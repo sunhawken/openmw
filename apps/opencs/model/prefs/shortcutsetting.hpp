@@ -17,7 +17,7 @@ namespace CSMPrefs
         public:
 
             ShortcutSetting(Category* parent, Settings::Manager* values, QMutex* mutex, const std::string& key,
-                const std::string& label, const QKeySequence& default_);
+                const std::string& label);
 
             virtual std::pair<QWidget*, QWidget*> makeWidgets(QWidget* parent);
 
@@ -28,8 +28,6 @@ namespace CSMPrefs
         private:
 
             bool handleEvent(QObject* target, int mod, int value, bool active);
-
-            QKeySequence mDefault;
 
             QPushButton* mButton;
 
