@@ -692,7 +692,6 @@ void OMW::Engine::go()
     // Setup viewer
     mViewer = new osgViewer::Viewer;
     mViewer->setReleaseContextAtEndOfFrameHint(false);
-    mViewer->setThreadingModel(osgViewer::Viewer::SingleThreaded);
 
 #if OSG_VERSION_GREATER_OR_EQUAL(3,5,5)
     // Do not try to outsmart the OS thread scheduler (see bug #4785).
@@ -727,6 +726,20 @@ void OMW::Engine::go()
     osg::ref_ptr<Resource::StatsHandler> resourceshandler = new Resource::StatsHandler;
     mViewer->addEventHandler(resourceshandler);
 
+#ifdef USE_OPENXR
+    auto* root = mViewer->getSceneData();
+    mXRViewer->addChild(root);
+    mViewer->setSceneData(mXRViewer);
+#ifndef _NDEBUG
+    mXR->addPoseUpdateCallback(new MWVR::PoseLogger(MWVR::TrackedLimb::HEAD, MWVR::TrackedSpace::STAGE));
+    mXR->addPoseUpdateCallback(new MWVR::PoseLogger(MWVR::TrackedLimb::HEAD, MWVR::TrackedSpace::VIEW));
+    mXR->addPoseUpdateCallback(new MWVR::PoseLogger(MWVR::TrackedLimb::LEFT_HAND, MWVR::TrackedSpace::STAGE));
+    mXR->addPoseUpdateCallback(new MWVR::PoseLogger(MWVR::TrackedLimb::LEFT_HAND, MWVR::TrackedSpace::VIEW));
+    mXR->addPoseUpdateCallback(new MWVR::PoseLogger(MWVR::TrackedLimb::RIGHT_HAND, MWVR::TrackedSpace::STAGE));
+    mXR->addPoseUpdateCallback(new MWVR::PoseLogger(MWVR::TrackedLimb::RIGHT_HAND, MWVR::TrackedSpace::VIEW));
+#endif
+#endif
+
     // Start the game
     if (!mSaveGameFile.empty())
     {
@@ -752,11 +765,6 @@ void OMW::Engine::go()
     }
 
 
-#ifdef USE_OPENXR
-    auto* root = mViewer->getSceneData();
-    mXRViewer->addChild(root);
-    mViewer->setSceneData(mXRViewer);
-#endif
 
     // Start the main rendering loop
     osg::Timer frameTimer;
@@ -776,12 +784,18 @@ void OMW::Engine::go()
         }
         else
         {
+
             mViewer->eventTraversal();
-            mViewer->updateTraversal();
 
             mEnvironment.getWorld()->updateWindowManager();
 
+#ifdef USE_OPENXR
+            mXRViewer->traversals();
+#else
+            mViewer->updateTraversal();
+
             mViewer->renderingTraversals();
+#endif
 
             bool guiActive = mEnvironment.getWindowManager()->isGuiMode();
             if (!guiActive)
