@@ -14,15 +14,16 @@ cd ~
 PATH=$PATH:~/lua-5.1.5/src
 
 echo "Install luarocks"
-wget https://luarocks.org/releases/luarocks-2.4.2.tar.gz
-tar zxpf luarocks-2.4.2.tar.gz
-rm luarocks-2.4.2.tar.gz
-cd luarocks-2.4.2/
+luarocksV="3.9.2"
+wget https://luarocks.org/releases/luarocks-$luarocksV.tar.gz
+tar zxpf luarocks-$luarocksV.tar.gz
+rm luarocks-$luarocksV.tar.gz
+cd luarocks-$luarocksV/
 ./configure --with-lua-bin=$HOME/lua-5.1.5/src --with-lua-include=$HOME/lua-5.1.5/src --prefix=$HOME/luarocks
 make build
 make install
 cd ~
-rm -r luarocks-2.4.2
+rm -r luarocks-$luarocksV
 PATH=$PATH:~/luarocks/bin
 
 echo "Install openmwluadocumentor"
