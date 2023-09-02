@@ -23,7 +23,6 @@ local handlersPerType = {}
 handlersPerType[types.ESM4Door] = { ESM4DoorActivation }
 
 local function onActivate(obj, actor)
-    types.Actor.activeEffects(actor):remove('invisibility')
     local handlers = handlersPerObject[obj.id]
     if handlers then
         for i = #handlers, 1, -1 do
@@ -40,6 +39,7 @@ local function onActivate(obj, actor)
             end
         end
     end
+    types.Actor.activeEffects(actor):remove('invisibility')
     world._runStandardActivationAction(obj, actor)
 end
 
