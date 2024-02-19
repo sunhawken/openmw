@@ -576,6 +576,7 @@ if (MSVC)
 endif()
 
 include_directories(${BULLET_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${JOLT_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 
 if (OPENMW_USE_SYSTEM_SQLITE3)
     find_package(SQLite3 REQUIRED)
@@ -638,7 +639,11 @@ else()
     target_link_libraries(components yaml-cpp)
 endif()
 
-target_link_libraries(components ${BULLET_LIBRARIES})
+if(Boost_VERSION_STRING VERSION_GREATER_EQUAL 1.77.0)
+    target_link_libraries(components ${Boost_ATOMIC_LIBRARY})
+endif()
+
+target_link_libraries(components ${BULLET_LIBRARIES} ${JOLT_LIBRARIES})
 
 if (USE_QT)
     add_library(components_qt STATIC ${COMPONENT_QT_FILES})
