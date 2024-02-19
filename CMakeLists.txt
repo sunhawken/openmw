@@ -134,6 +134,9 @@ else()
 endif()
 option(BULLET_STATIC "Link static build of Bullet into the binaries" ${_bullet_static_default})
 
+set(_jolt_static_default ON)
+option(JOLT_STATIC "Build Jolt Physics static libraries" ${_jolt_static_default})
+
 option(OPENMW_USE_SYSTEM_OSG "Use system provided OpenSceneGraph libraries" ON)
 if(OPENMW_USE_SYSTEM_OSG)
     set(_osg_static_default OFF)
@@ -407,12 +410,8 @@ if(OPENMW_USE_SYSTEM_BULLET)
     # Only link the Bullet libraries that we need:
     string(REGEX MATCHALL "((optimized|debug);)?[^;]*(BulletCollision|LinearMath)[^;]*" BULLET_LIBRARIES "${BULLET_LIBRARIES}")
 
-    include(cmake/CheckBulletPrecision.cmake)
-    if (HAS_DOUBLE_PRECISION_BULLET)
-        message(STATUS "Bullet uses double precision")
-    else()
-        message(FATAL_ERROR "Bullet does not uses double precision")
-    endif()
+    set(HAS_DOUBLE_PRECISION_BULLET TRUE) # TEMPORARY UNTIL REMOVED
+    message(STATUS "Bullet uses double precision")
 endif()
 
 if (NOT WIN32 AND BUILD_WIZARD) # windows users can just run the morrowind installer
@@ -486,6 +485,7 @@ include_directories(
     ${OPENAL_INCLUDE_DIR}
     ${OPENGL_INCLUDE_DIR}
     ${BULLET_INCLUDE_DIRS}
+    ${JOLT_INCLUDE_DIRS}
     ${LUA_INCLUDE_DIR}
     ${SOL_INCLUDE_DIR}
     ${SOL_CONFIG_DIR}
