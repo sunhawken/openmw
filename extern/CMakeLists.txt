@@ -3,6 +3,25 @@
 set_directory_properties(PROPERTIES EXCLUDE_FROM_ALL on)
 set(CMAKE_CXX_CLANG_TIDY "")
 
+# Like `FetchContent_MakeAvailable` but passes EXCLUDE_FROM_ALL to `add_subdirectory`.
+macro(FetchContent_MakeAvailableExcludeFromAll)
+    foreach(contentName IN ITEMS ${ARGV})
+        string(TOLOWER ${contentName} contentNameLower)
+        FetchContent_GetProperties(${contentName})
+        if(NOT ${contentNameLower}_POPULATED)
+            FetchContent_Populate(${contentName})
+            if(EXISTS ${${contentNameLower}_SOURCE_DIR}/CMakeLists.txt)
+                add_subdirectory(${${contentNameLower}_SOURCE_DIR}
+                    ${${contentNameLower}_BINARY_DIR} EXCLUDE_FROM_ALL)
+            elseif(EXISTS ${${contentNameLower}_SOURCE_DIR}/Build/CMakeLists.txt)
+                add_subdirectory(${${contentNameLower}_SOURCE_DIR}/Build
+                    ${${contentNameLower}_BINARY_DIR} EXCLUDE_FROM_ALL)
+            endif()
+        endif()
+    endforeach()
+endmacro()
+
+# TODO: remove bullet!
 if(NOT OPENMW_USE_SYSTEM_BULLET)
 
     set(BUILD_BULLET3 OFF CACHE BOOL "")
@@ -45,6 +64,70 @@ if(NOT OPENMW_USE_SYSTEM_BULLET)
     # The order here is important to work around a bug in Bullet:
     # https://github.com/bulletphysics/bullet3/issues/3233
     set(BULLET_LIBRARIES BulletCollision LinearMath PARENT_SCOPE)
+endif()
+
+if(NOT OPENMW_USE_SYSTEM_JOLT)
+    #if(JOLT_STATIC)
+    #    set(BUILD_SHARED_LIBS OFF)
+    #else()
+    #    set(BUILD_SHARED_LIBS ON)
+    #endif()
+
+    # NOTE: COPIED CONFIG FROM CUSTOM ENGINE, NEEDS CLEANUP/DECIDING
+
+    # When turning this option on, the library will be compiled using doubles for positions. This allows for much bigger worlds.
+    set(DOUBLE_PRECISION ON)
+
+    # When turning this option on, the library will be compiled in such a way to attempt to keep the simulation deterministic across platforms
+    set(CROSS_PLATFORM_DETERMINISTIC OFF)
+
+    # When turning this option on, the library will be compiled with interprocedural optimizations enabled, also known as link-time optimizations or link-time code generation.
+    # Note that if you turn this on you need to use SET_INTERPROCEDURAL_OPTIMIZATION() or set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON) to enable LTO specificly for your own project as well.
+    # If you don't do this you may get an error: /usr/bin/ld: libJolt.a: error adding symbols: file format not recognized
+    set(INTERPROCEDURAL_OPTIMIZATION OFF)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+
+    # When turning this on, in Debug and Release mode, the library will emit extra code to ensure that the 4th component of a 3-vector is kept the same as the 3rd component 
+    # and will enable floating point exceptions during simulation to detect divisions by zero. 
+    # Note that this currently only works using MSVC. Clang turns Float2 into a SIMD vector sometimes causing floating point exceptions (the option is ignored).
+    set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF)
+
+    # For Jolt....
+    # Select X86 processor features to use, by default the library compiles with AVX2, if everything is off it will be SSE2 compatible.
+
+    if (DEFINED EMSCRIPTEN)
+        set(USE_SSE4_1 OFF)
+        set(USE_SSE4_2 OFF)
+        set(USE_AVX OFF)
+        set(USE_AVX2 OFF)
+        set(USE_AVX512 OFF)
+        set(USE_LZCNT OFF)
+        set(USE_TZCNT OFF)
+        set(USE_F16C OFF)
+        set(USE_FMADD OFF)
+    else()
+        set(USE_SSE4_1 ON)
+        set(USE_SSE4_2 ON)
+        set(USE_AVX ON)
+        set(USE_AVX2 ON)
+        set(USE_AVX512 OFF)
+        set(USE_LZCNT ON)
+        set(USE_TZCNT ON)
+        set(USE_F16C ON)
+        set(USE_FMADD ON)
+    endif()
+
+
+    include(FetchContent)
+    FetchContent_Declare(joltphysics
+        URL https://github.com/jrouwe/JoltPhysics/archive/refs/tags/v4.0.2.zip
+        URL_HASH SHA512=d1070e3ad85f4ed4703f146c2ce1a673b082b74bce7ac6876ce8b9525d2027574a6aa488f46297c9b5aab0193fa6e03f9d3c4d2798b9767f620f52e2a72ddd71
+        SOURCE_DIR fetched/joltphysics
+    )
+    FetchContent_MakeAvailableExcludeFromAll(joltphysics)
+    message(STATUS "joltphysics_SOURCE_DIR ${joltphysics_SOURCE_DIR}")
+    set(JOLT_INCLUDE_DIRS ${joltphysics_SOURCE_DIR}/../ PARENT_SCOPE)
+    set(JOLT_LIBRARIES Jolt PARENT_SCOPE)
 endif()
 
 if(NOT OPENMW_USE_SYSTEM_MYGUI)
