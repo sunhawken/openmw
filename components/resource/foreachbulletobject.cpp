@@ -85,7 +85,7 @@ namespace Resource
 
         template <class F>
         void forEachObject(const ESM::Cell& cell, const EsmLoader::EsmData& esmData, const VFS::Manager& vfs,
-            Resource::BulletShapeManager& bulletShapeManager, ESM::ReadersCache& readers, F&& f)
+            Resource::PhysicsShapeManager& bulletShapeManager, ESM::ReadersCache& readers, F&& f)
         {
             std::vector<CellRef> cellRefs = loadCellRefs(cell, esmData, readers);
 
@@ -133,7 +133,7 @@ namespace Resource
     }
 
     void forEachBulletObject(ESM::ReadersCache& readers, const VFS::Manager& vfs,
-        Resource::BulletShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        Resource::PhysicsShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
         std::function<void(const ESM::Cell& cell, const BulletObject& object)> callback)
     {
         Log(Debug::Info) << "Processing " << esmData.mCells.size() << " cells...";

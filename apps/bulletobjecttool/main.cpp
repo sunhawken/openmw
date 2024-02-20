@@ -176,10 +176,10 @@ namespace
         Resource::NifFileManager nifFileManager(&vfs, &encoder.getStatelessEncoder());
         Resource::BgsmFileManager bgsmFileManager(&vfs, expiryDelay);
         Resource::SceneManager sceneManager(&vfs, &imageManager, &nifFileManager, &bgsmFileManager, expiryDelay);
-        Resource::BulletShapeManager bulletShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
+        Resource::PhysicsShapeManager physicsShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
 
         Resource::forEachBulletObject(
-            readers, vfs, bulletShapeManager, esmData, [](const ESM::Cell& cell, const Resource::BulletObject& object) {
+            readers, vfs, physicsShapeManager, esmData, [](const ESM::Cell& cell, const Resource::BulletObject& object) {
                 Log(Debug::Verbose) << "Found bullet object in " << (cell.isExterior() ? "exterior" : "interior")
                                     << " cell \"" << cell.getDescription() << "\":"
                                     << " fileName=\"" << object.mShape->mFileName << '"'

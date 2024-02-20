@@ -233,15 +233,15 @@ namespace NavMeshTool
             Resource::NifFileManager nifFileManager(&vfs, &encoder.getStatelessEncoder());
             Resource::BgsmFileManager bgsmFileManager(&vfs, expiryDelay);
             Resource::SceneManager sceneManager(&vfs, &imageManager, &nifFileManager, &bgsmFileManager, expiryDelay);
-            Resource::BulletShapeManager bulletShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
+            Resource::PhysicsShapeManager physicsShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
             DetourNavigator::RecastGlobalAllocator::init();
             DetourNavigator::Settings navigatorSettings
                 = DetourNavigator::makeSettingsFromSettingsManager(Debug::getRecastMaxLogLevel());
             navigatorSettings.mRecast.mSwimHeightScale
                 = EsmLoader::getGameSetting(esmData.mGameSettings, "fSwimHeightScale").getFloat();
 
-            const std::unordered_map<ESM::RefId, std::vector<std::size_t>> worldspaceCells
-                = collectWorldspaceCells(esmData, processInteriorCells, worldspaceFilter);
+            WorldspaceData cellsData = gatherWorldspaceData(
+                navigatorSettings, readers, vfs, physicsShapeManager, esmData, processInteriorCells, writeBinaryLog);
 
             Status status = Status::Ok;
             std::size_t provided = 0;

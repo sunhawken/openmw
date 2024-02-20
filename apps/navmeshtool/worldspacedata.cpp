@@ -133,7 +133,7 @@ namespace NavMeshTool
 
         template <class F>
         void forEachObject(const ESM::Cell& cell, const EsmLoader::EsmData& esmData, const VFS::Manager& vfs,
-            Resource::BulletShapeManager& bulletShapeManager, ESM::ReadersCache& readers, F&& f)
+            Resource::PhysicsShapeManager& bulletShapeManager, ESM::ReadersCache& readers, F&& f)
         {
             std::vector<CellRef> cellRefs = loadCellRefs(cell, esmData, readers);
 
@@ -344,8 +344,9 @@ namespace NavMeshTool
         mAabb.m_max = btVector3(0, 0, 0);
     }
 
-    std::unordered_map<ESM::RefId, std::vector<std::size_t>> collectWorldspaceCells(
-        const EsmLoader::EsmData& esmData, bool processInteriorCells, const std::regex& worldspaceFilter)
+    WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
+        const VFS::Manager& vfs, Resource::PhysicsShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        bool processInteriorCells, bool writeBinaryLog)
     {
         Log(Debug::Info) << "Collecting worldspaces from " << esmData.mCells.size() << " cells...";
 
