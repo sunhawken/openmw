@@ -22,7 +22,7 @@ namespace VFS
 
 namespace Resource
 {
-    class BulletShapeManager;
+    class PhysicsShapeManager;
 }
 
 namespace EsmLoader
@@ -40,7 +40,7 @@ namespace Resource
     };
 
     void forEachBulletObject(ESM::ReadersCache& readers, const VFS::Manager& vfs,
-        Resource::BulletShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        Resource::PhysicsShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
         std::function<void(const ESM::Cell&, const BulletObject& object)> callback);
 }
 

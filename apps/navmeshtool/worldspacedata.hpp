@@ -30,7 +30,7 @@ namespace VFS
 
 namespace Resource
 {
-    class BulletShapeManager;
+    class PhysicsShapeManager;
 }
 
 namespace EsmLoader
@@ -98,8 +98,8 @@ namespace NavMeshTool
         const EsmLoader::EsmData& esmData, bool processInteriorCells, const std::regex& worldspaceFilter);
 
     WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
-        const VFS::Manager& vfs, Resource::BulletShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
-        bool writeBinaryLog, ESM::RefId worldspace, std::span<const std::size_t> cells);
+        const VFS::Manager& vfs, Resource::PhysicsShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        bool processInteriorCells, bool writeBinaryLog);
 }
 
 #endif
