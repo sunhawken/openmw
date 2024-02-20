@@ -1,32 +1,141 @@
 #ifndef OPENMW_MWPHYSICS_ACTORCONVEXCALLBACK_H
 #define OPENMW_MWPHYSICS_ACTORCONVEXCALLBACK_H
 
-#include <BulletCollision/CollisionDispatch/btCollisionWorld.h>
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 
-class btCollisionObject;
+#include <components/misc/convert.hpp>
+#include <components/debug/debuglog.hpp>
+
+#include "../mwrender/joltdebugdraw.hpp"
+
+#include "joltlayers.hpp"
+#include "physicssystem.hpp"
 
 namespace MWPhysics
 {
-    class ActorConvexCallback : public btCollisionWorld::ClosestConvexResultCallback
+    class ActorConvexCallback : public JPH::CastShapeCollector
     {
     public:
-        explicit ActorConvexCallback(const btCollisionObject* me, const btVector3& motion, btScalar minCollisionDot,
-            const btCollisionWorld* world)
-            : btCollisionWorld::ClosestConvexResultCallback(btVector3(0.0, 0.0, 0.0), btVector3(0.0, 0.0, 0.0))
-            , mMe(me)
-            , mMotion(motion)
+        ActorConvexCallback()
+            : mClosestHitFraction(0.0f)
+            , mMinCollisionDot(0.0f)
+            , mPhysicsSystem(nullptr) {}
+
+        ActorConvexCallback(const JPH::BodyID actor, const JPH::PhysicsSystem* inPhysicsSystem, JPH::RVec3 origin, float minCollisionDot, JPH::Vec3 motion)
+            : mMe(actor)
+            , mPhysicsSystem(inPhysicsSystem)
             , mMinCollisionDot(minCollisionDot)
-            , mWorld(world)
+            , mMotion(motion)
+            , mOrigin(origin)
         {
         }
 
-        btScalar addSingleResult(btCollisionWorld::LocalConvexResult& convexResult, bool normalInWorldSpace) override;
+        virtual void AddHit(const JPH::ShapeCastResult& inResult) override
+        {
+            // If self, skip
+            if (inResult.mBodyID2 == mMe) {
+                return;
+            }
 
-    protected:
-        const btCollisionObject* mMe;
-        const btVector3 mMotion;
-        const btScalar mMinCollisionDot;
-        const btCollisionWorld* mWorld;
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterfaceNoLock(), inResult.mBodyID2);
+            if (!lock.Succeeded())
+                return;
+
+            const JPH::Body* body = &lock.GetBody();
+
+            if (body->IsSensor())
+                return;
+
+            JPH::BodyLockRead myLock(mPhysicsSystem->GetBodyLockInterfaceNoLock(), mMe);
+            assert(myLock.Succeeded());
+            if (!myLock.Succeeded())
+                return;
+
+            const JPH::Body* myBody = &myLock.GetBody();
+
+            const JPH::ObjectLayer collisionGroup = body->GetObjectLayer();
+
+            JPH::Vec3 hitNormalWorld = -inResult.mPenetrationAxis.Normalized();
+
+            // override data for actor-actor collisions
+            // vanilla Morrowind seems to make overlapping actors collide as though they are both cylinders with a diameter
+            // of the distance between them For some reason this doesn't work as well as it should when using capsules, but
+            // it still helps a lot.
+            float earlyOut = inResult.GetEarlyOutFraction();
+            if (collisionGroup == Layers::ACTOR)
+            {
+                bool isOverlapping = inResult.mPenetrationDepth != 0.0f;
+                if (isOverlapping)
+                {
+                    auto originA = Misc::Convert::toOsg(myBody->GetCenterOfMassTransform().GetTranslation());
+                    auto originB = Misc::Convert::toOsg(body->GetCenterOfMassTransform().GetTranslation());
+                    osg::Vec3f motion = Misc::Convert::toOsg(mMotion);
+                    osg::Vec3f normal = (originA - originB);
+                    normal.z() = 0;
+                    normal.normalize();
+                 
+                    // only collide if horizontally moving towards the hit actor (note: the motion vector appears to be
+                    // inverted)
+                    // FIXME: This kinda screws with standing on actors that walk up slopes for some reason. Makes you fall
+                    // through them. It happens in vanilla Morrowind too, but much less often. I tried hunting down why but
+                    // couldn't figure it out. Possibly a stair stepping or ground ejection bug.
+                    if (normal * motion > 0.0f)
+                    {
+                        // Get the contact properties
+                        mHitCollisionObject = body;
+                        mHitCollisionLayer = collisionGroup;
+                        mHitPointWorld = mOrigin + inResult.mContactPointOn2;
+                        mHitNormalWorld = Misc::Convert::toJolt<JPH::Vec3>(normal);
+                        mClosestHitFraction = 0.0f;
+                        ForceEarlyOut();
+                    }
+                    return;
+                }
+            }
+
+            if (collisionGroup == Layers::PROJECTILE)
+                return;
+
+            // dot product of the motion vector against the collision contact normal
+            float dotCollision = mMotion.Dot(hitNormalWorld);
+            if (dotCollision <= mMinCollisionDot)
+                return;
+
+            // Test if this collision is closer/deeper than the previous one
+            if (earlyOut < GetEarlyOutFraction())
+            {
+                // Update early out fraction to this hit
+                UpdateEarlyOutFraction(earlyOut);
+
+                // Get the contact properties
+                mHitCollisionObject = body;
+                mHitCollisionLayer = collisionGroup;
+                mHitPointWorld = mOrigin + inResult.mContactPointOn2;
+                mHitNormalWorld = hitNormalWorld;
+                mClosestHitFraction = inResult.mFraction;
+            }
+        }
+            
+        bool hasHit() const {
+            return mHitCollisionObject != nullptr;
+        }
+
+        // Configuration
+        float mClosestHitFraction;
+        const float mMinCollisionDot;
+        const JPH::BodyID mMe;
+        const JPH::Body* mHitCollisionObject = nullptr;
+
+        JPH::ObjectLayer mHitCollisionLayer;
+        JPH::RVec3 mHitPointWorld;
+        JPH::Vec3 mHitNormalWorld;
+        JPH::Vec3 mMotion;
+
+    private:
+        const JPH::PhysicsSystem* mPhysicsSystem;
+        JPH::RVec3 mOrigin;
     };
 }
 

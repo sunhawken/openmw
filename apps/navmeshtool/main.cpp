@@ -20,7 +20,7 @@
 #include <components/files/multidircollection.hpp>
 #include <components/platform/platform.hpp>
 #include <components/resource/bgsmfilemanager.hpp>
-#include <components/resource/bulletshapemanager.hpp>
+#include <components/resource/physicsshapemanager.hpp>
 #include <components/resource/imagemanager.hpp>
 #include <components/resource/niffilemanager.hpp>
 #include <components/resource/scenemanager.hpp>

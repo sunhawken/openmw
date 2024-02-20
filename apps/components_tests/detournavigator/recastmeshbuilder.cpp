@@ -3,13 +3,6 @@
 #include <components/detournavigator/recastmesh.hpp>
 #include <components/detournavigator/recastmeshbuilder.hpp>
 
-#include <BulletCollision/CollisionDispatch/btCollisionObject.h>
-#include <BulletCollision/CollisionShapes/btBoxShape.h>
-#include <BulletCollision/CollisionShapes/btBvhTriangleMeshShape.h>
-#include <BulletCollision/CollisionShapes/btCompoundShape.h>
-#include <BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h>
-#include <BulletCollision/CollisionShapes/btTriangleMesh.h>
-
 #include <DetourCommon.h>
 
 #include <gmock/gmock.h>
@@ -52,7 +45,7 @@ namespace
     {
         TileBounds mBounds;
         const Version mVersion{ 0, 0 };
-        const osg::ref_ptr<const Resource::BulletShape> mSource{ nullptr };
+        const osg::ref_ptr<const Resource::PhysicsShape> mSource{ nullptr };
         const ObjectTransform mObjectTransform{ ESM::Position{ { 0, 0, 0 }, { 0, 0, 0 } }, 0.0f };
 
         DetourNavigatorRecastMeshBuilderTest()

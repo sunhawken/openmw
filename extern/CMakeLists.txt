@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-set_directory_properties(PROPERTIES EXCLUDE_FROM_ALL on)
 set(CMAKE_CXX_CLANG_TIDY "")
 
 # Like `FetchContent_MakeAvailable` but passes EXCLUDE_FROM_ALL to `add_subdirectory`.
@@ -21,59 +20,10 @@ macro(FetchContent_MakeAvailableExcludeFromAll)
     endforeach()
 endmacro()
 
-# TODO: remove bullet!
-if(NOT OPENMW_USE_SYSTEM_BULLET)
-
-    set(BUILD_BULLET3 OFF CACHE BOOL "")
-    set(BUILD_EXTRAS OFF CACHE BOOL "")
-    set(BUILD_OPENGL3_DEMOS OFF CACHE BOOL "")
-    set(BUILD_UNIT_TESTS OFF CACHE BOOL "")
-    set(BUILD_BULLET2_DEMOS OFF CACHE BOOL "")
-    set(BUILD_CLSOCKET OFF CACHE BOOL "")
-    set(BUILD_ENET OFF CACHE BOOL "")
-    set(BUILD_CPU_DEMOS OFF CACHE BOOL "")
-    set(BUILD_EGL OFF CACHE BOOL "")
-
-    set(USE_DOUBLE_PRECISION ON CACHE BOOL "")
-    set(BULLET2_MULTITHREADING ON CACHE BOOL "")
-
-    if(BULLET_STATIC)
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    else()
-        set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
-    endif()
-
-    if(MSVC)
-        # this setting is badly named - having it off forces the static runtime library,
-        # but having it on does nothing, letting the defaults get used.
-        # OpenMW uses the defaults, and you can't mix and match.
-        set(USE_MSVC_RUNTIME_LIBRARY_DLL ON CACHE BOOL "" FORCE)
-    endif()
-
-    # May 7, 2021
-    include(FetchContent)
-    FetchContent_Declare(bullet
-        URL https://github.com/bulletphysics/bullet3/archive/refs/tags/3.17.tar.gz
-        URL_HASH SHA512=a5105bf5f1dd365a64a350755c7d2c97942f74897a18dcdb3651e6732fd55cc1030a096f5808cf50575281f05e3ac09aa50a48d271a47b94cd61f5167a72b7cc
-        SOURCE_DIR fetched/bullet
-    )
-    FetchContent_MakeAvailable(bullet)
-
-    set(BULLET_INCLUDE_DIRS ${bullet_SOURCE_DIR}/src PARENT_SCOPE)
-
-    # The order here is important to work around a bug in Bullet:
-    # https://github.com/bulletphysics/bullet3/issues/3233
-    set(BULLET_LIBRARIES BulletCollision LinearMath PARENT_SCOPE)
-endif()
-
 if(NOT OPENMW_USE_SYSTEM_JOLT)
-    #if(JOLT_STATIC)
-    #    set(BUILD_SHARED_LIBS OFF)
-    #else()
-    #    set(BUILD_SHARED_LIBS ON)
-    #endif()
-
-    # NOTE: COPIED CONFIG FROM CUSTOM ENGINE, NEEDS CLEANUP/DECIDING
+    set(JPH_DEBUG_RENDERER ON CACHE BOOL "")
+    set(JPH_PROFILE_ENABLED ON CACHE BOOL "")
+    add_definitions(-DJPH_DEBUG_RENDERER=1 -DJPH_PROFILE_ENABLED=1)
 
     # When turning this option on, the library will be compiled using doubles for positions. This allows for much bigger worlds.
     set(DOUBLE_PRECISION ON)
@@ -89,43 +39,16 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
 
     # When turning this on, in Debug and Release mode, the library will emit extra code to ensure that the 4th component of a 3-vector is kept the same as the 3rd component 
     # and will enable floating point exceptions during simulation to detect divisions by zero. 
-    # Note that this currently only works using MSVC. Clang turns Float2 into a SIMD vector sometimes causing floating point exceptions (the option is ignored).
     set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF)
-
-    # For Jolt....
-    # Select X86 processor features to use, by default the library compiles with AVX2, if everything is off it will be SSE2 compatible.
-
-    if (DEFINED EMSCRIPTEN)
-        set(USE_SSE4_1 OFF)
-        set(USE_SSE4_2 OFF)
-        set(USE_AVX OFF)
-        set(USE_AVX2 OFF)
-        set(USE_AVX512 OFF)
-        set(USE_LZCNT OFF)
-        set(USE_TZCNT OFF)
-        set(USE_F16C OFF)
-        set(USE_FMADD OFF)
-    else()
-        set(USE_SSE4_1 ON)
-        set(USE_SSE4_2 ON)
-        set(USE_AVX ON)
-        set(USE_AVX2 ON)
-        set(USE_AVX512 OFF)
-        set(USE_LZCNT ON)
-        set(USE_TZCNT ON)
-        set(USE_F16C ON)
-        set(USE_FMADD ON)
-    endif()
-
 
     include(FetchContent)
     FetchContent_Declare(joltphysics
-        URL https://github.com/jrouwe/JoltPhysics/archive/refs/tags/v4.0.2.zip
-        URL_HASH SHA512=d1070e3ad85f4ed4703f146c2ce1a673b082b74bce7ac6876ce8b9525d2027574a6aa488f46297c9b5aab0193fa6e03f9d3c4d2798b9767f620f52e2a72ddd71
+        URL https://github.com/jrouwe/JoltPhysics/archive/045a87e23052a6d550619ac0e9e401d96e40e9e9.zip
+        URL_HASH SHA512=ac65393a5941a76e42f2d3ac5ea57af3533b701eb4c6cea39e8a492a39adfccf780cb3c02876863a2b7d0fec1b5dda8aec1a16a6f322e10d34f72ee30485d7c9
         SOURCE_DIR fetched/joltphysics
     )
     FetchContent_MakeAvailableExcludeFromAll(joltphysics)
-    message(STATUS "joltphysics_SOURCE_DIR ${joltphysics_SOURCE_DIR}")
+
     set(JOLT_INCLUDE_DIRS ${joltphysics_SOURCE_DIR}/../ PARENT_SCOPE)
     set(JOLT_LIBRARIES Jolt PARENT_SCOPE)
 endif()
@@ -151,7 +74,7 @@ if(NOT OPENMW_USE_SYSTEM_MYGUI)
         URL_HASH SHA512=c804ef665e786076582367f171082cd2181fdbd214300ddcca4a4245c5a0f45e62e72778ee2d96ec46b393e22477dd729f9bb3006e6eecbf536674e34a057721
         SOURCE_DIR fetched/mygui
     )
-    FetchContent_MakeAvailable(mygui)
+    FetchContent_MakeAvailableExcludeFromAll(mygui)
 
     set(MyGUI_INCLUDE_DIRS ${mygui_SOURCE_DIR}/MyGUIEngine/include PARENT_SCOPE)
     set(MyGUI_LIBRARIES MyGUIEngine PARENT_SCOPE)
@@ -217,7 +140,7 @@ if(NOT OPENMW_USE_SYSTEM_OSG)
         URL_HASH SHA512=9b0a94c1c1d99c767f1857629d43c7a53bfcb74ef760993a121567831e168a1ebbfc10b0c67d7f2241c7b6c6dab2d0e6b876d9f17aca0fabe1a8c86b2279f956
         SOURCE_DIR fetched/osg
     )
-    FetchContent_MakeAvailable(osg)
+    FetchContent_MakeAvailableExcludeFromAll(osg)
 
     set(OPENSCENEGRAPH_INCLUDE_DIRS ${osg_SOURCE_DIR}/include ${osg_BINARY_DIR}/include PARENT_SCOPE)
     set(OSG_LIBRARIES OpenThreads osg PARENT_SCOPE)
@@ -248,7 +171,7 @@ if(NOT OPENMW_USE_SYSTEM_RECASTNAVIGATION)
         URL_HASH SHA512=48f20cee7a70c2f20f4c68bb74d5af11a1434be85294e37f5fe7b7aae820fbcdff4f35d3be286eaf6f9cbce0aed4201fcc090df409a5bd04aec5fd7c29b3ad94
         SOURCE_DIR fetched/recastnavigation
     )
-    FetchContent_MakeAvailable(recastnavigation)
+    FetchContent_MakeAvailableExcludeFromAll(recastnavigation)
 endif()
 
 if (NOT OPENMW_USE_SYSTEM_SQLITE3)
@@ -258,7 +181,7 @@ if (NOT OPENMW_USE_SYSTEM_SQLITE3)
         URL_HASH SHA512=7de291709e88fffc693cf24ac675950cfc35c1bf7631cfea95167105720a05cf37fb943c57c5c985db2eeaa57b31894b3c0df98a7bd2939b5746fc5a24b5ae87
         SOURCE_DIR fetched/sqlite3
     )
-    FetchContent_MakeAvailable(sqlite3)
+    FetchContent_MakeAvailableExcludeFromAll(sqlite3)
 
     add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
     target_include_directories(sqlite3 INTERFACE ${sqlite3_SOURCE_DIR}/)
@@ -278,7 +201,6 @@ if (BUILD_BENCHMARKS AND NOT OPENMW_USE_SYSTEM_BENCHMARK)
     set(BENCHMARK_ENABLE_TESTING OFF)
     set(BENCHMARK_ENABLE_INSTALL OFF)
     set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
-    set(BENCHMARK_ENABLE_WERROR OFF)
 
     include(FetchContent)
     FetchContent_Declare(benchmark
@@ -286,7 +208,7 @@ if (BUILD_BENCHMARKS AND NOT OPENMW_USE_SYSTEM_BENCHMARK)
         URL_HASH SHA512=d73587ad9c49338749e1d117a6f8c7ff9c603a91a2ffa91a7355c7df7dea82710b9a810d34ddfef20973ecdc77092ec10fb2b4e4cc8d2e7810cbed79617b3828
         SOURCE_DIR fetched/benchmark
     )
-    FetchContent_MakeAvailable(benchmark)
+    FetchContent_MakeAvailableExcludeFromAll(benchmark)
 endif()
 
 if (NOT OPENMW_USE_SYSTEM_YAML_CPP)
@@ -302,7 +224,7 @@ if (NOT OPENMW_USE_SYSTEM_YAML_CPP)
         URL_HASH MD5=1e8ca0d6ccf99f3ed9506c1f6937d0ec
         SOURCE_DIR fetched/yaml-cpp
     )
-    FetchContent_MakeAvailable(yaml-cpp)
+    FetchContent_MakeAvailableExcludeFromAll(yaml-cpp)
 
     if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
         target_precompile_headers(yaml-cpp PRIVATE <algorithm>)
@@ -364,7 +286,7 @@ if (NOT OPENMW_USE_SYSTEM_ICU)
     set(ICU_LIBRARIES ICU::i18n ICU::uc ICU::data PARENT_SCOPE)
 endif()
 
-if ((BUILD_COMPONENTS_TESTS OR BUILD_OPENCS_TESTS OR BUILD_OPENMW_TESTS) AND NOT OPENMW_USE_SYSTEM_GOOGLETEST)
+if ((BUILD_UNITTESTS OR BUILD_OPENCS_TESTS) AND NOT OPENMW_USE_SYSTEM_GOOGLETEST)
 
     include(FetchContent)
     FetchContent_Declare(googletest
@@ -375,7 +297,7 @@ if ((BUILD_COMPONENTS_TESTS OR BUILD_OPENCS_TESTS OR BUILD_OPENMW_TESTS) AND NOT
     if (MSVC)
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     endif()
-    FetchContent_MakeAvailable(googletest)
+    FetchContent_MakeAvailableExcludeFromAll(googletest)
 
     add_library(GTest::GTest ALIAS gtest)
     add_library(GMock::GMock ALIAS gmock)

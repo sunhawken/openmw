@@ -2,12 +2,14 @@
 #define OPENMW_COMPONENTS_DETOURNAVIGATOR_TILEBOUNDS_H
 
 #include <components/misc/convert.hpp>
+#include <components/physicshelpers/aabb.hpp>
 
 #include <osg/Vec2f>
 #include <osg/Vec2i>
+#include <osg/Matrixd>
 
-#include <BulletCollision/CollisionShapes/btCollisionShape.h>
-#include <LinearMath/btTransform.h>
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Collision/Shape/Shape.h>
 
 #include <algorithm>
 #include <optional>
@@ -61,13 +63,12 @@ namespace DetourNavigator
             osg::Vec2f(static_cast<float>(position.x() + 1), static_cast<float>(position.y() + 1))
                 * static_cast<float>(size) };
     }
+    
 
-    inline TileBounds makeObjectTileBounds(const btCollisionShape& shape, const btTransform& transform)
+    inline TileBounds makeObjectTileBounds(const JPH::Shape& shape, const osg::Matrixd& transform)
     {
-        btVector3 aabbMin;
-        btVector3 aabbMax;
-        shape.getAabb(transform, aabbMin, aabbMax);
-        return TileBounds{ Misc::Convert::toOsgXY(aabbMin), Misc::Convert::toOsgXY(aabbMax) };
+        JPH::AABox bounds = PhysicsSystemHelpers::getAabb(shape, transform);
+        return TileBounds{ Misc::Convert::toOsgXY(bounds.mMin), Misc::Convert::toOsgXY(bounds.mMax) };
     }
 }
 

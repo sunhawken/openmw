@@ -45,7 +45,7 @@ namespace MWWorld
     class CellPreloader
     {
     public:
-        CellPreloader(Resource::ResourceSystem* resourceSystem, Resource::PhysicsShapeManager* bulletShapeManager,
+        CellPreloader(Resource::ResourceSystem* resourceSystem, Resource::PhysicsShapeManager* physicsShapeManager,
             Terrain::World* terrain, MWRender::LandManager* landManager);
         ~CellPreloader();
 

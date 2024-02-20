@@ -4,11 +4,14 @@
 #include <components/esm/position.hpp>
 #include <components/esm3/loadpgrd.hpp>
 
-#include <LinearMath/btQuaternion.h>
-#include <LinearMath/btTransform.h>
-#include <LinearMath/btVector3.h>
+#include <Jolt/Jolt.h>
+#include <Jolt/Math/Float3.h>
+#include <Jolt/Math/Mat44.h>
+#include <Jolt/Math/Real.h>
+
 #include <osg/Quat>
 #include <osg/Vec3f>
+#include <osg/Matrixd>
 
 namespace Misc::Convert
 {
@@ -19,32 +22,85 @@ namespace Misc::Convert
 
     inline osg::Vec3f makeOsgVec3f(const ESM::Pathgrid::Point& value)
     {
-        return osg::Vec3f(static_cast<float>(value.mX), static_cast<float>(value.mY), static_cast<float>(value.mZ));
+        return osg::Vec3f(value.mX, value.mY, value.mZ);
     }
 
-    inline btVector3 toBullet(const osg::Vec3f& vec)
+    template <typename T>
+    inline T toJolt(const osg::Vec3f& vec)
     {
-        return btVector3(vec.x(), vec.y(), vec.z());
+        return T(vec.x(), vec.y(), vec.z());
     }
 
-    inline btQuaternion toBullet(const osg::Quat& quat)
+    template <typename T>
+    inline T toJolt(const osg::Vec3d& vec)
     {
-        return btQuaternion(quat.x(), quat.y(), quat.z(), quat.w());
+        return T(vec.x(), vec.y(), vec.z());
     }
 
-    inline osg::Vec3d toOsg(const btVector3& vec)
+    template <typename T>
+    inline T toJolt(const JPH::RVec3& vec)
     {
-        return osg::Vec3d(vec.x(), vec.y(), vec.z());
+        return T(vec.GetX(), vec.GetY(), vec.GetZ());
     }
 
-    inline osg::Vec3f makeOsgVec3f(const btVector3& vec)
+    template <typename T>
+    inline T toJolt(const JPH::Float3& vec)
     {
-        return toOsg(vec);
+        return T(vec.x, vec.y, vec.z);
     }
 
-    inline osg::Quat toOsg(const btQuaternion& quat)
+    inline JPH::Quat toJolt(const osg::Quat& quat)
     {
-        return osg::Quat(quat.x(), quat.y(), quat.z(), quat.w());
+        return JPH::Quat(quat.x(), quat.y(), quat.z(), quat.w());
+    }
+
+    inline osg::Matrixd toOsgNoScale(const JPH::Mat44& joltMatrix)
+    {
+        osg::Matrixd mat;
+        auto inPosition = joltMatrix.GetTranslation();
+
+        // NOTE: jolt complains that translation isnt 0,0,0 here with asserts enabled
+        // it can be ignored.
+        auto subRot = joltMatrix.GetQuaternion();
+        mat.makeRotate(osg::Quat(subRot.GetX(), subRot.GetY(), subRot.GetZ(), subRot.GetW()));
+        mat.setTrans(osg::Vec3f(inPosition.GetX(), inPosition.GetY(), inPosition.GetZ()));
+        return mat;
+    }
+
+    inline JPH::RMat44 toJoltNoScale(const osg::Matrixd& mat)
+    {
+        osg::Quat quat = mat.getRotate();
+        osg::Vec3d trans = mat.getTrans();
+
+        // NOTE: discards scale - do we care?
+        return JPH::RMat44::sRotationTranslation(toJolt(quat), toJolt<JPH::RVec3>(trans));
+    }
+
+    inline osg::Vec3f toOsg(const JPH::RVec3& vec)
+    {
+        return osg::Vec3f(vec.GetX(), vec.GetY(), vec.GetZ());
+    }
+
+    inline osg::Vec3f toOsg(const JPH::Vec3& vec)
+    {
+        return osg::Vec3f(vec.GetX(), vec.GetY(), vec.GetZ());
+    }
+
+    template <typename T>
+    inline T* toPointerFromUserData(uint64_t userData) {
+        if (userData > 0)
+        {
+            // Converts from userdata uintptr to class type
+            // You should know the userdata points to the correct type!
+            T* ptr = reinterpret_cast<T*>(static_cast<uintptr_t>(userData));
+            return ptr;
+        }
+        return nullptr;
+    }
+
+    inline osg::Vec3f toOsg(const JPH::Float3& vec)
+    {
+        return osg::Vec3f(vec.x, vec.y, vec.z);
     }
 
     inline osg::Quat makeOsgQuat(const float (&rotation)[3])
@@ -58,25 +114,38 @@ namespace Misc::Convert
         return makeOsgQuat(position.rot);
     }
 
-    inline btQuaternion makeBulletQuaternion(const float (&rotation)[3])
+    inline osg::Quat makeQuaternion(const float (&rotation)[3])
     {
-        return btQuaternion(btVector3(0, 0, -1), rotation[2]) * btQuaternion(btVector3(0, -1, 0), rotation[1])
-            * btQuaternion(btVector3(-1, 0, 0), rotation[0]);
+        return osg::Quat(0, 0, -1, rotation[2]) * osg::Quat(0, -1, 0, rotation[1])
+            * osg::Quat(-1, 0, 0, rotation[0]);
     }
 
-    inline btQuaternion makeBulletQuaternion(const ESM::Position& position)
+    inline osg::Quat makeQuaternion(const ESM::Position& position)
     {
-        return makeBulletQuaternion(position.rot);
+        return makeQuaternion(position.rot);
     }
 
-    inline btTransform makeBulletTransform(const ESM::Position& position)
+    inline osg::Matrixd makeOSGTransform(const ESM::Position& position)
     {
-        return btTransform(makeBulletQuaternion(position), toBullet(position.asVec3()));
+        osg::Matrixd mat;
+        mat.setRotate(makeQuaternion(position));
+        mat.setTrans(position.asVec3());
+        return mat;
     }
 
-    inline osg::Vec2f toOsgXY(const btVector3& value)
+    inline osg::Vec2f toOsgXY(const osg::Vec3f& value)
     {
         return osg::Vec2f(static_cast<float>(value.x()), static_cast<float>(value.y()));
+    }
+
+    inline osg::Vec2f toOsgXY(const JPH::RVec3& value)
+    {
+        return osg::Vec2f(static_cast<float>(value.GetX()), static_cast<float>(value.GetY()));
+    }
+
+    inline osg::Vec2f toOsgXY(const JPH::Vec3& value)
+    {
+        return osg::Vec2f(static_cast<float>(value.GetX()), static_cast<float>(value.GetY()));
     }
 }
 
