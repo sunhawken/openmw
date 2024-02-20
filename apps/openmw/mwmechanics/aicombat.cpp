@@ -601,7 +601,7 @@ namespace MWMechanics
                 return;
 
             int mask
-                = MWPhysics::CollisionType_World | MWPhysics::CollisionType_HeightMap | MWPhysics::CollisionType_Door;
+                = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR;
 
             // Actor can not back up if there is no free space behind
             // Currently we take the 35% of actor's height from the ground as vector height.

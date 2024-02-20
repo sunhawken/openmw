@@ -17,8 +17,7 @@
 #include <boost/geometry/geometries/point.hpp>
 #include <boost/geometry/index/rtree.hpp>
 
-#include <LinearMath/btTransform.h>
-
+#include <osg/Matrixd>
 #include <osg/Vec2i>
 
 #include <map>
@@ -49,10 +48,10 @@ namespace DetourNavigator
 
         void setWorldspace(ESM::RefId worldspace, const UpdateGuard* guard);
 
-        bool addObject(ObjectId id, const CollisionShape& shape, const btTransform& transform, AreaType areaType,
+        bool addObject(ObjectId id, const CollisionShape& shape, const osg::Matrixd& transform, AreaType areaType,
             const UpdateGuard* guard);
 
-        bool updateObject(ObjectId id, const btTransform& transform, AreaType areaType, const UpdateGuard* guard);
+        bool updateObject(ObjectId id, const osg::Matrixd& transform, AreaType areaType, const UpdateGuard* guard);
 
         void removeObject(ObjectId id, const UpdateGuard* guard);
 

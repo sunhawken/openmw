@@ -1,6 +1,6 @@
 ﻿#include "worldspacedata.hpp"
 
-#include <components/bullethelpers/aabb.hpp>
+#include <components/physicshelpers/aabb.hpp>
 #include <components/debug/debugging.hpp>
 #include <components/debug/debuglog.hpp>
 #include <components/detournavigator/debug.hpp>
@@ -22,11 +22,9 @@
 #include <components/misc/strings/conversion.hpp>
 #include <components/misc/strings/lower.hpp>
 #include <components/navmeshtool/protocol.hpp>
-#include <components/resource/bulletshapemanager.hpp>
+#include <components/resource/physicsshapemanager.hpp>
 #include <components/settings/settings.hpp>
 #include <components/vfs/manager.hpp>
-
-#include <LinearMath/btVector3.h>
 
 #include <osg/Vec2i>
 #include <osg/ref_ptr>
@@ -113,7 +111,7 @@ namespace NavMeshTool
 
         template <class F>
         void forEachObject(const ESM::Cell& cell, const EsmLoader::EsmData& esmData, const VFS::Manager& vfs,
-            Resource::PhysicsShapeManager& bulletShapeManager, ESM::ReadersCache& readers, F&& f)
+            Resource::PhysicsShapeManager& physicsShapeManager, ESM::ReadersCache& readers, F&& f)
         {
             std::vector<CellRef> cellRefs = loadCellRefs(cell, esmData, readers);
 
@@ -128,24 +126,24 @@ namespace NavMeshTool
                 if (cellRef.mType != ESM::REC_STAT)
                     model = Misc::ResourceHelpers::correctActorModelPath(model, &vfs);
 
-                osg::ref_ptr<const Resource::BulletShape> shape = [&] {
+                osg::ref_ptr<const Resource::PhysicsShape> shape = [&] {
                     try
                     {
-                        return bulletShapeManager.getShape(Misc::ResourceHelpers::correctMeshPath(model));
+                        return physicsShapeManager.getShape(Misc::ResourceHelpers::correctMeshPath(model));
                     }
                     catch (const std::exception& e)
                     {
                         Log(Debug::Warning) << "Failed to load cell ref \"" << cellRef.mRefId << "\" model \"" << model
                                             << "\": " << e.what();
-                        return osg::ref_ptr<const Resource::BulletShape>();
+                        return osg::ref_ptr<const Resource::PhysicsShape>();
                     }
                 }();
 
                 if (shape == nullptr || shape->mCollisionShape == nullptr)
                     continue;
 
-                osg::ref_ptr<Resource::BulletShapeInstance> shapeInstance(
-                    new Resource::BulletShapeInstance(std::move(shape)));
+                osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance(
+                    new Resource::PhysicsShapeInstance(std::move(shape)));
 
                 switch (cellRef.mType)
                 {
@@ -153,7 +151,7 @@ namespace NavMeshTool
                     case ESM::REC_CONT:
                     case ESM::REC_DOOR:
                     case ESM::REC_STAT:
-                        f(BulletObject(std::move(shapeInstance), cellRef.mPos, cellRef.mScale));
+                        f(PhysicsObject(std::move(shapeInstance), cellRef.mPos, cellRef.mScale));
                         break;
                     default:
                         break;
@@ -175,23 +173,23 @@ namespace NavMeshTool
             bool operator()(const osg::Vec2i& lhs, const ESM::Land& rhs) const { return lhs < GetXY{}(rhs); }
         };
 
-        btAABB getAabb(const osg::Vec2i& cellPosition, btScalar minHeight, btScalar maxHeight)
+        JPH::AABox getAabb(const osg::Vec2i& cellPosition, float minHeight, float maxHeight)
         {
-            btAABB aabb;
-            aabb.m_min = btVector3(static_cast<btScalar>(cellPosition.x() * ESM::Land::REAL_SIZE),
-                static_cast<btScalar>(cellPosition.y() * ESM::Land::REAL_SIZE), minHeight);
-            aabb.m_max = btVector3(static_cast<btScalar>((cellPosition.x() + 1) * ESM::Land::REAL_SIZE),
-                static_cast<btScalar>((cellPosition.y() + 1) * ESM::Land::REAL_SIZE), maxHeight);
+            JPH::AABox aabb;
+            aabb.mMin = JPH::Vec3(static_cast<float>(cellPosition.x() * ESM::Land::REAL_SIZE),
+                static_cast<float>(cellPosition.y() * ESM::Land::REAL_SIZE), minHeight);
+            aabb.mMax = JPH::Vec3(static_cast<float>((cellPosition.x() + 1) * ESM::Land::REAL_SIZE),
+                static_cast<float>((cellPosition.y() + 1) * ESM::Land::REAL_SIZE), maxHeight);
             return aabb;
         }
 
-        void mergeOrAssign(const btAABB& aabb, btAABB& target, bool& initialized)
+        void mergeOrAssign(const JPH::AABox& aabb, JPH::AABox& target, bool& initialized)
         {
             if (initialized)
                 return target.merge(aabb);
 
-            target.m_min = aabb.m_min;
-            target.m_max = aabb.m_max;
+            target.mMin = aabb.mMin;
+            target.mMax = aabb.mMax;
             initialized = true;
         }
 
@@ -239,12 +237,12 @@ namespace NavMeshTool
         : mWorldspace(worldspace)
         , mTileCachedRecastMeshManager(settings)
     {
-        mAabb.m_min = btVector3(0, 0, 0);
-        mAabb.m_max = btVector3(0, 0, 0);
+        mAabb.mMin = JPH::Vec3(0, 0, 0);
+        mAabb.mMax = JPH::Vec3(0, 0, 0);
     }
 
     WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
-        const VFS::Manager& vfs, Resource::PhysicsShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        const VFS::Manager& vfs, Resource::PhysicsShapeManager& physicsShapeManager, const EsmLoader::EsmData& esmData,
         bool processInteriorCells, bool writeBinaryLog)
     {
         Log(Debug::Info) << "Processing " << esmData.mCells.size() << " cells...";
@@ -316,15 +314,15 @@ namespace NavMeshTool
                         cellPosition, std::numeric_limits<int>::max(), cell.mWater, guard.get());
             }
 
-            forEachObject(cell, esmData, vfs, bulletShapeManager, readers, [&](BulletObject object) {
+            forEachObject(cell, esmData, vfs, physicsShapeManager, readers, [&](PhysicsObject object) {
                 if (object.getShapeInstance()->mVisualCollisionType != Resource::VisualCollisionType::None)
                     return;
 
                 const btTransform& transform = object.getCollisionObject().getWorldTransform();
-                const btAABB aabb = BulletHelpers::getAabb(*object.getCollisionObject().getCollisionShape(), transform);
+                const JPH::AABox aabb = PhysicsSystemHelpers::getAabb(*object.getCollisionObject().getCollisionShape(), transform);
                 mergeOrAssign(aabb, navMeshInput.mAabb, navMeshInput.mAabbInitialized);
-                if (const btCollisionShape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
-                    navMeshInput.mAabb.merge(BulletHelpers::getAabb(*avoid, transform));
+                if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
+                    navMeshInput.mAabb.merge(PhysicsSystemHelpers::getAabb(*avoid, transform));
 
                 const ObjectId objectId(++objectsCounter);
                 const CollisionShape shape(object.getShapeInstance(), *object.getCollisionObject().getCollisionShape(),
@@ -335,7 +333,7 @@ namespace NavMeshTool
                     throw std::logic_error(
                         makeAddObjectErrorMessage(objectId, DetourNavigator::AreaType_ground, shape));
 
-                if (const btCollisionShape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
+                if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
                 {
                     const ObjectId avoidObjectId(++objectsCounter);
                     const CollisionShape avoidShape(object.getShapeInstance(), *avoid, object.getObjectTransform());

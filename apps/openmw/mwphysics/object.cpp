@@ -1,20 +1,19 @@
 #include "object.hpp"
 #include "mtphysics.hpp"
 
-#include <components/bullethelpers/collisionobject.hpp>
+#include <components/physicshelpers/collisionobject.hpp>
 #include <components/debug/debuglog.hpp>
 #include <components/misc/convert.hpp>
 #include <components/nifosg/particle.hpp>
-#include <components/resource/bulletshape.hpp>
+#include <components/resource/physicsshape.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
 
-#include <BulletCollision/CollisionShapes/btCompoundShape.h>
-
-#include <LinearMath/btTransform.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
+#include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
 
 namespace MWPhysics
 {
-    Object::Object(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::BulletShapeInstance> shapeInstance,
+    Object::Object(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance,
         osg::Quat rotation, int collisionType, PhysicsTaskScheduler* scheduler)
         : PtrHolder(ptr, osg::Vec3f())
         , mShapeInstance(std::move(shapeInstance))
@@ -25,20 +24,33 @@ namespace MWPhysics
         , mTaskScheduler(scheduler)
         , mCollidedWith(ScriptedCollisionType_None)
     {
-        mCollisionObject = BulletHelpers::makeCollisionObject(mShapeInstance->mCollisionShape.get(),
-            Misc::Convert::toBullet(mPosition), Misc::Convert::toBullet(rotation));
-        mCollisionObject->setUserPointer(this);
-        mShapeInstance->setLocalScaling(mScale);
-        mTaskScheduler->addCollisionObject(mCollisionObject.get(), collisionType,
-            CollisionType_Actor | CollisionType_HeightMap | CollisionType_Projectile);
+        // Create a new shape instance from the settings
+        // mBasePhysicsShape = mShapeInstance->mCollisionShape.get()->Create().Get();
+        mBasePhysicsShape = mShapeInstance->mCollisionShape.GetPtr();
+        mUsesScaledShape = !isScaleIdentity();
+
+        JPH::Shape* finalShape = mUsesScaledShape ?
+            new JPH::ScaledShape(mBasePhysicsShape.GetPtr(), Misc::Convert::toJolt<JPH::Vec3>(mScale)) :
+            mBasePhysicsShape.GetPtr();
+
+        JPH::BodyCreationSettings bodyCreationSettings = PhysicsSystemHelpers::makePhysicsBodySettings(
+            finalShape,
+            mPosition,
+            rotation,
+            static_cast<JPH::ObjectLayer>(collisionType)
+        );
+        mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
+        mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
+        mTaskScheduler->addCollisionObject(mPhysicsBody, false);
     }
 
     Object::~Object()
     {
-        mTaskScheduler->removeCollisionObject(mCollisionObject.get());
+        mTaskScheduler->removeCollisionObject(mPhysicsBody);
+        mTaskScheduler->destroyCollisionObject(mPhysicsBody);
     }
 
-    const Resource::BulletShapeInstance* Object::getShapeInstance() const
+    const Resource::PhysicsShapeInstance* Object::getShapeInstance() const
     {
         return mShapeInstance.get();
     }
@@ -46,8 +58,11 @@ namespace MWPhysics
     void Object::setScale(float scale)
     {
         std::unique_lock<std::mutex> lock(mPositionMutex);
-        mScale = { scale, scale, scale };
-        mScaleUpdatePending = true;
+        osg::Vec3f newScale = { scale, scale, scale };
+        if (mScale != newScale) {
+            mScale = { scale, scale, scale };
+            mScaleUpdatePending = true;
+        }
     }
 
     void Object::setRotation(osg::Quat quat)
@@ -69,25 +84,48 @@ namespace MWPhysics
         std::unique_lock<std::mutex> lock(mPositionMutex);
         if (mScaleUpdatePending)
         {
-            mShapeInstance->setLocalScaling(mScale);
+            JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
+            JPH::ScaledShape* newShape;
+            JPH::ShapeRefC shapeRef;
+            shapeRef = mPhysicsBody->GetShape();
+            if (!mUsesScaledShape) // Was not originally a scaled shape
+            {
+                newShape = new JPH::ScaledShape(shapeRef.GetPtr(), Misc::Convert::toJolt<JPH::Vec3>(mScale));
+            }
+            else
+            {
+                const JPH::ScaledShape* bodyShape = reinterpret_cast<const JPH::ScaledShape*>(shapeRef.GetPtr());
+                const JPH::Shape* innerShape = bodyShape->GetInnerShape();
+                newShape = new JPH::ScaledShape(innerShape, Misc::Convert::toJolt<JPH::Vec3>(mScale));
+                mUsesScaledShape = true;
+            }
+            
+            // NOTE: SetShape will destroy the original shape if required, no need to do it after
+            bodyInterface.SetShape(getPhysicsBody(), newShape, false, JPH::EActivation::DontActivate);
             mScaleUpdatePending = false;
         }
+
         if (mTransformUpdatePending)
         {
-            btTransform trans;
-            trans.setOrigin(Misc::Convert::toBullet(mPosition));
-            trans.setRotation(Misc::Convert::toBullet(mRotation));
-            mCollisionObject->setWorldTransform(trans);
+            // SetPositionAndRotation is thread safe
+            JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
+            bodyInterface.SetPositionAndRotation(getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(mPosition), Misc::Convert::toJolt(mRotation), JPH::EActivation::Activate);
+
             mTransformUpdatePending = false;
         }
     }
 
-    btTransform Object::getTransform() const
+    osg::Matrixd Object::getTransform() const
     {
         std::unique_lock<std::mutex> lock(mPositionMutex);
-        btTransform trans;
-        trans.setOrigin(Misc::Convert::toBullet(mPosition));
-        trans.setRotation(Misc::Convert::toBullet(mRotation));
+
+        osg::Matrixd trans; // TODO: both of these give same result, wonder which is fastest
+        trans.makeRotate(mRotation);
+        trans.setTrans(mPosition);
+
+        // osg::Matrixd translationMatrix = osg::Matrixd::translate(mPosition);
+        // osg::Matrixd rotationMatrix = osg::Matrixd::rotate(mRotation);
+        // trans = rotationMatrix * translationMatrix;
         return trans;
     }
 
@@ -114,9 +152,19 @@ namespace MWPhysics
         if (!mPtr.getRefData().getBaseNode())
             return false;
 
-        assert(mShapeInstance->mCollisionShape->isCompound());
+        JPH::BodyLockWrite lock(mTaskScheduler->getBodyLockInterface(), getPhysicsBody());
+        assert(lock.Succeeded());
+        if (!lock.Succeeded())
+            return false;
 
-        btCompoundShape* compound = static_cast<btCompoundShape*>(mShapeInstance->mCollisionShape.get());
+        JPH::MutableCompoundShape* compound = static_cast<JPH::MutableCompoundShape*>(mBasePhysicsShape.GetPtr());
+
+        osg::Vec3f localCompoundScaling; // TODO: evaluate if needed, jolt should handle this without us multiplying by it?
+        {
+            std::unique_lock<std::mutex> lock(mPositionMutex);
+            localCompoundScaling = mScale;
+        }
+
         bool result = false;
         for (const auto& [recordIndex, shapeIndex] : mShapeInstance->mAnimatedShapes)
         {
@@ -139,29 +187,42 @@ namespace MWPhysics
                 nodePathFound = mRecordIndexToNodePath.emplace(recordIndex, nodePath).first;
             }
 
+            int numSubShapes = compound->GetNumSubShapes();
+            assert(numSubShapes > shapeIndex);
+
             osg::NodePath& nodePath = nodePathFound->second;
             osg::Matrixf matrix = osg::computeLocalToWorld(nodePath);
-            btVector3 scale = Misc::Convert::toBullet(matrix.getScale());
+            osg::Vec3f scale = matrix.getScale();
             matrix.orthoNormalize(matrix);
 
-            btTransform transform;
-            transform.setOrigin(Misc::Convert::toBullet(matrix.getTrans()) * compound->getLocalScaling());
-            for (int i = 0; i < 3; ++i)
-                for (int j = 0; j < 3; ++j)
-                    transform.getBasis()[i][j] = matrix(j, i); // NB column/row major difference
+            auto origin = Misc::Convert::toJolt<JPH::Vec3>(matrix.getTrans()) * Misc::Convert::toJolt<JPH::Vec3>(localCompoundScaling);
+            auto rotation = Misc::Convert::toJolt(matrix.getRotate());
 
-            btCollisionShape* childShape = compound->getChildShape(shapeIndex);
-            btVector3 newScale = compound->getLocalScaling() * scale;
+            const JPH::CompoundShape::SubShape& subShape = compound->GetSubShape(shapeIndex);
+            auto subShapePosition = subShape.GetPositionCOM();
+            auto subShapeRotation = subShape.GetRotation();
 
-            if (childShape->getLocalScaling() != newScale)
+            bool positionOrRotationChanged = subShapeRotation != rotation || origin != subShapePosition;
+                
+            // btCollisionShape* childShape = compound->getChildShape(shapeIndex);
+            // osg::Vec3f newScale = localCompoundScaling * scale;
+
+            // TODO: need an example of this happening in game, probably a rare case
+            // would have to erbuild alot of shpae info each change
+            // if (childShape->getLocalScaling() != newScale)
+            // {
+            //     childShape->setLocalScaling(newScale);
+            //     result = true;
+            // }
+
+            if (positionOrRotationChanged)
             {
-                childShape->setLocalScaling(newScale);
-                result = true;
-            }
-
-            if (!(transform == compound->getChildTransform(shapeIndex)))
-            {
-                compound->updateChildTransform(shapeIndex, transform);
+                // NOTE: this can cause a race condition i think
+                // TODO: FIXME: YEP, RACE COND
+                /// Note: If you're using MutableCompoundShapes and are querying data while modifying the shape you'll have a race condition.
+                /// In this case it is best to create a new MutableCompoundShape and set the new shape on the body using BodyInterface::SetShape. If a
+                /// query is still working on the old shape, it will have taken a reference and keep the old shape alive until the query finishes.
+                compound->ModifyShape(shapeIndex, origin, rotation);
                 result = true;
             }
         }

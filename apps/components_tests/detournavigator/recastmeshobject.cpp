@@ -2,9 +2,6 @@
 #include <components/detournavigator/recastmeshobject.hpp>
 #include <components/misc/convert.hpp>
 
-#include <BulletCollision/CollisionShapes/btBoxShape.h>
-#include <BulletCollision/CollisionShapes/btCompoundShape.h>
-
 #include <gtest/gtest.h>
 
 namespace
@@ -19,7 +16,7 @@ namespace
         CollisionShape mBoxShape{ nullptr, mBoxShapeImpl, mObjectTransform };
         btCompoundShape mCompoundShapeImpl{ true };
         CollisionShape mCompoundShape{ nullptr, mCompoundShapeImpl, mObjectTransform };
-        btTransform mTransform{ Misc::Convert::makeBulletTransform(mObjectTransform.mPosition) };
+        btTransform mTransform{ Misc::Convert::makeOSGTransform(mObjectTransform.mPosition) };
 
         DetourNavigatorRecastMeshObjectTest()
         {
@@ -78,7 +75,7 @@ namespace
     TEST_F(DetourNavigatorRecastMeshObjectTest, update_for_changed_local_scaling_should_return_true)
     {
         RecastMeshObject object(mBoxShape, mTransform, AreaType_ground);
-        mBoxShapeImpl.setLocalScaling(btVector3(2, 2, 2));
+        mBoxShapeImpl.setLocalScaling(osg::Vec3f(2, 2, 2));
         EXPECT_TRUE(object.update(mTransform, AreaType_ground));
     }
 }
