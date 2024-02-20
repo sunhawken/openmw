@@ -1,7 +1,7 @@
 #ifndef OPENMW_TEST_SUITE_DETOURNAVIGATOR_OPERATORS_H
 #define OPENMW_TEST_SUITE_DETOURNAVIGATOR_OPERATORS_H
 
-#include <components/bullethelpers/operators.hpp>
+#include <components/physicshelpers/operators.hpp>
 #include <components/detournavigator/debug.hpp>
 
 #include <deque>

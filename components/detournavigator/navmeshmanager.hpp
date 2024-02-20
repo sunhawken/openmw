@@ -10,6 +10,7 @@
 #include "waitconditiontype.hpp"
 
 #include <osg/Vec3f>
+#include <osg/Matrixd>
 
 #include <map>
 #include <memory>
@@ -28,10 +29,10 @@ namespace DetourNavigator
         void updateBounds(ESM::RefId worldspace, const std::optional<CellGridBounds>& cellGridBounds,
             const osg::Vec3f& playerPosition, const UpdateGuard* guard);
 
-        bool addObject(const ObjectId id, const CollisionShape& shape, const btTransform& transform,
+        bool addObject(const ObjectId id, const CollisionShape& shape, const osg::Matrixd& transform,
             const AreaType areaType, const UpdateGuard* guard);
 
-        bool updateObject(ObjectId id, const btTransform& transform, AreaType areaType, const UpdateGuard* guard);
+        bool updateObject(ObjectId id, const osg::Matrixd& transform, AreaType areaType, const UpdateGuard* guard);
 
         void removeObject(const ObjectId id, const UpdateGuard* guard);
 

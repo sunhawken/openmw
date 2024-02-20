@@ -1,21 +1,20 @@
 ﻿#ifndef OPENMW_NAVMESHTOOL_WORLDSPACEDATA_H
 #define OPENMW_NAVMESHTOOL_WORLDSPACEDATA_H
 
-#include <components/bullethelpers/collisionobject.hpp>
-#include <components/detournavigator/settings.hpp>
-#include <components/detournavigator/tilecachedrecastmeshmanager.hpp>
-#include <components/esm3/loadland.hpp>
-#include <components/misc/convert.hpp>
-#include <components/resource/bulletshape.hpp>
-
-#include <BulletCollision/CollisionDispatch/btCollisionObject.h>
-#include <BulletCollision/Gimpact/btBoxCollision.h>
-#include <LinearMath/btVector3.h>
-
 #include <memory>
 #include <regex>
 #include <span>
 #include <vector>
+
+#include <Jolt/Jolt.h>
+#include <Jolt/Geometry/AABox.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+
+#include <components/physicshelpers/collisionobject.hpp>
+#include <components/detournavigator/tilecachedrecastmeshmanager.hpp>
+#include <components/esm3/loadland.hpp>
+#include <components/misc/convert.hpp>
+#include <components/resource/physicsshape.hpp>
 
 namespace ESM
 {
@@ -44,35 +43,46 @@ namespace NavMeshTool
     using DetourNavigator::RecastSettings;
     using DetourNavigator::TileCachedRecastMeshManager;
 
-    class BulletObject
+    struct WorldspaceNavMeshInput
+    {
+        ESM::RefId mWorldspace;
+        TileCachedRecastMeshManager mTileCachedRecastMeshManager;
+        JPH::AABox mAabb;
+        bool mAabbInitialized = false;
+
+        explicit WorldspaceNavMeshInput(ESM::RefId worldspace, const DetourNavigator::RecastSettings& settings);
+    };
+
+    class PhysicsObject
     {
     public:
-        BulletObject(osg::ref_ptr<Resource::BulletShapeInstance>&& shapeInstance, const ESM::Position& position,
+        PhysicsObject(osg::ref_ptr<Resource::PhysicsShapeInstance>&& shapeInstance, const ESM::Position& position,
             float localScaling)
             : mShapeInstance(std::move(shapeInstance))
             , mObjectTransform{ position, localScaling }
-            , mCollisionObject(BulletHelpers::makeCollisionObject(mShapeInstance->mCollisionShape.get(),
-                  Misc::Convert::toBullet(position.asVec3()),
-                  Misc::Convert::toBullet(Misc::Convert::makeOsgQuat(position))))
+            
+            , mCollisionObject(PhysicsSystemHelpers::makeCollisionObject(mShapeInstance->mCollisionShape,
+                  position.asVec3(),
+                  Misc::Convert::makeOsgQuat(position)))
         {
-            mShapeInstance->setLocalScaling(btVector3(localScaling, localScaling, localScaling));
+            // TOOD: create jph body from settings as mCollisionObject
+            mShapeInstance->setLocalScaling(osg::Vec3f(localScaling, localScaling, localScaling));
         }
 
-        const osg::ref_ptr<Resource::BulletShapeInstance>& getShapeInstance() const noexcept { return mShapeInstance; }
+        const osg::ref_ptr<Resource::PhysicsShapeInstance>& getShapeInstance() const noexcept { return mShapeInstance; }
         const DetourNavigator::ObjectTransform& getObjectTransform() const noexcept { return mObjectTransform; }
-        btCollisionObject& getCollisionObject() const noexcept { return *mCollisionObject; }
+        JPH::Body& getCollisionObject() const noexcept { return *mCollisionObject; }
 
     private:
-        osg::ref_ptr<Resource::BulletShapeInstance> mShapeInstance;
+        osg::ref_ptr<Resource::PhysicsShapeInstance> mShapeInstance;
         DetourNavigator::ObjectTransform mObjectTransform;
-        std::unique_ptr<btCollisionObject> mCollisionObject;
+        std::unique_ptr<JPH::Body> mCollisionObject;
     };
 
     struct TilesData
     {
-        const RecastSettings mSettings;
-        TileCachedRecastMeshManager mTileCachedRecastMeshManager;
-        std::vector<BulletObject> mObjects;
+        std::vector<std::unique_ptr<WorldspaceNavMeshInput>> mNavMeshInputs;
+        std::vector<PhysicsObject> mObjects;
         std::vector<std::unique_ptr<ESM::Land::LandData>> mLandData;
         std::vector<std::vector<float>> mHeightfields;
 
@@ -98,7 +108,7 @@ namespace NavMeshTool
         const EsmLoader::EsmData& esmData, bool processInteriorCells, const std::regex& worldspaceFilter);
 
     WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
-        const VFS::Manager& vfs, Resource::PhysicsShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        const VFS::Manager& vfs, Resource::PhysicsShapeManager& physicsShapeManager, const EsmLoader::EsmData& esmData,
         bool processInteriorCells, bool writeBinaryLog);
 }
 
