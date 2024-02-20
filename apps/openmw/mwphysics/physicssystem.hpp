@@ -37,7 +37,7 @@ namespace MWRender
 
 namespace Resource
 {
-    class BulletShapeManager;
+    class PhysicsShapeManager;
     class ResourceSystem;
 }
 
@@ -155,7 +155,7 @@ namespace MWPhysics
         PhysicsSystem(Resource::ResourceSystem* resourceSystem, osg::ref_ptr<osg::Group> parentNode);
         virtual ~PhysicsSystem();
 
-        Resource::BulletShapeManager* getShapeManager();
+        Resource::PhysicsShapeManager* getShapeManager();
 
         void enableWater(float height);
         void setWaterHeight(float height);
@@ -300,7 +300,7 @@ namespace MWPhysics
         std::unique_ptr<btCollisionWorld> mCollisionWorld;
         std::unique_ptr<PhysicsTaskScheduler> mTaskScheduler;
 
-        std::unique_ptr<Resource::BulletShapeManager> mShapeManager;
+        std::unique_ptr<Resource::PhysicsShapeManager> mShapeManager;
         Resource::ResourceSystem* mResourceSystem;
 
         using ObjectMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Object>>;

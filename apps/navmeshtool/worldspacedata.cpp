@@ -113,7 +113,7 @@ namespace NavMeshTool
 
         template <class F>
         void forEachObject(const ESM::Cell& cell, const EsmLoader::EsmData& esmData, const VFS::Manager& vfs,
-            Resource::BulletShapeManager& bulletShapeManager, ESM::ReadersCache& readers, F&& f)
+            Resource::PhysicsShapeManager& bulletShapeManager, ESM::ReadersCache& readers, F&& f)
         {
             std::vector<CellRef> cellRefs = loadCellRefs(cell, esmData, readers);
 
@@ -244,7 +244,7 @@ namespace NavMeshTool
     }
 
     WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
-        const VFS::Manager& vfs, Resource::BulletShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        const VFS::Manager& vfs, Resource::PhysicsShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
         bool processInteriorCells, bool writeBinaryLog)
     {
         Log(Debug::Info) << "Processing " << esmData.mCells.size() << " cells...";
