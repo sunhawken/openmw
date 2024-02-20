@@ -21,12 +21,12 @@ namespace Resource
     /// Handles loading, caching and "instancing" of bullet shapes.
     /// A shape 'instance' is a clone of another shape, with the goal of setting a different scale on this instance.
     /// @note May be used from any thread.
-    class BulletShapeManager : public ResourceManager
+    class PhysicsShapeManager : public ResourceManager
     {
     public:
-        BulletShapeManager(
+        PhysicsShapeManager(
             const VFS::Manager* vfs, SceneManager* sceneMgr, NifFileManager* nifFileManager, double expiryDelay);
-        ~BulletShapeManager();
+        ~PhysicsShapeManager();
 
         /// @note May return a null pointer if the object has no shape.
         osg::ref_ptr<const BulletShape> getShape(VFS::Path::NormalizedView name);

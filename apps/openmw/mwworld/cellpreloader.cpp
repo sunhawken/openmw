@@ -68,13 +68,13 @@ namespace MWWorld
     public:
         /// Constructor to be called from the main thread.
         explicit PreloadItem(MWWorld::CellStore* cell, Resource::SceneManager* sceneManager,
-            Resource::BulletShapeManager* bulletShapeManager, Resource::KeyframeManager* keyframeManager,
+            Resource::PhysicsShapeManager* bulletShapeManager, Resource::KeyframeManager* keyframeManager,
             Terrain::World* terrain, MWRender::LandManager* landManager, bool preloadInstances)
             : mIsExterior(cell->getCell()->isExterior())
             , mCellLocation(cell->getCell()->getExteriorCellLocation())
             , mCellId(cell->getCell()->getId())
             , mSceneManager(sceneManager)
-            , mBulletShapeManager(bulletShapeManager)
+            , mPhysicsShapeManager(bulletShapeManager)
             , mKeyframeManager(keyframeManager)
             , mTerrain(terrain)
             , mLandManager(landManager)
@@ -134,9 +134,9 @@ namespace MWWorld
 
                     mPreloadedObjects.insert(mSceneManager->getTemplate(mesh));
                     if (mPreloadInstances)
-                        mPreloadedObjects.insert(mBulletShapeManager->cacheInstance(mesh));
+                        mPreloadedObjects.insert(mPhysicsShapeManager->cacheInstance(mesh));
                     else
-                        mPreloadedObjects.insert(mBulletShapeManager->getShape(mesh));
+                        mPreloadedObjects.insert(mPhysicsShapeManager->getShape(mesh));
                 }
                 catch (const std::exception& e)
                 {
@@ -152,7 +152,7 @@ namespace MWWorld
         ESM::RefId mCellId;
         std::vector<std::string_view> mMeshes;
         Resource::SceneManager* mSceneManager;
-        Resource::BulletShapeManager* mBulletShapeManager;
+        Resource::PhysicsShapeManager* mPhysicsShapeManager;
         Resource::KeyframeManager* mKeyframeManager;
         Terrain::World* mTerrain;
         MWRender::LandManager* mLandManager;
@@ -219,9 +219,9 @@ namespace MWWorld
     };
 
     CellPreloader::CellPreloader(Resource::ResourceSystem* resourceSystem,
-        Resource::BulletShapeManager* bulletShapeManager, Terrain::World* terrain, MWRender::LandManager* landManager)
+        Resource::PhysicsShapeManager* bulletShapeManager, Terrain::World* terrain, MWRender::LandManager* landManager)
         : mResourceSystem(resourceSystem)
-        , mBulletShapeManager(bulletShapeManager)
+        , mPhysicsShapeManager(bulletShapeManager)
         , mTerrain(terrain)
         , mLandManager(landManager)
         , mExpiryDelay(0.0)
@@ -282,7 +282,7 @@ namespace MWWorld
                 return;
         }
 
-        osg::ref_ptr<PreloadItem> item(new PreloadItem(&cell, mResourceSystem->getSceneManager(), mBulletShapeManager,
+        osg::ref_ptr<PreloadItem> item(new PreloadItem(&cell, mResourceSystem->getSceneManager(), mPhysicsShapeManager,
             mResourceSystem->getKeyframeManager(), mTerrain, mLandManager, mPreloadInstances));
         mWorkQueue->addWorkItem(item);
 
