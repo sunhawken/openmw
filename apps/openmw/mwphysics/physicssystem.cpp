@@ -8,6 +8,23 @@
 #include <osg/Stats>
 #include <osg/Timer>
 
+// The Jolt headers don't include Jolt.h. Always include Jolt.h before including any other Jolt header.
+// You can use Jolt.h in your precompiled header to speed up compilation.
+#include <Jolt/Jolt.h>
+
+// Jolt includes
+#include <Jolt/RegisterTypes.h>
+#include <Jolt/Core/Factory.h>
+#include <Jolt/Core/TempAllocator.h>
+#include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Physics/PhysicsSettings.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyActivationListener.h>
+
+// TODO: remove bullet!
 #include <BulletCollision/BroadphaseCollision/btDbvtBroadphase.h>
 #include <BulletCollision/CollisionDispatch/btCollisionObject.h>
 #include <BulletCollision/CollisionDispatch/btCollisionWorld.h>
@@ -56,6 +73,15 @@
 #include "object.hpp"
 #include "projectile.hpp"
 
+// Disable common warnings triggered by Jolt, you can use JPH_SUPPRESS_WARNING_PUSH / JPH_SUPPRESS_WARNING_POP to store and restore the warning state
+JPH_SUPPRESS_WARNINGS
+
+// All Jolt symbols are in the JPH namespace
+using namespace JPH;
+
+// If you want your code to compile using single or double precision write 0.0_r to get a Real value that compiles to double or float depending if JPH_DOUBLE_PRECISION is set or not.
+using namespace JPH::literals;
+
 namespace
 {
     void handleJump(const MWWorld::Ptr& ptr)
@@ -94,7 +120,7 @@ namespace MWPhysics
 {
     PhysicsSystem::PhysicsSystem(Resource::ResourceSystem* resourceSystem, osg::ref_ptr<osg::Group> parentNode)
         : mPhysicsDt(1.f / 60.f)
-        , mShapeManager(std::make_unique<Resource::BulletShapeManager>(resourceSystem->getVFS(),
+        , mShapeManager(std::make_unique<Resource::PhysicsShapeManager>(resourceSystem->getVFS(),
               resourceSystem->getSceneManager(), resourceSystem->getNifFileManager(),
               Settings::cells().mCacheExpiryDelay))
         , mResourceSystem(resourceSystem)
@@ -148,7 +174,7 @@ namespace MWPhysics
         mProjectiles.clear();
     }
 
-    Resource::BulletShapeManager* PhysicsSystem::getShapeManager()
+    Resource::PhysicsShapeManager* PhysicsSystem::getShapeManager()
     {
         return mShapeManager.get();
     }

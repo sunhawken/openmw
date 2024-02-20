@@ -222,7 +222,7 @@ namespace NavMeshTool
             Resource::NifFileManager nifFileManager(&vfs, &encoder.getStatelessEncoder());
             Resource::BgsmFileManager bgsmFileManager(&vfs, expiryDelay);
             Resource::SceneManager sceneManager(&vfs, &imageManager, &nifFileManager, &bgsmFileManager, expiryDelay);
-            Resource::BulletShapeManager bulletShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
+            Resource::PhysicsShapeManager physicsShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
             DetourNavigator::RecastGlobalAllocator::init();
             DetourNavigator::Settings navigatorSettings
                 = DetourNavigator::makeSettingsFromSettingsManager(Debug::getRecastMaxLogLevel());
@@ -230,7 +230,7 @@ namespace NavMeshTool
                 = EsmLoader::getGameSetting(esmData.mGameSettings, "fSwimHeightScale").getFloat();
 
             WorldspaceData cellsData = gatherWorldspaceData(
-                navigatorSettings, readers, vfs, bulletShapeManager, esmData, processInteriorCells, writeBinaryLog);
+                navigatorSettings, readers, vfs, physicsShapeManager, esmData, processInteriorCells, writeBinaryLog);
 
             const Status status = generateAllNavMeshTiles(agentBounds, navigatorSettings, threadsNumber,
                 removeUnusedTiles, writeBinaryLog, cellsData, std::move(db));
