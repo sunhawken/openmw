@@ -34,7 +34,6 @@
 #include "../mwmechanics/npcstats.hpp"
 
 #include "classmodel.hpp"
-#include "nameorid.hpp"
 
 namespace MWClass
 {
@@ -124,7 +123,7 @@ namespace MWClass
     void Container::insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
         MWPhysics::PhysicsSystem& physics) const
     {
-        physics.addObject(ptr, VFS::Path::toNormalized(model), rotation, MWPhysics::CollisionType_World);
+        physics.addObject(ptr, model, rotation, MWPhysics::Layers::WORLD);
     }
 
     std::string_view Container::getModel(const MWWorld::ConstPtr& ptr) const
@@ -192,13 +191,12 @@ namespace MWClass
         {
             if (!isTrapped)
             {
-                if (!canBeHarvested(ptr))
-                    return std::make_unique<MWWorld::ActionOpen>(ptr);
-
-                if (hasToolTip(ptr))
+                if (canBeHarvested(ptr))
+                {
                     return std::make_unique<MWWorld::ActionHarvest>(ptr);
+                }
 
-                return std::make_unique<MWWorld::FailedAction>(std::string_view{}, ptr);
+                return std::make_unique<MWWorld::ActionOpen>(ptr);
             }
             else
             {
@@ -219,7 +217,10 @@ namespace MWClass
 
     std::string_view Container::getName(const MWWorld::ConstPtr& ptr) const
     {
-        return getNameOrId<ESM::Container>(ptr);
+        const MWWorld::LiveCellRef<ESM::Container>* ref = ptr.get<ESM::Container>();
+        const std::string& name = ref->mBase->mName;
+
+        return !name.empty() ? name : ref->mBase->mId.getRefIdString();
     }
 
     MWWorld::ContainerStore& Container::getContainerStore(const MWWorld::Ptr& ptr) const
@@ -238,12 +239,7 @@ namespace MWClass
     bool Container::hasToolTip(const MWWorld::ConstPtr& ptr) const
     {
         if (const MWWorld::CustomData* data = ptr.getRefData().getCustomData())
-        {
-            if (!canBeHarvested(ptr))
-                return true;
-            const MWWorld::ContainerStore& store = data->asContainerCustomData().mStore;
-            return !store.isResolved() || store.hasVisibleItems();
-        }
+            return !canBeHarvested(ptr) || data->asContainerCustomData().mStore.hasVisibleItems();
         return true;
     }
 

@@ -1,11 +1,12 @@
-#ifndef OPENMW_COMPONENTS_BULLETSHAPEMANAGER_H
-#define OPENMW_COMPONENTS_BULLETSHAPEMANAGER_H
+#ifndef OPENMW_COMPONENTS_JOLTSHAPEMANAGER_H
+#define OPENMW_COMPONENTS_JOLTSHAPEMANAGER_H
+
+#include <map>
+#include <string>
 
 #include <osg/ref_ptr>
 
-#include <components/vfs/pathutil.hpp>
-
-#include "bulletshape.hpp"
+#include "physicsshape.hpp"
 #include "resourcemanager.hpp"
 
 namespace Resource
@@ -13,12 +14,12 @@ namespace Resource
     class SceneManager;
     class NifFileManager;
 
-    struct BulletShape;
-    class BulletShapeInstance;
+    struct PhysicsShape;
+    class PhysicsShapeInstance;
 
     class MultiObjectCache;
 
-    /// Handles loading, caching and "instancing" of bullet shapes.
+    /// Handles loading, caching and "instancing" of Jolt physics shapes.
     /// A shape 'instance' is a clone of another shape, with the goal of setting a different scale on this instance.
     /// @note May be used from any thread.
     class PhysicsShapeManager : public ResourceManager
@@ -29,16 +30,16 @@ namespace Resource
         ~PhysicsShapeManager();
 
         /// @note May return a null pointer if the object has no shape.
-        osg::ref_ptr<const BulletShape> getShape(VFS::Path::NormalizedView name);
+        osg::ref_ptr<const PhysicsShape> getShape(const std::string& name);
 
         /// Create an instance of the given shape and cache it for later use, so that future calls to getInstance() can
         /// simply return the cached instance instead of having to create a new one.
         /// @note The returned ref_ptr may be kept by the caller to ensure that the instance stays in cache for as long
         /// as needed.
-        osg::ref_ptr<BulletShapeInstance> cacheInstance(VFS::Path::NormalizedView name);
+        osg::ref_ptr<PhysicsShapeInstance> cacheInstance(const std::string& name);
 
         /// @note May return a null pointer if the object has no shape.
-        osg::ref_ptr<BulletShapeInstance> getInstance(VFS::Path::NormalizedView name);
+        osg::ref_ptr<PhysicsShapeInstance> getInstance(const std::string& name);
 
         /// @see ResourceManager::updateCache
         void updateCache(double referenceTime) override;
@@ -48,7 +49,7 @@ namespace Resource
         void reportStats(unsigned int frameNumber, osg::Stats* stats) const override;
 
     private:
-        osg::ref_ptr<BulletShapeInstance> createInstance(VFS::Path::NormalizedView name);
+        osg::ref_ptr<PhysicsShapeInstance> createInstance(const std::string& name);
 
         osg::ref_ptr<MultiObjectCache> mInstanceCache;
         SceneManager* mSceneManager;

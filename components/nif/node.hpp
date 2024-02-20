@@ -8,7 +8,9 @@
 
 #include "base.hpp"
 
-class btCollisionShape;
+namespace JPH {
+    class MeshShapeSettings;
+}
 
 namespace Nif
 {
@@ -149,7 +151,7 @@ namespace Nif
         void read(NIFStream* nif) override;
         void post(Reader& nif) override;
 
-        virtual std::unique_ptr<btCollisionShape> getCollisionShape() const
+        virtual std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const
         {
             throw std::runtime_error("NiGeometry::getCollisionShape() called on base class");
         }
@@ -162,7 +164,7 @@ namespace Nif
 
     struct NiTriShape : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct BSSegmentedTriShape : NiTriShape
@@ -183,17 +185,17 @@ namespace Nif
 
     struct NiTriStrips : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct NiLines : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct NiParticles : NiGeometry
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct BSLODTriShape : NiTriShape
