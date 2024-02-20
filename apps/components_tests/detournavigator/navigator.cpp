@@ -1,21 +1,17 @@
 #include "operators.hpp"
 #include "settings.hpp"
 
-#include <components/bullethelpers/heightfield.hpp>
+#include <components/physicshelpers/heightfield.hpp>
 #include <components/detournavigator/navigatorimpl.hpp>
 #include <components/detournavigator/navigatorutils.hpp>
 #include <components/detournavigator/navmeshdb.hpp>
 #include <components/esm3/loadland.hpp>
 #include <components/loadinglistener/loadinglistener.hpp>
 #include <components/misc/rng.hpp>
-#include <components/resource/bulletshape.hpp>
+#include <components/resource/physicsshape.hpp>
 
 #include <osg/io_utils>
 #include <osg/ref_ptr>
-
-#include <BulletCollision/CollisionShapes/btBoxShape.h>
-#include <BulletCollision/CollisionShapes/btCompoundShape.h>
-#include <BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -109,11 +105,11 @@ namespace
     }
 
     template <class T>
-    osg::ref_ptr<const Resource::BulletShapeInstance> makeBulletShapeInstance(std::unique_ptr<T>&& shape)
+    osg::ref_ptr<const Resource::PhysicsShapeInstance> makePhysicsShapeInstance(std::unique_ptr<T>&& shape)
     {
-        osg::ref_ptr<Resource::BulletShape> bulletShape(new Resource::BulletShape);
-        bulletShape->mCollisionShape.reset(std::move(shape).release());
-        return new Resource::BulletShapeInstance(bulletShape);
+        osg::ref_ptr<Resource::PhysicsShape> physicsShape(new Resource::PhysicsShape);
+        physicsShape->mCollisionShape.reset(std::move(shape).release());
+        return new Resource::PhysicsShapeInstance(physicsShape);
     }
 
     template <class T>
@@ -121,20 +117,20 @@ namespace
     {
     public:
         CollisionShapeInstance(std::unique_ptr<T>&& shape)
-            : mInstance(makeBulletShapeInstance(std::move(shape)))
+            : mInstance(makePhysicsShapeInstance(std::move(shape)))
         {
         }
 
         T& shape() const { return static_cast<T&>(*mInstance->mCollisionShape); }
-        const osg::ref_ptr<const Resource::BulletShapeInstance>& instance() const { return mInstance; }
+        const osg::ref_ptr<const Resource::PhysicsShapeInstance>& instance() const { return mInstance; }
 
     private:
-        osg::ref_ptr<const Resource::BulletShapeInstance> mInstance;
+        osg::ref_ptr<const Resource::PhysicsShapeInstance> mInstance;
     };
 
-    btVector3 getHeightfieldShift(const osg::Vec2i& cellPosition, int cellSize, float minHeight, float maxHeight)
+    inline osg::Vec3f getHeightfieldShift(const osg::Vec2i& cellPosition, int cellSize, float minHeight, float maxHeight)
     {
-        return BulletHelpers::getHeightfieldShift(cellPosition.x(), cellPosition.x(), cellSize, minHeight, maxHeight);
+        return PhysicsSystemHelpers::getHeightfieldShift(cellPosition.x(), cellPosition.x(), cellSize, minHeight, maxHeight);
     }
 
     TEST_F(DetourNavigatorNavigatorTest, find_path_for_empty_should_return_empty)
@@ -298,7 +294,7 @@ namespace
     TEST_F(DetourNavigatorNavigatorTest, for_overlapping_heightfields_objects_should_use_higher)
     {
         CollisionShapeInstance heightfield1(makeSquareHeightfieldTerrainShape(defaultHeightfieldDataScalar));
-        heightfield1.shape().setLocalScaling(btVector3(128, 128, 1));
+        heightfield1.shape().setLocalScaling(osg::Vec3f(128, 128, 1));
 
         const std::array<btScalar, 5 * 5> heightfieldData2{ {
             -25, -25, -25, -25, -25, // row 0
@@ -308,7 +304,7 @@ namespace
             -25, -25, -25, -25, -25, // row 4
         } };
         CollisionShapeInstance heightfield2(makeSquareHeightfieldTerrainShape(heightfieldData2));
-        heightfield2.shape().setLocalScaling(btVector3(128, 128, 1));
+        heightfield2.shape().setLocalScaling(osg::Vec3f(128, 128, 1));
 
         ASSERT_TRUE(mNavigator->addAgent(mAgentBounds));
         mNavigator->addObject(ObjectId(&heightfield1.shape()), ObjectShapes(heightfield1.instance(), mObjectTransform),
@@ -359,12 +355,12 @@ namespace
 
     TEST_F(DetourNavigatorNavigatorTest, path_should_be_around_avoid_shape)
     {
-        osg::ref_ptr<Resource::BulletShape> bulletShape(new Resource::BulletShape);
+        osg::ref_ptr<Resource::PhysicsShape> physicsShape(new Resource::PhysicsShape);
 
         std::unique_ptr<btHeightfieldTerrainShape> shapePtr
             = makeSquareHeightfieldTerrainShape(defaultHeightfieldDataScalar);
-        shapePtr->setLocalScaling(btVector3(128, 128, 1));
-        bulletShape->mCollisionShape.reset(shapePtr.release());
+        shapePtr->setLocalScaling(osg::Vec3f(128, 128, 1));
+        physicsShape->mCollisionShape.reset(shapePtr.release());
 
         std::array<btScalar, 5 * 5> heightfieldDataAvoid{ {
             -25, -25, -25, -25, -25, // row 0
@@ -375,10 +371,10 @@ namespace
         } };
         std::unique_ptr<btHeightfieldTerrainShape> shapeAvoidPtr
             = makeSquareHeightfieldTerrainShape(heightfieldDataAvoid);
-        shapeAvoidPtr->setLocalScaling(btVector3(128, 128, 1));
-        bulletShape->mAvoidCollisionShape.reset(shapeAvoidPtr.release());
+        shapeAvoidPtr->setLocalScaling(osg::Vec3f(128, 128, 1));
+        physicsShape->mAvoidCollisionShape.reset(shapeAvoidPtr.release());
 
-        osg::ref_ptr<const Resource::BulletShapeInstance> instance(new Resource::BulletShapeInstance(bulletShape));
+        osg::ref_ptr<const Resource::PhysicsShapeInstance> instance(new Resource::PhysicsShapeInstance(physicsShape));
 
         ASSERT_TRUE(mNavigator->addAgent(mAgentBounds));
         mNavigator->addObject(
@@ -532,7 +528,7 @@ namespace
     TEST_F(DetourNavigatorNavigatorTest, update_object_remove_and_update_then_find_path_should_return_path)
     {
         CollisionShapeInstance heightfield(makeSquareHeightfieldTerrainShape(defaultHeightfieldDataScalar));
-        heightfield.shape().setLocalScaling(btVector3(128, 128, 1));
+        heightfield.shape().setLocalScaling(osg::Vec3f(128, 128, 1));
 
         ASSERT_TRUE(mNavigator->addAgent(mAgentBounds));
         mNavigator->addObject(ObjectId(&heightfield.shape()), ObjectShapes(heightfield.instance(), mObjectTransform),

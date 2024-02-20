@@ -1,4 +1,4 @@
-#include "bulletnifloader.hpp"
+#include "joltnifloader.hpp"
 
 #include <cassert>
 #include <sstream>
@@ -27,12 +27,26 @@ namespace
 
 }
 
-namespace NifBullet
+namespace NifJolt
 {
+    // Some nif scales aren't exactly 1.0f, 1.0f, 1.0f but within a small epsilon
+    // detect that so we can skip potentially expensive scaling
+    bool isScaleUniformAndCloseToOne(const osg::Vec3& localScale) {
+        const float targetScale = 1.0f;
+        const float epsilon = 0.0001f;
 
-    osg::ref_ptr<Resource::BulletShape> BulletNifLoader::load(Nif::FileView nif)
+        // Check if each component of localScale is within epsilon of targetScale
+        bool scaleXCloseToOne = std::abs(localScale.x() - targetScale) < epsilon;
+        bool scaleYCloseToOne = std::abs(localScale.y() - targetScale) < epsilon;
+        bool scaleZCloseToOne = std::abs(localScale.z() - targetScale) < epsilon;
+
+        // Return true only if all components are within epsilon of 1.0f
+        return scaleXCloseToOne && scaleYCloseToOne && scaleZCloseToOne;
+    }
+
+    osg::ref_ptr<Resource::PhysicsShape> JoltNifLoader::load(Nif::FileView nif)
     {
-        mShape = new Resource::BulletShape;
+        mShape = new Resource::PhysicsShape;
 
         mCompoundShape.reset();
         mAvoidCompoundShape.reset();
@@ -53,7 +67,7 @@ namespace NifBullet
         mShape->mFileName = nif.getFilename();
         if (roots.empty())
         {
-            warn("Found no root nodes in NIF file " + mShape->mFileName.value());
+            warn("Found no root nodes in NIF file " + mShape->mFileName);
             return mShape;
         }
 
@@ -72,28 +86,27 @@ namespace NifBullet
             handleRoot(nif, *node, args);
 
         if (mCompoundShape)
-            mShape->mCollisionShape = std::move(mCompoundShape);
+            mShape->mCollisionShape = mCompoundShape.get()->Create().Get();
 
         if (mAvoidCompoundShape)
-            mShape->mAvoidCollisionShape = std::move(mAvoidCompoundShape);
+            mShape->mAvoidCollisionShape = mAvoidCompoundShape.get()->Create().Get();
 
         return mShape;
     }
 
     // Find a bounding box in the node hierarchy to use for actor collision
-    bool BulletNifLoader::findBoundingBox(const Nif::NiAVObject& node)
+    bool JoltNifLoader::findBoundingBox(const Nif::NiAVObject& node)
     {
         if (Misc::StringUtils::ciEqual(node.mName, "Bounding Box"))
         {
-            if (node.mBounds.mType == Nif::BoundingVolume::Type::BOX_BV
-                && std::ranges::all_of(node.mBounds.mBox.mExtents._v, [](float extent) { return extent > 0.f; }))
+            if (node.mBounds.mType == Nif::BoundingVolume::Type::BOX_BV)
             {
                 mShape->mCollisionBox.mExtents = node.mBounds.mBox.mExtents;
                 mShape->mCollisionBox.mCenter = node.mBounds.mBox.mCenter;
             }
             else
             {
-                warn("Invalid Bounding Box node bounds in file " + mShape->mFileName.value());
+                warn("Invalid Bounding Box node bounds in file " + mShape->mFileName);
             }
             return true;
         }
@@ -106,7 +119,7 @@ namespace NifBullet
         return false;
     }
 
-    void BulletNifLoader::handleRoot(Nif::FileView nif, const Nif::NiAVObject& node, HandleNodeArgs args)
+    void JoltNifLoader::handleRoot(Nif::FileView nif, const Nif::NiAVObject& node, HandleNodeArgs args)
     {
         // Gamebryo/Bethbryo meshes
         if (nif.getVersion() >= Nif::NIFStream::generateVersion(10, 0, 1, 0))
@@ -115,7 +128,7 @@ namespace NifBullet
             const Nif::NiIntegerExtraData* bsxFlags = nullptr;
             for (const auto& e : node.getExtraList())
             {
-                if (e->mRecordType == Nif::RC_BSXFlags)
+                if (e->recType == Nif::RC_BSXFlags)
                 {
                     bsxFlags = static_cast<const Nif::NiIntegerExtraData*>(e.getPtr());
                     break;
@@ -142,7 +155,7 @@ namespace NifBullet
             {
                 for (const auto& child : ninode->mChildren)
                 {
-                    if (!child.empty() && child->mRecordType == Nif::RC_RootCollisionNode)
+                    if (!child.empty() && child.getPtr()->recType == Nif::RC_RootCollisionNode)
                     {
                         colNode = static_cast<const Nif::NiNode*>(child.getPtr());
                         break;
@@ -155,7 +168,7 @@ namespace NifBullet
             // Check for extra data
             for (const auto& e : node.getExtraList())
             {
-                if (e->mRecordType == Nif::RC_NiStringExtraData)
+                if (e->recType == Nif::RC_NiStringExtraData)
                 {
                     // String markers may contain important information
                     // affecting the entire subtree of this node
@@ -178,7 +191,7 @@ namespace NifBullet
                 }
             }
 
-            // FIXME: BulletNifLoader should never have to provide rendered geometry for camera collision
+            // FIXME: JoltNifLoader should never have to provide rendered geometry for camera collision
             if (colNode && colNode->mChildren.empty())
             {
                 args.mAutogenerated = true;
@@ -189,10 +202,10 @@ namespace NifBullet
         handleNode(node, nullptr, args);
     }
 
-    void BulletNifLoader::handleNode(const Nif::NiAVObject& node, const Nif::Parent* parent, HandleNodeArgs args)
+    void JoltNifLoader::handleNode(const Nif::NiAVObject& node, const Nif::Parent* parent, HandleNodeArgs args)
     {
         // TODO: allow on-the fly collision switching via toggling this flag
-        if (node.mRecordType == Nif::RC_NiCollisionSwitch && !node.collisionActive())
+        if (node.recType == Nif::RC_NiCollisionSwitch && !node.collisionActive())
             return;
 
         for (Nif::NiTimeControllerPtr ctrl = node.mController; !ctrl.empty(); ctrl = ctrl->mNext)
@@ -201,7 +214,7 @@ namespace NifBullet
                 break;
             if (!ctrl->isActive())
                 continue;
-            switch (ctrl->mRecordType)
+            switch (ctrl->recType)
             {
                 case Nif::RC_NiKeyframeController:
                 case Nif::RC_NiPathController:
@@ -213,7 +226,7 @@ namespace NifBullet
             }
         }
 
-        if (node.mRecordType == Nif::RC_RootCollisionNode)
+        if (node.recType == Nif::RC_RootCollisionNode)
         {
             if (args.mAutogenerated)
             {
@@ -225,7 +238,7 @@ namespace NifBullet
                     return;
 
                 // Otherwise we'll want to notify the user.
-                Log(Debug::Info) << "BulletNifLoader: RootCollisionNode is not attached to the root node in "
+                Log(Debug::Info) << "JoltNifLoader: RootCollisionNode is not attached to the root node in "
                                  << mShape->mFileName << ". Treating it as a NiNode.";
             }
             else
@@ -235,7 +248,7 @@ namespace NifBullet
         }
 
         // Don't collide with AvoidNode shapes
-        if (node.mRecordType == Nif::RC_AvoidNode)
+        if (node.recType == Nif::RC_AvoidNode)
             args.mAvoid = true;
 
         if (args.mAutogenerated || args.mIsCollisionNode)
@@ -259,13 +272,13 @@ namespace NifBullet
                 // For NiSwitchNodes and NiFltAnimationNodes, only use the first child
                 // TODO: must synchronize with the rendering scene graph somehow
                 // Doing this for NiLODNodes is unsafe (the first level might not be the closest)
-                if (node.mRecordType == Nif::RC_NiSwitchNode || node.mRecordType == Nif::RC_NiFltAnimationNode)
+                if (node.recType == Nif::RC_NiSwitchNode || node.recType == Nif::RC_NiFltAnimationNode)
                     break;
             }
         }
     }
 
-    void BulletNifLoader::handleGeometry(
+    void JoltNifLoader::handleGeometry(
         const Nif::NiGeometry& niGeometry, const Nif::Parent* nodeParent, HandleNodeArgs args)
     {
         // This flag comes from BSXFlags
@@ -279,52 +292,85 @@ namespace NifBullet
         if (!niGeometry.mSkin.empty())
             args.mAnimated = false;
 
-        std::unique_ptr<btCollisionShape> childShape = niGeometry.getCollisionShape();
+        std::unique_ptr<JPH::MeshShapeSettings> childShape = niGeometry.getCollisionShape();
         if (childShape == nullptr)
             return;
 
         osg::Matrixf transform = niGeometry.mTransform.toMatrix();
         for (const Nif::Parent* parent = nodeParent; parent != nullptr; parent = parent->mParent)
             transform *= parent->mNiNode.mTransform.toMatrix();
-
-        if (childShape->getShapeType() == TRIANGLE_MESH_SHAPE_PROXYTYPE)
-        {
-            auto scaledShape = std::make_unique<Resource::ScaledTriangleMeshShape>(
-                static_cast<btBvhTriangleMeshShape*>(childShape.get()), Misc::Convert::toBullet(transform.getScale()));
-            std::ignore = childShape.release();
-
-            childShape = std::move(scaledShape);
-        }
-        else
-        {
-            childShape->setLocalScaling(Misc::Convert::toBullet(transform.getScale()));
+        
+        // TODO: restore scaling
+        osg::Vec3f localScale = transform.getScale();
+        bool isScaledShape = !isScaleUniformAndCloseToOne(localScale);
+        if (isScaledShape) {
+            // TODO: support this
+            Log(Debug::Info) << "found nif with localsccaling, need to support it. " << std::setprecision(10) << localScale.x() << ", " << std::setprecision(10) << localScale.y() << ", " << std::setprecision(10) << localScale.z();
         }
 
         transform.orthoNormalize(transform);
 
-        btTransform trans;
-        trans.setOrigin(Misc::Convert::toBullet(transform.getTrans()));
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                trans.getBasis()[i][j] = transform(j, i);
+        const osg::Vec3f& osgPos = transform.getTrans();
+        const osg::Quat& osgQuat = transform.getRotate();
+
+        // Try create shape, Jolt will validate and give error if it failed (it shouldnt usually)
+        auto createdRef = childShape->Create();
+        if (createdRef.HasError())
+        {
+            // Remove degenerate and duplicate triangles, then try again
+            childShape->Sanitize();
+
+            createdRef = childShape->Create();
+            if (createdRef.HasError())
+            {
+                Log(Debug::Error) << "JoltNifLoader mesh error: " << createdRef.GetError();
+                return;
+            }
+        }
+        
+        // TODO: dtermine if has any animation in collision object at all so parent can bemutable
+        mShapeMutable = true;
 
         if (!args.mAvoid)
         {
             if (!mCompoundShape)
-                mCompoundShape.reset(new btCompoundShape);
+            {
+                if (mShapeMutable)
+                {
+                    // This shape is optimized for adding / removing and changing the rotation / translation of sub shapes but is less efficient in querying.
+                    mCompoundShape.reset(new JPH::MutableCompoundShapeSettings);
+                }
+                else
+                {
+                    mCompoundShape.reset(new JPH::StaticCompoundShapeSettings);
+                }
+            }
 
             if (args.mAnimated)
-                mShape->mAnimatedShapes.emplace(niGeometry.mRecordIndex, mCompoundShape->getNumChildShapes());
-            mCompoundShape->addChildShape(trans, childShape.get());
+                mShape->mAnimatedShapes.emplace(niGeometry.recIndex, mCompoundShape->mSubShapes.size());
+
+            mCompoundShape->AddShape(JPH::Vec3(osgPos.x(), osgPos.y(), osgPos.z()), JPH::Quat(osgQuat.x(), osgQuat.y(), osgQuat.z(), osgQuat.w()), createdRef.Get());
         }
         else
         {
             if (!mAvoidCompoundShape)
-                mAvoidCompoundShape.reset(new btCompoundShape);
-            mAvoidCompoundShape->addChildShape(trans, childShape.get());
+            {
+                if (mShapeMutable)
+                {
+                    // This shape is optimized for adding / removing and changing the rotation / translation of sub shapes but is less efficient in querying.
+                    mAvoidCompoundShape.reset(new JPH::MutableCompoundShapeSettings);
+                }
+                else
+                {
+                    mAvoidCompoundShape.reset(new JPH::StaticCompoundShapeSettings);
+                }
+            }
+
+            mAvoidCompoundShape->AddShape(JPH::Vec3(osgPos.x(), osgPos.y(), osgPos.z()), JPH::Quat(osgQuat.x(), osgQuat.y(), osgQuat.z(), osgQuat.w()), createdRef.Get());
         }
 
+        // TODO: maybe we should delete childShape here instead of just forgetting about it
         std::ignore = childShape.release();
     }
 
-} // namespace NifBullet
+} // namespace NifJolt

@@ -1,10 +1,11 @@
-#ifndef OENGINE_BULLET_TRACE_H
-#define OENGINE_BULLET_TRACE_H
+#ifndef OENGINE_PHYSICS_ACTOR_TRACE_H
+#define OENGINE_PHYSICS_ACTOR_TRACE_H
 
 #include <osg/Vec3f>
 
-class btCollisionObject;
-class btCollisionWorld;
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Body/BodyID.h>
 
 namespace MWPhysics
 {
@@ -15,14 +16,15 @@ namespace MWPhysics
         osg::Vec3f mEndPos;
         osg::Vec3f mPlaneNormal;
         osg::Vec3f mHitPoint;
-        const btCollisionObject* mHitObject;
+        JPH::ObjectLayer mHitObjectLayer;
+        const JPH::Body* mHitObject;
 
         float mFraction;
 
-        void doTrace(const btCollisionObject* actor, const osg::Vec3f& start, const osg::Vec3f& end,
-            const btCollisionWorld* world, bool attemptShortTrace = false);
+        void doTrace(const JPH::BodyID actor, const osg::Vec3f& start, const osg::Vec3f& end,
+            const JPH::PhysicsSystem* world, const int collisionMask, bool attempt_short_trace = false);
         void findGround(
-            const Actor* actor, const osg::Vec3f& start, const osg::Vec3f& end, const btCollisionWorld* world);
+            const Actor* actor, const osg::Vec3f& start, const osg::Vec3f& end, const JPH::PhysicsSystem* physicsSystem);
     };
 }
 

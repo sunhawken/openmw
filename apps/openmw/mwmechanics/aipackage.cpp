@@ -374,7 +374,7 @@ bool MWMechanics::AiPackage::shortcutPath(const osg::Vec3f& startPoint, const os
             = !MWBase::Environment::get()
                    .getWorld()
                    ->getRayCasting()
-                   ->castRay(startPoint, endPoint, MWPhysics::CollisionType_World | MWPhysics::CollisionType_Door)
+                   ->castRay(startPoint, endPoint, MWPhysics::Layers::WORLD | MWPhysics::Layers::DOOR)
                    .mHit;
 
         if (destInLOS != nullptr)

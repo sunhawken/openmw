@@ -1,5 +1,5 @@
-#ifndef OPENMW_COMPONENTS_NIFBULLET_BULLETNIFLOADER_HPP
-#define OPENMW_COMPONENTS_NIFBULLET_BULLETNIFLOADER_HPP
+#ifndef OPENMW_COMPONENTS_NIFJOLT_JOLTNIFLOADER_HPP
+#define OPENMW_COMPONENTS_NIFJOLT_JOLTNIFLOADER_HPP
 
 #include <cassert>
 #include <map>
@@ -10,15 +10,17 @@
 #include <osg/Referenced>
 #include <osg/ref_ptr>
 
-#include <BulletCollision/CollisionShapes/btCompoundShape.h>
+#include <Jolt/Jolt.h>
+#include <Jolt/Geometry/Triangle.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
+#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/nif/niffile.hpp>
-#include <components/resource/bulletshape.hpp>
-
-class btTriangleMesh;
-class btCompoundShape;
-class btCollisionShape;
+#include <components/resource/physicsshape.hpp>
 
 namespace Nif
 {
@@ -28,13 +30,13 @@ namespace Nif
     struct Parent;
 }
 
-namespace NifBullet
+namespace NifJolt
 {
 
     /**
-     *Load bulletShape from NIF files.
+     *Load Jolt Shapes from NIF files.
      */
-    class BulletNifLoader
+    class JoltNifLoader
     {
     public:
         void warn(const std::string& msg) { Log(Debug::Warning) << "NIFLoader: Warn: " << msg; }
@@ -45,7 +47,7 @@ namespace NifBullet
             abort();
         }
 
-        osg::ref_ptr<Resource::BulletShape> load(Nif::FileView file);
+        osg::ref_ptr<Resource::PhysicsShape> load(Nif::FileView file);
 
     private:
         bool findBoundingBox(const Nif::NiAVObject& node);
@@ -64,10 +66,11 @@ namespace NifBullet
         void handleNode(const Nif::NiAVObject& node, const Nif::Parent* parent, HandleNodeArgs args);
         void handleGeometry(const Nif::NiGeometry& nifNode, const Nif::Parent* parent, HandleNodeArgs args);
 
-        std::unique_ptr<btCompoundShape, Resource::DeleteCollisionShape> mCompoundShape;
-        std::unique_ptr<btCompoundShape, Resource::DeleteCollisionShape> mAvoidCompoundShape;
+        bool mShapeMutable = false;
+        std::unique_ptr<JPH::CompoundShapeSettings> mCompoundShape;
+        std::unique_ptr<JPH::CompoundShapeSettings> mAvoidCompoundShape;
 
-        osg::ref_ptr<Resource::BulletShape> mShape;
+        osg::ref_ptr<Resource::PhysicsShape> mShape;
     };
 
 }

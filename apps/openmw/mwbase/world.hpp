@@ -311,8 +311,6 @@ namespace MWBase
         ///< Queues movement for \a ptr (in local space), to be applied in the next call to
         /// doPhysics.
 
-        virtual void updateAnimatedCollisionShape(const MWWorld::Ptr& ptr) = 0;
-
         virtual const MWPhysics::RayCastingInterface* getRayCasting() const = 0;
 
         virtual bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
