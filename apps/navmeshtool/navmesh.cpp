@@ -313,7 +313,8 @@ namespace NavMeshTool
         std::vector<TilePosition> worldspaceTiles = data.mTiles;
 
         {
-            const std::size_t tiles = worldspaceTiles.size();
+            const auto range = DetourNavigator::makeTilesPositionsRange(
+                Misc::Convert::toOsgXY(input->mAabb.mMin), Misc::Convert::toOsgXY(input->mAabb.mMax), settings.mRecast);
 
             if (options.mWriteBinaryLog)
                 serializeToStderr(ExpectedTiles{ static_cast<std::uint64_t>(tiles) });

@@ -12,7 +12,6 @@
 
 namespace PhysicsSystemHelpers
 {
-    // TODO: probably should return a pointer... this will clone shit????
     inline JPH::BodyCreationSettings makePhysicsBodySettings(const JPH::Shape* shape, const osg::Vec3f& position,
         const osg::Quat& rotation, const JPH::ObjectLayer collisionLayer,
         const JPH::EMotionType motionType = JPH::EMotionType::Static)
