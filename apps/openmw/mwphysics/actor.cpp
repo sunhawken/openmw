@@ -83,7 +83,8 @@ namespace MWPhysics
                     break;
                 case DetourNavigator::CollisionShapeType::Cylinder:
                     JPH::Quat shapeRotation = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH::DegreesToRadians(90.0f));
-                    mBasePhysicsShape = new JPH::RotatedTranslatedShape(JPH::Vec3(0.0f, 0.0f, 0.0f), shapeRotation, new JPH::CylinderShape(mOriginalHalfExtents.z(), mOriginalHalfExtents.x()));
+                    mBasePhysicsShape = new JPH::RotatedTranslatedShape(JPH::Vec3(0.0f, 0.0f, 0.0f), shapeRotation,
+                        new JPH::CylinderShape(mOriginalHalfExtents.z(), mOriginalHalfExtents.x()));
                     mRotationallyInvariant = true;
                     break;
             }
@@ -110,13 +111,8 @@ namespace MWPhysics
         mPhysicsShape = new JPH::ScaledShape(mBasePhysicsShape, Misc::Convert::toJolt<JPH::Vec3>(mScale));
         mScaleUpdated = false; // We set the scale just now so cancel update flag set in updateScaleUnsafe
 
-        JPH::BodyCreationSettings bodyCreationSettings = PhysicsSystemHelpers::makePhysicsBodySettings(
-            mPhysicsShape,
-            getScaledMeshTranslation() + mPosition,
-            mRotation,
-            Layers::ACTOR,
-            JPH::EMotionType::Kinematic
-        );
+        JPH::BodyCreationSettings bodyCreationSettings = PhysicsSystemHelpers::makePhysicsBodySettings(mPhysicsShape,
+            getScaledMeshTranslation() + mPosition, mRotation, Layers::ACTOR, JPH::EMotionType::Kinematic);
 
         mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
         mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
@@ -197,7 +193,8 @@ namespace MWPhysics
 
         // If scale was updated, we need to re-create a scaled shape
         // This code assumes mPhysicsShape is a ScaledShape and not equal to mBasePhysicsShape (which is fine for now)
-        if (mScaleUpdated) {
+        if (mScaleUpdated)
+        {
             // Jolt handles destroying of the original shape when SetShape is called!
             mPhysicsShape = new JPH::ScaledShape(mBasePhysicsShape, Misc::Convert::toJolt<JPH::Vec3>(mScale));
             bodyInterface.SetShape(getPhysicsBody(), mPhysicsShape, false, JPH::EActivation::DontActivate);
@@ -207,7 +204,8 @@ namespace MWPhysics
         osg::Vec3f newPosition = getScaledMeshTranslation() + mPosition;
 
         // NOTE: SetPositionAndRotation is thread safe to call
-        bodyInterface.SetPositionAndRotation(getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(newPosition), Misc::Convert::toJolt(mRotation), JPH::EActivation::Activate);
+        bodyInterface.SetPositionAndRotation(getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(newPosition),
+            Misc::Convert::toJolt(mRotation), JPH::EActivation::Activate);
     }
 
     osg::Vec3f Actor::getCollisionObjectPosition() const

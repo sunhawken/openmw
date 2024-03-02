@@ -3,8 +3,8 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 
-#include <components/physicshelpers/collisionobject.hpp>
 #include <components/misc/convert.hpp>
+#include <components/physicshelpers/collisionobject.hpp>
 
 #include "actor.hpp"
 #include "joltlayers.hpp"
@@ -26,15 +26,12 @@ namespace MWPhysics
         mPreviousPosition = position;
         setCaster(caster);
 
-        JPH::BodyCreationSettings bodyCreationSettings = PhysicsSystemHelpers::makePhysicsBodySettings(
-            new JPH::SphereShape(radius),
-            mPosition,
-            osg::Quat(1.0f, 0.0f, 0.0f, 0.0f),
-            Layers::PROJECTILE,
-            JPH::EMotionType::Dynamic
-        );
+        JPH::BodyCreationSettings bodyCreationSettings
+            = PhysicsSystemHelpers::makePhysicsBodySettings(new JPH::SphereShape(radius), mPosition,
+                osg::Quat(1.0f, 0.0f, 0.0f, 0.0f), Layers::PROJECTILE, JPH::EMotionType::Dynamic);
 
-        bodyCreationSettings.mMotionQuality = JPH::EMotionQuality::LinearCast; // Important for accurate collision detection at speed/small radius
+        bodyCreationSettings.mMotionQuality
+            = JPH::EMotionQuality::LinearCast; // Important for accurate collision detection at speed/small radius
         bodyCreationSettings.mMassPropertiesOverride.mMass = 10000.0f; // Very high mass so it cant be moved
         bodyCreationSettings.mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
         bodyCreationSettings.mGravityFactor = 0.0f; // Gravity managed manually
@@ -57,7 +54,8 @@ namespace MWPhysics
         mTaskScheduler->destroyCollisionObject(mPhysicsBody);
     }
 
-    osg::Vec3f Projectile::getSimulationPosition() const {
+    osg::Vec3f Projectile::getSimulationPosition() const
+    {
         // OPTIMIZATION: dont do each call to here, but each update frame?
         // right now its ok because this method is called only once per projectile update
         JPH::BodyLockRead lock(mTaskScheduler->getBodyLockInterface(), getPhysicsBody());
@@ -78,7 +76,7 @@ namespace MWPhysics
         // don't hit the caster
         if (withBody.GetID() == mCasterColObj)
             return false;
-        
+
         // Check if projectile or actor and if we should skip collision with them
         // typically useful for NPCs whos projectiles cannot collide with someone they arent targetting
         switch (withBody.GetObjectLayer())
@@ -107,7 +105,8 @@ namespace MWPhysics
         return true;
     }
 
-    void Projectile::onContactAdded(const JPH::Body& withBody, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
+    void Projectile::onContactAdded(
+        const JPH::Body& withBody, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
     {
         // If inactive while still in simulation, skip all future contacts
         if (!isActive())
@@ -217,8 +216,8 @@ namespace MWPhysics
         if (mValidTargets.empty())
             return true;
 
-        return std::any_of(mValidTargets.begin(), mValidTargets.end(),
-            [target](const JPH::BodyID actor) { return target == actor; });
+        return std::any_of(
+            mValidTargets.begin(), mValidTargets.end(), [target](const JPH::BodyID actor) { return target == actor; });
     }
 
 }

@@ -4,9 +4,9 @@
 #include <components/misc/convert.hpp>
 #include <components/physicshelpers/aabb.hpp>
 
+#include <osg/Matrixd>
 #include <osg/Vec2f>
 #include <osg/Vec2i>
-#include <osg/Matrixd>
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/Shape.h>
@@ -63,7 +63,6 @@ namespace DetourNavigator
             osg::Vec2f(static_cast<float>(position.x() + 1), static_cast<float>(position.y() + 1))
                 * static_cast<float>(size) };
     }
-    
 
     inline TileBounds makeObjectTileBounds(const JPH::Shape& shape, const osg::Matrixd& transform)
     {

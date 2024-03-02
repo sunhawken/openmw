@@ -6,13 +6,13 @@
 #include <optional>
 #include <shared_mutex>
 #include <stdexcept>
-#include <variant>
 #include <thread>
+#include <variant>
 
-#include <Jolt/Jolt.h>
 #include <Jolt/Core/JobSystem.h>
-#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 
 #include <osg/Stats>
 
@@ -32,10 +32,10 @@
 #include "../mwbase/world.hpp"
 
 #include "actor.hpp"
+#include "joltfilters.hpp"
 #include "movementsolver.hpp"
 #include "object.hpp"
 #include "physicssystem.hpp"
-#include "joltfilters.hpp"
 
 namespace MWPhysics
 {
@@ -278,8 +278,8 @@ namespace
 
 namespace MWPhysics
 {
-    PhysicsTaskScheduler::PhysicsTaskScheduler(
-        float physicsDt, JPH::PhysicsSystem* physicsSystem, MWRender::JoltDebugDrawer* debugDrawer, JPH::JobSystem* jobSystem)
+    PhysicsTaskScheduler::PhysicsTaskScheduler(float physicsDt, JPH::PhysicsSystem* physicsSystem,
+        MWRender::JoltDebugDrawer* debugDrawer, JPH::JobSystem* jobSystem)
         : mPhysicsSystem(physicsSystem)
         , mJobSystem(jobSystem)
         , mDefaultPhysicsDt(physicsDt)
@@ -308,10 +308,7 @@ namespace MWPhysics
             mLOSCacheExpiry = 0;
     }
 
-    PhysicsTaskScheduler::~PhysicsTaskScheduler()
-    {
-        
-    }
+    PhysicsTaskScheduler::~PhysicsTaskScheduler() {}
 
     std::tuple<int, float> PhysicsTaskScheduler::calculateStepConfig(float timeAccum) const
     {
@@ -399,7 +396,7 @@ namespace MWPhysics
 
         if (mAdvanceSimulation)
             mBudgetCursor += 1;
-        
+
         // Resets simulation timers
         mAsyncStartTime = mTimer->tick();
         if (mAdvanceSimulation)
@@ -410,8 +407,8 @@ namespace MWPhysics
         doSimulation();
     }
 
-    
-    void PhysicsTaskScheduler::syncSimulation() {
+    void PhysicsTaskScheduler::syncSimulation()
+    {
         if (mSimulations != nullptr)
         {
             // For each simulation, call the Sync method
@@ -433,7 +430,6 @@ namespace MWPhysics
         if (mAdvanceSimulation)
             mAsyncBudget.update(mTimer->delta_s(mAsyncStartTime, mTimeEnd), mPrevStepCount, mBudgetCursor);
     }
-
 
     void PhysicsTaskScheduler::resetSimulation(const ActorMap& actors)
     {
@@ -468,10 +464,10 @@ namespace MWPhysics
         mPhysicsSystem->GetBodyInterface().DestroyBody(joltBody->GetID());
     }
 
-    void PhysicsTaskScheduler::addCollisionObject(
-        JPH::Body* joltBody, bool activate)
+    void PhysicsTaskScheduler::addCollisionObject(JPH::Body* joltBody, bool activate)
     {
-        mPhysicsSystem->GetBodyInterface().AddBody(joltBody->GetID(), activate ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
+        mPhysicsSystem->GetBodyInterface().AddBody(
+            joltBody->GetID(), activate ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
     }
 
     bool PhysicsTaskScheduler::getLineOfSight(
@@ -544,7 +540,8 @@ namespace MWPhysics
         MultiObjectLayerFilter objectLayerFilter({ Layers::WORLD, Layers::HEIGHTMAP, Layers::DOOR });
 
         JPH::RayCastResult ioHit;
-        const bool didRayHit = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(ray, ioHit, broadphaseLayerFilter, objectLayerFilter);
+        const bool didRayHit
+            = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(ray, ioHit, broadphaseLayerFilter, objectLayerFilter);
         return !didRayHit;
     }
 
@@ -561,20 +558,20 @@ namespace MWPhysics
             // For each simulation, spawn a new job to be waited for
             for (int job = 0; job < mNumJobs; job++)
             {
-                const auto& jobGroup = [this, job]()
-                {
+                const auto& jobGroup = [this, job]() {
                     assert(mWorldFrameData != nullptr);
                     const Visitors::Move impl{ mPhysicsDt, mPhysicsSystem, mWorldFrameData.get() };
-                    const Visitors::WithLockedPtr<Visitors::Move, MaybeLock> vis{ impl, mSimulationMutex, mLockingPolicy };
+                    const Visitors::WithLockedPtr<Visitors::Move, MaybeLock> vis{ impl, mSimulationMutex,
+                        mLockingPolicy };
                     std::visit(vis, (*mSimulations)[job]);
                 };
 
                 JPH::JobHandle handle = mJobSystem->CreateJob("MWSimulation", JPH::Color::sBlue, jobGroup, 0);
                 barrier->AddJob(handle);
             }
-            
+
             // FIXME: waiting here technically means jolt.Update() isnt happening at the same time
-            // and its wasted cpu time. Need to reconsider eventually 
+            // and its wasted cpu time. Need to reconsider eventually
             mJobSystem->WaitForJobs(barrier);
             mJobSystem->DestroyBarrier(barrier);
 
@@ -609,12 +606,14 @@ namespace MWPhysics
 
     void* PhysicsTaskScheduler::getUserPointer(const JPH::BodyID bodyId) const
     {
-        if (bodyId.IsInvalid()) {
+        if (bodyId.IsInvalid())
+        {
             return nullptr;
         }
 
         JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), bodyId);
-        if (lock.Succeeded()) {
+        if (lock.Succeeded())
+        {
             const JPH::Body& body = lock.GetBody();
             return reinterpret_cast<void*>(static_cast<uintptr_t>(body.GetUserData()));
         }

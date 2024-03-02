@@ -10,9 +10,9 @@
 #include <MyGUI_TextIterator.h>
 
 #include <Jolt/Jolt.h>
+#include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Collision/CastResult.h>
 
 #include <components/debug/debuglog.hpp>
 
@@ -2605,8 +2605,7 @@ namespace MWWorld
         to.normalize();
         to = from + (to * maxDist);
 
-        int collisionTypes
-            = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR;
+        int collisionTypes = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR;
         if (includeWater)
         {
             collisionTypes |= MWPhysics::Layers::WATER;
@@ -3064,8 +3063,8 @@ namespace MWWorld
             actor.getClass().getCreatureStats(actor).getAiSequence().getCombatTargets(targetActors);
 
         // Check for impact, if yes, handle hit, if not, launch projectile
-        MWPhysics::RayCastingResult result = mPhysics->castRay(
-            sourcePos, worldPos, { actor }, targetActors, 0xff, MWPhysics::Layers::PROJECTILE);
+        MWPhysics::RayCastingResult result
+            = mPhysics->castRay(sourcePos, worldPos, { actor }, targetActors, 0xff, MWPhysics::Layers::PROJECTILE);
         if (result.mHit)
             MWMechanics::projectileHit(actor, result.mHitObject, bow, projectile, result.mHitPos, attackStrength);
         else

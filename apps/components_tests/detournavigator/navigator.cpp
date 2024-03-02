@@ -1,13 +1,13 @@
 #include "operators.hpp"
 #include "settings.hpp"
 
-#include <components/physicshelpers/heightfield.hpp>
 #include <components/detournavigator/navigatorimpl.hpp>
 #include <components/detournavigator/navigatorutils.hpp>
 #include <components/detournavigator/navmeshdb.hpp>
 #include <components/esm3/loadland.hpp>
 #include <components/loadinglistener/loadinglistener.hpp>
 #include <components/misc/rng.hpp>
+#include <components/physicshelpers/heightfield.hpp>
 #include <components/resource/physicsshape.hpp>
 
 #include <osg/io_utils>
@@ -128,9 +128,11 @@ namespace
         osg::ref_ptr<const Resource::PhysicsShapeInstance> mInstance;
     };
 
-    inline osg::Vec3f getHeightfieldShift(const osg::Vec2i& cellPosition, int cellSize, float minHeight, float maxHeight)
+    inline osg::Vec3f getHeightfieldShift(
+        const osg::Vec2i& cellPosition, int cellSize, float minHeight, float maxHeight)
     {
-        return PhysicsSystemHelpers::getHeightfieldShift(cellPosition.x(), cellPosition.x(), cellSize, minHeight, maxHeight);
+        return PhysicsSystemHelpers::getHeightfieldShift(
+            cellPosition.x(), cellPosition.x(), cellSize, minHeight, maxHeight);
     }
 
     TEST_F(DetourNavigatorNavigatorTest, find_path_for_empty_should_return_empty)

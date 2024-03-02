@@ -1,10 +1,11 @@
 #ifndef OPENMW_COMPONENTS_DETOURNAVIGATOR_COMMULATIVEAABB_H
 #define OPENMW_COMPONENTS_DETOURNAVIGATOR_COMMULATIVEAABB_H
 
+#include <cstddef>
+#include <cstdint>
+
 #include <Jolt/Jolt.h>
 #include <Jolt/Geometry/AABox.h>
-
-#include <cstddef>
 
 namespace DetourNavigator
 {

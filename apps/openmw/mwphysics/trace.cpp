@@ -1,22 +1,22 @@
 #include "trace.h"
 
-#include <components/misc/convert.hpp>
 #include <components/debug/debuglog.hpp>
+#include <components/misc/convert.hpp>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 
 #include "actor.hpp"
 #include "actorconvexcallback.hpp"
-#include "joltlayers.hpp"
 #include "joltfilters.hpp"
+#include "joltlayers.hpp"
 
 namespace MWPhysics
 {
     ActorConvexCallback sweepHelper(const JPH::BodyID actor, const JPH::RVec3& from, const JPH::RVec3& to,
         const JPH::PhysicsSystem* physicsSystem, bool actorFilter, const int collisionMask)
-    {   
+    {
         const JPH::RVec3 correctMotion = to - from;
 
         JPH::BodyLockRead lock(physicsSystem->GetBodyLockInterface(), actor);
@@ -36,7 +36,8 @@ namespace MWPhysics
             settings.mBackFaceModeConvex = JPH::EBackFaceMode::CollideWithBackFaces;
 
             JPH::Vec3 scale = JPH::Vec3::sReplicate(1.0f);
-            JPH::RShapeCast shapeCast(shapeRef.GetPtr(), scale, transFrom, Misc::Convert::toJolt<JPH::Vec3>(correctMotion));
+            JPH::RShapeCast shapeCast(
+                shapeRef.GetPtr(), scale, transFrom, Misc::Convert::toJolt<JPH::Vec3>(correctMotion));
 
             // Inherit the actor's collision mask
             int actualMask = collisionMask;
@@ -44,19 +45,20 @@ namespace MWPhysics
                 actualMask &= ~Layers::ACTOR;
 
             // Inherit the actor's collision group
-            JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter = physicsSystem->GetDefaultBroadPhaseLayerFilter(actorBody.GetObjectLayer());
+            JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
+                = physicsSystem->GetDefaultBroadPhaseLayerFilter(actorBody.GetObjectLayer());
             MaskedObjectLayerFilter objectLayerFilter(actualMask);
 
             // Ignore actor's own body
             JPH::IgnoreSingleBodyFilter bodyFilter(actor);
 
             // FIXME: motion is backwards; means ActorConvexCallback is doing dot product tests backwards too
-            ActorConvexCallback collector(actor, physicsSystem, shapeCast.mCenterOfMassStart.GetTranslation(), 0.0, Misc::Convert::toJolt<JPH::Vec3>(-correctMotion));
+            ActorConvexCallback collector(actor, physicsSystem, shapeCast.mCenterOfMassStart.GetTranslation(), 0.0,
+                Misc::Convert::toJolt<JPH::Vec3>(-correctMotion));
             lock.ReleaseLock();
-            physicsSystem->GetNarrowPhaseQuery().CastShape(
-                shapeCast, settings, shapeCast.mCenterOfMassStart.GetTranslation(),
-                collector, broadphaseLayerFilter, objectLayerFilter, bodyFilter
-            );
+            physicsSystem->GetNarrowPhaseQuery().CastShape(shapeCast, settings,
+                shapeCast.mCenterOfMassStart.GetTranslation(), collector, broadphaseLayerFilter, objectLayerFilter,
+                bodyFilter);
 
             return collector;
         }
@@ -100,8 +102,8 @@ namespace MWPhysics
     void ActorTracer::findGround(
         const Actor* actor, const osg::Vec3f& start, const osg::Vec3f& end, const JPH::PhysicsSystem* physicsSystem)
     {
-        const auto traceCallback = sweepHelper(
-            actor->getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(start), Misc::Convert::toJolt<JPH::RVec3>(end), physicsSystem, true, actor->getCollisionMask());
+        const auto traceCallback = sweepHelper(actor->getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(start),
+            Misc::Convert::toJolt<JPH::RVec3>(end), physicsSystem, true, actor->getCollisionMask());
         if (traceCallback.hasHit())
         {
             mFraction = traceCallback.mClosestHitFraction;

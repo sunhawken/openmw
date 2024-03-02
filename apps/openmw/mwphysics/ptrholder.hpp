@@ -31,7 +31,14 @@ namespace MWPhysics
         MWWorld::Ptr getPtr() const { return mPtr; }
 
         JPH::Body* getPhysicsBodyUnsafe() const { return mPhysicsBody; }
-        const JPH::BodyID getPhysicsBody() const { if (mPhysicsBody == nullptr) { return JPH::BodyID(); } return mPhysicsBody->GetID(); }
+        const JPH::BodyID getPhysicsBody() const
+        {
+            if (mPhysicsBody == nullptr)
+            {
+                return JPH::BodyID();
+            }
+            return mPhysicsBody->GetID();
+        }
 
         virtual void setVelocity(osg::Vec3f velocity) { mVelocity = velocity; }
 
@@ -50,7 +57,10 @@ namespace MWPhysics
 
         osg::Vec3d getPreviousPosition() const { return mPreviousPosition; }
 
-        virtual void onContactAdded(const JPH::Body& withBody, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) {}
+        virtual void onContactAdded(
+            const JPH::Body& withBody, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
+        {
+        }
 
         virtual bool onContactValidate(const JPH::Body& withBody) { return true; }
 

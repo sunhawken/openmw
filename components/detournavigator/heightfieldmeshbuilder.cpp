@@ -6,12 +6,15 @@
 
     This software is provided 'as-is', without any express or implied warranty.
     In no event will the authors be held liable for any damages arising from the use of this software.
-    Permission is granted to anyone to use this software for any purpose, 
-    including commercial applications, and to alter it and redistribute it freely, 
+    Permission is granted to anyone to use this software for any purpose,
+    including commercial applications, and to alter it and redistribute it freely,
     subject to the following restrictions:
 
-    1. The origin of this software must not be misrepresented; you must not claim that you wrote the original software. If you use this software in a product, an acknowledgment in the product documentation would be appreciated but is not required.
-    2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
+    1. The origin of this software must not be misrepresented; you must not claim that you wrote the original software.
+   If you use this software in a product, an acknowledgment in the product documentation would be appreciated but is not
+   required.
+    2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original
+   software.
     3. This notice may not be removed or altered from any source distribution.
 */
 
@@ -25,17 +28,12 @@
 namespace DetourNavigator
 {
     HeightfieldMeshBuilder::HeightfieldMeshBuilder(
-        int heightStickWidth, int heightStickLength,
-        const float* heightfieldData, double minHeight, double maxHeight)
+        int heightStickWidth, int heightStickLength, const float* heightfieldData, double minHeight, double maxHeight)
     {
-        initialize(
-            heightStickWidth, heightStickLength, heightfieldData,
-            minHeight, maxHeight, false
-        );
+        initialize(heightStickWidth, heightStickLength, heightfieldData, minHeight, maxHeight, false);
     }
 
-    void HeightfieldMeshBuilder::initialize(
-        int heightStickWidth, int heightStickLength, const void* heightfieldData,
+    void HeightfieldMeshBuilder::initialize(int heightStickWidth, int heightStickLength, const void* heightfieldData,
         double minHeight, double maxHeight, bool flipQuadEdges)
     {
         assert(heightStickWidth > 1); // && "bad width");
@@ -84,16 +82,12 @@ namespace DetourNavigator
 
         double height = getRawHeightFieldValue(x, y);
 
-        vertex.Set(
-            (-m_width / double(2.0)) + x,
-            (-m_length / double(2.0)) + y,
-            height - m_localOrigin.GetZ());
+        vertex.Set((-m_width / double(2.0)) + x, (-m_length / double(2.0)) + y, height - m_localOrigin.GetZ());
 
         vertex *= JPH::RVec3(m_localScaling);
     }
 
-    static inline int getQuantized(
-        double x)
+    static inline int getQuantized(double x)
     {
         if (x < 0.0)
         {
@@ -114,17 +108,11 @@ namespace DetourNavigator
     void HeightfieldMeshBuilder::quantizeWithClamp(int* out, const JPH::Vec3& point, int /*isMax*/) const
     {
         JPH::Vec3 clampedPoint(point);
-        clampedPoint.Set(
-            std::max(m_localAabbMin.GetX(), clampedPoint.GetX()),
-            std::max(m_localAabbMin.GetY(), clampedPoint.GetY()),
-            std::max(m_localAabbMin.GetZ(), clampedPoint.GetZ())
-        );
+        clampedPoint.Set(std::max(m_localAabbMin.GetX(), clampedPoint.GetX()),
+            std::max(m_localAabbMin.GetY(), clampedPoint.GetY()), std::max(m_localAabbMin.GetZ(), clampedPoint.GetZ()));
 
-        clampedPoint.Set(
-            std::min(m_localAabbMax.GetX(), clampedPoint.GetX()),
-            std::min(m_localAabbMax.GetY(), clampedPoint.GetY()),
-            std::min(m_localAabbMax.GetZ(), clampedPoint.GetZ())
-        );
+        clampedPoint.Set(std::min(m_localAabbMax.GetX(), clampedPoint.GetX()),
+            std::min(m_localAabbMax.GetY(), clampedPoint.GetY()), std::min(m_localAabbMax.GetZ(), clampedPoint.GetZ()));
 
         out[0] = getQuantized(clampedPoint.GetX());
         out[1] = getQuantized(clampedPoint.GetY());
@@ -138,7 +126,8 @@ namespace DetourNavigator
         - convert input aabb to a range of heightfield grid points (quantize)
         - iterate over all triangles in that subset of the grid
     */
-    void HeightfieldMeshBuilder::processAllTriangles(TriangleProcessFunc& callback, const JPH::Vec3& aabbMin, const JPH::Vec3& aabbMax) const
+    void HeightfieldMeshBuilder::processAllTriangles(
+        TriangleProcessFunc& callback, const JPH::Vec3& aabbMin, const JPH::Vec3& aabbMax) const
     {
         // scale down the input aabb's so they are in local (non-scaled) coordinates
         JPH::Vec3 localScale = JPH::Vec3(1.f / m_localScaling[0], 1.f / m_localScaling[1], 1.f / m_localScaling[2]);
@@ -149,7 +138,7 @@ namespace DetourNavigator
         localAabbMin += m_localOrigin;
         localAabbMax += m_localOrigin;
 
-        //quantize the aabbMin and aabbMax, and adjust the start/end ranges
+        // quantize the aabbMin and aabbMax, and adjust the start/end ranges
         int quantizedAabbMin[3];
         int quantizedAabbMax[3];
         quantizeWithClamp(quantizedAabbMin, localAabbMin, 0);
@@ -168,18 +157,17 @@ namespace DetourNavigator
         int startJ = 0;
         int endJ = m_heightStickLength - 1;
 
-
-                if (quantizedAabbMin[0] > startX)
-                    startX = quantizedAabbMin[0];
-                if (quantizedAabbMax[0] < endX)
-                    endX = quantizedAabbMax[0];
-                if (quantizedAabbMin[1] > startJ)
-                    startJ = quantizedAabbMin[1];
-                if (quantizedAabbMax[1] < endJ)
-                    endJ = quantizedAabbMax[1];
+        if (quantizedAabbMin[0] > startX)
+            startX = quantizedAabbMin[0];
+        if (quantizedAabbMax[0] < endX)
+            endX = quantizedAabbMax[0];
+        if (quantizedAabbMin[1] > startJ)
+            startJ = quantizedAabbMin[1];
+        if (quantizedAabbMax[1] < endJ)
+            endJ = quantizedAabbMax[1];
 
         // TODO If m_vboundsGrid is available, use it to determine if we really need to process this area
-        
+
         for (int j = startJ; j < endJ; j++)
         {
             for (int x = startX; x < endX; x++)
@@ -187,13 +175,14 @@ namespace DetourNavigator
                 JPH::RVec3 vertices[3];
                 int indices[3] = { 0, 1, 2 };
 
-                if (m_flipQuadEdges || (m_useDiamondSubdivision && !((j + x) & 1)) || (m_useZigzagSubdivision && !(j & 1)))
+                if (m_flipQuadEdges || (m_useDiamondSubdivision && !((j + x) & 1))
+                    || (m_useZigzagSubdivision && !(j & 1)))
                 {
                     getVertex(x, j, vertices[indices[0]]);
                     getVertex(x, j + 1, vertices[indices[1]]);
                     getVertex(x + 1, j + 1, vertices[indices[2]]);
                     callback(vertices, 2 * x, j);
-                  
+
                     vertices[indices[1]] = vertices[indices[2]];
 
                     getVertex(x + 1, j, vertices[indices[2]]);
