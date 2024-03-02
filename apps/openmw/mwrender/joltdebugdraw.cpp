@@ -24,7 +24,8 @@ using namespace JPH;
 
 namespace MWRender
 {
-    JoltDebugDrawer::JoltDebugDrawer(osg::ref_ptr<osg::Group> parentNode, JPH::PhysicsSystem* physicsSystem, int debugMode)
+    JoltDebugDrawer::JoltDebugDrawer(
+        osg::ref_ptr<osg::Group> parentNode, JPH::PhysicsSystem* physicsSystem, int debugMode)
         : mParentNode(std::move(parentNode))
         , mPhysicsSystem(physicsSystem)
     {
@@ -100,9 +101,9 @@ namespace MWRender
             MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(mLinesGeometry, "debug");
             MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(mTrisGeometry, "debug");
             MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(mShapesRoot, "debug");
-          
+
             // Create empty batch of triagnles
-            Vertex emptyVertex { JPH::Float3(0, 0, 0), JPH::Float3(1, 0, 0), JPH::Float2(0, 0), Color::sWhite };
+            Vertex emptyVertex{ JPH::Float3(0, 0, 0), JPH::Float3(1, 0, 0), JPH::Float2(0, 0), Color::sWhite };
             uint32_t emptyIndices[] = { 0, 0, 0 };
             mEmptyBatch = CreateTriangleBatch(&emptyVertex, 1, emptyIndices, 3);
         }
@@ -197,14 +198,16 @@ namespace MWRender
         mLinesColors->push_back({ (float)inColor.r / 255.0f, (float)inColor.g / 255.0f, (float)inColor.b / 255.0f, 1 });
     }
 
-    void JoltDebugDrawer::DrawTriangle(JPH::RVec3Arg inV1, JPH::RVec3Arg inV2, JPH::RVec3Arg inV3, JPH::ColorArg inColor, JPH::DebugRenderer::ECastShadow inCastShadow)
+    void JoltDebugDrawer::DrawTriangle(JPH::RVec3Arg inV1, JPH::RVec3Arg inV2, JPH::RVec3Arg inV3,
+        JPH::ColorArg inColor, JPH::DebugRenderer::ECastShadow inCastShadow)
     {
         mTrisVertices->push_back(Misc::Convert::toOsg(inV1));
         mTrisVertices->push_back(Misc::Convert::toOsg(inV2));
         mTrisVertices->push_back(Misc::Convert::toOsg(inV3));
     }
 
-    JPH::DebugRenderer::Batch JoltDebugDrawer::CreateTriangleBatch(const JPH::DebugRenderer::Triangle *inTriangles, int inTriangleCount)
+    JPH::DebugRenderer::Batch JoltDebugDrawer::CreateTriangleBatch(
+        const JPH::DebugRenderer::Triangle* inTriangles, int inTriangleCount)
     {
         if (inTriangles == nullptr || inTriangleCount == 0)
             return mEmptyBatch;
@@ -218,9 +221,10 @@ namespace MWRender
 
         // Create a vertex array
         osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array(inVertexCount);
-        osg::ref_ptr<osg::DrawElementsUInt> indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, inVertexCount);
+        osg::ref_ptr<osg::DrawElementsUInt> indices
+            = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, inVertexCount);
 
-        for(int i = 0; i < inTriangleCount; ++i)
+        for (int i = 0; i < inTriangleCount; ++i)
         {
             const JPH::DebugRenderer::Triangle& triangle = inTriangles[i];
             for (int j = 0; j < 3; ++j) // Each triangle has 3 vertices
@@ -236,13 +240,15 @@ namespace MWRender
         primitive->mGeometry->setUseDisplayList(false);
         primitive->mGeometry->setDataVariance(osg::Object::STATIC);
         primitive->mGeometry->setStateSet(stateSet);
-        
-        MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(primitive->mGeometry, "debug");
+
+        MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(
+            primitive->mGeometry, "debug");
 
         return primitive;
     }
 
-    JPH::DebugRenderer::Batch JoltDebugDrawer::CreateTriangleBatch(const JPH::DebugRenderer::Vertex *inVertices, int inVertexCount, const uint32_t *inIndices, int inIndexCount)
+    JPH::DebugRenderer::Batch JoltDebugDrawer::CreateTriangleBatch(
+        const JPH::DebugRenderer::Vertex* inVertices, int inVertexCount, const uint32_t* inIndices, int inIndexCount)
     {
         if (inVertices == nullptr || inVertexCount == 0 || inIndices == nullptr || inIndexCount == 0)
             return mEmptyBatch;
@@ -253,15 +259,16 @@ namespace MWRender
 
         // Create a vertex array and fill it with the vertices from inVertices
         osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array(inVertexCount);
-        for(int i = 0; i < inVertexCount; ++i)
+        for (int i = 0; i < inVertexCount; ++i)
         {
             const JPH::DebugRenderer::Vertex& vertex = inVertices[i];
             (*vertices)[i].set(vertex.mPosition.x, vertex.mPosition.y, vertex.mPosition.z);
         }
 
         // Create a new DrawElementsUInt object for the indices
-        osg::ref_ptr<osg::DrawElementsUInt> indices = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, inIndexCount);
-        for(int i = 0; i < inIndexCount; ++i)
+        osg::ref_ptr<osg::DrawElementsUInt> indices
+            = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES, inIndexCount);
+        for (int i = 0; i < inIndexCount; ++i)
         {
             (*indices)[i] = inIndices[i];
         }
@@ -271,24 +278,28 @@ namespace MWRender
         primitive->mGeometry->setUseDisplayList(false);
         primitive->mGeometry->setDataVariance(osg::Object::STATIC);
         primitive->mGeometry->setStateSet(stateSet);
-        
-        MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(primitive->mGeometry, "debug");
+
+        MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(
+            primitive->mGeometry, "debug");
 
         return primitive;
     }
 
-    void JoltDebugDrawer::DrawGeometry(JPH::RMat44Arg inModelMatrix, const JPH::AABox &inWorldSpaceBounds, float inLODScaleSq, JPH::ColorArg inModelColor, const JPH::DebugRenderer::GeometryRef &inGeometry, JPH::DebugRenderer::ECullMode inCullMode, JPH::DebugRenderer::ECastShadow inCastShadow, JPH::DebugRenderer::EDrawMode inDrawMode)
+    void JoltDebugDrawer::DrawGeometry(JPH::RMat44Arg inModelMatrix, const JPH::AABox& inWorldSpaceBounds,
+        float inLODScaleSq, JPH::ColorArg inModelColor, const JPH::DebugRenderer::GeometryRef& inGeometry,
+        JPH::DebugRenderer::ECullMode inCullMode, JPH::DebugRenderer::ECastShadow inCastShadow,
+        JPH::DebugRenderer::EDrawMode inDrawMode)
     {
         Mat44 model_matrix = inModelMatrix.ToMat44();
 
         // Draw all geometry LODs
-        const Array<LOD> &geometry_lods = inGeometry->mLODs;
+        const Array<LOD>& geometry_lods = inGeometry->mLODs;
         for (size_t lod = 0; lod < geometry_lods.size(); ++lod)
         {
             // Handle for a batch of triangles
             BatchImpl* batchPtr = static_cast<BatchImpl*>(geometry_lods[lod].mTriangleBatch.GetPtr());
             osg::ref_ptr<osg::MatrixTransform> transformNode = new osg::MatrixTransform();
-            
+
             // Set the transformation matrix for this instance
             osg::Matrix mat = osg::Matrix::identity();
             for (uint8_t x = 0; x < 4; x++)
@@ -300,8 +311,9 @@ namespace MWRender
             mShapesRoot->addChild(transformNode.get());
         }
     }
-       
-    void JoltDebugDrawer::DrawText3D(JPH::RVec3Arg inPosition, const std::string_view &inString, JPH::ColorArg inColor, float inHeight)
+
+    void JoltDebugDrawer::DrawText3D(
+        JPH::RVec3Arg inPosition, const std::string_view& inString, JPH::ColorArg inColor, float inHeight)
     {
         Log(Debug::Info) << "DrawText3D ";
     }

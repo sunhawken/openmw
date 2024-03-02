@@ -5,14 +5,14 @@
 #include <string>
 #include <vector>
 
-#include <Jolt/Jolt.h>
 #include <Jolt/Geometry/AABox.h>
+#include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 
-#include <components/physicshelpers/collisionobject.hpp>
 #include <components/detournavigator/tilecachedrecastmeshmanager.hpp>
 #include <components/esm3/loadland.hpp>
 #include <components/misc/convert.hpp>
+#include <components/physicshelpers/collisionobject.hpp>
 #include <components/resource/physicsshape.hpp>
 
 namespace ESM
@@ -63,10 +63,9 @@ namespace NavMeshTool
             float localScaling)
             : mShapeInstance(std::move(shapeInstance))
             , mObjectTransform{ position, localScaling }
-            
-            , mCollisionObject(PhysicsSystemHelpers::makeCollisionObject(mShapeInstance->mCollisionShape,
-                  position.asVec3(),
-                  Misc::Convert::makeOsgQuat(position)))
+
+            , mCollisionObject(PhysicsSystemHelpers::makeCollisionObject(
+                  mShapeInstance->mCollisionShape, position.asVec3(), Misc::Convert::makeOsgQuat(position)))
         {
             // TOOD: create jph body from settings as mCollisionObject
             mShapeInstance->setLocalScaling(osg::Vec3f(localScaling, localScaling, localScaling));

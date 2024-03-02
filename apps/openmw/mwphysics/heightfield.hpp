@@ -4,9 +4,9 @@
 #include <osg/ref_ptr>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyManager.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 
 #include <memory>
 #include <vector>

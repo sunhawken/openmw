@@ -1,6 +1,5 @@
 ﻿#include "worldspacedata.hpp"
 
-#include <components/physicshelpers/aabb.hpp>
 #include <components/debug/debugging.hpp>
 #include <components/debug/debuglog.hpp>
 #include <components/detournavigator/debug.hpp>
@@ -22,6 +21,7 @@
 #include <components/misc/strings/conversion.hpp>
 #include <components/misc/strings/lower.hpp>
 #include <components/navmeshtool/protocol.hpp>
+#include <components/physicshelpers/aabb.hpp>
 #include <components/resource/physicsshapemanager.hpp>
 #include <components/settings/settings.hpp>
 #include <components/vfs/manager.hpp>
@@ -319,7 +319,8 @@ namespace NavMeshTool
                     return;
 
                 const btTransform& transform = object.getCollisionObject().getWorldTransform();
-                const JPH::AABox aabb = PhysicsSystemHelpers::getAabb(*object.getCollisionObject().getCollisionShape(), transform);
+                const JPH::AABox aabb
+                    = PhysicsSystemHelpers::getAabb(*object.getCollisionObject().getCollisionShape(), transform);
                 mergeOrAssign(aabb, navMeshInput.mAabb, navMeshInput.mAabbInitialized);
                 if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
                     navMeshInput.mAabb.merge(PhysicsSystemHelpers::getAabb(*avoid, transform));

@@ -4,6 +4,8 @@
 #include <map>
 #include <string>
 
+#include <Jolt/Jolt.h>
+
 #include <osg/ref_ptr>
 
 #include "physicsshape.hpp"

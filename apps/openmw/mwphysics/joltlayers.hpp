@@ -2,8 +2,8 @@
 #define OPENMW_MWPHYSICS_JOLTLAYERS_H
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/Collision/ObjectLayer.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayer.h>
+#include <Jolt/Physics/Collision/ObjectLayer.h>
 
 namespace MWPhysics
 {
@@ -48,17 +48,18 @@ namespace MWPhysics
     enum CollisionMask
     {
         CollisionMask_Default = Layers::WORLD | Layers::HEIGHTMAP | Layers::ACTOR | Layers::DOOR,
-        CollisionMask_AnyPhysical = Layers::WORLD | Layers::HEIGHTMAP | Layers::ACTOR | Layers::DOOR | Layers::PROJECTILE | Layers::WATER,
+        CollisionMask_AnyPhysical
+        = Layers::WORLD | Layers::HEIGHTMAP | Layers::ACTOR | Layers::DOOR | Layers::PROJECTILE | Layers::WATER,
     };
 
     // Broadphase layers
     namespace BroadPhaseLayers
     {
-        constexpr static JPH::BroadPhaseLayer WORLD{0};
-        constexpr static JPH::BroadPhaseLayer DYNAMIC_WORLD{1};
-        constexpr static JPH::BroadPhaseLayer DEBRIS{2};
-        constexpr static JPH::BroadPhaseLayer SENSOR{3};
-        constexpr static unsigned int NUM_LAYERS{6};
+        constexpr static JPH::BroadPhaseLayer WORLD{ 0 };
+        constexpr static JPH::BroadPhaseLayer DYNAMIC_WORLD{ 1 };
+        constexpr static JPH::BroadPhaseLayer DEBRIS{ 2 };
+        constexpr static JPH::BroadPhaseLayer SENSOR{ 3 };
+        constexpr static unsigned int NUM_LAYERS{ 6 };
     };
 
     // BroadPhaseLayerInterface implementation
@@ -67,10 +68,7 @@ namespace MWPhysics
     public:
         JoltBPLayerInterface() {}
 
-        virtual unsigned int GetNumBroadPhaseLayers() const override
-        {
-            return BroadPhaseLayers::NUM_LAYERS;
-        }
+        virtual unsigned int GetNumBroadPhaseLayers() const override { return BroadPhaseLayers::NUM_LAYERS; }
 
         // Converts an object layer into broadphase layer
         virtual JPH::BroadPhaseLayer GetBroadPhaseLayer(JPH::ObjectLayer inLayer) const override
@@ -83,28 +81,29 @@ namespace MWPhysics
             return BroadPhaseLayers::WORLD;
         }
 
-    #if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
+#if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
         virtual const char* GetBroadPhaseLayerName(JPH::BroadPhaseLayer inLayer) const override
         {
             switch ((JPH::BroadPhaseLayer::Type)inLayer)
             {
-            // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::WORLD:    return "WORLD";
-            // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::DYNAMIC_WORLD:        return "DYNAMIC_WORLD";
-            // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::DEBRIS:        return "DEBRIS";
-            // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::SENSOR:        return "SENSOR";
-            // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::UNUSED:        return "UNUSED";
-            default:                                                    return "INVALID";
+                // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::WORLD:    return "WORLD";
+                // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::DYNAMIC_WORLD:        return "DYNAMIC_WORLD";
+                // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::DEBRIS:        return "DEBRIS";
+                // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::SENSOR:        return "SENSOR";
+                // case (JPH::BroadPhaseLayer::Type)BroadPhaseLayers::UNUSED:        return "UNUSED";
+                default:
+                    return "INVALID";
             }
         }
-    #endif
+#endif
 
     private:
-        JPH::BroadPhaseLayer                    mObjectToBroadPhase[512]; // maybe not needed t have this map
+        JPH::BroadPhaseLayer mObjectToBroadPhase[512]; // maybe not needed t have this map
     };
 
-    // This class defines a ObjectVsBroadPhaseLayerFilter::ShouldCollide function that checks if an ObjectLayer collides with objects
-    // that reside in a particular BroadPhaseLayer. ObjectLayers can collide with as many BroadPhaseLayers as needed, so it is possible
-    // for a collision query to visit multiple broad phase trees.
+    // This class defines a ObjectVsBroadPhaseLayerFilter::ShouldCollide function that checks if an ObjectLayer collides
+    // with objects that reside in a particular BroadPhaseLayer. ObjectLayers can collide with as many BroadPhaseLayers
+    // as needed, so it is possible for a collision query to visit multiple broad phase trees.
     class JoltObjectVsBroadPhaseLayerFilter : public JPH::ObjectVsBroadPhaseLayerFilter
     {
     public:
@@ -116,34 +115,37 @@ namespace MWPhysics
                 // case Layers::WORLD:
                 //     return broadPhaseLayer == BroadPhaseLayers::DYNAMIC_WORLD;
                 // case Layers::DYNAMIC_WORLD:
-                //     return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer == BroadPhaseLayers::DYNAMIC_WORLD || broadPhaseLayer == BroadPhaseLayers::SENSOR;
+                //     return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer ==
+                //     BroadPhaseLayers::DYNAMIC_WORLD || broadPhaseLayer == BroadPhaseLayers::SENSOR;
                 // case Layers::DEBRIS:
                 //     return broadPhaseLayer == BroadPhaseLayers::WORLD;
                 // case Layers::SENSOR:
-                //     return broadPhaseLayer == BroadPhaseLayers::DYNAMIC_WORLD || broadPhaseLayer == BroadPhaseLayers::SENSOR;
+                //     return broadPhaseLayer == BroadPhaseLayers::DYNAMIC_WORLD || broadPhaseLayer ==
+                //     BroadPhaseLayers::SENSOR;
                 default:
                     return true;
             }
         }
     };
 
-    // This class defines a ObjectLayerPairFilter::ShouldCollide function that checks if an ObjectLayer collides with another ObjectLayer.
+    // This class defines a ObjectLayerPairFilter::ShouldCollide function that checks if an ObjectLayer collides with
+    // another ObjectLayer.
     class JoltObjectLayerPairFilter : public JPH::ObjectLayerPairFilter
     {
     public:
         virtual bool ShouldCollide(JPH::ObjectLayer inObject1, JPH::ObjectLayer inObject2) const override
         {
 
-        // static constexpr JPH::ObjectLayer WORLD = 1 << 0;
-        // static constexpr JPH::ObjectLayer DOOR = 1 << 1;
-        // static constexpr JPH::ObjectLayer ACTOR = 1 << 2;
-        // static constexpr JPH::ObjectLayer HEIGHTMAP = 1 << 3;
-        // static constexpr JPH::ObjectLayer PROJECTILE = 1 << 4;
-        // static constexpr JPH::ObjectLayer WATER = 1 << 5;
-        // static constexpr JPH::ObjectLayer CAMERA_ONLY = 1 << 6;
+            // static constexpr JPH::ObjectLayer WORLD = 1 << 0;
+            // static constexpr JPH::ObjectLayer DOOR = 1 << 1;
+            // static constexpr JPH::ObjectLayer ACTOR = 1 << 2;
+            // static constexpr JPH::ObjectLayer HEIGHTMAP = 1 << 3;
+            // static constexpr JPH::ObjectLayer PROJECTILE = 1 << 4;
+            // static constexpr JPH::ObjectLayer WATER = 1 << 5;
+            // static constexpr JPH::ObjectLayer CAMERA_ONLY = 1 << 6;
 
-            // NOTE: This doesn't filter against actor/object collison masks, for that we use body filters and/or contact validation callbacks
-            // Rather this is a high level group->group check
+            // NOTE: This doesn't filter against actor/object collison masks, for that we use body filters and/or
+            // contact validation callbacks Rather this is a high level group->group check
             switch (inObject1)
             {
                 // Static layers should collide with dynamic layers
@@ -151,30 +153,21 @@ namespace MWPhysics
                 case Layers::WORLD:
                 case Layers::WATER:
                 case Layers::HEIGHTMAP:
-                    return inObject2 == Layers::DYNAMIC_WORLD ||
-                        inObject2 == Layers::ACTOR ||
-                        inObject2 == Layers::PROJECTILE ||
-                        inObject2 == Layers::DEBRIS;
+                    return inObject2 == Layers::DYNAMIC_WORLD || inObject2 == Layers::ACTOR
+                        || inObject2 == Layers::PROJECTILE || inObject2 == Layers::DEBRIS;
 
                 // Any dynamic/moving layers should collide with all static geometry, sensors and other dynamics
                 case Layers::DYNAMIC_WORLD:
                 case Layers::PROJECTILE:
                 case Layers::ACTOR:
-                    return inObject2 == Layers::WORLD ||
-                        inObject2 == Layers::HEIGHTMAP ||
-                        inObject2 == Layers::DOOR ||
-                        inObject2 == Layers::WATER ||
-                        inObject2 == Layers::ACTOR ||
-                        inObject2 == Layers::PROJECTILE ||
-                        inObject2 == Layers::DYNAMIC_WORLD ||
-                        inObject2 == Layers::SENSOR;
+                    return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP || inObject2 == Layers::DOOR
+                        || inObject2 == Layers::WATER || inObject2 == Layers::ACTOR || inObject2 == Layers::PROJECTILE
+                        || inObject2 == Layers::DYNAMIC_WORLD || inObject2 == Layers::SENSOR;
 
                 // Sensors should collide with other sensors, actors and projectiles (not dynamic objects)
                 case Layers::SENSOR:
-                    return inObject2 == Layers::SENSOR ||
-                        inObject2 == Layers::PROJECTILE ||
-                        inObject2 == Layers::ACTOR;
-                
+                    return inObject2 == Layers::SENSOR || inObject2 == Layers::PROJECTILE || inObject2 == Layers::ACTOR;
+
                 // Debris layer should only collide with static world for performance
                 case Layers::DEBRIS:
                     return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP;

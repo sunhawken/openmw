@@ -16,7 +16,8 @@
 
 namespace DetourNavigator
 {
-    static inline osg::Matrixd getSubShapeTransform(JPH::CompoundShape::SubShape subShape) {
+    static inline osg::Matrixd getSubShapeTransform(JPH::CompoundShape::SubShape subShape)
+    {
         auto subRot = subShape.GetRotation();
         auto comPos = subShape.GetPositionCOM();
         JPH::Vec3 inCenterOfMass = JPH::Vec3(0.0f, 0.0f, 0.0f);
@@ -74,7 +75,10 @@ namespace DetourNavigator
     public:
         RecastMeshObject(const CollisionShape& shape, const osg::Matrixd& transform, const AreaType areaType);
 
-        bool update(const osg::Matrixd& transform, const AreaType areaType) { return mImpl.update(transform, areaType); }
+        bool update(const osg::Matrixd& transform, const AreaType areaType)
+        {
+            return mImpl.update(transform, areaType);
+        }
 
         const osg::ref_ptr<const Resource::PhysicsShapeInstance>& getInstance() const { return mInstance; }
 
