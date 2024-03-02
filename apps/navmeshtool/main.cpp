@@ -33,6 +33,9 @@
 
 #include <osg/Vec3f>
 
+#include <Jolt/Core/Factory.h>
+#include <Jolt/RegisterTypes.h>
+
 #include <boost/program_options.hpp>
 
 #include <cstddef>
@@ -135,6 +138,10 @@ namespace NavMeshTool
         int runNavMeshTool(int argc, char* argv[])
         {
             Platform::init();
+
+            JPH::RegisterDefaultAllocator();
+            JPH::Factory::sInstance = new JPH::Factory();
+            JPH::RegisterTypes();
 
             bpo::options_description desc = makeOptionsDescription();
 
