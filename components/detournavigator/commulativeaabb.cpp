@@ -1,6 +1,8 @@
-#include "commulativeaabb.hpp"
+#include <Jolt/Jolt.h>
 
 #include <components/physicshelpers/aabb.hpp>
+
+#include "commulativeaabb.hpp"
 
 namespace DetourNavigator
 {

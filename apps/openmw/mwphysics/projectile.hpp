@@ -48,7 +48,8 @@ namespace MWPhysics
 
         osg::Vec3f getHitPosition() const { return mHitPosition; }
 
-        void onContactAdded(const JPH::Body& withBody, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override;
+        void onContactAdded(const JPH::Body& withBody, const JPH::ContactManifold& inManifold,
+            JPH::ContactSettings& ioSettings) override;
         bool onContactValidate(const JPH::Body& withBody) override;
         void setVelocity(osg::Vec3f velocity) override;
 

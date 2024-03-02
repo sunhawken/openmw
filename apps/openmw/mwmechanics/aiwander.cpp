@@ -83,8 +83,8 @@ namespace MWMechanics
             const auto visibleDestination
                 = (isWaterCreature || isFlyingCreature ? destination : destination + osg::Vec3f(0, 0, halfExtents.z()))
                 + direction * std::max(halfExtents.x(), std::max(halfExtents.y(), halfExtents.z()));
-            const int mask = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP
-                | MWPhysics::Layers::DOOR | MWPhysics::Layers::ACTOR;
+            const int mask = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR
+                | MWPhysics::Layers::ACTOR;
             return MWBase::Environment::get()
                 .getWorld()
                 ->getRayCasting()

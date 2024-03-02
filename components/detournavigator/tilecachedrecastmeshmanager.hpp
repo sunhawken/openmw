@@ -1,6 +1,8 @@
 #ifndef OPENMW_COMPONENTS_DETOURNAVIGATOR_TILECACHEDRECASTMESHMANAGER_H
 #define OPENMW_COMPONENTS_DETOURNAVIGATOR_TILECACHEDRECASTMESHMANAGER_H
 
+#include <Jolt/Jolt.h>
+
 #include "areatype.hpp"
 #include "changetype.hpp"
 #include "commulativeaabb.hpp"

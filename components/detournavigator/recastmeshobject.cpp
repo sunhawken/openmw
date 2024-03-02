@@ -1,11 +1,11 @@
 #include "recastmeshobject.hpp"
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/Collision/Shape/Shape.h>
 #include <Jolt/Physics/Collision/Shape/CompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/Shape.h>
 
-#include <components/misc/convert.hpp>
 #include <components/debug/debuglog.hpp>
+#include <components/misc/convert.hpp>
 
 #include <cassert>
 
