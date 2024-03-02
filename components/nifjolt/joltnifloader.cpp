@@ -31,7 +31,8 @@ namespace NifJolt
 {
     // Some nif scales aren't exactly 1.0f, 1.0f, 1.0f but within a small epsilon
     // detect that so we can skip potentially expensive scaling
-    bool isScaleUniformAndCloseToOne(const osg::Vec3& localScale) {
+    bool isScaleUniformAndCloseToOne(const osg::Vec3& localScale)
+    {
         const float targetScale = 1.0f;
         const float epsilon = 0.0001f;
 
@@ -299,13 +300,16 @@ namespace NifJolt
         osg::Matrixf transform = niGeometry.mTransform.toMatrix();
         for (const Nif::Parent* parent = nodeParent; parent != nullptr; parent = parent->mParent)
             transform *= parent->mNiNode.mTransform.toMatrix();
-        
+
         // TODO: restore scaling
         osg::Vec3f localScale = transform.getScale();
         bool isScaledShape = !isScaleUniformAndCloseToOne(localScale);
-        if (isScaledShape) {
+        if (isScaledShape)
+        {
             // TODO: support this
-            Log(Debug::Info) << "found nif with localsccaling, need to support it. " << std::setprecision(10) << localScale.x() << ", " << std::setprecision(10) << localScale.y() << ", " << std::setprecision(10) << localScale.z();
+            Log(Debug::Info) << "found nif with localsccaling, need to support it. " << std::setprecision(10)
+                             << localScale.x() << ", " << std::setprecision(10) << localScale.y() << ", "
+                             << std::setprecision(10) << localScale.z();
         }
 
         transform.orthoNormalize(transform);
@@ -327,7 +331,7 @@ namespace NifJolt
                 return;
             }
         }
-        
+
         // TODO: dtermine if has any animation in collision object at all so parent can bemutable
         mShapeMutable = true;
 
@@ -337,7 +341,8 @@ namespace NifJolt
             {
                 if (mShapeMutable)
                 {
-                    // This shape is optimized for adding / removing and changing the rotation / translation of sub shapes but is less efficient in querying.
+                    // This shape is optimized for adding / removing and changing the rotation / translation of sub
+                    // shapes but is less efficient in querying.
                     mCompoundShape.reset(new JPH::MutableCompoundShapeSettings);
                 }
                 else
@@ -349,7 +354,8 @@ namespace NifJolt
             if (args.mAnimated)
                 mShape->mAnimatedShapes.emplace(niGeometry.recIndex, mCompoundShape->mSubShapes.size());
 
-            mCompoundShape->AddShape(JPH::Vec3(osgPos.x(), osgPos.y(), osgPos.z()), JPH::Quat(osgQuat.x(), osgQuat.y(), osgQuat.z(), osgQuat.w()), createdRef.Get());
+            mCompoundShape->AddShape(JPH::Vec3(osgPos.x(), osgPos.y(), osgPos.z()),
+                JPH::Quat(osgQuat.x(), osgQuat.y(), osgQuat.z(), osgQuat.w()), createdRef.Get());
         }
         else
         {
@@ -357,7 +363,8 @@ namespace NifJolt
             {
                 if (mShapeMutable)
                 {
-                    // This shape is optimized for adding / removing and changing the rotation / translation of sub shapes but is less efficient in querying.
+                    // This shape is optimized for adding / removing and changing the rotation / translation of sub
+                    // shapes but is less efficient in querying.
                     mAvoidCompoundShape.reset(new JPH::MutableCompoundShapeSettings);
                 }
                 else
@@ -366,7 +373,8 @@ namespace NifJolt
                 }
             }
 
-            mAvoidCompoundShape->AddShape(JPH::Vec3(osgPos.x(), osgPos.y(), osgPos.z()), JPH::Quat(osgQuat.x(), osgQuat.y(), osgQuat.z(), osgQuat.w()), createdRef.Get());
+            mAvoidCompoundShape->AddShape(JPH::Vec3(osgPos.x(), osgPos.y(), osgPos.z()),
+                JPH::Quat(osgQuat.x(), osgQuat.y(), osgQuat.z(), osgQuat.w()), createdRef.Get());
         }
 
         // TODO: maybe we should delete childShape here instead of just forgetting about it

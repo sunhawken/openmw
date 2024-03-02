@@ -28,7 +28,8 @@ namespace DetourNavigator
 
     inline osg::Vec3f getHeightfieldShift(const HeightfieldPlane& v, const osg::Vec2i& cellPosition, int cellSize)
     {
-        return PhysicsSystemHelpers::getHeightfieldShift(cellPosition.x(), cellPosition.y(), cellSize, v.mHeight, v.mHeight);
+        return PhysicsSystemHelpers::getHeightfieldShift(
+            cellPosition.x(), cellPosition.y(), cellSize, v.mHeight, v.mHeight);
     }
 
     inline osg::Vec3f getHeightfieldShift(const HeightfieldSurface& v, const osg::Vec2i& cellPosition, int cellSize)

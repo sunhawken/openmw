@@ -45,8 +45,8 @@ namespace MWPhysics
     public:
         static osg::Vec3f traceDown(const MWWorld::Ptr& ptr, const osg::Vec3f& position, Actor* actor,
             JPH::PhysicsSystem* collisionWorld, float maxHeight);
-        static void move(
-            ActorFrameData& actor, float time, const JPH::PhysicsSystem* physicsSystem, const WorldFrameData& worldData);
+        static void move(ActorFrameData& actor, float time, const JPH::PhysicsSystem* physicsSystem,
+            const WorldFrameData& worldData);
         static void unstuck(ActorFrameData& actor, JPH::PhysicsSystem* physicsSystem);
     };
 }

@@ -4,8 +4,8 @@
 #include <algorithm>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Math/Vec3.h>
 #include <Jolt/Math/Mat44.h>
+#include <Jolt/Math/Vec3.h>
 
 namespace PhysicsSystemHelpers
 {

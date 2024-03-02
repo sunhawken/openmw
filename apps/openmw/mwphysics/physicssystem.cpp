@@ -1,30 +1,30 @@
 #include "physicssystem.hpp"
 
 #include <algorithm>
+#include <cstdarg>
 #include <memory>
 #include <vector>
-#include <cstdarg>
 
 #include <osg/Group>
 #include <osg/Stats>
 #include <osg/Timer>
 
-#include <Jolt/Jolt.h>
-#include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
-#include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/JobSystemSingleThreaded.h>
-#include <Jolt/Physics/PhysicsSettings.h>
-#include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Core/TempAllocator.h>
+#include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
-#include <Jolt/Physics/Collision/RayCast.h>
-#include <Jolt/Physics/Collision/ShapeCast.h>
-#include <Jolt/Physics/Collision/CastResult.h>
-#include <Jolt/Physics/Collision/ShapeFilter.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/Collision/ShapeFilter.h>
+#include <Jolt/Physics/PhysicsSettings.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/RegisterTypes.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadgmst.hpp>
@@ -61,14 +61,14 @@
 #include "projectile.hpp"
 #include "water.hpp"
 
+#include "joltcallbacks.hpp"
 #include "joltfilters.hpp"
 #include "joltlisteners.hpp"
-#include "joltcallbacks.hpp"
 
 using namespace JPH;
 
 // Callback for traces
-static void TraceImpl(const char *inFMT, ...)
+static void TraceImpl(const char* inFMT, ...)
 {
     // Format the message
     va_list list;
@@ -83,9 +83,10 @@ static void TraceImpl(const char *inFMT, ...)
 #ifdef JPH_ENABLE_ASSERTS
 
 // Callback for Jolt asserts
-static bool AssertFailedImpl(const char *inExpression, const char *inMessage, const char *inFile, uint inLine)
+static bool AssertFailedImpl(const char* inExpression, const char* inMessage, const char* inFile, uint inLine)
 {
-    Log(Debug::Error) << "Jolt Assert: " << inFile << ":" << inLine << ": (" << inExpression << ") " << (inMessage != nullptr ? inMessage : "");
+    Log(Debug::Error) << "Jolt Assert: " << inFile << ":" << inLine << ": (" << inExpression << ") "
+                      << (inMessage != nullptr ? inMessage : "");
 
     // Prevent breakpoint, better to log than exit/crash in debug mode usually
     // Jolt has a tendancy to complain about alot of things even if they work fine
@@ -93,7 +94,6 @@ static bool AssertFailedImpl(const char *inExpression, const char *inMessage, co
 };
 
 #endif
-
 
 namespace
 {
@@ -149,17 +149,17 @@ namespace MWPhysics
     static const unsigned int cMaxBodyPairs = 65536;
 
     // This is the maximum size of the contact constraint buffer. If more contacts (collisions between bodies) are
-    // detected than this number then these contacts will be ignored and bodies will start interpenetrating / fall through
-    // the world.
+    // detected than this number then these contacts will be ignored and bodies will start interpenetrating / fall
+    // through the world.
     static const unsigned int cMaxContactConstraints = 10240;
-  
+
     namespace
     {
         LockingPolicy detectLockingPolicy()
         {
             if (Settings::physics().mAsyncNumThreads < 1)
                 return LockingPolicy::NoLocks;
-            
+
             return LockingPolicy::AllowSharedLocks;
         }
 
@@ -170,8 +170,8 @@ namespace MWPhysics
                 case LockingPolicy::NoLocks:
                     return 0;
                 case LockingPolicy::AllowSharedLocks:
-                    return static_cast<unsigned>(std::clamp<int>(
-                        Settings::physics().mAsyncNumThreads, 0, std::thread::hardware_concurrency()));
+                    return static_cast<unsigned>(
+                        std::clamp<int>(Settings::physics().mAsyncNumThreads, 0, std::thread::hardware_concurrency()));
             }
 
             throw std::runtime_error("Unsupported LockingPolicy: "
@@ -226,19 +226,20 @@ namespace MWPhysics
         mMemoryAllocator = std::make_unique<JPH::TempAllocatorImpl>(25 * 1024 * 1024);
 
         // Now we can create the actual physics system.
-        mPhysicsSystem.Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints,
-            mBPLayerInterface, mObjectVsBPLayerFilter, mObjectVsObjectLayerFilter);
+        mPhysicsSystem.Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints, mBPLayerInterface,
+            mObjectVsBPLayerFilter, mObjectVsObjectLayerFilter);
         mPhysicsSystem.SetContactListener(&mContactListener);
         mPhysicsSystem.SetGravity(JPH::Vec3(0, 0, Constants::GravityConst * Constants::UnitsPerMeter));
 
         // Debug helper
         mJoltDebugDrawer = std::make_unique<MWRender::JoltDebugDrawer>(mParentNode, &mPhysicsSystem, mDebugDrawEnabled);
 
-        // Detect number of wanted async threads, if 0 then use single threaded job system 
+        // Detect number of wanted async threads, if 0 then use single threaded job system
         unsigned numThreads = getNumThreads(detectLockingPolicy());
         if (numThreads > 0)
         {
-            mPhysicsJobSystem = std::make_unique<JPH::JobSystemThreadPool>(cMaxPhysicsJobs, cMaxPhysicsBarriers, numThreads);
+            mPhysicsJobSystem
+                = std::make_unique<JPH::JobSystemThreadPool>(cMaxPhysicsJobs, cMaxPhysicsBarriers, numThreads);
         }
         else
         {
@@ -246,7 +247,8 @@ namespace MWPhysics
         }
 
         // Create a job scheduler responsible for simulating the game world (actors etc)
-        mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(mPhysicsDt, &mPhysicsSystem, mJoltDebugDrawer.get(), mPhysicsJobSystem.get());
+        mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(
+            mPhysicsDt, &mPhysicsSystem, mJoltDebugDrawer.get(), mPhysicsJobSystem.get());
     }
 
     PhysicsSystem::~PhysicsSystem()
@@ -368,7 +370,8 @@ namespace MWPhysics
 
         // Cast ray and return closest hit
         JPH::RayCastResult ioHit;
-        const bool didRayHit = mPhysicsSystem.GetNarrowPhaseQuery().CastRay(ray, ioHit, broadphaseLayerFilter, objectLayerFilter, bodyFilter);
+        const bool didRayHit = mPhysicsSystem.GetNarrowPhaseQuery().CastRay(
+            ray, ioHit, broadphaseLayerFilter, objectLayerFilter, bodyFilter);
 
         RayCastingResult result;
         result.mHit = didRayHit;
@@ -380,7 +383,8 @@ namespace MWPhysics
             if (lock.Succeeded())
             {
                 const JPH::Body& hitBody = lock.GetBody();
-                result.mHitNormal = Misc::Convert::toOsg(hitBody.GetWorldSpaceSurfaceNormal(ioHit.mSubShapeID2, outPosition));
+                result.mHitNormal
+                    = Misc::Convert::toOsg(hitBody.GetWorldSpaceSurfaceNormal(ioHit.mSubShapeID2, outPosition));
 
                 PtrHolder* ptrHolder = Misc::Convert::toPointerFromUserData<PtrHolder>(hitBody.GetUserData());
                 if (ptrHolder)
@@ -415,9 +419,7 @@ namespace MWPhysics
 
         ClosestConvexResultCallback callback(transFrom.GetTranslation());
         mPhysicsSystem.GetNarrowPhaseQuery().CastShape(
-            shapeCast, settings, transFrom.GetTranslation(),
-            callback, broadphaseLayerFilter, objectLayerFilter
-        );
+            shapeCast, settings, transFrom.GetTranslation(), callback, broadphaseLayerFilter, objectLayerFilter);
 
         RayCastingResult result;
         result.mHit = callback.hasHit();
@@ -487,7 +489,7 @@ namespace MWPhysics
         const Object* physobject = getObject(object);
         if (!physobject)
             return osg::BoundingBox();
-      
+
         JPH::BodyID bodyId = physobject->getPhysicsBody();
         if (bodyId.IsInvalid())
             return osg::BoundingBox();
@@ -498,7 +500,7 @@ namespace MWPhysics
 
         const JPH::Body& body = lock.GetBody();
 
-        // Get body world space translation + shape local space bound 
+        // Get body world space translation + shape local space bound
         osg::Vec3f translation = Misc::Convert::toOsg(body.GetCenterOfMassTransform().GetTranslation());
         JPH::AABox bounds = body.GetShape()->GetLocalBounds();
 
@@ -531,7 +533,7 @@ namespace MWPhysics
 
         if (me.IsInvalid())
             return {};
-        
+
         JPH::ShapeRefC shape;
         JPH::RMat44 transform;
 
@@ -546,9 +548,11 @@ namespace MWPhysics
             shape = body.GetShape();
         }
 
-        // This sets layer filters to avoid collisions with static geometry in those cases, and allows with actors->actors etc if needed
-        // this is important to prevent Jolt comlaining that two triangle mesh shapes cannot collide
-        JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter = mPhysicsSystem.GetDefaultBroadPhaseLayerFilter(collisionGroup);
+        // This sets layer filters to avoid collisions with static geometry in those cases, and allows with
+        // actors->actors etc if needed this is important to prevent Jolt comlaining that two triangle mesh shapes
+        // cannot collide
+        JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
+            = mPhysicsSystem.GetDefaultBroadPhaseLayerFilter(collisionGroup);
         MaskedObjectLayerFilter objectLayerFilter(collisionMask);
 
         JPH::CollideShapeSettings settings;
@@ -556,10 +560,12 @@ namespace MWPhysics
         settings.mBackFaceMode = JPH::EBackFaceMode::IgnoreBackFaces;
         settings.mCollectFacesMode = JPH::ECollectFacesMode::NoFaces;
 
-        // WARNING: you cannot collide mesh->mesh shapes in Jolt, so this should filter to avoid that (only collide with actors etc)
+        // WARNING: you cannot collide mesh->mesh shapes in Jolt, so this should filter to avoid that (only collide with
+        // actors etc)
         auto scale = JPH::Vec3::sReplicate(1.0f);
         ContactTestResultCallback resultCallback(&mPhysicsSystem, me, transform.GetTranslation());
-        mPhysicsSystem.GetNarrowPhaseQuery().CollideShape(shape, scale, transform, settings, JPH::RVec3::sZero(), resultCallback, broadphaseLayerFilter, objectLayerFilter);
+        mPhysicsSystem.GetNarrowPhaseQuery().CollideShape(shape, scale, transform, settings, JPH::RVec3::sZero(),
+            resultCallback, broadphaseLayerFilter, objectLayerFilter);
         return resultCallback.mResult;
     }
 
@@ -617,7 +623,8 @@ namespace MWPhysics
         if (ptr.getClass().useAnim())
             animationMesh = Misc::ResourceHelpers::correctActorModelPath(mesh, mResourceSystem->getVFS());
         osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance = mShapeManager->getInstance(animationMesh);
-        if (!shapeInstance || !shapeInstance->mCollisionShape) {
+        if (!shapeInstance || !shapeInstance->mCollisionShape)
+        {
             return;
         }
 
@@ -942,10 +949,10 @@ namespace MWPhysics
             updatePtrHolders();
         }
 
-        #ifdef JPH_PROFILE_ENABLED
+#ifdef JPH_PROFILE_ENABLED
         JPH_PROFILE_NEXTFRAME();
-        // JPH_DET_LOG("OpenMw:");
-        #endif
+// JPH_DET_LOG("OpenMw:");
+#endif
     }
 
     void PhysicsSystem::updatePtrHolders()
@@ -1072,46 +1079,51 @@ namespace MWPhysics
         // Define a tiny private class here as its not used anywhere else
         class AreaActorCollector : public JPH::CollideShapeBodyCollector
         {
-            public:
-                AreaActorCollector(const JPH::PhysicsSystem *inSystem, std::vector<JPH::BodyID>* ignoredBodies, std::vector<MWWorld::Ptr>* occupiedResult) :
-                    mSystem(inSystem),
-                    mIgnoredBodies(ignoredBodies),
-                    mOccupiedResult(occupiedResult) { }
+        public:
+            AreaActorCollector(const JPH::PhysicsSystem* inSystem, std::vector<JPH::BodyID>* ignoredBodies,
+                std::vector<MWWorld::Ptr>* occupiedResult)
+                : mSystem(inSystem)
+                , mIgnoredBodies(ignoredBodies)
+                , mOccupiedResult(occupiedResult)
+            {
+            }
 
-                virtual void AddHit(const JPH::BodyID& inBodyID) override
+            virtual void AddHit(const JPH::BodyID& inBodyID) override
+            {
+                // Check if we should ignore this body
+                if (std::binary_search(mIgnoredBodies->begin(), mIgnoredBodies->end(), inBodyID))
+                    return;
+
+                // If an output array is specified, get body ptrholder
+                if (mOccupiedResult)
                 {
-                    // Check if we should ignore this body
-                    if (std::binary_search(mIgnoredBodies->begin(), mIgnoredBodies->end(), inBodyID))
-                        return;
-                    
-                    // If an output array is specified, get body ptrholder
-                    if (mOccupiedResult)
+                    JPH::BodyLockRead lock(mSystem->GetBodyLockInterface(), inBodyID);
+                    if (lock.Succeeded())
                     {
-                        JPH::BodyLockRead lock(mSystem->GetBodyLockInterface(), inBodyID);
-                        if (lock.Succeeded())
-                        {
-                            const JPH::Body& body = lock.GetBody();
-                            if (PtrHolder* holder = Misc::Convert::toPointerFromUserData<PtrHolder>(body.GetUserData()))
-                                mOccupiedResult->push_back(holder->getPtr());
-                        }
+                        const JPH::Body& body = lock.GetBody();
+                        if (PtrHolder* holder = Misc::Convert::toPointerFromUserData<PtrHolder>(body.GetUserData()))
+                            mOccupiedResult->push_back(holder->getPtr());
                     }
-
-                    mHasHit = true;
                 }
 
-                bool hasHit() { return mHasHit; }
+                mHasHit = true;
+            }
 
-            private:
-                const JPH::PhysicsSystem* mSystem;
-                std::vector<JPH::BodyID>* mIgnoredBodies;
-                std::vector<MWWorld::Ptr>* mOccupiedResult;
-                bool mHasHit = false;
+            bool hasHit() { return mHasHit; }
+
+        private:
+            const JPH::PhysicsSystem* mSystem;
+            std::vector<JPH::BodyID>* mIgnoredBodies;
+            std::vector<MWWorld::Ptr>* mOccupiedResult;
+            bool mHasHit = false;
         };
 
         // Setup collector and collide body AABBs by the input sphere
         AreaActorCollector collector(&mPhysicsSystem, &ignoredObjects, occupyingActors);
-        JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter = mPhysicsSystem.GetDefaultBroadPhaseLayerFilter(Layers::ACTOR);
-        mPhysicsSystem.GetBroadPhaseQuery().CollideSphere(Misc::Convert::toJolt<JPH::Vec3>(position), radius, collector, broadphaseLayerFilter, JPH::SpecifiedObjectLayerFilter(Layers::ACTOR));
+        JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
+            = mPhysicsSystem.GetDefaultBroadPhaseLayerFilter(Layers::ACTOR);
+        mPhysicsSystem.GetBroadPhaseQuery().CollideSphere(Misc::Convert::toJolt<JPH::Vec3>(position), radius, collector,
+            broadphaseLayerFilter, JPH::SpecifiedObjectLayerFilter(Layers::ACTOR));
 
         return collector.hasHit();
     }

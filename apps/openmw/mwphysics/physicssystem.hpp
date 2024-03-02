@@ -23,8 +23,8 @@
 
 #include "../mwworld/ptr.hpp"
 
-#include "raycasting.hpp"
 #include "joltlisteners.hpp"
+#include "raycasting.hpp"
 
 namespace JPH
 {
@@ -156,8 +156,8 @@ namespace MWPhysics
         void setWaterHeight(float height);
         void disableWater();
 
-        void addObject(const MWWorld::Ptr& ptr, const std::string& mesh, osg::Quat rotation,
-            int collisionType = Layers::WORLD);
+        void addObject(
+            const MWWorld::Ptr& ptr, const std::string& mesh, osg::Quat rotation, int collisionType = Layers::WORLD);
         void addActor(const MWWorld::Ptr& ptr, const std::string& mesh);
 
         int addProjectile(
@@ -289,7 +289,7 @@ namespace MWPhysics
     private:
         void updateWater();
         void updatePtrHolders();
-        
+
         void prepareSimulation(bool willSimulate, std::vector<Simulation>& simulations);
 
         JoltContactListener mContactListener;

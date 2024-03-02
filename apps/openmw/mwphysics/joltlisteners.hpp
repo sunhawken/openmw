@@ -11,11 +11,13 @@ namespace MWPhysics
     // Note: this is called from a job so whatever you do here needs to be thread safe.
     class JoltContactListener : public JPH::ContactListener
     {
-        public:
+    public:
         JoltContactListener() {}
 
         // Allows you to ignore a contact before it is created (using layers to not make objects collide is cheaper!)
-        virtual JPH::ValidateResult OnContactValidate(const JPH::Body& inBody1, const JPH::Body& inBody2, JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult) override {
+        virtual JPH::ValidateResult OnContactValidate(const JPH::Body& inBody1, const JPH::Body& inBody2,
+            JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult) override
+        {
             bool canCollide = true;
             PtrHolder* ptr;
 
@@ -37,10 +39,11 @@ namespace MWPhysics
 
             return JPH::ValidateResult::RejectAllContactsForThisBodyPair;
         }
-        
+
         // NOTE: In the OnContactAdded callback all bodies are locked already
         virtual void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
-                                    const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override {
+            const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override
+        {
             PtrHolder* ptr1 = Misc::Convert::toPointerFromUserData<PtrHolder>(inBody1.GetUserData());
             if (ptr1)
                 ptr1->onContactAdded(inBody2, inManifold, ioSettings);

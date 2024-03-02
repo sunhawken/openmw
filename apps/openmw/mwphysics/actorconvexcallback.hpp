@@ -2,11 +2,11 @@
 #define OPENMW_MWPHYSICS_ACTORCONVEXCALLBACK_H
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 
-#include <components/misc/convert.hpp>
 #include <components/debug/debuglog.hpp>
+#include <components/misc/convert.hpp>
 
 #include "../mwrender/joltdebugdraw.hpp"
 
@@ -21,9 +21,12 @@ namespace MWPhysics
         ActorConvexCallback()
             : mClosestHitFraction(0.0f)
             , mMinCollisionDot(0.0f)
-            , mPhysicsSystem(nullptr) {}
+            , mPhysicsSystem(nullptr)
+        {
+        }
 
-        ActorConvexCallback(const JPH::BodyID actor, const JPH::PhysicsSystem* inPhysicsSystem, JPH::RVec3 origin, float minCollisionDot, JPH::Vec3 motion)
+        ActorConvexCallback(const JPH::BodyID actor, const JPH::PhysicsSystem* inPhysicsSystem, JPH::RVec3 origin,
+            float minCollisionDot, JPH::Vec3 motion)
             : mMe(actor)
             , mPhysicsSystem(inPhysicsSystem)
             , mMinCollisionDot(minCollisionDot)
@@ -35,7 +38,8 @@ namespace MWPhysics
         virtual void AddHit(const JPH::ShapeCastResult& inResult) override
         {
             // If self, skip
-            if (inResult.mBodyID2 == mMe) {
+            if (inResult.mBodyID2 == mMe)
+            {
                 return;
             }
 
@@ -60,9 +64,9 @@ namespace MWPhysics
             JPH::Vec3 hitNormalWorld = -inResult.mPenetrationAxis.Normalized();
 
             // override data for actor-actor collisions
-            // vanilla Morrowind seems to make overlapping actors collide as though they are both cylinders with a diameter
-            // of the distance between them For some reason this doesn't work as well as it should when using capsules, but
-            // it still helps a lot.
+            // vanilla Morrowind seems to make overlapping actors collide as though they are both cylinders with a
+            // diameter of the distance between them For some reason this doesn't work as well as it should when using
+            // capsules, but it still helps a lot.
             float earlyOut = inResult.GetEarlyOutFraction();
             if (collisionGroup == Layers::ACTOR)
             {
@@ -75,12 +79,12 @@ namespace MWPhysics
                     osg::Vec3f normal = (originA - originB);
                     normal.z() = 0;
                     normal.normalize();
-                 
+
                     // only collide if horizontally moving towards the hit actor (note: the motion vector appears to be
                     // inverted)
-                    // FIXME: This kinda screws with standing on actors that walk up slopes for some reason. Makes you fall
-                    // through them. It happens in vanilla Morrowind too, but much less often. I tried hunting down why but
-                    // couldn't figure it out. Possibly a stair stepping or ground ejection bug.
+                    // FIXME: This kinda screws with standing on actors that walk up slopes for some reason. Makes you
+                    // fall through them. It happens in vanilla Morrowind too, but much less often. I tried hunting down
+                    // why but couldn't figure it out. Possibly a stair stepping or ground ejection bug.
                     if (normal * motion > 0.0f)
                     {
                         // Get the contact properties
@@ -117,10 +121,8 @@ namespace MWPhysics
                 mClosestHitFraction = inResult.mFraction;
             }
         }
-            
-        bool hasHit() const {
-            return mHitCollisionObject != nullptr;
-        }
+
+        bool hasHit() const { return mHitCollisionObject != nullptr; }
 
         // Configuration
         float mClosestHitFraction;

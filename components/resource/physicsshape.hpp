@@ -5,16 +5,15 @@
 #include <map>
 #include <memory>
 
+#include <osg/Matrixd>
 #include <osg/Object>
 #include <osg/Vec3f>
 #include <osg/ref_ptr>
-#include <osg/Matrixd>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Geometry/Triangle.h>
+#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
-#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 
 namespace NifJolt
@@ -89,16 +88,12 @@ namespace Resource
     struct TriangleMeshShape
     {
         JPH::MeshShapeSettings* m_meshInterface;
-        TriangleMeshShape(
-            JPH::MeshShapeSettings* meshInterface, bool useQuantizedAabbCompression, bool buildBvh = true)
+        TriangleMeshShape(JPH::MeshShapeSettings* meshInterface, bool useQuantizedAabbCompression, bool buildBvh = true)
         {
             m_meshInterface = meshInterface;
         }
 
-        virtual ~TriangleMeshShape()
-        {
-            delete m_meshInterface;
-        }
+        virtual ~TriangleMeshShape() { delete m_meshInterface; }
     };
 }
 
