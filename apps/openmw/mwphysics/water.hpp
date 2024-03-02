@@ -9,13 +9,13 @@ namespace MWPhysics
     class PhysicsTaskScheduler;
     class MWWater
     {
-        public:
-            MWWater(PhysicsTaskScheduler* scheduler, float height);
-            ~MWWater();
+    public:
+        MWWater(PhysicsTaskScheduler* scheduler, float height);
+        ~MWWater();
 
-        private:
-            JPH::Body* mPhysicsBody;
-            PhysicsTaskScheduler* mTaskScheduler;
+    private:
+        JPH::Body* mPhysicsBody;
+        PhysicsTaskScheduler* mTaskScheduler;
     };
 }
 

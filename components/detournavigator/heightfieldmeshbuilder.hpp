@@ -9,10 +9,10 @@
 #include <osg/Vec3f>
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <tuple>
 #include <vector>
-#include <functional>
 
 namespace JPH
 {
@@ -31,19 +31,17 @@ namespace DetourNavigator
     class HeightfieldMeshBuilder
     {
     public:
-        explicit HeightfieldMeshBuilder(
-            int heightStickWidth, int heightStickLength,
-            const float* heightfieldData, double minHeight, double maxHeight);
+        explicit HeightfieldMeshBuilder(int heightStickWidth, int heightStickLength, const float* heightfieldData,
+            double minHeight, double maxHeight);
         ~HeightfieldMeshBuilder() {}
 
-
-        void initialize(int heightStickWidth, int heightStickLength,
-                        const void* heightfieldData,
-                        double minHeight, double maxHeight, bool flipQuadEdges);
+        void initialize(int heightStickWidth, int heightStickLength, const void* heightfieldData, double minHeight,
+            double maxHeight, bool flipQuadEdges);
 
         void getAabb(JPH::Vec3& aabbMin, JPH::Vec3& aabbMax) const;
 
-        void processAllTriangles(TriangleProcessFunc& callback, const JPH::Vec3& aabbMin, const JPH::Vec3& aabbMax) const;
+        void processAllTriangles(
+            TriangleProcessFunc& callback, const JPH::Vec3& aabbMin, const JPH::Vec3& aabbMax) const;
 
         void setLocalScaling(const JPH::Vec3& scaling);
 

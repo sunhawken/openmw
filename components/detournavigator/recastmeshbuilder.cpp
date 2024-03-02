@@ -1,26 +1,26 @@
 #include "recastmeshbuilder.hpp"
-#include "heightfieldmeshbuilder.hpp"
 #include "exceptions.hpp"
+#include "heightfieldmeshbuilder.hpp"
 #include "recastmeshobject.hpp"
 
+#include <components/debug/debuglog.hpp>
+#include <components/misc/convert.hpp>
 #include <components/physicshelpers/heightfield.hpp>
 #include <components/physicshelpers/transformboundingbox.hpp>
-#include <components/misc/convert.hpp>
-#include <components/debug/debuglog.hpp>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/Collision/Shape/Shape.h>
+#include <Jolt/Math/Real.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
-#include <Jolt/Math/Real.h>
+#include <Jolt/Physics/Collision/Shape/Shape.h>
 
-#include <cxxabi.h>
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cxxabi.h>
 #include <sstream>
 #include <vector>
 
@@ -35,12 +35,13 @@ namespace DetourNavigator
             return JPH::RVec3(result.x(), result.y(), result.z());
         }
 
-        void walkShapeTriangles(const JPH::Shape& shape, const JPH::AABox& bounds, TriangleWalkerFunc& walkerFunc, JPH::Vec3 localScale = JPH::Vec3::sReplicate(1.0f), JPH::Quat rotation = JPH::Quat::sIdentity())
+        void walkShapeTriangles(const JPH::Shape& shape, const JPH::AABox& bounds, TriangleWalkerFunc& walkerFunc,
+            JPH::Vec3 localScale = JPH::Vec3::sReplicate(1.0f), JPH::Quat rotation = JPH::Quat::sIdentity())
         {
             // Start iterating all triangles of the shape
             JPH::Shape::GetTrianglesContext context;
             shape.GetTrianglesStart(context, bounds, JPH::Vec3::sZero(), rotation, localScale);
-            
+
             int triangleIndex = 0;
             constexpr int cMaxTrianglesInBatch = 256;
             JPH::Float3 vertices[3 * cMaxTrianglesInBatch];
@@ -56,24 +57,31 @@ namespace DetourNavigator
                     walkerFunc(vertices[vertex + 0], vertices[vertex + 1], vertices[vertex + 2], triangleIndex);
             }
         }
-        
-        inline bool TestTriangleAgainstAabb2(const JPH::RVec3 *vertices, const JPH::RVec3 &aabbMin, const JPH::RVec3& aabbMax)
+
+        inline bool TestTriangleAgainstAabb2(
+            const JPH::RVec3* vertices, const JPH::RVec3& aabbMin, const JPH::RVec3& aabbMax)
         {
-            const JPH::RVec3 &p1 = vertices[0];
-            const JPH::RVec3 &p2 = vertices[1];
-            const JPH::RVec3 &p3 = vertices[2];
+            const JPH::RVec3& p1 = vertices[0];
+            const JPH::RVec3& p2 = vertices[1];
+            const JPH::RVec3& p3 = vertices[2];
 
-            if (std::min(std::min(p1.GetX(), p2.GetX()), p3.GetX()) > aabbMax.GetX()) return false;
-            if (std::max(std::max(p1.GetX(), p2.GetX()), p3.GetX()) < aabbMin.GetX()) return false;
+            if (std::min(std::min(p1.GetX(), p2.GetX()), p3.GetX()) > aabbMax.GetX())
+                return false;
+            if (std::max(std::max(p1.GetX(), p2.GetX()), p3.GetX()) < aabbMin.GetX())
+                return false;
 
-            if (std::min(std::min(p1.GetZ(), p2.GetZ()), p3.GetZ()) > aabbMax.GetZ()) return false;
-            if (std::max(std::max(p1.GetZ(), p2.GetZ()), p3.GetZ()) < aabbMin.GetZ()) return false;
-        
-            if (std::min(std::min(p1.GetY(), p2.GetY()), p3.GetY()) > aabbMax.GetY()) return false;
-            if (std::max(std::max(p1.GetY(), p2.GetY()), p3.GetY()) < aabbMin.GetY()) return false;
+            if (std::min(std::min(p1.GetZ(), p2.GetZ()), p3.GetZ()) > aabbMax.GetZ())
+                return false;
+            if (std::max(std::max(p1.GetZ(), p2.GetZ()), p3.GetZ()) < aabbMin.GetZ())
+                return false;
+
+            if (std::min(std::min(p1.GetY(), p2.GetY()), p3.GetY()) > aabbMax.GetY())
+                return false;
+            if (std::max(std::max(p1.GetY(), p2.GetY()), p3.GetY()) < aabbMin.GetY())
+                return false;
             return true;
         }
-        
+
         RecastMeshTriangle makeRecastMeshTriangle(const JPH::RVec3* vertices, const AreaType areaType)
         {
             RecastMeshTriangle result;
@@ -178,16 +186,14 @@ namespace DetourNavigator
     {
     }
 
-    void RecastMeshBuilder::addObject(const JPH::Shape& shape, const osg::Matrixd& transform,
-        const AreaType areaType, osg::ref_ptr<const Resource::PhysicsShape> source,
-        const ObjectTransform& objectTransform)
+    void RecastMeshBuilder::addObject(const JPH::Shape& shape, const osg::Matrixd& transform, const AreaType areaType,
+        osg::ref_ptr<const Resource::PhysicsShape> source, const ObjectTransform& objectTransform)
     {
         addObject(shape, transform, areaType);
         mSources.push_back(MeshSource{ std::move(source), objectTransform, areaType });
     }
 
-    void RecastMeshBuilder::addObject(
-        const JPH::Shape& shape, const osg::Matrixd& transform, const AreaType areaType)
+    void RecastMeshBuilder::addObject(const JPH::Shape& shape, const osg::Matrixd& transform, const AreaType areaType)
     {
         if (dynamic_cast<const JPH::CompoundShape*>(&shape))
             return addObject(static_cast<const JPH::CompoundShape&>(shape), transform, areaType);
@@ -221,8 +227,7 @@ namespace DetourNavigator
     {
         // FIXME: we can optimize this by not having a callback for each triangle
         // but instead process in batches when reading from the jolt shape
-        TriangleProcessFunc callback = [&](JPH::RVec3* vertices, int, int)
-        {
+        TriangleProcessFunc callback = [&](JPH::RVec3* vertices, int, int) {
             RecastMeshTriangle triangle = makeRecastMeshTriangle(vertices, areaType);
             std::reverse(triangle.mVertices.begin(), triangle.mVertices.end());
             mTriangles.emplace_back(triangle);
@@ -235,17 +240,16 @@ namespace DetourNavigator
     {
         // FIXME: we can optimize this by not having a callback for each triangle
         // but instead process in batches when reading from the jolt shape
-        TriangleProcessFunc callback = [&](JPH::RVec3* vertices, int, int)
-        {
+        TriangleProcessFunc callback = [&](JPH::RVec3* vertices, int, int) {
             mTriangles.emplace_back(makeRecastMeshTriangle(vertices, areaType));
         };
         addObject(shape, transform, callback);
     }
 
-    void RecastMeshBuilder::addObject(const JPH::BoxShape& shape, const osg::Matrixd& transform, const AreaType areaType)
+    void RecastMeshBuilder::addObject(
+        const JPH::BoxShape& shape, const osg::Matrixd& transform, const AreaType areaType)
     {
-        TriangleWalkerFunc walkerFunc = [&](JPH::Float3& v1, JPH::Float3& v2, JPH::Float3& v3, int)
-        {
+        TriangleWalkerFunc walkerFunc = [&](JPH::Float3& v1, JPH::Float3& v2, JPH::Float3& v3, int) {
             // Convert to a world space triangle set
             std::array<JPH::RVec3, 3> transformed;
             transformed[0] = joltTransformMult(v1, transform);
@@ -275,7 +279,8 @@ namespace DetourNavigator
         if (!intersection.has_value())
             return;
 
-        const osg::Vec3f shift = PhysicsSystemHelpers::getHeightfieldShift(cellPosition.x(), cellPosition.y(), cellSize, minHeight, maxHeight);
+        const osg::Vec3f shift = PhysicsSystemHelpers::getHeightfieldShift(
+            cellPosition.x(), cellPosition.y(), cellSize, minHeight, maxHeight);
         const float stepSize = getHeightfieldScale(cellSize, size);
         const int halfCellSize = cellSize / 2;
         const auto local = [&](float v, float shift) { return (v - shift + halfCellSize) / stepSize; };
@@ -330,8 +335,7 @@ namespace DetourNavigator
             std::numeric_limits<double>::max() * std::numeric_limits<double>::epsilon());
 
         // Convert to a world space triangle set
-        TriangleWalkerFunc walkerFunc = [&](JPH::Float3& v1, JPH::Float3& v2, JPH::Float3& v3, int triangleIndex)
-        {
+        TriangleWalkerFunc walkerFunc = [&](JPH::Float3& v1, JPH::Float3& v2, JPH::Float3& v3, int triangleIndex) {
             std::array<JPH::RVec3, 3> transformed;
             transformed[0] = joltTransformMult(v1, transform);
             transformed[1] = joltTransformMult(v2, transform);
@@ -363,12 +367,11 @@ namespace DetourNavigator
         bounds.mMax.SetX(std::min(static_cast<float>(mBounds.mMax.x()), bounds.mMax.GetX()));
         bounds.mMax.SetY(std::max(static_cast<float>(mBounds.mMin.y()), bounds.mMax.GetY()));
         bounds.mMax.SetY(std::min(static_cast<float>(mBounds.mMax.y()), bounds.mMax.GetY()));
-        
+
         JPH::RMat44 inverseMatrix = joltTransform.Inversed();
         transformBoundingBox(inverseMatrix, bounds.mMin, bounds.mMax);
 
-        TriangleWalkerFunc walkerFunc = [&](JPH::Float3& v1, JPH::Float3& v2, JPH::Float3& v3, int triangleIndex)
-        {
+        TriangleWalkerFunc walkerFunc = [&](JPH::Float3& v1, JPH::Float3& v2, JPH::Float3& v3, int triangleIndex) {
             // Convert to a world space triangle set
             std::array<JPH::RVec3, 3> transformed;
             transformed[0] = joltTransformMult(v1, transform);

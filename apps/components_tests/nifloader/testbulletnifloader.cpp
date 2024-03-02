@@ -495,8 +495,7 @@ namespace
         EXPECT_EQ(*result, expected);
     }
 
-    TEST_F(
-        TestJoltNifLoader, for_root_and_two_children_where_both_with_bounds_but_one_is_bounding_box_use_bounding_box)
+    TEST_F(TestJoltNifLoader, for_root_and_two_children_where_both_with_bounds_but_one_is_bounding_box_use_bounding_box)
     {
         mNode.mName = "Bounding Box";
         mNode.mBounds.mType = Nif::BoundingVolume::Type::BOX_BV;
@@ -527,8 +526,8 @@ namespace
         EXPECT_EQ(*result, expected);
     }
 
-    TEST_F(TestJoltNifLoader,
-        for_root_and_two_children_where_both_with_bounds_but_second_is_bounding_box_use_bounding_box)
+    TEST_F(
+        TestJoltNifLoader, for_root_and_two_children_where_both_with_bounds_but_second_is_bounding_box_use_bounding_box)
     {
         mNode.mBounds.mType = Nif::BoundingVolume::Type::BOX_BV;
         mNode.mBounds.mBox.mExtents = osg::Vec3f(1, 2, 3);
@@ -988,8 +987,8 @@ namespace
         EXPECT_EQ(*result, expected);
     }
 
-    TEST_F(TestJoltNifLoader,
-        for_root_node_with_extra_data_string_equal_ncc_should_return_shape_with_cameraonly_collision)
+    TEST_F(
+        TestJoltNifLoader, for_root_node_with_extra_data_string_equal_ncc_should_return_shape_with_cameraonly_collision)
     {
         mNiStringExtraData.mData = "NCC__";
         mNiStringExtraData.recType = Nif::RC_NiStringExtraData;
