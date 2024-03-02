@@ -163,14 +163,12 @@ namespace
 
                 const auto start = (center + toPoint) * transform;
                 const auto startPoint = physics.castRay(start, start - osg::Vec3f(0, 0, 1000), { ptr }, {},
-                    MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP
-                        | MWPhysics::Layers::WATER);
+                    MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::WATER);
                 const auto connectionStart = startPoint.mHit ? startPoint.mHitPos : start;
 
                 const auto end = (center - toPoint) * transform;
                 const auto endPoint = physics.castRay(end, end - osg::Vec3f(0, 0, 1000), { ptr }, {},
-                    MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP
-                        | MWPhysics::Layers::WATER);
+                    MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::WATER);
                 const auto connectionEnd = endPoint.mHit ? endPoint.mHitPos : end;
 
                 navigator.addObject(DetourNavigator::ObjectId(object),
@@ -800,7 +798,8 @@ namespace MWWorld
         if (old.mCell == &cell)
         {
             // We can optimize physics collisions when rapidly changing dataset (such as interior load)
-            if (!isExterior) {
+            if (!isExterior)
+            {
                 mPhysics->optimize();
             }
 

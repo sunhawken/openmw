@@ -11,12 +11,11 @@
 #include <osg/ref_ptr>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Geometry/Triangle.h>
-#include <Jolt/Physics/Collision/Shape/MeshShape.h>
-#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
-#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/nif/niffile.hpp>

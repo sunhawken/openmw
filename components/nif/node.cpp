@@ -3,10 +3,9 @@
 #include <cstdint>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Geometry/Triangle.h>
+#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
-#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 
 #include <components/misc/convert.hpp>
@@ -35,9 +34,8 @@ namespace
     void trianglesToJPHMeshShape(JPH::MeshShapeSettings& mesh, const std::vector<unsigned short>& triangles)
     {
         for (std::size_t i = 0; i < triangles.size(); i += 3)
-            mesh.mIndexedTriangles.push_back(
-                JPH::IndexedTriangle(uint32_t(triangles[i + 0]), uint32_t(triangles[i + 1]), uint32_t(triangles[i + 2]))
-            );
+            mesh.mIndexedTriangles.push_back(JPH::IndexedTriangle(
+                uint32_t(triangles[i + 0]), uint32_t(triangles[i + 1]), uint32_t(triangles[i + 2])));
     }
 
     void stripsToJPHMeshShape(JPH::MeshShapeSettings& mesh, const std::vector<std::vector<unsigned short>>& strips)

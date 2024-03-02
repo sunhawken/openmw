@@ -8,10 +8,9 @@
 #include <osg/TriangleFunctor>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Geometry/Triangle.h>
+#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
-#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 
 #include <components/misc/osguservalues.hpp>
@@ -24,10 +23,10 @@
 
 #include <components/misc/convert.hpp>
 
-#include "physicsshape.hpp"
 #include "multiobjectcache.hpp"
 #include "niffilemanager.hpp"
 #include "objectcache.hpp"
+#include "physicsshape.hpp"
 #include "scenemanager.hpp"
 
 namespace Resource
@@ -55,15 +54,7 @@ namespace Resource
                 mTriMesh->mTriangleVertices.push_back(Misc::Convert::toJolt<JPH::Float3>(mMatrix.preMult(v1)));
                 mTriMesh->mTriangleVertices.push_back(Misc::Convert::toJolt<JPH::Float3>(mMatrix.preMult(v2)));
                 mTriMesh->mTriangleVertices.push_back(Misc::Convert::toJolt<JPH::Float3>(mMatrix.preMult(v3)));
-
-                mTriMesh->mIndexedTriangles.push_back(
-                    JPH::IndexedTriangle(
-                        sizeC + 0,
-                        sizeC + 1,
-                        sizeC + 2
-                    )
-                );
-
+                mTriMesh->mIndexedTriangles.push_back(JPH::IndexedTriangle(sizeC + 0, sizeC + 1, sizeC + 2));
             }
         }
 

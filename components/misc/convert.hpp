@@ -9,9 +9,9 @@
 #include <Jolt/Math/Mat44.h>
 #include <Jolt/Math/Real.h>
 
+#include <osg/Matrixd>
 #include <osg/Quat>
 #include <osg/Vec3f>
-#include <osg/Matrixd>
 
 namespace Misc::Convert
 {
@@ -87,7 +87,8 @@ namespace Misc::Convert
     }
 
     template <typename T>
-    inline T* toPointerFromUserData(uint64_t userData) {
+    inline T* toPointerFromUserData(uint64_t userData)
+    {
         if (userData > 0)
         {
             // Converts from userdata uintptr to class type
@@ -116,8 +117,7 @@ namespace Misc::Convert
 
     inline osg::Quat makeQuaternion(const float (&rotation)[3])
     {
-        return osg::Quat(0, 0, -1, rotation[2]) * osg::Quat(0, -1, 0, rotation[1])
-            * osg::Quat(-1, 0, 0, rotation[0]);
+        return osg::Quat(0, 0, -1, rotation[2]) * osg::Quat(0, -1, 0, rotation[1]) * osg::Quat(-1, 0, 0, rotation[0]);
     }
 
     inline osg::Quat makeQuaternion(const ESM::Position& position)

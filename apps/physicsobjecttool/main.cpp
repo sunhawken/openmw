@@ -25,9 +25,9 @@
 #include <components/vfs/manager.hpp>
 #include <components/vfs/registerarchives.hpp>
 
+#include <Jolt/Core/Factory.h>
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
-#include <Jolt/Core/Factory.h>
 
 #include <boost/program_options.hpp>
 
@@ -185,8 +185,8 @@ namespace
         Resource::SceneManager sceneManager(&vfs, &imageManager, &nifFileManager, expiryDelay);
         Resource::PhysicsShapeManager physicsShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
 
-        Resource::forEachPhysicsObject(
-            readers, vfs, physicsShapeManager, esmData, [](const ESM::Cell& cell, const Resource::PhysicsObject& object) {
+        Resource::forEachPhysicsObject(readers, vfs, physicsShapeManager, esmData,
+            [](const ESM::Cell& cell, const Resource::PhysicsObject& object) {
                 Log(Debug::Verbose) << "Found physics object in " << (cell.isExterior() ? "exterior" : "interior")
                                     << " cell \"" << cell.getDescription() << "\":"
                                     << " fileName=\"" << object.mShape->mFileName << '"'

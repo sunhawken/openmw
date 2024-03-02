@@ -11,8 +11,8 @@
 #include <unordered_set>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyManager.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 
 #include <osg/Timer>
 
@@ -46,7 +46,8 @@ namespace MWPhysics
     class PhysicsTaskScheduler
     {
     public:
-        PhysicsTaskScheduler(float physicsDt, JPH::PhysicsSystem* physicsSystem, MWRender::JoltDebugDrawer* debugDrawer, JPH::JobSystem* jobSystem);
+        PhysicsTaskScheduler(float physicsDt, JPH::PhysicsSystem* physicsSystem, MWRender::JoltDebugDrawer* debugDrawer,
+            JPH::JobSystem* jobSystem);
         ~PhysicsTaskScheduler();
 
         /// @brief move actors taking into account desired movements and collisions
@@ -73,13 +74,12 @@ namespace MWPhysics
         void releaseSharedStates(); // destroy all objects whose destructor can't be safely called from
                                     // ~PhysicsTaskScheduler()
 
-        inline const JPH::BodyLockInterfaceLocking& getBodyLockInterface() const {
+        inline const JPH::BodyLockInterfaceLocking& getBodyLockInterface() const
+        {
             return mPhysicsSystem->GetBodyLockInterface();
         }
 
-        inline JPH::BodyInterface& getBodyInterface() {
-            return mPhysicsSystem->GetBodyInterface();
-        }
+        inline JPH::BodyInterface& getBodyInterface() { return mPhysicsSystem->GetBodyInterface(); }
 
     private:
         class WorkersSync;
