@@ -1,13 +1,13 @@
 #include "movementsolver.hpp"
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
-#include <Jolt/Physics/Collision/ShapeFilter.h>
 #include <Jolt/Physics/Collision/CollisionDispatch.h>
 #include <Jolt/Physics/Collision/RayCast.h>
-#include <Jolt/Physics/Body/BodyFilter.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/Collision/ShapeFilter.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadgmst.hpp>
@@ -18,15 +18,14 @@
 #include "../mwworld/esmstore.hpp"
 
 #include "actor.hpp"
-#include "joltlayers.hpp"
 #include "constants.hpp"
+#include "joltfilters.hpp"
+#include "joltlayers.hpp"
 #include "object.hpp"
 #include "physicssystem.hpp"
 #include "projectile.hpp"
 #include "stepper.hpp"
 #include "trace.h"
-#include "joltfilters.hpp"
-#include "joltlayers.hpp"
 
 #include <cmath>
 
@@ -45,7 +44,9 @@ namespace MWPhysics
         {
         public:
             explicit ContactCollectionCallback(const osg::Vec3f& velocity)
-                : mVelocity(Misc::Convert::toJolt<JPH::Vec3>(velocity)) { }
+                : mVelocity(Misc::Convert::toJolt<JPH::Vec3>(velocity))
+            {
+            }
 
             virtual void AddHit(const JPH::CollideShapeResult& inResult) override
             {
@@ -74,7 +75,6 @@ namespace MWPhysics
                     UpdateEarlyOutFraction(early_out);
                 }
             }
-
 
             float mMaxX = 0.0;
             float mMaxY = 0.0;
@@ -115,7 +115,8 @@ namespace MWPhysics
         MultiObjectLayerFilter objectLayerFilter({ Layers::WORLD, Layers::HEIGHTMAP });
 
         // Cast ray and return closest hit
-        const bool didRayHit = physicsSystem->GetNarrowPhaseQuery().CastRay(ray, ioHit, broadphaseLayerFilter, objectLayerFilter);
+        const bool didRayHit
+            = physicsSystem->GetNarrowPhaseQuery().CastRay(ray, ioHit, broadphaseLayerFilter, objectLayerFilter);
         if (didRayHit)
         {
             JPH::RVec3 hitPointWorld = ray.GetPointOnRay(ioHit.mFraction);
@@ -142,7 +143,7 @@ namespace MWPhysics
         ActorFrameData& actor, float time, const JPH::PhysicsSystem* physicsSystem, const WorldFrameData& worldData)
     {
         const int collisionMask = actor.mCollisionMask;
-        
+
         // Reset per-frame data
         actor.mWalkingOnWater = false;
         // Anything to collide with?
@@ -236,7 +237,8 @@ namespace MWPhysics
             if ((newPosition - nextpos).length2() > 0.0001)
             {
                 // trace to where character would go if there were no obstructions
-                tracer.doTrace(actor.mPhysicsBody, newPosition, nextpos, physicsSystem, collisionMask, actor.mIsOnGround);
+                tracer.doTrace(
+                    actor.mPhysicsBody, newPosition, nextpos, physicsSystem, collisionMask, actor.mIsOnGround);
 
                 // check for obstructions
                 if (tracer.mFraction >= 1.0f)
@@ -267,10 +269,12 @@ namespace MWPhysics
                 {
                     // Try to step up onto it.
                     // NOTE: this modifies newPosition and velocity on its own if successful
-                    usedStepLogic = stepper.step(newPosition, velocity, remainingTime, seenGround, iterations == 0, collisionMask);
+                    usedStepLogic = stepper.step(
+                        newPosition, velocity, remainingTime, seenGround, iterations == 0, collisionMask);
                 }
 
-                if (tracer.mHitObject->GetObjectLayer() != Layers::WATER) {
+                if (tracer.mHitObject->GetObjectLayer() != Layers::WATER)
+                {
                     Object* hitObject = Misc::Convert::toPointerFromUserData<Object>(tracer.mHitObject->GetUserData());
                     if (hitObject != nullptr)
                     {
@@ -511,7 +515,6 @@ namespace MWPhysics
         osg::Vec3f refPosition = tempPosition + verticalHalfExtent;
         osg::Vec3f goodPosition = refPosition;
 
-
         JPH::BodyLockRead lock(physicsSystem->GetBodyLockInterface(), actor.mPhysicsBody);
         if (lock.Succeeded())
         {
@@ -522,23 +525,25 @@ namespace MWPhysics
             JPH::RMat44 oldTransformJolt(trans);
             JPH::RMat44 newTransformJolt(oldTransformJolt);
             const JPH::Vec3 scale = JPH::Vec3::sReplicate(1.0f);
-            
+
             // Create a mask that is same of the actor minus projectiles and other actors
             int collisionMask = actor.mCollisionMask;
             collisionMask = collisionMask & ~Layers::PROJECTILE;
             collisionMask = collisionMask & ~Layers::ACTOR;
 
             // Filter out layers
-            JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter = physicsSystem->GetDefaultBroadPhaseLayerFilter(Layers::ACTOR);
+            JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
+                = physicsSystem->GetDefaultBroadPhaseLayerFilter(Layers::ACTOR);
             MaskedObjectLayerFilter objectLayerFilter(collisionMask);
             lock.ReleaseLock();
 
             JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();
-            
+
             auto gatherContacts = [&](JPH::Vec3 newOffset) -> ContactCollectionCallback {
                 goodPosition = refPosition + Misc::Convert::toOsg(addMarginToDelta(newOffset));
                 newTransformJolt.SetTranslation(Misc::Convert::toJolt<JPH::RVec3>(goodPosition));
-                bodyInterface.SetPosition(actor.mPhysicsBody, newTransformJolt.GetTranslation(), JPH::EActivation::Activate);
+                bodyInterface.SetPosition(
+                    actor.mPhysicsBody, newTransformJolt.GetTranslation(), JPH::EActivation::Activate);
 
                 // Collide with all edges, dont collect face data and ignore backfaces
                 JPH::CollideShapeSettings settings;
@@ -551,7 +556,8 @@ namespace MWPhysics
 
                 // Query against actor shape
                 ContactCollectionCallback ioCollector(velocity);
-                physicsSystem->GetNarrowPhaseQuery().CollideShape(shape, scale, newTransformJolt, settings, JPH::RVec3::sZero(), ioCollector, broadphaseLayerFilter, objectLayerFilter, bodyFilter);
+                physicsSystem->GetNarrowPhaseQuery().CollideShape(shape, scale, newTransformJolt, settings,
+                    JPH::RVec3::sZero(), ioCollector, broadphaseLayerFilter, objectLayerFilter, bodyFilter);
                 return ioCollector;
             };
 
@@ -600,7 +606,8 @@ namespace MWPhysics
                 actor.mLastStuckPosition = { 0, 0, 0 };
             }
 
-            bodyInterface.SetPosition(actor.mPhysicsBody, oldTransformJolt.GetTranslation(), JPH::EActivation::Activate);
+            bodyInterface.SetPosition(
+                actor.mPhysicsBody, oldTransformJolt.GetTranslation(), JPH::EActivation::Activate);
             actor.mPosition = tempPosition;
         }
         else

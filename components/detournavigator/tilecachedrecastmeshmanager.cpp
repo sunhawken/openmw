@@ -8,8 +8,8 @@
 #include "updateguard.hpp"
 
 #include <components/debug/debuglog.hpp>
-#include <components/physicshelpers/aabb.hpp>
 #include <components/misc/convert.hpp>
+#include <components/physicshelpers/aabb.hpp>
 
 #include <boost/geometry/geometry.hpp>
 
@@ -167,19 +167,19 @@ namespace DetourNavigator
             if (it != mObjects.end())
                 return false;
             const std::size_t revision = mRevision + 1;
-            ObjectData* const dataPtr
-                = mObjects
-                      .emplace_hint(it, id,
-                          std::unique_ptr<ObjectData>(new ObjectData{
-                              .mObject = RecastMeshObject(shape, transform, areaType),
-                              .mRange = range,
-                              .mAabb = CommulativeAabb(revision, PhysicsSystemHelpers::getAabb(shape.getShape(), transform)),
-                              .mGeneration = mGeneration,
-                              .mRevision = revision,
-                              .mLastNavMeshReportedChange = {},
-                              .mLastNavMeshReport = {},
-                          }))
-                      ->second.get();
+            ObjectData* const dataPtr = mObjects
+                                            .emplace_hint(it, id,
+                                                std::unique_ptr<ObjectData>(new ObjectData{
+                                                    .mObject = RecastMeshObject(shape, transform, areaType),
+                                                    .mRange = range,
+                                                    .mAabb = CommulativeAabb(revision,
+                                                        PhysicsSystemHelpers::getAabb(shape.getShape(), transform)),
+                                                    .mGeneration = mGeneration,
+                                                    .mRevision = revision,
+                                                    .mLastNavMeshReportedChange = {},
+                                                    .mLastNavMeshReport = {},
+                                                }))
+                                            ->second.get();
             assert(range.mBegin != range.mEnd);
             mObjectIndex.insert(makeObjectIndexValue(range, dataPtr));
             mRevision = revision;

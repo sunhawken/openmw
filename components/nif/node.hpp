@@ -8,7 +8,8 @@
 
 #include "base.hpp"
 
-namespace JPH {
+namespace JPH
+{
     class MeshShapeSettings;
 }
 

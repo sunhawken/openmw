@@ -4,8 +4,8 @@
 #include <osg/Vec3f>
 
 #include <Jolt/Jolt.h>
-#include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyID.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 
 namespace MWPhysics
 {
@@ -23,8 +23,8 @@ namespace MWPhysics
 
         void doTrace(const JPH::BodyID actor, const osg::Vec3f& start, const osg::Vec3f& end,
             const JPH::PhysicsSystem* world, const int collisionMask, bool attempt_short_trace = false);
-        void findGround(
-            const Actor* actor, const osg::Vec3f& start, const osg::Vec3f& end, const JPH::PhysicsSystem* physicsSystem);
+        void findGround(const Actor* actor, const osg::Vec3f& start, const osg::Vec3f& end,
+            const JPH::PhysicsSystem* physicsSystem);
     };
 }
 

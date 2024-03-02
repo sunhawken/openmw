@@ -13,8 +13,8 @@
 #include <components/misc/resourcehelpers.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/strings/lower.hpp>
-#include <components/resource/physicsshapemanager.hpp>
 #include <components/resource/keyframemanager.hpp>
+#include <components/resource/physicsshapemanager.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/terrain/view.hpp>

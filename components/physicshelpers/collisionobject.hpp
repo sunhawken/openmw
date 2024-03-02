@@ -13,21 +13,18 @@
 namespace PhysicsSystemHelpers
 {
     // TODO: probably should return a pointer... this will clone shit????
-    inline JPH::BodyCreationSettings makePhysicsBodySettings(
-        const JPH::Shape* shape, const osg::Vec3f& position, const osg::Quat& rotation, const JPH::ObjectLayer collisionLayer, const JPH::EMotionType motionType = JPH::EMotionType::Static)
+    inline JPH::BodyCreationSettings makePhysicsBodySettings(const JPH::Shape* shape, const osg::Vec3f& position,
+        const osg::Quat& rotation, const JPH::ObjectLayer collisionLayer,
+        const JPH::EMotionType motionType = JPH::EMotionType::Static)
     {
-        JPH::BodyCreationSettings settings(
-            shape,
-            Misc::Convert::toJolt<JPH::RVec3>(position),
-            Misc::Convert::toJolt(rotation),
-            motionType,
-            collisionLayer
-        );
+        JPH::BodyCreationSettings settings(shape, Misc::Convert::toJolt<JPH::RVec3>(position),
+            Misc::Convert::toJolt(rotation), motionType, collisionLayer);
         return settings;
     }
 
-    inline JPH::BodyCreationSettings makePhysicsBodySettings(
-        JPH::ShapeSettings* shape, const osg::Vec3f& position, const osg::Quat& rotation, const JPH::ObjectLayer collisionLayer, const JPH::EMotionType motionType = JPH::EMotionType::Static)
+    inline JPH::BodyCreationSettings makePhysicsBodySettings(JPH::ShapeSettings* shape, const osg::Vec3f& position,
+        const osg::Quat& rotation, const JPH::ObjectLayer collisionLayer,
+        const JPH::EMotionType motionType = JPH::EMotionType::Static)
     {
         auto createRes = shape->Create();
         if (createRes.HasError())

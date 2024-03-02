@@ -6,8 +6,8 @@
 #include <components/misc/constants.hpp>
 
 #include "constants.hpp"
-#include "movementsolver.hpp"
 #include "joltlayers.hpp"
+#include "movementsolver.hpp"
 
 namespace MWPhysics
 {
@@ -18,7 +18,7 @@ namespace MWPhysics
         static const float sMaxSlopeCos = std::cos(osg::DegreesToRadians(Constants::sMaxSlope));
         if (stepper.mPlaneNormal.z() <= sMaxSlopeCos)
             return false;
-        
+
         return stepper.mHitObjectLayer != Layers::ACTOR;
     }
 
@@ -28,8 +28,8 @@ namespace MWPhysics
     {
     }
 
-    bool Stepper::step(
-        osg::Vec3f& position, osg::Vec3f& velocity, float& remainingTime, const bool& onGround, bool firstIteration, const int collisionMask)
+    bool Stepper::step(osg::Vec3f& position, osg::Vec3f& velocity, float& remainingTime, const bool& onGround,
+        bool firstIteration, const int collisionMask)
     {
         if (velocity.x() == 0.0 && velocity.y() == 0.0)
             return false;
@@ -37,8 +37,8 @@ namespace MWPhysics
         // Stairstepping algorithms work by moving up to avoid the step, moving forwards, then moving back down onto the
         // ground. This algorithm has a couple of minor problems, but they don't cause problems for sane geometry, and
         // just prevent stepping on insane geometry.
-        mUpStepper.doTrace(
-            mColObj, position, position + osg::Vec3f(0.0f, 0.0f, Constants::sStepSizeUp), mColWorld, collisionMask, onGround);
+        mUpStepper.doTrace(mColObj, position, position + osg::Vec3f(0.0f, 0.0f, Constants::sStepSizeUp), mColWorld,
+            collisionMask, onGround);
 
         float upDistance = 0;
         if (!mUpStepper.mHitObject)
@@ -121,8 +121,8 @@ namespace MWPhysics
                 downStepSize = upDistance;
             else
                 downStepSize = moveDistance + upDistance + sStepSizeDown;
-            mDownStepper.doTrace(
-                mColObj, tracerDest, tracerDest + osg::Vec3f(0.0f, 0.0f, -downStepSize), mColWorld, collisionMask, onGround);
+            mDownStepper.doTrace(mColObj, tracerDest, tracerDest + osg::Vec3f(0.0f, 0.0f, -downStepSize), mColWorld,
+                collisionMask, onGround);
 
             // can't step down onto air, non-walkable-slopes, or actors
             // NOTE: using a capsule causes isWalkableSlope (used in canStepDown) to fail on certain geometry that were

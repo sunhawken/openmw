@@ -6,9 +6,9 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 
-#include <components/physicshelpers/heightfield.hpp>
 #include <components/debug/debuglog.hpp>
 #include <components/misc/convert.hpp>
+#include <components/physicshelpers/heightfield.hpp>
 
 #include "heightfield.hpp"
 #include "mtphysics.hpp"
@@ -25,7 +25,8 @@ namespace MWPhysics
 
         // Determine scale and offset
         JPH::Vec3 mTerrainOffset = JPH::Vec3(float(size) / 2.0f - float(size), 0.0f, float(size) / 2.0f - float(size));
-        JPH::Vec3 mTerrainScale = JPH::Vec3(scaling, 1.0f, scaling); // NOTE: jolt heightfield is Y up, its rotated below
+        JPH::Vec3 mTerrainScale
+            = JPH::Vec3(scaling, 1.0f, scaling); // NOTE: jolt heightfield is Y up, its rotated below
 
         // Create height field
         JPH::HeightFieldShapeSettings shapeSettings(heights, mTerrainOffset, mTerrainScale, verts);
@@ -40,13 +41,9 @@ namespace MWPhysics
         // Create a quaternion representing a rotation of 90 degrees around the X-axis
         JPH::Quat rotation = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH::DegreesToRadians(90.0f));
 
-        JPH::BodyCreationSettings bodyCreationSettings(
-            mShapeReference,
-            JPH::RVec3(mWorldOrigin.x(), mWorldOrigin.y(), 0.0f),
-            rotation,
-            JPH::EMotionType::Static,
-            Layers::HEIGHTMAP
-        );
+        JPH::BodyCreationSettings bodyCreationSettings(mShapeReference,
+            JPH::RVec3(mWorldOrigin.x(), mWorldOrigin.y(), 0.0f), rotation, JPH::EMotionType::Static,
+            Layers::HEIGHTMAP);
 
         mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
         mTaskScheduler->addCollisionObject(mPhysicsBody);

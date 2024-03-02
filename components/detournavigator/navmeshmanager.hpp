@@ -9,8 +9,8 @@
 #include "recastmeshtiles.hpp"
 #include "waitconditiontype.hpp"
 
-#include <osg/Vec3f>
 #include <osg/Matrixd>
+#include <osg/Vec3f>
 
 #include <map>
 #include <memory>

@@ -9,10 +9,10 @@
 #include <osg/Vec3f>
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <tuple>
 #include <vector>
-#include <functional>
 
 namespace JPH
 {
@@ -74,7 +74,8 @@ namespace DetourNavigator
 
         inline void addObject(const JPH::Shape& shape, const osg::Matrixd& transform, const AreaType areaType);
 
-        void addObject(const JPH::MeshShape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle);
+        void addObject(
+            const JPH::MeshShape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle);
 
         void addObject(
             const JPH::HeightFieldShape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle);
