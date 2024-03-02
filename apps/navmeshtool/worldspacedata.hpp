@@ -5,8 +5,9 @@
 #include <string>
 #include <vector>
 
-#include <Jolt/Geometry/AABox.h>
 #include <Jolt/Jolt.h>
+#include <Jolt/Physics/Body/Body.h>
+#include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 
 #include <components/detournavigator/tilecachedrecastmeshmanager.hpp>
@@ -63,22 +64,21 @@ namespace NavMeshTool
             float localScaling)
             : mShapeInstance(std::move(shapeInstance))
             , mObjectTransform{ position, localScaling }
-
-            , mCollisionObject(PhysicsSystemHelpers::makeCollisionObject(
-                  mShapeInstance->mCollisionShape, position.asVec3(), Misc::Convert::makeOsgQuat(position)))
         {
-            // TOOD: create jph body from settings as mCollisionObject
             mShapeInstance->setLocalScaling(osg::Vec3f(localScaling, localScaling, localScaling));
+            worldTransform.setTrans(position.asVec3());
+            worldTransform.setRotate(Misc::Convert::makeOsgQuat(position));
         }
 
         const osg::ref_ptr<Resource::PhysicsShapeInstance>& getShapeInstance() const noexcept { return mShapeInstance; }
         const DetourNavigator::ObjectTransform& getObjectTransform() const noexcept { return mObjectTransform; }
-        JPH::Body& getCollisionObject() const noexcept { return *mCollisionObject; }
+        JPH::Shape& getShape() const noexcept { return *mShapeInstance->mCollisionShape.GetPtr(); }
+        const osg::Matrixd& getWorldTransform() const noexcept { return worldTransform; }
 
     private:
         osg::ref_ptr<Resource::PhysicsShapeInstance> mShapeInstance;
         DetourNavigator::ObjectTransform mObjectTransform;
-        std::unique_ptr<JPH::Body> mCollisionObject;
+        osg::Matrixd worldTransform;
     };
 
     struct WorldspaceData
