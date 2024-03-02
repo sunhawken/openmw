@@ -267,8 +267,8 @@ namespace NavMeshTool
 
         for (const std::unique_ptr<WorldspaceNavMeshInput>& input : data.mNavMeshInputs)
         {
-            const auto range = DetourNavigator::makeTilesPositionsRange(Misc::Convert::toOsgXY(input->mAabb.m_min),
-                Misc::Convert::toOsgXY(input->mAabb.m_max), settings.mRecast);
+            const auto range = DetourNavigator::makeTilesPositionsRange(
+                Misc::Convert::toOsgXY(input->mAabb.mMin), Misc::Convert::toOsgXY(input->mAabb.mMax), settings.mRecast);
 
             if (removeUnusedTiles)
                 navMeshTileConsumer->removeTilesOutsideRange(input->mWorldspace, range);

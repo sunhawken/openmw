@@ -186,7 +186,7 @@ namespace NavMeshTool
         void mergeOrAssign(const JPH::AABox& aabb, JPH::AABox& target, bool& initialized)
         {
             if (initialized)
-                return target.merge(aabb);
+                return target.Encapsulate(aabb);
 
             target.mMin = aabb.mMin;
             target.mMax = aabb.mMax;
@@ -318,23 +318,22 @@ namespace NavMeshTool
                 if (object.getShapeInstance()->mVisualCollisionType != Resource::VisualCollisionType::None)
                     return;
 
-                const btTransform& transform = object.getCollisionObject().getWorldTransform();
-                const JPH::AABox aabb
-                    = PhysicsSystemHelpers::getAabb(*object.getCollisionObject().getCollisionShape(), transform);
+                const JPH::Shape& collisionShape = object.getShape();
+                const auto& transform = object.getWorldTransform();
+                const JPH::AABox aabb = PhysicsSystemHelpers::getAabb(collisionShape, transform);
                 mergeOrAssign(aabb, navMeshInput.mAabb, navMeshInput.mAabbInitialized);
-                if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
-                    navMeshInput.mAabb.merge(PhysicsSystemHelpers::getAabb(*avoid, transform));
+                if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.GetPtr())
+                    navMeshInput.mAabb.Encapsulate(PhysicsSystemHelpers::getAabb(*avoid, transform));
 
                 const ObjectId objectId(++objectsCounter);
-                const CollisionShape shape(object.getShapeInstance(), *object.getCollisionObject().getCollisionShape(),
-                    object.getObjectTransform());
+                const CollisionShape shape(object.getShapeInstance(), collisionShape, object.getObjectTransform());
 
                 if (!navMeshInput.mTileCachedRecastMeshManager.addObject(
                         objectId, shape, transform, DetourNavigator::AreaType_ground, guard.get()))
                     throw std::logic_error(
                         makeAddObjectErrorMessage(objectId, DetourNavigator::AreaType_ground, shape));
 
-                if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
+                if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.GetPtr())
                 {
                     const ObjectId avoidObjectId(++objectsCounter);
                     const CollisionShape avoidShape(object.getShapeInstance(), *avoid, object.getObjectTransform());
