@@ -1,14 +1,7 @@
 #include <memory>
 
 #include <Jolt/Jolt.h>
-
-JPH_SUPPRESS_WARNING_PUSH
-JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
-JPH_MSVC_SUPPRESS_WARNING(4201)
-
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
-
-JPH_SUPPRESS_WARNING_POP
 
 #include <components/misc/convert.hpp>
 #include <components/physicshelpers/collisionobject.hpp>

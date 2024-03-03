@@ -49,7 +49,7 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
     )
     FetchContent_MakeAvailableExcludeFromAll(joltphysics)
 
-    set(JOLT_INCLUDE_DIRS ${joltphysics_SOURCE_DIR}/../ PARENT_SCOPE)
+    set(JOLT_INCLUDE_DIRS ${joltphysics_SOURCE_DIR} PARENT_SCOPE)
     set(JOLT_LIBRARIES Jolt PARENT_SCOPE)
 endif()
 
