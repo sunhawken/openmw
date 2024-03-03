@@ -94,8 +94,9 @@ namespace MWPhysics
                 const JPH::ScaledShape* bodyShape = reinterpret_cast<const JPH::ScaledShape*>(shapeRef.GetPtr());
                 const JPH::Shape* innerShape = bodyShape->GetInnerShape();
                 newShape = new JPH::ScaledShape(innerShape, Misc::Convert::toJolt<JPH::Vec3>(mScale));
-                mUsesScaledShape = true;
             }
+
+            mUsesScaledShape = true;
 
             // NOTE: SetShape will destroy the original shape if required, no need to do it after
             bodyInterface.SetShape(getPhysicsBody(), newShape, false, JPH::EActivation::DontActivate);
@@ -116,14 +117,9 @@ namespace MWPhysics
     osg::Matrixd Object::getTransform() const
     {
         std::unique_lock<std::mutex> lock(mPositionMutex);
-
-        osg::Matrixd trans; // TODO: both of these give same result, wonder which is fastest
+        osg::Matrixd trans;
         trans.makeRotate(mRotation);
         trans.setTrans(mPosition);
-
-        // osg::Matrixd translationMatrix = osg::Matrixd::translate(mPosition);
-        // osg::Matrixd rotationMatrix = osg::Matrixd::rotate(mRotation);
-        // trans = rotationMatrix * translationMatrix;
         return trans;
     }
 
@@ -157,13 +153,6 @@ namespace MWPhysics
 
         JPH::MutableCompoundShape* compound = static_cast<JPH::MutableCompoundShape*>(mBasePhysicsShape.GetPtr());
 
-        osg::Vec3f
-            localCompoundScaling; // TODO: evaluate if needed, jolt should handle this without us multiplying by it?
-        {
-            std::unique_lock<std::mutex> lock(mPositionMutex);
-            localCompoundScaling = mScale;
-        }
-
         bool result = false;
         for (const auto& [recordIndex, shapeIndex] : mShapeInstance->mAnimatedShapes)
         {
@@ -190,38 +179,33 @@ namespace MWPhysics
 
             osg::NodePath& nodePath = nodePathFound->second;
             osg::Matrixf matrix = osg::computeLocalToWorld(nodePath);
-            // osg::Vec3f scale = matrix.getScale(); // TODO: restore when restoring below commented code
+            osg::Vec3f scale = matrix.getScale();
             matrix.orthoNormalize(matrix);
 
-            auto origin = Misc::Convert::toJolt<JPH::Vec3>(matrix.getTrans())
-                * Misc::Convert::toJolt<JPH::Vec3>(localCompoundScaling);
+            auto origin = Misc::Convert::toJolt<JPH::Vec3>(matrix.getTrans());
             auto rotation = Misc::Convert::toJolt(matrix.getRotate());
 
             const JPH::CompoundShape::SubShape& subShape = compound->GetSubShape(shapeIndex);
+            JPH::RefConst<JPH::Shape> childShape = subShape.mShape;
             auto subShapePosition = subShape.GetPositionCOM();
             auto subShapeRotation = subShape.GetRotation();
 
-            bool positionOrRotationChanged = subShapeRotation != rotation || origin != subShapePosition;
+            const JPH::ScaledShape* scaledPtr = dynamic_cast<const JPH::ScaledShape*>(subShape.mShape.GetPtr());
+            const bool isScaledSubshape = scaledPtr != nullptr;
+            const JPH::Vec3 currentScale = isScaledSubshape ? scaledPtr->GetScale() : JPH::Vec3(1.0f, 1.0f, 1.0f);
+            const JPH::Vec3 newScale = Misc::Convert::toJolt<JPH::Vec3>(scale);
 
-            // btCollisionShape* childShape = compound->getChildShape(shapeIndex);
-            // osg::Vec3f newScale = localCompoundScaling * scale;
-
-            // TODO: need an example of this happening in game, probably a rare case
-            // would have to rebuild alot of shape info each change
-            // if (childShape->getLocalScaling() != newScale)
-            // {
-            //     childShape->setLocalScaling(newScale);
-            //     result = true;
-            // }
-
-            if (positionOrRotationChanged)
+            // In Jolt to change the scale requires creating a new ScaledShape and replacing
+            // any position/origin change is also applied at the same time
+            if (currentScale != newScale)
             {
-                // NOTE: this can cause a race condition i think
-                // TODO: FIXME: YEP, RACE COND
-                /// Note: If you're using MutableCompoundShapes and are querying data while modifying the shape you'll
-                /// have a race condition. In this case it is best to create a new MutableCompoundShape and set the new
-                /// shape on the body using BodyInterface::SetShape. If a query is still working on the old shape, it
-                /// will have taken a reference and keep the old shape alive until the query finishes.
+                const JPH::Shape* baseSubshape = isScaledSubshape ? scaledPtr->GetInnerShape() : childShape.GetPtr();
+                JPH::ScaledShape* newShape = new JPH::ScaledShape(baseSubshape, newScale);
+                compound->ModifyShape(shapeIndex, origin, rotation, newShape);
+                result = true;
+            }
+            else if (subShapeRotation != rotation || origin != subShapePosition)
+            {
                 compound->ModifyShape(shapeIndex, origin, rotation);
                 result = true;
             }
