@@ -1,11 +1,6 @@
 #include "movementsolver.hpp"
 
 #include <Jolt/Jolt.h>
-
-JPH_SUPPRESS_WARNING_PUSH
-JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
-JPH_MSVC_SUPPRESS_WARNING(4201)
-
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -13,8 +8,6 @@ JPH_MSVC_SUPPRESS_WARNING(4201)
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/ShapeFilter.h>
-
-JPH_SUPPRESS_WARNING_POP
 
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadgmst.hpp>
