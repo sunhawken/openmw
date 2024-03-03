@@ -204,12 +204,12 @@ namespace DetourNavigator
         if (dynamic_cast<const JPH::MeshShape*>(&shape))
             return addObject(static_cast<const JPH::MeshShape&>(shape), transform, areaType);
 
+        const JPH::ScaledShape* scaledShape = dynamic_cast<const JPH::ScaledShape*>(&shape);
+        if (scaledShape)
+            return addObject(*scaledShape->GetInnerShape(), transform, areaType);
+
         if (dynamic_cast<const JPH::BoxShape*>(&shape))
             return addObject(static_cast<const JPH::BoxShape&>(shape), transform, areaType);
-
-        // TODO: apply scale to transform?
-        if (dynamic_cast<const JPH::ScaledShape*>(&shape))
-            return addObject(*static_cast<const JPH::ScaledShape&>(shape).GetInnerShape(), transform, areaType);
 
         std::ostringstream message;
         message << "Unsupported shape type: " << typeid(shape).name();
@@ -331,8 +331,7 @@ namespace DetourNavigator
     void RecastMeshBuilder::addObject(
         const JPH::MeshShape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle)
     {
-        JPH::AABox bounds = shape.GetLocalBounds();
-
+        const JPH::AABox bounds = shape.GetLocalBounds();
         const JPH::RVec3 boundsMin(mBounds.mMin.x(), mBounds.mMin.y(),
             -std::numeric_limits<double>::max() * std::numeric_limits<double>::epsilon());
         const JPH::RVec3 boundsMax(mBounds.mMax.x(), mBounds.mMax.y(),
