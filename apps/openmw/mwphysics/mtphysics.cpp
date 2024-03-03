@@ -370,6 +370,11 @@ namespace MWPhysics
         // This function run in the main thread to prepare data for job dispatch
         double timeStart = mTimer->tick();
 
+        // start by finishing previous background computation
+        syncSimulation();
+
+        if (mAdvanceSimulation)
+            mAsyncBudget.update(mTimer->delta_s(mAsyncStartTime, mTimeEnd), mPrevStepCount, mBudgetCursor);
         updateStats(frameStart, frameNumber, stats);
 
         auto [numSteps, newDelta] = calculateStepConfig(timeAccum);
@@ -392,23 +397,33 @@ namespace MWPhysics
         mNextLOS.store(0, std::memory_order_relaxed);
 
         if (mAdvanceSimulation)
+        {
             mWorldFrameData = std::make_unique<WorldFrameData>();
-
-        if (mAdvanceSimulation)
             mBudgetCursor += 1;
 
-        // Resets simulation timers
-        mAsyncStartTime = mTimer->tick();
-        if (mAdvanceSimulation)
+            // Resets simulation timers
+            mAsyncStartTime = mTimer->tick();
             mBudget.update(mTimer->delta_s(timeStart, mTimer->tick()), 1, mBudgetCursor);
 
-        // Dispatches jobs to be completed asynchronously (probably)
-        // physicssystem must so syncSimulation to guarantee they have completed
-        doSimulation();
+            // Dispatches jobs to be completed asynchronously (probably)
+            // physics system must call syncSimulation to guarantee they have completed
+            assert(mSimulationBarrier == nullptr);
+            mSimulationBarrier = mJobSystem->CreateBarrier();
+            JPH::JobHandle handle = mJobSystem->CreateJob(
+                "MWSimulation", JPH::Color::sBlue, [this]() { doSimulation(); }, 0);
+            mSimulationBarrier->AddJob(handle);
+        }
     }
 
     void PhysicsTaskScheduler::syncSimulation()
     {
+        if (mSimulationBarrier)
+        {
+            mJobSystem->WaitForJobs(mSimulationBarrier);
+            mJobSystem->DestroyBarrier(mSimulationBarrier);
+            mSimulationBarrier = nullptr;
+        }
+
         if (mSimulations != nullptr)
         {
             // For each simulation, call the Sync method
@@ -419,16 +434,6 @@ namespace MWPhysics
             mSimulations->clear();
             mSimulations = nullptr;
         }
-
-        double timeStart = mTimer->tick();
-
-        // TODO: separate profiling stats for actor sim vs dynamic body/jolt sim
-        // maybe actor sim should replace old "async" sim stat, all under physics
-        if (mAdvanceSimulation)
-            mBudget.update(mTimer->delta_s(timeStart, mTimer->tick()), mPrevStepCount, mBudgetCursor);
-
-        if (mAdvanceSimulation)
-            mAsyncBudget.update(mTimer->delta_s(mAsyncStartTime, mTimeEnd), mPrevStepCount, mBudgetCursor);
     }
 
     void PhysicsTaskScheduler::resetSimulation(const ActorMap& actors)
@@ -552,26 +557,41 @@ namespace MWPhysics
             // Before any jobs spawned for this sim step
             afterPreStep();
 
-            // Barrier to wait for every sim to complete for this step
-            JPH::JobSystem::Barrier* barrier = mJobSystem->CreateBarrier();
+            // Calculate the amount of job groups to dispatch (overestimate, or "ceil"):
+            const uint32_t groupSize = mNumJobs > 32 ? 32 : 2; // FIXME: could scale this dynamically better than this
+            const uint32_t jobCount = mNumJobs;
+            const uint32_t groupCount = (jobCount + groupSize - 1) / groupSize;
 
-            // For each simulation, spawn a new job to be waited for
-            for (int job = 0; job < mNumJobs; job++)
+            std::vector<JPH::JobHandle> handles;
+            JPH::JobSystem::Barrier* barrier = mJobSystem->CreateBarrier();
+            handles.reserve(groupCount);
+            for (uint32_t groupIndex = 0; groupIndex < groupCount; ++groupIndex)
             {
-                const auto& jobGroup = [this, job]() {
+                // For each group, generate one real job
+                const auto& jobGroup = [this, jobCount, groupSize, groupIndex]() {
                     assert(mWorldFrameData != nullptr);
                     const Visitors::Move impl{ mPhysicsDt, mPhysicsSystem, mWorldFrameData.get() };
                     const Visitors::WithLockedPtr<Visitors::Move, MaybeLock> vis{ impl, mSimulationMutex,
                         mLockingPolicy };
-                    std::visit(vis, (*mSimulations)[job]);
+
+                    // Calculate the current group's offset into the jobs:
+                    const uint32_t groupJobOffset = groupIndex * groupSize;
+                    const uint32_t groupJobEnd = std::min(groupJobOffset + groupSize, jobCount);
+
+                    // Inside the group, loop through all job indices and execute job for each index:
+                    for (uint32_t i = groupJobOffset; i < groupJobEnd; ++i)
+                    {
+                        std::visit(vis, (*mSimulations)[i]);
+                    }
                 };
 
-                JPH::JobHandle handle = mJobSystem->CreateJob("MWSimulation", JPH::Color::sBlue, jobGroup, 0);
-                barrier->AddJob(handle);
+                // Try to push a new job until it is pushed successfully:
+                JPH::JobHandle handle = mJobSystem->CreateJob("MWSimulationStep", JPH::Color::sBlue, jobGroup, 0);
+                handles.push_back(handle);
             }
 
-            // FIXME: waiting here technically means jolt.Update() isnt happening at the same time
-            // and its wasted cpu time. Need to reconsider eventually
+            // Wait for step to complete
+            barrier->AddJobs(handles.data(), handles.size());
             mJobSystem->WaitForJobs(barrier);
             mJobSystem->DestroyBarrier(barrier);
 

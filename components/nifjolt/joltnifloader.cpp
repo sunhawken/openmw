@@ -335,7 +335,7 @@ namespace NifJolt
             }
         }
 
-        // TODO: dtermine if has any animation in collision object at all so parent can bemutable
+        // TODO: determine if has any animation in collision object at all so parent can be mutable
         mShapeMutable = true;
 
         if (!args.mAvoid)
