@@ -6,9 +6,16 @@
 #include <vector>
 
 #include <Jolt/Jolt.h>
+
+JPH_SUPPRESS_WARNING_PUSH
+JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
+JPH_MSVC_SUPPRESS_WARNING(4201)
+
 #include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+
+JPH_SUPPRESS_WARNING_POP
 
 #include <components/detournavigator/tilecachedrecastmeshmanager.hpp>
 #include <components/esm3/loadland.hpp>

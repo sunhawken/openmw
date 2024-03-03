@@ -2,7 +2,15 @@
 #include "mtphysics.hpp"
 
 #include <Jolt/Jolt.h>
+
+JPH_SUPPRESS_WARNING_PUSH
+JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
+JPH_MSVC_SUPPRESS_WARNING(4201)
+
+#include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+
+JPH_SUPPRESS_WARNING_POP
 
 #include <components/misc/convert.hpp>
 #include <components/physicshelpers/collisionobject.hpp>
