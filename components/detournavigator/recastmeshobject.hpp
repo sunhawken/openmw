@@ -52,18 +52,19 @@ namespace DetourNavigator
     class ChildRecastMeshObject
     {
     public:
-        ChildRecastMeshObject(const JPH::Shape& shape, const osg::Matrixd& transform, const AreaType areaType);
+        ChildRecastMeshObject(
+            const JPH::CompoundShape::SubShape& shape, const osg::Matrixd& transform, const AreaType areaType);
 
         bool update(const osg::Matrixd& transform, const AreaType areaType);
 
-        const JPH::Shape& getShape() const { return mShape; }
+        const JPH::RefConst<JPH::Shape> getShape() const { return mShape.get().mShape; }
 
         const osg::Matrixd& getTransform() const { return mTransform; }
 
         AreaType getAreaType() const { return mAreaType; }
 
     private:
-        std::reference_wrapper<const JPH::Shape> mShape;
+        std::reference_wrapper<const JPH::CompoundShape::SubShape> mShape;
         osg::Matrixd mTransform;
         AreaType mAreaType;
         osg::Vec3f mLocalScaling;
@@ -75,25 +76,27 @@ namespace DetourNavigator
     public:
         RecastMeshObject(const CollisionShape& shape, const osg::Matrixd& transform, const AreaType areaType);
 
-        bool update(const osg::Matrixd& transform, const AreaType areaType)
-        {
-            return mImpl.update(transform, areaType);
-        }
+        bool update(const osg::Matrixd& transform, const AreaType areaType);
 
         const osg::ref_ptr<const Resource::PhysicsShapeInstance>& getInstance() const { return mInstance; }
 
-        const JPH::Shape& getShape() const { return mImpl.getShape(); }
+        const JPH::RefConst<JPH::Shape> getShape() const { return mShape; }
 
-        const osg::Matrixd& getTransform() const { return mImpl.getTransform(); }
+        const osg::Matrixd& getTransform() const { return mTransform; }
 
-        AreaType getAreaType() const { return mImpl.getAreaType(); }
+        AreaType getAreaType() const { return mAreaType; }
 
         const ObjectTransform& getObjectTransform() const { return mObjectTransform; }
 
     private:
         osg::ref_ptr<const Resource::PhysicsShapeInstance> mInstance;
         ObjectTransform mObjectTransform;
-        ChildRecastMeshObject mImpl;
+
+        JPH::RefConst<JPH::Shape> mShape;
+        osg::Matrixd mTransform;
+        AreaType mAreaType;
+        osg::Vec3f mLocalScaling;
+        std::vector<ChildRecastMeshObject> mChildren;
     };
 }
 

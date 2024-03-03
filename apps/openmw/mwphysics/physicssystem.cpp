@@ -91,7 +91,7 @@ static bool AssertFailedImpl(const char* inExpression, const char* inMessage, co
     // Prevent breakpoint, better to log than exit/crash in debug mode usually
     // Jolt has a tendancy to complain about alot of things even if they work fine
     return false;
-};
+}
 
 #endif
 
@@ -193,8 +193,6 @@ namespace MWPhysics
         , mPhysicsDt(1.f / 60.f)
     {
         mResourceSystem->addResourceManager(mShapeManager.get());
-
-        Log(Debug::Info) << "Setting up physics allocators and factories...";
 
         // Register allocation hook and callbacks
         JPH::RegisterDefaultAllocator();
