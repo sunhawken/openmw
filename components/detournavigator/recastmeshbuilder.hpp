@@ -47,14 +47,6 @@ namespace DetourNavigator
         void addObject(const JPH::Shape& shape, const osg::Matrixd& transform, const AreaType areaType,
             osg::ref_ptr<const Resource::PhysicsShape> source, const ObjectTransform& objectTransform);
 
-        void addObject(const JPH::CompoundShape& shape, const osg::Matrixd& transform, const AreaType areaType);
-
-        void addObject(const JPH::MeshShape& shape, const osg::Matrixd& transform, const AreaType areaType);
-
-        void addObject(const JPH::HeightFieldShape& shape, const osg::Matrixd& transform, const AreaType areaType);
-
-        void addObject(const JPH::BoxShape& shape, const osg::Matrixd& transform, const AreaType areaType);
-
         void addWater(const osg::Vec2i& cellPosition, const Water& water);
 
         void addHeightfield(const osg::Vec2i& cellPosition, int cellSize, float height);
@@ -79,6 +71,14 @@ namespace DetourNavigator
 
         void addObject(
             const JPH::HeightFieldShape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle);
+
+        void addObject(const JPH::CompoundShape& shape, const osg::Matrixd& transform, const AreaType areaType);
+
+        void addObject(const JPH::MeshShape& shape, const osg::Matrixd& transform, const AreaType areaType);
+
+        void addObject(const JPH::HeightFieldShape& shape, const osg::Matrixd& transform, const AreaType areaType);
+
+        void addObject(const JPH::BoxShape& shape, const osg::Matrixd& transform, const AreaType areaType);
     };
 
     Mesh makeMesh(std::vector<RecastMeshTriangle>&& triangles, const osg::Vec3f& shift = osg::Vec3f());
