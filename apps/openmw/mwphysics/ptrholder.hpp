@@ -8,7 +8,14 @@
 #include <osg/Vec3d>
 
 #include <Jolt/Jolt.h>
+
+JPH_SUPPRESS_WARNING_PUSH
+JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
+JPH_MSVC_SUPPRESS_WARNING(4201)
+
 #include <Jolt/Physics/PhysicsSystem.h>
+
+JPH_SUPPRESS_WARNING_POP
 
 #include "../mwworld/ptr.hpp"
 

@@ -21,16 +21,24 @@ namespace MWPhysics
         ActorConvexCallback()
             : mClosestHitFraction(0.0f)
             , mMinCollisionDot(0.0f)
+            , mHitCollisionLayer(0)
+            , mHitPointWorld(JPH::RVec3(0.0, 0.0, 0.0))
+            , mHitNormalWorld(JPH::Vec3(0.0, 0.0, 0.0))
+            , mMotion(JPH::Vec3(0.0, 0.0, 0.0))
             , mPhysicsSystem(nullptr)
+            , mOrigin(JPH::RVec3(0.0, 0.0, 0.0))
         {
         }
 
         ActorConvexCallback(const JPH::BodyID actor, const JPH::PhysicsSystem* inPhysicsSystem, JPH::RVec3 origin,
             float minCollisionDot, JPH::Vec3 motion)
-            : mMe(actor)
-            , mPhysicsSystem(inPhysicsSystem)
-            , mMinCollisionDot(minCollisionDot)
+            : mMinCollisionDot(minCollisionDot)
+            , mMe(actor)
+            , mHitCollisionLayer(0)
+            , mHitPointWorld(JPH::RVec3(0.0, 0.0, 0.0))
+            , mHitNormalWorld(JPH::RVec3(0.0, 0.0, 0.0))
             , mMotion(motion)
+            , mPhysicsSystem(inPhysicsSystem)
             , mOrigin(origin)
         {
         }
@@ -124,7 +132,6 @@ namespace MWPhysics
 
         bool hasHit() const { return mHitCollisionObject != nullptr; }
 
-        // Configuration
         float mClosestHitFraction;
         const float mMinCollisionDot;
         const JPH::BodyID mMe;

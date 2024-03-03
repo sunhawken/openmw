@@ -1,8 +1,10 @@
 #ifndef OPENMW_MWWATER_OBJECT_H
 #define OPENMW_MWWATER_OBJECT_H
 
-#include <Jolt/Jolt.h>
-#include <Jolt/Physics/Body/Body.h>
+namespace JPH
+{
+    class Body;
+}
 
 namespace MWPhysics
 {

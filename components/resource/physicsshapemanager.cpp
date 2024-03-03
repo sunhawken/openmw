@@ -7,12 +7,6 @@
 #include <osg/Transform>
 #include <osg/TriangleFunctor>
 
-#include <Jolt/Jolt.h>
-#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
-#include <Jolt/Physics/Collision/Shape/MeshShape.h>
-#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
-#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
-
 #include <components/misc/osguservalues.hpp>
 #include <components/misc/pathhelpers.hpp>
 #include <components/sceneutil/visitor.hpp>
