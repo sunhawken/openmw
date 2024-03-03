@@ -67,7 +67,7 @@ namespace DetourNavigator
         std::reference_wrapper<const JPH::CompoundShape::SubShape> mShape;
         osg::Matrixd mTransform;
         AreaType mAreaType;
-        osg::Vec3f mLocalScaling;
+        JPH::Vec3 mLocalScaling;
         std::vector<ChildRecastMeshObject> mChildren;
     };
 
@@ -95,7 +95,7 @@ namespace DetourNavigator
         JPH::RefConst<JPH::Shape> mShape;
         osg::Matrixd mTransform;
         AreaType mAreaType;
-        osg::Vec3f mLocalScaling;
+        JPH::Vec3 mLocalScaling;
         std::vector<ChildRecastMeshObject> mChildren;
     };
 }
