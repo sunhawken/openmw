@@ -56,10 +56,10 @@ namespace MWPhysics
     namespace BroadPhaseLayers
     {
         constexpr static JPH::BroadPhaseLayer WORLD{ 0 };
-        constexpr static JPH::BroadPhaseLayer DYNAMIC_WORLD{ 1 };
+        constexpr static JPH::BroadPhaseLayer MOVING{ 1 };
         constexpr static JPH::BroadPhaseLayer DEBRIS{ 2 };
         constexpr static JPH::BroadPhaseLayer SENSOR{ 3 };
-        constexpr static unsigned int NUM_LAYERS{ 6 };
+        constexpr static unsigned int NUM_LAYERS{ 4 };
     }
 
     // BroadPhaseLayerInterface implementation
@@ -73,11 +73,16 @@ namespace MWPhysics
         // Converts an object layer into broadphase layer
         virtual JPH::BroadPhaseLayer GetBroadPhaseLayer(JPH::ObjectLayer inLayer) const override
         {
-            // TODO: RESTORE
-            // switch (inLayer)
-            // {
-            //     case Layers::
-            // }
+            switch (inLayer)
+            {
+                case Layers::SENSOR:
+                    return BroadPhaseLayers::SENSOR;
+                case Layers::DEBRIS:
+                    return BroadPhaseLayers::DEBRIS;
+                case Layers::ACTOR:
+                case Layers::PROJECTILE:
+                    return BroadPhaseLayers::MOVING;
+            }
             return BroadPhaseLayers::WORLD;
         }
 
@@ -106,21 +111,20 @@ namespace MWPhysics
     public:
         virtual bool ShouldCollide(JPH::ObjectLayer objectLayer, JPH::BroadPhaseLayer broadPhaseLayer) const override
         {
-            // TODO: RESTORE
             switch (objectLayer)
             {
-                // case Layers::WORLD:
-                //     return broadPhaseLayer == BroadPhaseLayers::DYNAMIC_WORLD;
-                // case Layers::DYNAMIC_WORLD:
-                //     return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer ==
-                //     BroadPhaseLayers::DYNAMIC_WORLD || broadPhaseLayer == BroadPhaseLayers::SENSOR;
-                // case Layers::DEBRIS:
-                //     return broadPhaseLayer == BroadPhaseLayers::WORLD;
-                // case Layers::SENSOR:
-                //     return broadPhaseLayer == BroadPhaseLayers::DYNAMIC_WORLD || broadPhaseLayer ==
-                //     BroadPhaseLayers::SENSOR;
+                case Layers::WORLD:
+                    return broadPhaseLayer == BroadPhaseLayers::MOVING;
+                case Layers::ACTOR:
+                case Layers::PROJECTILE:
+                    return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer == BroadPhaseLayers::MOVING
+                        || broadPhaseLayer == BroadPhaseLayers::SENSOR;
+                case Layers::DEBRIS:
+                    return broadPhaseLayer == BroadPhaseLayers::WORLD;
+                case Layers::SENSOR:
+                    return broadPhaseLayer == BroadPhaseLayers::MOVING || broadPhaseLayer == BroadPhaseLayers::SENSOR;
                 default:
-                    return true;
+                    return false;
             }
         }
     };

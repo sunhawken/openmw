@@ -128,7 +128,7 @@ option(QT_STATIC "Link static build of Qt into the binaries" FALSE)
 
 set(_jolt_static_default ON)
 option(JOLT_STATIC "Build Jolt Physics static libraries" ${_jolt_static_default})
-add_definitions(-DJPH_DEBUG_RENDERER=1 -DJPH_PROFILE_ENABLED=1)
+add_definitions(-DJPH_DEBUG_RENDERER=1)
 
 option(OPENMW_USE_SYSTEM_OSG "Use system provided OpenSceneGraph libraries" ON)
 if(OPENMW_USE_SYSTEM_OSG)
