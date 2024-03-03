@@ -30,9 +30,9 @@ namespace MWPhysics
 
         MWWorld::Ptr getPtr() const { return mPtr; }
 
-        JPH::Body* getPhysicsBodyUnsafe() const { return mPhysicsBody; }
         const JPH::BodyID getPhysicsBody() const
         {
+            assert(mPhysicsBody != nullptr);
             if (mPhysicsBody == nullptr)
             {
                 return JPH::BodyID();
