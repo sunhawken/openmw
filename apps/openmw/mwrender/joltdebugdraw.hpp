@@ -14,19 +14,11 @@
 #include <osg/ref_ptr>
 
 #include <Jolt/Jolt.h>
-
-JPH_SUPPRESS_WARNING_PUSH
-JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
-JPH_MSVC_SUPPRESS_WARNING(4201)
-
 #include <Jolt/Physics/Body/BodyManager.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
-
-JPH_SUPPRESS_WARNING_POP
-
 #include <Jolt/Renderer/DebugRenderer.h>
 
 #include <Jolt/Core/FixedSizeFreeList.h>
