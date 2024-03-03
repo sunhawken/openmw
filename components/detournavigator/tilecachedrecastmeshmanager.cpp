@@ -82,8 +82,8 @@ namespace DetourNavigator
         {
             for (const auto& [id, data] : mObjects)
             {
-                const TilesPositionsRange objectRange
-                    = makeTilesPositionsRange(data->mObject.getShape(), data->mObject.getTransform(), mSettings);
+                const TilesPositionsRange objectRange = makeTilesPositionsRange(
+                    *data->mObject.getShape().GetPtr(), data->mObject.getTransform(), mSettings);
 
                 getTilesPositions(getIntersection(mRange, objectRange), [&](const TilePosition& v) {
                     if (!isInTilesPositionsRange(range, v))
@@ -206,7 +206,7 @@ namespace DetourNavigator
             const std::size_t lastChangeRevision = it->second->mLastNavMeshReportedChange.has_value()
                 ? it->second->mLastNavMeshReportedChange->mRevision
                 : mRevision;
-            const JPH::Shape& shape = it->second->mObject.getShape();
+            const JPH::Shape& shape = *it->second->mObject.getShape().GetPtr();
             if (!it->second->mAabb.update(lastChangeRevision, PhysicsSystemHelpers::getAabb(shape, transform)))
                 return false;
 
@@ -517,7 +517,7 @@ namespace DetourNavigator
             for (auto it = mObjectIndex.qbegin(makeIndexQuery(tilePosition)); it != mObjectIndex.qend(); ++it)
             {
                 const auto& object = it->second->mObject;
-                objects.emplace_back(object.getInstance(), object.getObjectTransform(), object.getShape(),
+                objects.emplace_back(object.getInstance(), object.getObjectTransform(), *object.getShape().GetPtr(),
                     object.getTransform(), object.getAreaType());
                 hasInput = true;
             }

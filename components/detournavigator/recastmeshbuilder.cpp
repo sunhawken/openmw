@@ -14,6 +14,7 @@
 #include <Jolt/Physics/Collision/Shape/CompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 
 #include <algorithm>
 #include <array>
@@ -205,6 +206,10 @@ namespace DetourNavigator
 
         if (dynamic_cast<const JPH::BoxShape*>(&shape))
             return addObject(static_cast<const JPH::BoxShape&>(shape), transform, areaType);
+
+        // TODO: apply scale to transform?
+        if (dynamic_cast<const JPH::ScaledShape*>(&shape))
+            return addObject(*static_cast<const JPH::ScaledShape&>(shape).GetInnerShape(), transform, areaType);
 
         std::ostringstream message;
         message << "Unsupported shape type: " << typeid(shape).name();
