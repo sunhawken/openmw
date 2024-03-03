@@ -3,15 +3,8 @@
 #include <osg/Object>
 
 #include <Jolt/Jolt.h>
-
-JPH_SUPPRESS_WARNING_PUSH
-JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
-JPH_MSVC_SUPPRESS_WARNING(4201)
-
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
-
-JPH_SUPPRESS_WARNING_POP
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/convert.hpp>

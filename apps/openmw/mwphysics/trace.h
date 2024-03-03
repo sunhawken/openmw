@@ -4,15 +4,8 @@
 #include <osg/Vec3f>
 
 #include <Jolt/Jolt.h>
-
-JPH_SUPPRESS_WARNING_PUSH
-JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
-JPH_MSVC_SUPPRESS_WARNING(4201)
-
 #include <Jolt/Physics/Body/BodyID.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
-
-JPH_SUPPRESS_WARNING_POP
 
 namespace JPH
 {
