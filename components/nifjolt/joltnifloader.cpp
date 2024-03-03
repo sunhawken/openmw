@@ -6,6 +6,9 @@
 #include <variant>
 #include <vector>
 
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
+
 #include <components/debug/debuglog.hpp>
 #include <components/files/conversion.hpp>
 #include <components/misc/convert.hpp>
