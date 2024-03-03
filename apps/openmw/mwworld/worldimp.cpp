@@ -10,9 +10,16 @@
 #include <MyGUI_TextIterator.h>
 
 #include <Jolt/Jolt.h>
+
+JPH_SUPPRESS_WARNING_PUSH
+JPH_GCC_SUPPRESS_WARNING("-Wpedantic")
+JPH_MSVC_SUPPRESS_WARNING(4201)
+
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+
+JPH_SUPPRESS_WARNING_POP
 
 #include <components/debug/debuglog.hpp>
 
