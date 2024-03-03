@@ -545,11 +545,12 @@ if (USE_QT)
     QT_WRAP_UI(ESM_UI_HDR ${ESM_UI})
 endif()
 
-include_directories(${JOLT_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
-
 find_package(SQLite3 REQUIRED)
 
 add_library(components STATIC ${COMPONENT_FILES})
+
+target_include_directories(components PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(components SYSTEM BEFORE PUBLIC ${JOLT_INCLUDE_DIRS})
 
 if (ANDROID)
     set_property(TARGET components PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -592,6 +593,8 @@ target_link_libraries(components
     smhasher
     ${ICU_LIBRARIES}
     ZLIB::ZLIB
+
+    ${JOLT_LIBRARIES}
     )
 
 if(yaml-cpp_VERSION VERSION_GREATER_EQUAL 0.8.0)
@@ -603,8 +606,6 @@ endif()
 if(Boost_VERSION_STRING VERSION_GREATER_EQUAL 1.77.0)
     target_link_libraries(components ${Boost_ATOMIC_LIBRARY})
 endif()
-
-target_link_libraries(components ${JOLT_LIBRARIES})
 
 if (WIN32)
     target_link_libraries(components
