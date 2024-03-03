@@ -22,8 +22,8 @@ endmacro()
 
 if(NOT OPENMW_USE_SYSTEM_JOLT)
     set(JPH_DEBUG_RENDERER ON CACHE BOOL "")
-    set(JPH_PROFILE_ENABLED ON CACHE BOOL "")
-    add_definitions(-DJPH_DEBUG_RENDERER=1 -DJPH_PROFILE_ENABLED=1)
+    set(JPH_PROFILE_ENABLED OFF CACHE BOOL "")
+    add_definitions(-DJPH_DEBUG_RENDERER=1)
 
     # When turning this option on, the library will be compiled using doubles for positions. This allows for much bigger worlds.
     set(DOUBLE_PRECISION ON)

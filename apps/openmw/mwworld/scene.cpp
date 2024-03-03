@@ -798,6 +798,7 @@ namespace MWWorld
         if (old.mCell == &cell)
         {
             // We can optimize physics collisions when rapidly changing dataset (such as interior load)
+            // NOTE: for exteriors we call optimize in changeToExteriorCell
             if (!isExterior)
             {
                 mPhysics->optimize();
@@ -956,6 +957,8 @@ namespace MWWorld
             MWBase::Environment::get().getWindowManager()->fadeScreenIn(0.5);
 
         MWBase::Environment::get().getWorld()->getPostProcessor()->setExteriorFlag(true);
+
+        mPhysics->optimize();
     }
 
     CellStore* Scene::getCurrentCell()
