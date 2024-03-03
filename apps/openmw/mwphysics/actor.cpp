@@ -5,6 +5,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/convert.hpp>
@@ -32,12 +33,12 @@ namespace MWPhysics
         , mWalkingOnWater(false)
         , mMeshTranslation(shape->mCollisionBox.mCenter)
         , mOriginalHalfExtents(shape->mCollisionBox.mExtents)
+        , mScale({ 1.0f, 1.0f, 1.0f })
         , mStuckFrames(0)
         , mLastStuckPosition{ 0, 0, 0 }
         , mForce(0.f, 0.f, 0.f)
         , mOnGround(ptr.getClass().getCreatureStats(ptr).getFallHeight() == 0)
         , mOnSlope(false)
-        , mScale({ 1.0f, 1.0f, 1.0f })
         , mInternalCollisionMode(true)
         , mExternalCollisionMode(true)
         , mActive(false)

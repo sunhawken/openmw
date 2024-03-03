@@ -191,7 +191,7 @@ namespace MWPhysics
 
             osg::NodePath& nodePath = nodePathFound->second;
             osg::Matrixf matrix = osg::computeLocalToWorld(nodePath);
-            osg::Vec3f scale = matrix.getScale();
+            // osg::Vec3f scale = matrix.getScale(); // TODO: restore when restoring below commented code
             matrix.orthoNormalize(matrix);
 
             auto origin = Misc::Convert::toJolt<JPH::Vec3>(matrix.getTrans())
@@ -208,7 +208,7 @@ namespace MWPhysics
             // osg::Vec3f newScale = localCompoundScaling * scale;
 
             // TODO: need an example of this happening in game, probably a rare case
-            // would have to erbuild alot of shpae info each change
+            // would have to rebuild alot of shape info each change
             // if (childShape->getLocalScaling() != newScale)
             // {
             //     childShape->setLocalScaling(newScale);
