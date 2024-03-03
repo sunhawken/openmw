@@ -43,7 +43,7 @@ namespace MWPhysics
 
         // Sensors only collide with DYNAMIC_WORLD objects
         static constexpr JPH::ObjectLayer SENSOR = 1 << 10;
-    };
+    }
 
     enum CollisionMask
     {
@@ -60,7 +60,7 @@ namespace MWPhysics
         constexpr static JPH::BroadPhaseLayer DEBRIS{ 2 };
         constexpr static JPH::BroadPhaseLayer SENSOR{ 3 };
         constexpr static unsigned int NUM_LAYERS{ 6 };
-    };
+    }
 
     // BroadPhaseLayerInterface implementation
     class JoltBPLayerInterface final : public JPH::BroadPhaseLayerInterface
@@ -96,9 +96,6 @@ namespace MWPhysics
             }
         }
 #endif
-
-    private:
-        JPH::BroadPhaseLayer mObjectToBroadPhase[512]; // maybe not needed t have this map
     };
 
     // This class defines a ObjectVsBroadPhaseLayerFilter::ShouldCollide function that checks if an ObjectLayer collides
@@ -135,15 +132,6 @@ namespace MWPhysics
     public:
         virtual bool ShouldCollide(JPH::ObjectLayer inObject1, JPH::ObjectLayer inObject2) const override
         {
-
-            // static constexpr JPH::ObjectLayer WORLD = 1 << 0;
-            // static constexpr JPH::ObjectLayer DOOR = 1 << 1;
-            // static constexpr JPH::ObjectLayer ACTOR = 1 << 2;
-            // static constexpr JPH::ObjectLayer HEIGHTMAP = 1 << 3;
-            // static constexpr JPH::ObjectLayer PROJECTILE = 1 << 4;
-            // static constexpr JPH::ObjectLayer WATER = 1 << 5;
-            // static constexpr JPH::ObjectLayer CAMERA_ONLY = 1 << 6;
-
             // NOTE: This doesn't filter against actor/object collison masks, for that we use body filters and/or
             // contact validation callbacks Rather this is a high level group->group check
             switch (inObject1)
@@ -173,7 +161,6 @@ namespace MWPhysics
                     return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP;
 
                 default:
-                    // assert(false);
                     return false;
             }
         }
