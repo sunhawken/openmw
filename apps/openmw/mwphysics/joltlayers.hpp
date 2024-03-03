@@ -119,6 +119,8 @@ namespace MWPhysics
                 case Layers::PROJECTILE:
                     return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer == BroadPhaseLayers::MOVING
                         || broadPhaseLayer == BroadPhaseLayers::SENSOR;
+                case Layers::DOOR:
+                    return broadPhaseLayer == BroadPhaseLayers::DEBRIS || broadPhaseLayer == BroadPhaseLayers::MOVING;
                 case Layers::DEBRIS:
                     return broadPhaseLayer == BroadPhaseLayers::WORLD;
                 case Layers::SENSOR:

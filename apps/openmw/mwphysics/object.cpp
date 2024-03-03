@@ -120,7 +120,7 @@ namespace MWPhysics
         osg::Matrixd trans;
         trans.makeRotate(mRotation);
         trans.setTrans(mPosition);
-        return trans;
+        return osg::Matrixd::scale(mScale) * trans;
     }
 
     bool Object::isSolid() const

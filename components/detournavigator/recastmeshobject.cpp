@@ -2,6 +2,7 @@
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/CompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 
 #include <components/debug/debuglog.hpp>
@@ -52,13 +53,13 @@ namespace DetourNavigator
         : mShape(shape)
         , mTransform(transform)
         , mAreaType(areaType)
-        , mLocalScaling(osg::Vec3f(1.0f, 1.0f, 1.0f)) // jolt doesnt need to use localscaling
+        , mLocalScaling(Misc::Convert::toJolt<JPH::Vec3>(transform.getScale()))
         , mChildren(makeChildrenObjects(*shape.mShape.GetPtr(), mAreaType))
     {
     }
 
     inline bool updateMeshObject(const JPH::RefConst<JPH::Shape>& actualShape, const osg::Matrixd& transform,
-        const AreaType areaType, osg::Matrixd& mTransform, AreaType& mAreaType,
+        const AreaType areaType, osg::Matrixd& mTransform, AreaType& mAreaType, JPH::Vec3& mLocalScaling,
         std::vector<ChildRecastMeshObject>& mChildren)
     {
         bool result = false;
@@ -73,12 +74,16 @@ namespace DetourNavigator
             result = true;
         }
 
-        // TODO: restore? jolt doesnt really support this tho
-        // if (!(mLocalScaling == mShape.get().getLocalScaling()))
-        // {
-        //     mLocalScaling = mShape.get().getLocalScaling();
-        //     result = true;
-        // }
+        const JPH::ScaledShape* scaledShape = dynamic_cast<const JPH::ScaledShape*>(actualShape.GetPtr());
+        if (scaledShape)
+        {
+            auto shapeScale = scaledShape->GetScale();
+            if (mLocalScaling != shapeScale)
+            {
+                mLocalScaling = shapeScale;
+                result = true;
+            }
+        }
 
         if (dynamic_cast<const JPH::CompoundShape*>(actualShape.GetPtr()))
             result = updateCompoundObject(
@@ -91,12 +96,12 @@ namespace DetourNavigator
     bool ChildRecastMeshObject::update(const osg::Matrixd& transform, const AreaType areaType)
     {
         const JPH::RefConst<JPH::Shape> actualShape = mShape.get().mShape;
-        return updateMeshObject(actualShape, transform, areaType, mTransform, mAreaType, mChildren);
+        return updateMeshObject(actualShape, transform, areaType, mTransform, mAreaType, mLocalScaling, mChildren);
     }
 
     bool RecastMeshObject::update(const osg::Matrixd& transform, const AreaType areaType)
     {
-        return updateMeshObject(mShape, transform, areaType, mTransform, mAreaType, mChildren);
+        return updateMeshObject(mShape, transform, areaType, mTransform, mAreaType, mLocalScaling, mChildren);
     }
 
     RecastMeshObject::RecastMeshObject(
@@ -106,7 +111,7 @@ namespace DetourNavigator
         , mShape(&shape.getShape())
         , mTransform(transform)
         , mAreaType(areaType)
-        , mLocalScaling(osg::Vec3f(1.0f, 1.0f, 1.0f)) // jolt doesnt need to use localscaling
+        , mLocalScaling(Misc::Convert::toJolt<JPH::Vec3>(transform.getScale()))
         , mChildren(makeChildrenObjects(*mShape.GetPtr(), mAreaType))
     {
     }
