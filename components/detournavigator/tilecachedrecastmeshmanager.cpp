@@ -206,11 +206,11 @@ namespace DetourNavigator
             const std::size_t lastChangeRevision = it->second->mLastNavMeshReportedChange.has_value()
                 ? it->second->mLastNavMeshReportedChange->mRevision
                 : mRevision;
-            const JPH::Shape& shape = *it->second->mObject.getShape().GetPtr();
-            if (!it->second->mAabb.update(lastChangeRevision, PhysicsSystemHelpers::getAabb(shape, transform)))
+            const JPH::RefConst<JPH::Shape>& shape = it->second->mObject.getShape();
+            if (!it->second->mAabb.update(lastChangeRevision, PhysicsSystemHelpers::getAabb(shape.GetPtr(), transform)))
                 return false;
 
-            newRange = makeTilesPositionsRange(shape, transform, mSettings);
+            newRange = makeTilesPositionsRange(*shape.GetPtr(), transform, mSettings);
             oldRange = it->second->mRange;
             if (newRange != oldRange)
             {
