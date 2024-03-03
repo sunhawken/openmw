@@ -902,11 +902,9 @@ namespace MWPhysics
             std::scoped_lock lock(mTaskScheduler->getSimulationMutex());
             for (auto& [animatedObject, changed] : mAnimatedObjects)
             {
-                // TODO: !!!!crash when moving actors with this enabled (in debug mode)
                 if (animatedObject->animateCollisionShapes())
                 {
-                    auto obj = mObjects.find(animatedObject->getPtr().mRef);
-                    assert(obj != mObjects.end());
+                    assert(mObjects.find(animatedObject->getPtr().mRef) != mObjects.end());
                     changed = true;
                 }
                 else
