@@ -243,7 +243,7 @@ namespace MWPhysics
         }
         else
         {
-            mPhysicsJobSystem = std::make_unique<JPH::JobSystemSingleThreaded>();
+            mPhysicsJobSystem = std::make_unique<JPH::JobSystemSingleThreaded>(cMaxPhysicsJobs);
         }
 
         // Create a job scheduler responsible for simulating the game world (actors etc)
@@ -363,7 +363,7 @@ namespace MWPhysics
         JPH::RRayCast ray(rayOrigin, Misc::Convert::toJolt<JPH::Vec3>(diff));
 
         // Filter out layers
-        // TODO: collision group (if group == 0xff then all layers?)
+        // TODO: restore collision group (if group == 0xff then all layers?)
         // callback.m_collisionFilterGroup = group;
         JPH::SpecifiedBroadPhaseLayerFilter broadphaseLayerFilter(BroadPhaseLayers::WORLD);
         MaskedObjectLayerFilter objectLayerFilter(mask);
@@ -412,7 +412,7 @@ namespace MWPhysics
         JPH::RShapeCast shapeCast(&sphere, scale, transFrom, Misc::Convert::toJolt<JPH::Vec3>(to - from));
 
         // Filter out layers
-        // TODO: collision group (if group == 0xff then all layers?)
+        // TODO: restore - collision group (if group == 0xff then all layers?)
         // callback.m_collisionFilterGroup = group;
         JPH::SpecifiedBroadPhaseLayerFilter broadphaseLayerFilter(BroadPhaseLayers::WORLD);
         MaskedObjectLayerFilter objectLayerFilter(mask);
@@ -922,14 +922,6 @@ namespace MWPhysics
         mTimeAccum += dt;
         mTimeAccumJolt += dt;
 
-        // Run dynamic body sim, broadphase updates etc
-        // FIXME: maybe makes sense to step the world sim in here too, but dont want to risk breaking it
-        while (mTimeAccumJolt >= mPhysicsDt)
-        {
-            mTimeAccumJolt -= mPhysicsDt;
-            mPhysicsSystem.Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
-        }
-
         if (skipSimulation)
             mTaskScheduler->resetSimulation(mActors);
         else
@@ -939,17 +931,20 @@ namespace MWPhysics
 
             // Runs world simulation for required steps, modifies mTimeAccum
             mTaskScheduler->applyQueuedMovements(mTimeAccum, simulations, frameStart, frameNumber, stats);
+        }
 
-            // FIXME: better to sync after jolt system update also done, but cant atm (see above FIXME)
-            mTaskScheduler->syncSimulation();
+        // Synchronize/commit all transform updates for actors and objects
+        updatePtrHolders();
 
-            // Synchronize/commit all transform updates for actors and objects
-            updatePtrHolders();
+        // Run dynamic body sim, broadphase updates etc
+        while (mTimeAccumJolt >= mPhysicsDt)
+        {
+            mTimeAccumJolt -= mPhysicsDt;
+            mPhysicsSystem.Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
         }
 
 #ifdef JPH_PROFILE_ENABLED
         JPH_PROFILE_NEXTFRAME();
-// JPH_DET_LOG("OpenMw:");
 #endif
     }
 
@@ -958,8 +953,10 @@ namespace MWPhysics
         for (auto& [_, object] : mObjects)
             object->commitPositionChange();
 
-        for (auto& [_, actor] : mActors)
-            actor->updateCollisionObjectPosition();
+        // NOTE: disabled as last step in simulation sets actor positions if changed
+        // TODO: evaluate if this is needed at all, if not, remove
+        // for (auto& [_, actor] : mActors)
+        //     actor->updateCollisionObjectPosition();
     }
 
     void PhysicsSystem::moveActors()
