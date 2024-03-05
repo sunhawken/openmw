@@ -320,19 +320,16 @@ namespace NifJolt
         const osg::Vec3f& osgPos = transform.getTrans();
         const osg::Quat& osgQuat = transform.getRotate();
 
+        // Some objects require sanitizing, most don't.
+        // FIXME: Ideally we can check for error then sanitize but its a Jolt limitation.
+        childShape->Sanitize();
+
         // Try create shape, Jolt will validate and give error if it failed (it shouldnt usually)
         auto createdRef = childShape->Create();
         if (createdRef.HasError())
         {
-            // Remove degenerate and duplicate triangles, then try again
-            childShape->Sanitize();
-
-            createdRef = childShape->Create();
-            if (createdRef.HasError())
-            {
-                Log(Debug::Error) << "JoltNifLoader mesh error: " << createdRef.GetError();
-                return;
-            }
+            Log(Debug::Error) << "JoltNifLoader mesh error: " << createdRef.GetError();
+            return;
         }
 
         // TODO: determine if has any animation in collision object at all so parent can be mutable
