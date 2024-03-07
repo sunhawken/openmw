@@ -302,6 +302,7 @@ namespace MWPhysics
         , mTimeBegin(0)
         , mTimeEnd(0)
         , mFrameStart(0)
+        , mSimulationBarrier(nullptr)
     {
         Log(Debug::Info) << "Using " << (jobSystem->GetMaxConcurrency() - 1) << " async physics threads";
         if (jobSystem->GetMaxConcurrency() <= 1)
@@ -417,12 +418,7 @@ namespace MWPhysics
 
     void PhysicsTaskScheduler::syncSimulation()
     {
-        if (mSimulationBarrier)
-        {
-            mJobSystem->WaitForJobs(mSimulationBarrier);
-            mJobSystem->DestroyBarrier(mSimulationBarrier);
-            mSimulationBarrier = nullptr;
-        }
+        waitForSimulationBarrier();
 
         if (mSimulations != nullptr)
         {
@@ -436,8 +432,20 @@ namespace MWPhysics
         }
     }
 
+    void PhysicsTaskScheduler::waitForSimulationBarrier()
+    {
+        if (mSimulationBarrier)
+        {
+            mJobSystem->WaitForJobs(mSimulationBarrier);
+            mJobSystem->DestroyBarrier(mSimulationBarrier);
+            mSimulationBarrier = nullptr;
+        }
+    }
+
     void PhysicsTaskScheduler::resetSimulation(const ActorMap& actors)
     {
+        waitForSimulationBarrier();
+
         mBudget.reset(mDefaultPhysicsDt);
         mAsyncBudget.reset(0.0f);
         if (mSimulations != nullptr)
@@ -642,6 +650,8 @@ namespace MWPhysics
 
     void PhysicsTaskScheduler::releaseSharedStates()
     {
+        waitForSimulationBarrier();
+
         if (mSimulations != nullptr)
         {
             mSimulations->clear();

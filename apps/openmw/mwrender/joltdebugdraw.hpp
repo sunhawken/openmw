@@ -44,7 +44,6 @@ namespace MWRender
             }
         };
 
-        /// Implementation specific batch object
         class BatchImpl : public JPH::RefTargetVirtual
         {
         public:
@@ -79,7 +78,7 @@ namespace MWRender
         osg::ref_ptr<osg::StateSet> stateSet;
         Batch mEmptyBatch;
 
-        bool mDebugOn = true; // TODO: not true
+        bool mDebugOn = false;
 
         std::mutex mCollisionMutex;
         JPH::Mutex mPrimitivesLock;

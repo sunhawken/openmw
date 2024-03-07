@@ -65,9 +65,9 @@ namespace NavMeshTool
             : mShapeInstance(std::move(shapeInstance))
             , mObjectTransform{ position, localScaling }
         {
-            mShapeInstance->setLocalScaling(osg::Vec3f(localScaling, localScaling, localScaling));
             worldTransform.setTrans(position.asVec3());
             worldTransform.setRotate(Misc::Convert::makeOsgQuat(position));
+            worldTransform = osg::Matrixd::scale(osg::Vec3f(localScaling, localScaling, localScaling)) * worldTransform;
         }
 
         const osg::ref_ptr<Resource::PhysicsShapeInstance>& getShapeInstance() const noexcept { return mShapeInstance; }
