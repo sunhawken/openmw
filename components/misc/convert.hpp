@@ -69,11 +69,9 @@ namespace Misc::Convert
 
     inline JPH::RMat44 toJoltNoScale(const osg::Matrixd& mat)
     {
-        osg::Quat quat = mat.getRotate();
+        JPH::Quat quat = toJolt(mat.getRotate()).Normalized();
         osg::Vec3d trans = mat.getTrans();
-
-        // NOTE: discards scale - do we care?
-        return JPH::RMat44::sRotationTranslation(toJolt(quat), toJolt<JPH::RVec3>(trans));
+        return JPH::RMat44::sRotationTranslation(quat, toJolt<JPH::RVec3>(trans));
     }
 
     inline osg::Vec3f toOsg(const JPH::RVec3& vec)

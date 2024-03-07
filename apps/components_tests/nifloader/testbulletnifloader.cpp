@@ -29,7 +29,7 @@ namespace
         });
         btVector3 aabbMin;
         btVector3 aabbMax;
-        shape.getAabb(btTransform::getIdentity(), aabbMin, aabbMax);
+        shape.getAabb(osg::Matrixd::identity(), aabbMin, aabbMax);
         shape.processAllTriangles(&callback, aabbMin, aabbMax);
         return result;
     }
@@ -134,7 +134,7 @@ namespace Resource
         });
         btVector3 aabbMin;
         btVector3 aabbMax;
-        value.getAabb(btTransform::getIdentity(), aabbMin, aabbMax);
+        value.getAabb(osg::Matrixd::identity(), aabbMin, aabbMax);
         value.processAllTriangles(&callback, aabbMin, aabbMax);
         return stream << "}}";
     }
@@ -589,7 +589,7 @@ namespace
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         auto triShape = std::make_unique<Resource::TriangleMeshShape>(triangles.release(), true);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -615,7 +615,7 @@ namespace
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         auto triShape = std::make_unique<Resource::TriangleMeshShape>(triangles.release(), true);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -640,7 +640,7 @@ namespace
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         auto triShape = std::make_unique<Resource::TriangleMeshShape>(triangles.release(), true);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -667,7 +667,7 @@ namespace
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         auto triShape = std::make_unique<Resource::TriangleMeshShape>(triangles.release(), true);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -696,9 +696,9 @@ namespace
         auto triShape2 = std::make_unique<Resource::TriangleMeshShape>(triangles2.release(), true);
 
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(triShape2.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(triShape2.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -724,7 +724,7 @@ namespace
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         auto triShape = std::make_unique<Resource::TriangleMeshShape>(triangles.release(), true);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(triShape.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -914,9 +914,9 @@ namespace
 
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh2.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh2.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -944,7 +944,7 @@ namespace
 
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
         Resource::PhysicsShape expected;
         expected.mAvoidCollisionShape.reset(compound.release());
 
@@ -1007,7 +1007,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -1038,7 +1038,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -1067,7 +1067,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -1097,7 +1097,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -1125,7 +1125,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -1160,7 +1160,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -1224,7 +1224,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());
@@ -1315,7 +1315,7 @@ namespace
         std::unique_ptr<Resource::TriangleMeshShape> mesh(new Resource::TriangleMeshShape(triangles.release(), true));
         std::unique_ptr<btCompoundShape> compound(new btCompoundShape);
         compound->addChildShape(
-            btTransform::getIdentity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
+            osg::Matrixd::identity(), new Resource::ScaledTriangleMeshShape(mesh.release(), btVector3(1, 1, 1)));
 
         Resource::PhysicsShape expected;
         expected.mCollisionShape.reset(compound.release());

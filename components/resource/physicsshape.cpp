@@ -6,6 +6,8 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 
+#include <components/debug/debuglog.hpp>
+
 namespace Resource
 {
     PhysicsShape::PhysicsShape(const PhysicsShape& other, const osg::CopyOp& copyOp)
@@ -18,14 +20,6 @@ namespace Resource
         , mFileHash(other.mFileHash)
         , mVisualCollisionType(other.mVisualCollisionType)
     {
-    }
-
-    void PhysicsShape::setLocalScaling(const osg::Vec3f& scale)
-    {
-        // TODO: revisit this method!!
-        // mCollisionShape->setLocalScaling(scale);
-        // if (mAvoidCollisionShape)
-        //     mAvoidCollisionShape->setLocalScaling(scale);
     }
 
     osg::ref_ptr<PhysicsShapeInstance> makeInstance(osg::ref_ptr<const PhysicsShape> source)

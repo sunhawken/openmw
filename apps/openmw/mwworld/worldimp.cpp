@@ -3651,6 +3651,7 @@ namespace MWWorld
         const JPH::Vec3 diff = localTo - localFrom;
 
         JPH::BoxShape boundsShape(halfExtents);
+        boundsShape.SetEmbedded();
         JPH::RayCast ray(localFrom, diff);
         JPH::RayCastResult ioHit;
         return boundsShape.CastRay(ray, {}, ioHit);

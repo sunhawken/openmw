@@ -20,11 +20,10 @@ namespace DetourNavigator
     {
         auto subRot = subShape.GetRotation();
         auto comPos = subShape.GetPositionCOM();
-        JPH::Vec3 inCenterOfMass = JPH::Vec3(0.0f, 0.0f, 0.0f);
-        auto inPosition = comPos + inCenterOfMass - subRot * subShape.mShape->GetCenterOfMass();
+        auto subPos = comPos - subRot * subShape.mShape->GetCenterOfMass();
         osg::Matrixd trans;
         trans.makeRotate(osg::Quat(subRot.GetX(), subRot.GetY(), subRot.GetZ(), subRot.GetW()));
-        trans.setTrans(osg::Vec3f(inPosition.GetX(), inPosition.GetY(), inPosition.GetZ()));
+        trans.setTrans(osg::Vec3f(subPos.GetX(), subPos.GetY(), subPos.GetZ()));
         return trans;
     }
 
@@ -45,7 +44,7 @@ namespace DetourNavigator
 
     private:
         osg::ref_ptr<const Resource::PhysicsShapeInstance> mInstance;
-        std::reference_wrapper<const JPH::Shape> mShape;
+        const JPH::Shape& mShape;
         ObjectTransform mObjectTransform;
     };
 
@@ -80,7 +79,7 @@ namespace DetourNavigator
 
         const osg::ref_ptr<const Resource::PhysicsShapeInstance>& getInstance() const { return mInstance; }
 
-        const JPH::RefConst<JPH::Shape> getShape() const { return mShape; }
+        const JPH::Shape& getShape() const { return mShape; }
 
         const osg::Matrixd& getTransform() const { return mTransform; }
 
@@ -92,7 +91,7 @@ namespace DetourNavigator
         osg::ref_ptr<const Resource::PhysicsShapeInstance> mInstance;
         ObjectTransform mObjectTransform;
 
-        JPH::RefConst<JPH::Shape> mShape;
+        const JPH::Shape& mShape;
         osg::Matrixd mTransform;
         AreaType mAreaType;
         JPH::Vec3 mLocalScaling;

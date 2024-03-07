@@ -3,6 +3,11 @@
 #include <components/detournavigator/settingsutils.hpp>
 #include <components/detournavigator/tilecachedrecastmeshmanager.hpp>
 
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Body/Body.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
+
 #include <osg/io_utils>
 
 #include <gmock/gmock.h>
@@ -44,30 +49,30 @@ namespace
     TEST_F(DetourNavigatorTileCachedRecastMeshManagerTest, add_object_for_new_object_should_return_true)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         EXPECT_TRUE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
     }
 
     TEST_F(DetourNavigatorTileCachedRecastMeshManagerTest, add_object_for_existing_object_should_return_false)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_FALSE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
     }
 
     TEST_F(DetourNavigatorTileCachedRecastMeshManagerTest, add_object_should_add_tiles)
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         ASSERT_TRUE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         for (int x = -1; x < 1; ++x)
             for (int y = -1; y < 1; ++y)
                 ASSERT_NE(manager.getMesh("worldspace", TilePosition(x, y)), nullptr);
@@ -76,23 +81,23 @@ namespace
     TEST_F(DetourNavigatorTileCachedRecastMeshManagerTest, add_object_should_return_add_changed_tiles)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         const TilesPositionsRange range{
             .mBegin = TilePosition(0, 0),
             .mEnd = TilePosition(1, 1),
         };
         manager.setRange(range, nullptr);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_THAT(manager.takeChangedTiles(nullptr), ElementsAre(std::pair(TilePosition(0, 0), ChangeType::add)));
     }
 
     TEST_F(DetourNavigatorTileCachedRecastMeshManagerTest, update_object_for_changed_object_should_add_changed_tiles)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
-        const btTransform transform(
-            btMatrix3x3::getIdentity(), btVector3(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
+        const osg::Matrixd transform
+            = osg::Matrixd::translate(osg::Vec3f(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         const TilesPositionsRange range{
             .mBegin = TilePosition(-1, -1),
@@ -102,7 +107,7 @@ namespace
         manager.addObject(ObjectId(&boxShape), shape, transform, AreaType::AreaType_ground, nullptr);
         manager.takeChangedTiles(nullptr);
         EXPECT_TRUE(
-            manager.updateObject(ObjectId(&boxShape), btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            manager.updateObject(ObjectId(&boxShape), osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         EXPECT_THAT(manager.takeChangedTiles(nullptr),
             ElementsAre(std::pair(TilePosition(-1, -1), ChangeType::add),
                 std::pair(TilePosition(-1, 0), ChangeType::add), std::pair(TilePosition(0, -1), ChangeType::update),
@@ -114,26 +119,26 @@ namespace
         update_object_for_not_changed_object_should_not_add_changed_tiles)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         manager.takeChangedTiles(nullptr);
         EXPECT_FALSE(
-            manager.updateObject(ObjectId(&boxShape), btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            manager.updateObject(ObjectId(&boxShape), osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         EXPECT_THAT(manager.takeChangedTiles(nullptr), IsEmpty());
     }
 
     TEST_F(DetourNavigatorTileCachedRecastMeshManagerTest, remove_object_should_return_add_changed_tiles)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         const TilesPositionsRange range{
             .mBegin = TilePosition(0, 0),
             .mEnd = TilePosition(1, 1),
         };
         manager.setRange(range, nullptr);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         manager.takeChangedTiles(nullptr);
         manager.removeObject(ObjectId(&boxShape), nullptr);
         EXPECT_THAT(manager.takeChangedTiles(nullptr), ElementsAre(std::pair(TilePosition(0, 0), ChangeType::remove)));
@@ -144,9 +149,9 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, -1)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, 0)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(0, -1)), nullptr);
@@ -158,9 +163,9 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_EQ(manager.getMesh("worldspace", TilePosition(1, 0)), nullptr);
     }
 
@@ -175,9 +180,9 @@ namespace
         manager.setRange(range, nullptr);
         manager.setWorldspace("worldspace", nullptr);
 
-        const btBoxShape boxShape(btVector3(20, 20, 100));
-        const btTransform transform(
-            btMatrix3x3::getIdentity(), btVector3(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
+        const osg::Matrixd transform
+            = osg::Matrixd::translate(osg::Vec3f(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
 
         manager.addObject(ObjectId(&boxShape), shape, transform, AreaType::AreaType_ground, nullptr);
@@ -186,7 +191,7 @@ namespace
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(1, 0)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(1, -1)), nullptr);
 
-        manager.updateObject(ObjectId(&boxShape), btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.updateObject(ObjectId(&boxShape), osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, -1)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, 0)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(0, -1)), nullptr);
@@ -199,16 +204,16 @@ namespace
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
 
-        const btBoxShape boxShape(btVector3(20, 20, 100));
-        const btTransform transform(
-            btMatrix3x3::getIdentity(), btVector3(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
+        const osg::Matrixd transform
+            = osg::Matrixd::translate(osg::Vec3f(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
 
         manager.addObject(ObjectId(&boxShape), shape, transform, AreaType::AreaType_ground, nullptr);
         EXPECT_EQ(manager.getMesh("worldspace", TilePosition(-1, -1)), nullptr);
         EXPECT_EQ(manager.getMesh("worldspace", TilePosition(-1, 0)), nullptr);
 
-        manager.updateObject(ObjectId(&boxShape), btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.updateObject(ObjectId(&boxShape), osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_EQ(manager.getMesh("worldspace", TilePosition(1, 0)), nullptr);
         EXPECT_EQ(manager.getMesh("worldspace", TilePosition(1, -1)), nullptr);
     }
@@ -218,9 +223,9 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         manager.removeObject(ObjectId(&boxShape), nullptr);
         EXPECT_EQ(manager.getMesh("worldspace", TilePosition(-1, -1)), nullptr);
         EXPECT_EQ(manager.getMesh("worldspace", TilePosition(-1, 0)), nullptr);
@@ -233,16 +238,16 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
 
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, -1)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, 0)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(0, -1)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(0, 0)), nullptr);
 
-        manager.updateObject(ObjectId(&boxShape), btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.updateObject(ObjectId(&boxShape), osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, -1)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(-1, 0)), nullptr);
         EXPECT_NE(manager.getMesh("worldspace", TilePosition(0, -1)), nullptr);
@@ -254,9 +259,9 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         const auto initialRevision = manager.getRevision();
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_EQ(manager.getRevision(), initialRevision + 1);
     }
 
@@ -264,12 +269,12 @@ namespace
         DetourNavigatorTileCachedRecastMeshManagerTest, get_revision_after_add_object_existing_should_return_same_value)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         const auto beforeAddRevision = manager.getRevision();
         EXPECT_FALSE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         EXPECT_EQ(manager.getRevision(), beforeAddRevision);
     }
 
@@ -277,13 +282,13 @@ namespace
         get_revision_after_update_moved_object_should_return_incremented_value)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
-        const btTransform transform(
-            btMatrix3x3::getIdentity(), btVector3(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
+        const osg::Matrixd transform
+            = osg::Matrixd::translate(osg::Vec3f(getTileSize(mSettings) / mSettings.mRecastScaleFactor, 0, 0));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         manager.addObject(ObjectId(&boxShape), shape, transform, AreaType::AreaType_ground, nullptr);
         const auto beforeUpdateRevision = manager.getRevision();
-        manager.updateObject(ObjectId(&boxShape), btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.updateObject(ObjectId(&boxShape), osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_EQ(manager.getRevision(), beforeUpdateRevision + 1);
     }
 
@@ -292,11 +297,11 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         const auto beforeUpdateRevision = manager.getRevision();
-        manager.updateObject(ObjectId(&boxShape), btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.updateObject(ObjectId(&boxShape), osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         EXPECT_EQ(manager.getRevision(), beforeUpdateRevision);
     }
 
@@ -304,9 +309,9 @@ namespace
         get_revision_after_remove_existing_object_should_return_incremented_value)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         const auto beforeRemoveRevision = manager.getRevision();
         manager.removeObject(ObjectId(&boxShape), nullptr);
         EXPECT_EQ(manager.getRevision(), beforeRemoveRevision + 1);
@@ -350,10 +355,10 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         ASSERT_TRUE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         const osg::Vec2i cellPosition(0, 0);
         const int cellSize = std::numeric_limits<int>::max();
         manager.addWater(cellPosition, cellSize, 0.0f, nullptr);
@@ -402,10 +407,10 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         ASSERT_TRUE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         const osg::Vec2i cellPosition(0, 0);
         const int cellSize = 8192;
         manager.addWater(cellPosition, cellSize, 0.0f, nullptr);
@@ -422,10 +427,10 @@ namespace
         manager.setWorldspace("worldspace", nullptr);
         const osg::Vec2i cellPosition(0, 0);
         const int cellSize = 8192;
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         ASSERT_TRUE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         manager.addWater(cellPosition, cellSize, 0.0f, nullptr);
         manager.removeObject(ObjectId(&boxShape), nullptr);
         for (int x = -1; x < 12; ++x)
@@ -437,10 +442,10 @@ namespace
     {
         TileCachedRecastMeshManager manager(mSettings);
         manager.setWorldspace("worldspace", nullptr);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(nullptr, boxShape, mObjectTransform);
         ASSERT_TRUE(manager.addObject(
-            ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr));
+            ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr));
         manager.setWorldspace("other", nullptr);
         for (int x = -1; x < 1; ++x)
             for (int y = -1; y < 1; ++y)
@@ -450,14 +455,14 @@ namespace
     TEST_F(DetourNavigatorTileCachedRecastMeshManagerTest, set_bounds_should_add_changed_tiles)
     {
         TileCachedRecastMeshManager manager(mSettings);
-        const btBoxShape boxShape(btVector3(20, 20, 100));
+        const JPH::BoxShape boxShape(JPH::Vec3(20, 20, 100));
         const CollisionShape shape(mInstance, boxShape, mObjectTransform);
         const TilesPositionsRange range1{
             .mBegin = TilePosition(0, 0),
             .mEnd = TilePosition(1, 1),
         };
         manager.setRange(range1, nullptr);
-        manager.addObject(ObjectId(&boxShape), shape, btTransform::getIdentity(), AreaType::AreaType_ground, nullptr);
+        manager.addObject(ObjectId(&boxShape), shape, osg::Matrixd::identity(), AreaType::AreaType_ground, nullptr);
         const TilesPositionsRange range2{
             .mBegin = TilePosition(-1, -1),
             .mEnd = TilePosition(0, 0),
