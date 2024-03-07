@@ -315,6 +315,6 @@ namespace MWRender
     void JoltDebugDrawer::DrawText3D(
         JPH::RVec3Arg inPosition, const std::string_view& inString, JPH::ColorArg inColor, float inHeight)
     {
-        Log(Debug::Info) << "DrawText3D ";
+        // No implementation
     }
 }

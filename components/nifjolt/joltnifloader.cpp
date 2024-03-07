@@ -8,6 +8,7 @@
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/files/conversion.hpp>
@@ -304,17 +305,7 @@ namespace NifJolt
         for (const Nif::Parent* parent = nodeParent; parent != nullptr; parent = parent->mParent)
             transform *= parent->mNiNode.mTransform.toMatrix();
 
-        // TODO: restore scaling
         osg::Vec3f localScale = transform.getScale();
-        bool isScaledShape = !isScaleUniformAndCloseToOne(localScale);
-        if (isScaledShape)
-        {
-            // TODO: support this
-            Log(Debug::Info) << "found nif with localsccaling, need to support it. " << std::setprecision(10)
-                             << localScale.x() << ", " << std::setprecision(10) << localScale.y() << ", "
-                             << std::setprecision(10) << localScale.z();
-        }
-
         transform.orthoNormalize(transform);
 
         const osg::Vec3f& osgPos = transform.getTrans();
@@ -330,6 +321,15 @@ namespace NifJolt
         {
             Log(Debug::Error) << "JoltNifLoader mesh error: " << createdRef.GetError();
             return;
+        }
+
+        // Scaled shapes require wrapping the initial shape in a ScaledShape
+        auto finalShape = createdRef.Get();
+        bool isScaledShape = !isScaleUniformAndCloseToOne(localScale);
+        if (isScaledShape)
+        {
+            JPH::ScaledShapeSettings scaledSettings(createdRef.Get(), Misc::Convert::toJolt<JPH::Vec3>(localScale));
+            createdRef = scaledSettings.Create();
         }
 
         // TODO: determine if has any animation in collision object at all so parent can be mutable

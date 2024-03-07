@@ -61,8 +61,6 @@ namespace Resource
 
         META_Object(Resource, PhysicsShape)
 
-        void setLocalScaling(const osg::Vec3f& scale);
-
         bool isAnimated() const { return !mAnimatedShapes.empty(); }
     };
 
