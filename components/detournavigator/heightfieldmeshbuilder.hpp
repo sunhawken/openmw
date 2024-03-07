@@ -26,7 +26,7 @@ namespace JPH
 
 namespace DetourNavigator
 {
-    using TriangleProcessFunc = std::function<void(JPH::RVec3* triangle, int partId, int triangleIndex)>;
+    using TriangleProcessFunc = std::function<void(JPH::Float3* triangle, int partId, int triangleIndex)>;
 
     class HeightfieldMeshBuilder
     {
@@ -47,7 +47,7 @@ namespace DetourNavigator
 
         const JPH::Vec3& getLocalScaling() const;
 
-        void getVertex(int x, int y, JPH::RVec3& vertex) const;
+        void getVertex(int x, int y, JPH::Float3& vertex) const;
 
         void quantizeWithClamp(int* out, const JPH::Vec3& point, int isMax) const;
 
