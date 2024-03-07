@@ -17,10 +17,11 @@
 namespace JPH
 {
     class Shape;
-    class BoxShape;
+    class ConvexShape;
     class MeshShape;
     class CompoundShape;
     class HeightFieldShape;
+    class RotatedTranslatedShape;
 }
 
 namespace DetourNavigator
@@ -36,7 +37,7 @@ namespace DetourNavigator
         }
     };
 
-    using TriangleProcessFunc = std::function<void(JPH::RVec3* triangle, int partId, int triangleIndex)>;
+    using TriangleProcessFunc = std::function<void(JPH::Float3* triangle, int partId, int triangleIndex)>;
     using TriangleWalkerFunc = std::function<void(JPH::Float3& v1, JPH::Float3& v2, JPH::Float3& v3, int)>;
 
     class RecastMeshBuilder
@@ -66,19 +67,17 @@ namespace DetourNavigator
 
         inline void addObject(const JPH::Shape& shape, const osg::Matrixd& transform, const AreaType areaType);
 
-        void addObject(
-            const JPH::MeshShape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle);
+        void addObject(const JPH::Shape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle);
 
         void addObject(
             const JPH::HeightFieldShape& shape, const osg::Matrixd& transform, TriangleProcessFunc& processTriangle);
 
+        void addObject(
+            const JPH::RotatedTranslatedShape& shape, const osg::Matrixd& transform, const AreaType areaType);
+
         void addObject(const JPH::CompoundShape& shape, const osg::Matrixd& transform, const AreaType areaType);
 
-        void addObject(const JPH::MeshShape& shape, const osg::Matrixd& transform, const AreaType areaType);
-
         void addObject(const JPH::HeightFieldShape& shape, const osg::Matrixd& transform, const AreaType areaType);
-
-        void addObject(const JPH::BoxShape& shape, const osg::Matrixd& transform, const AreaType areaType);
     };
 
     Mesh makeMesh(std::vector<RecastMeshTriangle>&& triangles, const osg::Vec3f& shift = osg::Vec3f());

@@ -2,7 +2,6 @@
 #define OPENMW_TEST_SUITE_DETOURNAVIGATOR_OPERATORS_H
 
 #include <components/detournavigator/debug.hpp>
-#include <components/physicshelpers/operators.hpp>
 
 #include <deque>
 #include <iomanip>
