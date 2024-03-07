@@ -84,6 +84,7 @@ namespace MWPhysics
     private:
         class WorkersSync;
 
+        void waitForSimulationBarrier();
         void doSimulation();
         void updateActorsPositions();
         bool hasLineOfSight(const Actor* actor1, const Actor* actor2);

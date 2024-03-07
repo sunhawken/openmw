@@ -58,8 +58,8 @@ namespace DetourNavigator
     {
     }
 
-    inline bool updateMeshObject(const JPH::RefConst<JPH::Shape>& actualShape, const osg::Matrixd& transform,
-        const AreaType areaType, osg::Matrixd& mTransform, AreaType& mAreaType, JPH::Vec3& mLocalScaling,
+    inline bool updateMeshObject(const JPH::Shape& actualShape, const osg::Matrixd& transform, const AreaType areaType,
+        osg::Matrixd& mTransform, AreaType& mAreaType, JPH::Vec3& mLocalScaling,
         std::vector<ChildRecastMeshObject>& mChildren)
     {
         bool result = false;
@@ -74,7 +74,7 @@ namespace DetourNavigator
             result = true;
         }
 
-        const JPH::ScaledShape* scaledShape = dynamic_cast<const JPH::ScaledShape*>(actualShape.GetPtr());
+        const JPH::ScaledShape* scaledShape = dynamic_cast<const JPH::ScaledShape*>(&actualShape);
         if (scaledShape)
         {
             auto shapeScale = scaledShape->GetScale();
@@ -85,9 +85,8 @@ namespace DetourNavigator
             }
         }
 
-        if (dynamic_cast<const JPH::CompoundShape*>(actualShape.GetPtr()))
-            result = updateCompoundObject(
-                         *static_cast<const JPH::CompoundShape*>(actualShape.GetPtr()), mAreaType, mChildren)
+        if (dynamic_cast<const JPH::CompoundShape*>(&actualShape))
+            result = updateCompoundObject(static_cast<const JPH::CompoundShape&>(actualShape), mAreaType, mChildren)
                 || result;
 
         return result;
@@ -96,7 +95,8 @@ namespace DetourNavigator
     bool ChildRecastMeshObject::update(const osg::Matrixd& transform, const AreaType areaType)
     {
         const JPH::RefConst<JPH::Shape> actualShape = mShape.get().mShape;
-        return updateMeshObject(actualShape, transform, areaType, mTransform, mAreaType, mLocalScaling, mChildren);
+        return updateMeshObject(
+            *actualShape.GetPtr(), transform, areaType, mTransform, mAreaType, mLocalScaling, mChildren);
     }
 
     bool RecastMeshObject::update(const osg::Matrixd& transform, const AreaType areaType)
@@ -108,11 +108,11 @@ namespace DetourNavigator
         const CollisionShape& shape, const osg::Matrixd& transform, const AreaType areaType)
         : mInstance(shape.getInstance())
         , mObjectTransform(shape.getObjectTransform())
-        , mShape(&shape.getShape())
+        , mShape(shape.getShape())
         , mTransform(transform)
         , mAreaType(areaType)
         , mLocalScaling(Misc::Convert::toJolt<JPH::Vec3>(transform.getScale()))
-        , mChildren(makeChildrenObjects(*mShape.GetPtr(), mAreaType))
+        , mChildren(makeChildrenObjects(mShape, mAreaType))
     {
     }
 }

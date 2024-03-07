@@ -73,7 +73,7 @@ namespace DetourNavigator
     }
 
     /// this returns the vertex in local coordinates
-    void HeightfieldMeshBuilder::getVertex(int x, int y, JPH::RVec3& vertex) const
+    void HeightfieldMeshBuilder::getVertex(int x, int y, JPH::Float3& vertex) const
     {
         assert(x >= 0);
         assert(y >= 0);
@@ -82,9 +82,9 @@ namespace DetourNavigator
 
         double height = getRawHeightFieldValue(x, y);
 
-        vertex.Set((-m_width / double(2.0)) + x, (-m_length / double(2.0)) + y, height - m_localOrigin.GetZ());
-
-        vertex *= JPH::RVec3(m_localScaling);
+        vertex.x = m_localScaling.GetX() * ((-m_width / double(2.0)) + x);
+        vertex.y = m_localScaling.GetY() * ((-m_length / double(2.0)) + y);
+        vertex.z = m_localScaling.GetZ() * (height - m_localOrigin.GetZ());
     }
 
     static inline int getQuantized(double x)
@@ -172,7 +172,7 @@ namespace DetourNavigator
         {
             for (int x = startX; x < endX; x++)
             {
-                JPH::RVec3 vertices[3];
+                JPH::Float3 vertices[3];
                 int indices[3] = { 0, 1, 2 };
 
                 if (m_flipQuadEdges || (m_useDiamondSubdivision && !((j + x) & 1))
