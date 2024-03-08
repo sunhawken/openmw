@@ -90,16 +90,20 @@ namespace Resource
 
             auto meshInterface = triangleMeshShape.release()->m_meshInterface;
 
-            // Some objects require sanitizing, most don't.
-            // FIXME: Ideally we can check for error then sanitize but its a Jolt limitation.
-            meshInterface->Sanitize();
-
             // Try create shape, Jolt will validate and give error if it failed (it shouldnt usually)
             auto createdRef = meshInterface->Create();
             if (createdRef.HasError())
             {
-                Log(Debug::Error) << "PhysicsShape::getShape mesh error: " << createdRef.GetError();
-                return shape;
+                // Remove degenerate and duplicate triangles, then try again
+                meshInterface->ClearCachedResult();
+                meshInterface->Sanitize();
+
+                createdRef = meshInterface->Create();
+                if (createdRef.HasError())
+                {
+                    Log(Debug::Error) << "PhysicsShapeManager mesh error: " << createdRef.GetError();
+                    return osg::ref_ptr<PhysicsShape>();
+                }
             }
 
             shape->mCollisionShape = createdRef.Get();
