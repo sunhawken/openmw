@@ -654,7 +654,7 @@ endif()
 # Make the variable accessible for other subdirectories
 set(COMPONENT_FILES ${COMPONENT_FILES} PARENT_SCOPE)
 
-target_compile_definitions(components PUBLIC BT_USE_DOUBLE_PRECISION)
+target_compile_definitions(components PUBLIC DOUBLE_PRECISION)
 target_compile_definitions(components PRIVATE OPENMW_DOC_BASEURL="${OPENMW_DOC_BASEURL}")
 
 if(OSG_STATIC)
