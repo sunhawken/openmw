@@ -182,7 +182,8 @@ namespace
         constexpr double expiryDelay = 0;
         Resource::ImageManager imageManager(&vfs, expiryDelay);
         Resource::NifFileManager nifFileManager(&vfs, &encoder.getStatelessEncoder());
-        Resource::SceneManager sceneManager(&vfs, &imageManager, &nifFileManager, expiryDelay);
+        Resource::BgsmFileManager bgsmFileManager(&vfs, expiryDelay);
+        Resource::SceneManager sceneManager(&vfs, &imageManager, &nifFileManager, &bgsmFileManager, expiryDelay);
         Resource::PhysicsShapeManager physicsShapeManager(&vfs, &sceneManager, &nifFileManager, expiryDelay);
 
         Resource::forEachPhysicsObject(readers, vfs, physicsShapeManager, esmData,
