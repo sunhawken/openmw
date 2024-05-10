@@ -114,10 +114,31 @@ namespace MWPhysics
         MultiBroadPhaseLayerFilter broadphaseLayerFilter({ BroadPhaseLayers::WORLD });
         MultiObjectLayerFilter objectLayerFilter({ Layers::WORLD, Layers::HEIGHTMAP });
 
+        // It is important to ignore backfaces for this check, as all actor collision should
+        JPH::RayCastSettings settings;
+        settings.mBackFaceMode = JPH::EBackFaceMode::IgnoreBackFaces;
+
         // Cast ray and return closest hit
-        const bool didRayHit
-            = physicsSystem->GetNarrowPhaseQuery().CastRay(ray, ioHit, broadphaseLayerFilter, objectLayerFilter);
-        if (didRayHit)
+		class TraceHitCollector : public JPH::CastRayCollector
+		{
+		public:
+			virtual void AddHit(const JPH::RayCastResult &inResult) override
+			{
+				mSubShapeID2 = inResult.mSubShapeID2;
+				mBodyID = inResult.mBodyID;
+                mHit = true;
+                ForceEarlyOut(); // Only collect a single hit
+			}
+
+            bool mHit = false;
+			JPH::BodyID mBodyID;
+			JPH::SubShapeID mSubShapeID2;
+		};
+
+        TraceHitCollector collector;
+        physicsSystem->GetNarrowPhaseQuery().CastRay(ray, settings, collector, broadphaseLayerFilter, objectLayerFilter);
+
+        if (collector.mHit)
         {
             JPH::RVec3 hitPointWorld = ray.GetPointOnRay(ioHit.mFraction);
             if (((Misc::Convert::toOsg(hitPointWorld) - tracer.mEndPos + offset).length2() > 35 * 35
@@ -135,6 +156,8 @@ namespace MWPhysics
         }
 
         actor->setOnSlope(!isWalkableSlope(tracer.mPlaneNormal));
+
+        auto trRes = tracer.mEndPos - offset + osg::Vec3f(0.f, 0.f, sGroundOffset);
 
         return tracer.mEndPos - offset + osg::Vec3f(0.f, 0.f, sGroundOffset);
     }
