@@ -119,21 +119,21 @@ namespace MWPhysics
         settings.mBackFaceMode = JPH::EBackFaceMode::IgnoreBackFaces;
 
         // Cast ray and return closest hit
-		class TraceHitCollector : public JPH::CastRayCollector
-		{
-		public:
-			virtual void AddHit(const JPH::RayCastResult &inResult) override
-			{
-				mSubShapeID2 = inResult.mSubShapeID2;
-				mBodyID = inResult.mBodyID;
+        class TraceHitCollector : public JPH::CastRayCollector
+        {
+        public:
+            virtual void AddHit(const JPH::RayCastResult &inResult) override
+            {
+                mSubShapeID2 = inResult.mSubShapeID2;
+                mBodyID = inResult.mBodyID;
                 mHit = true;
                 ForceEarlyOut(); // Only collect a single hit
-			}
+            }
 
             bool mHit = false;
-			JPH::BodyID mBodyID;
-			JPH::SubShapeID mSubShapeID2;
-		};
+            JPH::BodyID mBodyID;
+            JPH::SubShapeID mSubShapeID2;
+        };
 
         TraceHitCollector collector;
         physicsSystem->GetNarrowPhaseQuery().CastRay(ray, settings, collector, broadphaseLayerFilter, objectLayerFilter);
@@ -156,8 +156,6 @@ namespace MWPhysics
         }
 
         actor->setOnSlope(!isWalkableSlope(tracer.mPlaneNormal));
-
-        auto trRes = tracer.mEndPos - offset + osg::Vec3f(0.f, 0.f, sGroundOffset);
 
         return tracer.mEndPos - offset + osg::Vec3f(0.f, 0.f, sGroundOffset);
     }
