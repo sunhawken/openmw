@@ -135,9 +135,9 @@ namespace
         // NOTE: this is the smallest Jolt heightfield we can create
         const std::array<float, 16> heightfieldData{ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } };
 
-        JPH::Vec3 mTerrainOffset = JPH::Vec3(-1.5f, 0.0f, -1.5f);
-        JPH::Vec3 mTerrainScale = JPH::Vec3::sReplicate(1.0f);
-        JPH::HeightFieldShapeSettings shapeSettings(heightfieldData.data(), mTerrainOffset, mTerrainScale, 4);
+        JPH::Vec3 terrainOffset(-1.5f, 0.0f, -1.5f);
+        JPH::Vec3 terrainScale = JPH::Vec3::sReplicate(1.0f);
+        JPH::HeightFieldShapeSettings shapeSettings(heightfieldData.data(), terrainOffset, terrainScale, 4);
         shapeSettings.mBlockSize = 2;
 
         auto createdRes = shapeSettings.Create();

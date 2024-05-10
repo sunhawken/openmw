@@ -24,12 +24,11 @@ namespace MWPhysics
         mWorldOrigin = PhysicsSystemHelpers::getHeightfieldShift(x, y, size, minH, maxH);
 
         // Determine scale and offset
-        JPH::Vec3 mTerrainOffset = JPH::Vec3(float(size) / 2.0f - float(size), 0.0f, float(size) / 2.0f - float(size));
-        JPH::Vec3 mTerrainScale
-            = JPH::Vec3(scaling, 1.0f, scaling); // NOTE: jolt heightfield is Y up, its rotated below
+        JPH::Vec3 terrainOffset = JPH::Vec3(float(size) / 2.0f - float(size), 0.0f, float(size) / 2.0f - float(size));
+        JPH::Vec3 terrainScale(scaling, 1.0f, scaling); // NOTE: jolt heightfield is Y up, its rotated below
 
         // Create height field
-        JPH::HeightFieldShapeSettings shapeSettings(heights, mTerrainOffset, mTerrainScale, verts);
+        JPH::HeightFieldShapeSettings shapeSettings(heights, terrainOffset, terrainScale, verts);
         shapeSettings.mMinHeightValue = minH;
         shapeSettings.mMaxHeightValue = maxH;
         shapeSettings.mBitsPerSample = 8;
