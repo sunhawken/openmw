@@ -92,10 +92,10 @@ namespace
         const float max = *std::max_element(values.begin(), values.end());
         const float greater = std::max(std::abs(min), std::abs(max));
 
-        JPH::Vec3 mTerrainOffset = JPH::Vec3(0.0f, 0, 0.0f);
-        JPH::Vec3 mTerrainScale = JPH::Vec3(128.0f, 1.0f, -128.0f); // NOTE: jolt heightfield is Y up, its rotated below
+        JPH::Vec3 terrainOffset(0.0f, 0, 0.0f);
+        JPH::Vec3 terrainScale(128.0f, 1.0f, -128.0f); // NOTE: jolt heightfield is Y up, its rotated below
 
-        JPH::HeightFieldShapeSettings settings(values.data(), mTerrainOffset, mTerrainScale, width);
+        JPH::HeightFieldShapeSettings settings(values.data(), terrainOffset, terrainScale, width);
         settings.mMinHeightValue = -greater;
         settings.mMaxHeightValue = greater;
         settings.mBlockSize = 2;
