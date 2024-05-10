@@ -58,10 +58,7 @@ namespace Misc::Convert
     {
         osg::Matrixd mat;
         auto inPosition = joltMatrix.GetTranslation();
-
-        // NOTE: jolt complains that translation isnt 0,0,0 here with asserts enabled
-        // it can be ignored.
-        auto subRot = joltMatrix.GetQuaternion();
+        auto subRot = joltMatrix.GetRotation().GetQuaternion();
         mat.makeRotate(osg::Quat(subRot.GetX(), subRot.GetY(), subRot.GetZ(), subRot.GetW()));
         mat.setTrans(osg::Vec3f(inPosition.GetX(), inPosition.GetY(), inPosition.GetZ()));
         return mat;
