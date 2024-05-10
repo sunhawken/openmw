@@ -127,7 +127,7 @@ add_component_dir (vfs
     )
 
 add_component_dir (resource
-    scenemanager keyframemanager imagemanager physicsshapemanager bulletshape niffilemanager objectcache multiobjectcache resourcesystem
+    scenemanager keyframemanager imagemanager physicsshapemanager physicsshape niffilemanager objectcache multiobjectcache resourcesystem
     resourcemanager stats animation foreachphysicsobject errormarker cachestats bgsmfilemanager
     )
 
