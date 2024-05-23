@@ -448,10 +448,6 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation></translation>
     </message>
     <message>
-        <source> Launch OpenMW </source>
-        <translation></translation>
-    </message>
-    <message>
         <source>Help</source>
         <translation></translation>
     </message>
@@ -546,6 +542,14 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>&lt;br&gt;&lt;b&gt;You do not have a game file selected.&lt;/b&gt;&lt;br&gt;&lt;br&gt;OpenMW will not start without a game file selected.&lt;br&gt;</source>
         <translation></translation>
+    </message>
+    <message>
+        <source>Launch OpenMW </source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
