@@ -1,6 +1,8 @@
 #include "maindialog.hpp"
 
 #include <QCloseEvent>
+#include <QDebug>
+#include <QDesktopServices>
 #include <QDir>
 #include <QMessageBox>
 #include <QStringList>
@@ -55,8 +57,27 @@ Launcher::MainDialog::MainDialog(const Files::ConfigurationManager& configuratio
         &MainDialog::wizardFinished);
 
     buttonBox->button(QDialogButtonBox::Close)->setText(tr("Close"));
-    buttonBox->button(QDialogButtonBox::Ok)->setText(tr(" Launch OpenMW "));
+    buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Launch OpenMW "));
     buttonBox->button(QDialogButtonBox::Help)->setText(tr("Help"));
+
+    QPushButton* openCongifBtn = buttonBox->addButton(tr("Open"), QDialogButtonBox::ActionRole);
+
+    QMenu* configMenu = new QMenu(openCongifBtn);
+
+    QAction* openConfigAction = new QAction("openmw.cfg");
+    connect(openConfigAction, &QAction::triggered, this, &MainDialog::openConfig);
+
+    QAction* openLogAction = new QAction("openmw.log");
+    connect(openLogAction, &QAction::triggered, this, &MainDialog::openLog);
+
+    QAction* openConfigFolderAction = new QAction("config folder");
+    connect(openConfigFolderAction, &QAction::triggered, this, &MainDialog::openConfigFolder);
+
+    configMenu->addAction(openConfigAction);
+    configMenu->addAction(openLogAction);
+    configMenu->addAction(openConfigFolderAction);
+
+    openCongifBtn->setMenu(configMenu);
 
     // Order of buttons can be different on different setups,
     // so make sure that the Play button has a focus by default.
@@ -394,10 +415,7 @@ bool Launcher::MainDialog::setupGameData()
     {
         QDir dir(path3.value);
         QStringList filters;
-        filters << "*.esp"
-                << "*.esm"
-                << "*.omwgame"
-                << "*.omwaddon";
+        filters << "*.esp" << "*.esm" << "*.omwgame" << "*.omwaddon";
 
         if (!dir.entryList(filters).isEmpty())
         {
@@ -603,4 +621,22 @@ void Launcher::MainDialog::play()
 void Launcher::MainDialog::help()
 {
     Misc::HelpViewer::openHelp("reference/index.html");
+}
+
+void Launcher::MainDialog::openConfig()
+{
+    QString configPath = Files::getUserConfigPathQString(mCfgMgr);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(configPath));
+}
+
+void Launcher::MainDialog::openLog()
+{
+    QUrl logUrl = QUrl::fromLocalFile(Files::pathToQString(mCfgMgr.getUserConfigPath() / "openmw.log"));
+    QDesktopServices::openUrl(logUrl);
+}
+
+void Launcher::MainDialog::openConfigFolder()
+{
+    QUrl confFolderUrl = QUrl::fromLocalFile(Files::pathToQString(mCfgMgr.getUserConfigPath()));
+    QDesktopServices::openUrl(confFolderUrl);
 }

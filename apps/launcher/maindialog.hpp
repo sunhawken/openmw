@@ -59,6 +59,9 @@ namespace Launcher
         void enableImportPage();
         void play();
         void help();
+        void openConfig();
+        void openLog();
+        void openConfigFolder();
 
     protected:
         bool event(QEvent* event) override;
