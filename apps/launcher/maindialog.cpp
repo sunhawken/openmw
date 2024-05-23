@@ -415,7 +415,10 @@ bool Launcher::MainDialog::setupGameData()
     {
         QDir dir(path3.value);
         QStringList filters;
-        filters << "*.esp" << "*.esm" << "*.omwgame" << "*.omwaddon";
+        filters << "*.esp"
+                << "*.esm"
+                << "*.omwgame"
+                << "*.omwaddon";
 
         if (!dir.entryList(filters).isEmpty())
         {
