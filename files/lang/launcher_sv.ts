@@ -451,8 +451,8 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <translation>Stäng</translation>
     </message>
     <message>
-        <source> Launch OpenMW </source>
-        <translation type="vanished"> Starta OpenMW </translation>
+        <source>Launch OpenMW</source>
+        <translation>Starta OpenMW</translation>
     </message>
     <message>
         <source>Help</source>
@@ -549,14 +549,6 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     <message>
         <source>&lt;br&gt;&lt;b&gt;Could not create directory %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</source>
         <translation>&lt;br&gt;&lt;b&gt;Kunde inte skapa katalog %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</translation>
-    </message>
-    <message>
-        <source>Launch OpenMW </source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Open</source>
-        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1505,6 +1497,10 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     <message>
         <source>Force Per-Pixel Lighting</source>
         <translation>Tvinga per-pixelljussättning</translation>
+    </message>
+    <message>
+        <source>Loaded configs</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

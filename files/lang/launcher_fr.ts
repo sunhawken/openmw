@@ -448,8 +448,8 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>Fermer</translation>
     </message>
     <message>
-        <source> Launch OpenMW </source>
-        <translation type="vanished">Lancer OpenMW</translation>
+        <source>Launch OpenMW</source>
+        <translation>Lancer OpenMW</translation>
     </message>
     <message>
         <source>Help</source>
@@ -546,14 +546,6 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>&lt;br&gt;&lt;b&gt;Could not create directory %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</source>
         <translation>&lt;br&gt;&lt;b&gt;Impossible de créer le dossier %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</translation>
-    </message>
-    <message>
-        <source>Launch OpenMW </source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Open</source>
-        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1489,6 +1481,10 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>Force Per-Pixel Lighting</source>
         <translation>Forcer l&apos;éclairage par pixel</translation>
+    </message>
+    <message>
+        <source>Loaded configs</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>
