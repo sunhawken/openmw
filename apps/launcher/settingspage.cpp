@@ -5,11 +5,12 @@
 #include <string>
 
 #include <QCompleter>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QString>
 
 #include <components/config/gamesettings.hpp>
-
+#include <components/files/qtconfigpath.hpp>
 #include <components/settings/values.hpp>
 
 #include "utils/openalutil.hpp"
@@ -71,8 +72,10 @@ namespace
     }
 }
 
-Launcher::SettingsPage::SettingsPage(Config::GameSettings& gameSettings, QWidget* parent)
+Launcher::SettingsPage::SettingsPage(
+    const Files::ConfigurationManager& configurationManager, Config::GameSettings& gameSettings, QWidget* parent)
     : QWidget(parent)
+    , mCfgMgr(configurationManager)
     , mGameSettings(gameSettings)
 {
     setObjectName("SettingsPage");
@@ -340,6 +343,8 @@ bool Launcher::SettingsPage::loadSettings()
         screenshotFormatComboBox->setCurrentIndex(screenshotFormatComboBox->findText(screenshotFormatString));
 
         loadSettingBool(Settings::general().mNotifyOnSavedScreenshot, *notifyOnSavedScreenshotCheckBox);
+
+        populateLoadedConfigs();
     }
 
     // Testing
@@ -358,6 +363,36 @@ bool Launcher::SettingsPage::loadSettings()
         runScriptAfterStartupField->setText(mGameSettings.value("script-run").value);
     }
     return true;
+}
+
+void Launcher::SettingsPage::populateLoadedConfigs()
+{
+    auto paths = Files::getActiveConfigPathsQString(mCfgMgr);
+    for (const QString& path : paths)
+    {
+        QFileInfo confFile(path);
+        QString confPath = confFile.absoluteFilePath();
+        QString confDir = confFile.absolutePath();
+        QListWidgetItem* confItem = new QListWidgetItem(confFile.canonicalFilePath(), configsList);
+
+        QString toolTipText = "";
+        if (confDir == QFileInfo(mCfgMgr.getGlobalPath().c_str()).absolutePath())
+        {
+            toolTipText = "Global config";
+        }
+        else if (confDir == QFileInfo(mCfgMgr.getUserConfigPath().c_str()).absolutePath())
+        {
+            toolTipText = "User config";
+        }
+        else if (confDir == QFileInfo(mCfgMgr.getLocalPath().c_str()).absolutePath())
+        {
+            toolTipText = "Local config";
+        }
+
+        confItem->setToolTip(toolTipText);
+        confItem->setData(Qt::ItemDataRole::UserRole, QVariant(confPath));
+        connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
+    }
 }
 
 void Launcher::SettingsPage::saveSettings()
@@ -605,4 +640,10 @@ void Launcher::SettingsPage::slotLightTypeCurrentIndexChanged(int index)
     lightsMaxLightsSpinBox->setEnabled(index != 0);
     lightsBoundingSphereMultiplierSpinBox->setEnabled(index != 0);
     lightsMinimumInteriorBrightnessSpinBox->setEnabled(index != 0);
+}
+
+void Launcher::SettingsPage::slotOpenFile(QListWidgetItem* item)
+{
+    QUrl confFolderUrl = QUrl::fromLocalFile(item->data(Qt::ItemDataRole::UserRole).toString());
+    QDesktopServices::openUrl(confFolderUrl);
 }
