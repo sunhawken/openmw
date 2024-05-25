@@ -2,7 +2,6 @@
 #include "maindialog.hpp"
 
 #include <QDebug>
-#include <QDesktopServices>
 #include <QFileDialog>
 #include <QList>
 #include <QMessageBox>
@@ -26,7 +25,6 @@
 
 #include <components/bsa/compressedbsafile.hpp>
 #include <components/debug/debuglog.hpp>
-#include <components/files/qtconfigpath.hpp>
 #include <components/files/qtconversion.hpp>
 #include <components/misc/strings/conversion.hpp>
 #include <components/navmeshtool/protocol.hpp>
