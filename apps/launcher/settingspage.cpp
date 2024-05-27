@@ -375,18 +375,36 @@ void Launcher::SettingsPage::populateLoadedConfigs()
         QString confDir = confFile.absolutePath();
         QListWidgetItem* confItem = new QListWidgetItem(confFile.canonicalFilePath(), configsList);
 
+        QString globalPath = QString::fromStdString(mCfgMgr.getGlobalPath());
+        QString userPath = QString::fromStdString(mCfgMgr.getUserConfigPath());
+        QString localPath = QString::fromStdString(mCfgMgr.getLocalPath());
+
         QString toolTipText = "";
-        if (confDir == QFileInfo(mCfgMgr.getGlobalPath().c_str()).absolutePath())
+        if (confDir == QFileInfo(localPath).absolutePath())
         {
-            toolTipText = "Global config";
+            toolTipText = "Local openmw.cfg. Usually this config is loaded first.";
         }
-        else if (confDir == QFileInfo(mCfgMgr.getUserConfigPath().c_str()).absolutePath())
+        else if (confDir == QFileInfo(globalPath).absolutePath())
         {
-            toolTipText = "User config";
+            toolTipText = "Global openmw.cfg. It was loaded because there were no local openmw.cfg";
         }
-        else if (confDir == QFileInfo(mCfgMgr.getLocalPath().c_str()).absolutePath())
+        else if (confDir == QFileInfo(userPath).absolutePath())
         {
-            toolTipText = "Local config";
+            Config::SettingValue configSetting;
+            for (auto v : mGameSettings.values(QString("config")))
+            {
+                if (QFileInfo(v.value).absolutePath() == confDir)
+                {
+                    configSetting = v;
+                }
+            }
+
+            if (!configSetting.value.isEmpty())
+            {
+                toolTipText = QString("User openmw.cfg. It was loaded because %1 contains the line %2")
+                                  .arg(QFileInfo(configSetting.context + "/openmw.cfg").absoluteFilePath(),
+                                      configSetting.originalRepresentation);
+            }
         }
 
         confItem->setToolTip(toolTipText);
