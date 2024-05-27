@@ -367,28 +367,25 @@ bool Launcher::SettingsPage::loadSettings()
 
 void Launcher::SettingsPage::populateLoadedConfigs()
 {
-    auto paths = Files::getActiveConfigPathsQString(mCfgMgr);
-    for (const QString& path : paths)
+    for (auto path : Files::getActiveConfigPathsQString(mCfgMgr))
     {
         QFileInfo confFile(path);
-        QString confPath = confFile.absoluteFilePath();
         QString confDir = confFile.absolutePath();
-        QListWidgetItem* confItem = new QListWidgetItem(confFile.canonicalFilePath(), configsList);
 
-        QString globalPath = QString::fromStdString(mCfgMgr.getGlobalPath());
-        QString userPath = QString::fromStdString(mCfgMgr.getUserConfigPath());
-        QString localPath = QString::fromStdString(mCfgMgr.getLocalPath());
+        QString localPath = Files::pathToQString(mCfgMgr.getLocalPath());
+        QString globalPath = Files::pathToQString(mCfgMgr.getGlobalPath());
 
         QString toolTipText = "";
+
         if (confDir == QFileInfo(localPath).absolutePath())
         {
-            toolTipText = "Local openmw.cfg. Usually this config is loaded first.";
+            toolTipText = "Local openmw.cfg. Usually, this config is loaded first.";
         }
         else if (confDir == QFileInfo(globalPath).absolutePath())
         {
-            toolTipText = "Global openmw.cfg. It was loaded because there were no local openmw.cfg";
+            toolTipText = "Global openmw.cfg. It was loaded because there was no local openmw.cfg";
         }
-        else if (confDir == QFileInfo(userPath).absolutePath())
+        else
         {
             Config::SettingValue configSetting;
             for (auto v : mGameSettings.values(QString("config")))
@@ -407,8 +404,9 @@ void Launcher::SettingsPage::populateLoadedConfigs()
             }
         }
 
+        QListWidgetItem* confItem = new QListWidgetItem(confFile.canonicalFilePath(), configsList);
         confItem->setToolTip(toolTipText);
-        confItem->setData(Qt::ItemDataRole::UserRole, QVariant(confPath));
+        confItem->setData(Qt::ItemDataRole::UserRole, QVariant(confFile.absoluteFilePath()));
         connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
     }
 }
