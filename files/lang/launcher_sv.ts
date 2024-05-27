@@ -557,6 +557,18 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <source>Text file (*.txt)</source>
         <translation>Textfil (*.txt)</translation>
     </message>
+    <message>
+        <source>Local openmw.cfg. Usually this config is loaded first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User openmw.cfg. It was loaded because %1 contains the line %2</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>MainWindow</name>

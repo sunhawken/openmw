@@ -556,6 +556,18 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <source>Text file (*.txt)</source>
         <translation>Текстовый файл (*.txt)</translation>
     </message>
+    <message>
+        <source>Local openmw.cfg. Usually this config is loaded first.</source>
+        <translation>Локальный openmw.cfg. Обычно этот конфиг загружается первым.</translation>
+    </message>
+    <message>
+        <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
+        <translation>Глобальный openmw.cfg. Он был загружен потому что не был найден локальный openmw.cfg</translation>
+    </message>
+    <message>
+        <source>User openmw.cfg. It was loaded because %1 contains the line %2</source>
+        <translation>Пользовательский openmw.cfg. Он был загружен потому что %1 содержит строку %2</translation>
+    </message>
 </context>
 <context>
     <name>MainWindow</name>

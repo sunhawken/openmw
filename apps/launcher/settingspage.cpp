@@ -379,11 +379,11 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
         if (confDir == QFileInfo(localPath).absolutePath())
         {
-            toolTipText = "Local openmw.cfg. Usually, this config is loaded first.";
+            toolTipText = tr("Local openmw.cfg. Usually this config is loaded first.");
         }
         else if (confDir == QFileInfo(globalPath).absolutePath())
         {
-            toolTipText = "Global openmw.cfg. It was loaded because there was no local openmw.cfg";
+            toolTipText = tr("Global openmw.cfg. It was loaded because there was no local openmw.cfg");
         }
         else
         {
@@ -393,12 +393,13 @@ void Launcher::SettingsPage::populateLoadedConfigs()
                 if (QFileInfo(v.value).absolutePath() == confDir)
                 {
                     configSetting = v;
+                    break;
                 }
             }
 
             if (!configSetting.value.isEmpty())
             {
-                toolTipText = QString("User openmw.cfg. It was loaded because %1 contains the line %2")
+                toolTipText = QString(tr("User openmw.cfg. It was loaded because %1 contains the line %2"))
                                   .arg(QFileInfo(configSetting.context + "/openmw.cfg").absoluteFilePath(),
                                       configSetting.originalRepresentation);
             }
