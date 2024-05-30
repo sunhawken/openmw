@@ -566,6 +566,22 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <source>User openmw.cfg. It was loaded because %1 contains the line %2</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>and settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>MainWindow</name>

@@ -367,30 +367,27 @@ bool Launcher::SettingsPage::loadSettings()
 
 void Launcher::SettingsPage::populateLoadedConfigs()
 {
-    for (auto path : Files::getActiveConfigPathsQString(mCfgMgr))
+    for (const auto& path : mCfgMgr.getActiveConfigPaths())
     {
-        QFileInfo confFile(path);
-        QString confDir = confFile.absolutePath();
-
+        QString confPath = Files::pathToQString(path);
         QString localPath = Files::pathToQString(mCfgMgr.getLocalPath());
         QString globalPath = Files::pathToQString(mCfgMgr.getGlobalPath());
-
         QString toolTipText = "";
 
-        if (confDir == QFileInfo(localPath).absolutePath())
+        if (confPath == localPath)
         {
             toolTipText = tr("Local openmw.cfg. Usually this config is loaded first.");
         }
-        else if (confDir == QFileInfo(globalPath).absolutePath())
+        else if (confPath == globalPath)
         {
             toolTipText = tr("Global openmw.cfg. It was loaded because there was no local openmw.cfg");
         }
         else
         {
             Config::SettingValue configSetting;
-            for (auto v : mGameSettings.values(QString("config")))
+            for (const auto& v : mGameSettings.values(QString("config")))
             {
-                if (QFileInfo(v.value).absolutePath() == confDir)
+                if (v.value == confPath)
                 {
                     configSetting = v;
                     break;
@@ -399,15 +396,38 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
             if (!configSetting.value.isEmpty())
             {
+                const QFileInfo configPathInfo = QFileInfo(configSetting.context + "/onpenmw.cfg");
                 toolTipText = QString(tr("User openmw.cfg. It was loaded because %1 contains the line %2"))
-                                  .arg(QFileInfo(configSetting.context + "/openmw.cfg").absoluteFilePath(),
-                                      configSetting.originalRepresentation);
+                                  .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
             }
         }
 
-        QListWidgetItem* confItem = new QListWidgetItem(confFile.canonicalFilePath(), configsList);
+        bool hasOpenmwCfg = QFileInfo(Files::pathToQString(path / "openmw.cfg")).exists();
+        bool hasSettingsCfg = QFileInfo(Files::pathToQString(path / "settings.cfg")).exists();
+
+        QStringList hasConfigs;
+        if (!hasOpenmwCfg && !hasSettingsCfg)
+        {
+            hasConfigs.append(tr("doesn't have openmw.cfg or settings.cfg"));
+        }
+        else
+        {
+            if (hasOpenmwCfg)
+            {
+                hasConfigs.append(tr("has openmw.cfg"));
+            }
+
+            if (hasSettingsCfg)
+            {
+                hasConfigs.append(hasConfigs.isEmpty() ? tr("has settings.cfg") : tr("and settings.cfg"));
+            }
+        }
+
+        QListWidgetItem* confItem = new QListWidgetItem(
+            QString(QFileInfo(confPath).canonicalPath() + " " + hasConfigs.join(" ")), configsList);
+
         confItem->setToolTip(toolTipText);
-        confItem->setData(Qt::ItemDataRole::UserRole, QVariant(confFile.absoluteFilePath()));
+        confItem->setData(Qt::ItemDataRole::UserRole, QVariant(confPath));
         connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
     }
 }
