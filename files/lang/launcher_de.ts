@@ -444,11 +444,11 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
 <context>
     <name>Launcher::MainDialog</name>
     <message>
-        <source>Launch OpenMW</source>
+        <source>Close</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Close</source>
+        <source>Launch OpenMW</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
