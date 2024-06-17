@@ -180,6 +180,8 @@
     Bug #7993: Cannot load Bloodmoon without Tribunal
     Bug #7997: Can toggle perspective when paralyzed
     Bug #8002: Portable light sources held by creatures do not emit lighting
+    Bug #8018: Potion effects should never explode and always apply on self
+    Bug #8021: Player's scale doesn't reset when starting a new game
     Feature #1415: Infinite fall failsafe
     Feature #2566: Handle NAM9 records for manual cell references
     Feature #3537: Shader-based water ripples
@@ -247,6 +249,7 @@
     Task #5896: Do not use deprecated MyGUI properties
     Task #6085: Replace boost::filesystem with std::filesystem
     Task #6149: Dehardcode Lua API_REVISION
+    Task #6505: UTF-8 support in Lua scripts
     Task #6624: Drop support for saves made prior to 0.45
     Task #7048: Get rid of std::bind
     Task #7113: Move from std::atoi to std::from_char
