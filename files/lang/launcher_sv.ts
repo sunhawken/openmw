@@ -582,7 +582,7 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>and settings.cfg</source>
+        <source>has openmw.cfg and settings.cfg</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

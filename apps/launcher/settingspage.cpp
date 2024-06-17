@@ -404,26 +404,26 @@ void Launcher::SettingsPage::populateLoadedConfigs()
         bool hasOpenmwCfg = QFileInfo(Files::pathToQString(path / "openmw.cfg")).exists();
         bool hasSettingsCfg = QFileInfo(Files::pathToQString(path / "settings.cfg")).exists();
 
-        QStringList hasConfigs;
-        if (!hasOpenmwCfg && !hasSettingsCfg)
+        QString hasConfigs;
+        if (hasOpenmwCfg && hasSettingsCfg)
         {
-            hasConfigs.append(tr("doesn't have openmw.cfg or settings.cfg"));
+            hasConfigs = tr("has openmw.cfg and settings.cfg");
+        }
+        else if (hasOpenmwCfg && !hasSettingsCfg)
+        {
+            hasConfigs = tr("has openmw.cfg");
+        }
+        else if (!hasOpenmwCfg && hasSettingsCfg)
+        {
+            hasConfigs = tr("has settings.cfg");
         }
         else
         {
-            if (hasOpenmwCfg)
-            {
-                hasConfigs.append(tr("has openmw.cfg"));
-            }
-
-            if (hasSettingsCfg)
-            {
-                hasConfigs.append(hasConfigs.isEmpty() ? tr("has settings.cfg") : tr("and settings.cfg"));
-            }
+            hasConfigs = tr("doesn't have openmw.cfg or settings.cfg");
         }
 
-        QListWidgetItem* confItem = new QListWidgetItem(
-            QString(QFileInfo(confPath).canonicalPath() + " " + hasConfigs.join(" ")), configsList);
+        QListWidgetItem* confItem
+            = new QListWidgetItem(QString(QFileInfo(confPath).canonicalPath() + " " + hasConfigs), configsList);
 
         confItem->setToolTip(toolTipText);
         confItem->setData(Qt::ItemDataRole::UserRole, QVariant(confPath));
