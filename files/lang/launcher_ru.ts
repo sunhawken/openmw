@@ -581,8 +581,8 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>содержит settings.cfg</translation>
     </message>
     <message>
-        <source>and settings.cfg</source>
-        <translation>и settings.cfg</translation>
+        <source>has openmw.cfg and settings.cfg</source>
+        <translation>содержит openmw.cfg и settings.cfg</translation>
     </message>
 </context>
 <context>
