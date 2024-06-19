@@ -565,10 +565,6 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>Глобальный openmw.cfg. Он был загружен потому что не был найден локальный openmw.cfg</translation>
     </message>
     <message>
-        <source>User openmw.cfg. It was loaded because %1 contains the line %2</source>
-        <translation>Пользовательский openmw.cfg. Он был загружен потому что %1 содержит строку %2</translation>
-    </message>
-    <message>
         <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
         <translation>не содержит openmw.cfg или settings.cfg</translation>
     </message>
@@ -583,6 +579,10 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>has openmw.cfg and settings.cfg</source>
         <translation>содержит openmw.cfg и settings.cfg</translation>
+    </message>
+    <message>
+        <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
+        <translation>Пользовательский openmw.cfg. Он был загружен потому что %1 содержит строку config=%2</translation>
     </message>
 </context>
 <context>
