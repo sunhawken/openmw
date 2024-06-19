@@ -385,8 +385,8 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
             if (!configSetting.value.isEmpty())
             {
-                const QFileInfo configPathInfo = QFileInfo(configSetting.context + "/onpenmw.cfg");
-                toolTipText = QString(tr("User openmw.cfg. It was loaded because %1 contains the line %2"))
+                const QFileInfo configPathInfo = QFileInfo(configSetting.context + "/openmw.cfg");
+                toolTipText = QString(tr("User openmw.cfg. It was loaded because %1 contains the line config=%2"))
                                   .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
             }
         }
