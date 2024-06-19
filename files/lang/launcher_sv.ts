@@ -566,10 +566,6 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>User openmw.cfg. It was loaded because %1 contains the line %2</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
         <translation type="unfinished"></translation>
     </message>
@@ -583,6 +579,10 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     </message>
     <message>
         <source>has openmw.cfg and settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
