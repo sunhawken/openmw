@@ -53,11 +53,12 @@ namespace MWLua
 {
     sol::table initNearbyPackage(const Context& context)
     {
-        sol::table api(context.mLua->sol(), sol::create);
+        sol::state_view lua = context.sol();
+        sol::table api(lua, sol::create);
         ObjectLists* objectLists = context.mObjectLists;
 
         sol::usertype<MWPhysics::RayCastingResult> rayResult
-            = context.mLua->sol().new_usertype<MWPhysics::RayCastingResult>("RayCastingResult");
+            = lua.new_usertype<MWPhysics::RayCastingResult>("RayCastingResult");
         rayResult["hit"] = sol::readonly_property([](const MWPhysics::RayCastingResult& r) { return r.mHit; });
         rayResult["hitPos"]
             = sol::readonly_property([](const MWPhysics::RayCastingResult& r) -> sol::optional<osg::Vec3f> {
@@ -81,18 +82,19 @@ namespace MWLua
                       return LObject(getId(r.mHitObject));
               });
 
-        api["COLLISION_TYPE"] = LuaUtil::makeStrictReadOnly(context.mLua->tableFromPairs<std::string_view, uint16_t>({
-            { "World", MWPhysics::Layers::WORLD },
-            { "Door", MWPhysics::Layers::DOOR },
-            { "Actor", MWPhysics::Layers::ACTOR },
-            { "HeightMap", MWPhysics::Layers::HEIGHTMAP },
-            { "Projectile", MWPhysics::Layers::PROJECTILE },
-            { "Water", MWPhysics::Layers::WATER },
-            { "Default", MWPhysics::CollisionMask_Default },
-            { "AnyPhysical", MWPhysics::CollisionMask_AnyPhysical },
-            { "Camera", MWPhysics::Layers::CAMERA_ONLY },
-            { "VisualOnly", MWPhysics::Layers::VISUAL_ONLY },
-        }));
+        api["COLLISION_TYPE"] = LuaUtil::makeStrictReadOnly(LuaUtil::tableFromPairs<std::string_view, uint16_t>(lua,
+            {
+                { "World", MWPhysics::Layers::WORLD },
+                { "Door", MWPhysics::Layers::DOOR },
+                { "Actor", MWPhysics::Layers::ACTOR },
+                { "HeightMap", MWPhysics::Layers::HEIGHTMAP },
+                { "Projectile", MWPhysics::Layers::PROJECTILE },
+                { "Water", MWPhysics::Layers::WATER },
+                { "Default", MWPhysics::CollisionMask_Default },
+                { "AnyPhysical", MWPhysics::CollisionMask_AnyPhysical },
+                { "Camera", MWPhysics::Layers::CAMERA_ONLY },
+                { "VisualOnly", MWPhysics::Layers::VISUAL_ONLY },
+            }));
 
         api["castRay"] = [](const osg::Vec3f& from, const osg::Vec3f& to, sol::optional<sol::table> options) {
             std::vector<MWWorld::ConstPtr> ignore;
@@ -162,12 +164,13 @@ namespace MWLua
                 ignore = parseIgnoreList(*options);
             }
 
-            context.mLuaManager->addAction([context, ignore = std::move(ignore),
-                                               callback = LuaUtil::Callback::fromLua(callback), from, to] {
-                MWPhysics::RayCastingResult res;
-                MWBase::Environment::get().getWorld()->castRenderingRay(res, from, to, false, false, ignore);
-                context.mLuaManager->queueCallback(callback, sol::main_object(context.mLua->sol(), sol::in_place, res));
-            });
+            context.mLuaManager->addAction(
+                [context, ignore = std::move(ignore), callback = LuaUtil::Callback::fromLua(callback), from, to] {
+                    MWPhysics::RayCastingResult res;
+                    MWBase::Environment::get().getWorld()->castRenderingRay(res, from, to, false, false, ignore);
+                    context.mLuaManager->queueCallback(
+                        callback, sol::main_object(context.mLua->unsafeState(), sol::in_place, res));
+                });
         };
 
         api["getObjectByFormId"] = [](std::string_view formIdStr) -> LObject {
@@ -185,32 +188,36 @@ namespace MWLua
         api["players"] = LObjectList{ objectLists->getPlayers() };
 
         api["NAVIGATOR_FLAGS"]
-            = LuaUtil::makeStrictReadOnly(context.mLua->tableFromPairs<std::string_view, DetourNavigator::Flag>({
-                { "Walk", DetourNavigator::Flag_walk },
-                { "Swim", DetourNavigator::Flag_swim },
-                { "OpenDoor", DetourNavigator::Flag_openDoor },
-                { "UsePathgrid", DetourNavigator::Flag_usePathgrid },
-            }));
+            = LuaUtil::makeStrictReadOnly(LuaUtil::tableFromPairs<std::string_view, DetourNavigator::Flag>(lua,
+                {
+                    { "Walk", DetourNavigator::Flag_walk },
+                    { "Swim", DetourNavigator::Flag_swim },
+                    { "OpenDoor", DetourNavigator::Flag_openDoor },
+                    { "UsePathgrid", DetourNavigator::Flag_usePathgrid },
+                }));
 
         api["COLLISION_SHAPE_TYPE"] = LuaUtil::makeStrictReadOnly(
-            context.mLua->tableFromPairs<std::string_view, DetourNavigator::CollisionShapeType>({
-                { "Aabb", DetourNavigator::CollisionShapeType::Aabb },
-                { "RotatingBox", DetourNavigator::CollisionShapeType::RotatingBox },
-                { "Cylinder", DetourNavigator::CollisionShapeType::Cylinder },
-            }));
+            LuaUtil::tableFromPairs<std::string_view, DetourNavigator::CollisionShapeType>(lua,
+                {
+                    { "Aabb", DetourNavigator::CollisionShapeType::Aabb },
+                    { "RotatingBox", DetourNavigator::CollisionShapeType::RotatingBox },
+                    { "Cylinder", DetourNavigator::CollisionShapeType::Cylinder },
+                }));
 
         api["FIND_PATH_STATUS"]
-            = LuaUtil::makeStrictReadOnly(context.mLua->tableFromPairs<std::string_view, DetourNavigator::Status>({
-                { "Success", DetourNavigator::Status::Success },
-                { "PartialPath", DetourNavigator::Status::PartialPath },
-                { "NavMeshNotFound", DetourNavigator::Status::NavMeshNotFound },
-                { "StartPolygonNotFound", DetourNavigator::Status::StartPolygonNotFound },
-                { "EndPolygonNotFound", DetourNavigator::Status::EndPolygonNotFound },
-                { "MoveAlongSurfaceFailed", DetourNavigator::Status::MoveAlongSurfaceFailed },
-                { "FindPathOverPolygonsFailed", DetourNavigator::Status::FindPathOverPolygonsFailed },
-                { "InitNavMeshQueryFailed", DetourNavigator::Status::InitNavMeshQueryFailed },
-                { "FindStraightPathFailed", DetourNavigator::Status::FindStraightPathFailed },
-            }));
+            = LuaUtil::makeStrictReadOnly(LuaUtil::tableFromPairs<std::string_view, DetourNavigator::Status>(lua,
+                {
+                    { "Success", DetourNavigator::Status::Success },
+                    { "PartialPath", DetourNavigator::Status::PartialPath },
+                    { "NavMeshNotFound", DetourNavigator::Status::NavMeshNotFound },
+                    { "StartPolygonNotFound", DetourNavigator::Status::StartPolygonNotFound },
+                    { "EndPolygonNotFound", DetourNavigator::Status::EndPolygonNotFound },
+                    { "TargetPolygonNotFound", DetourNavigator::Status::TargetPolygonNotFound },
+                    { "MoveAlongSurfaceFailed", DetourNavigator::Status::MoveAlongSurfaceFailed },
+                    { "FindPathOverPolygonsFailed", DetourNavigator::Status::FindPathOverPolygonsFailed },
+                    { "InitNavMeshQueryFailed", DetourNavigator::Status::InitNavMeshQueryFailed },
+                    { "FindStraightPathFailed", DetourNavigator::Status::FindStraightPathFailed },
+                }));
 
         static const DetourNavigator::AgentBounds defaultAgentBounds{
             Settings::game().mActorCollisionShapeType,
@@ -220,7 +227,7 @@ namespace MWLua
             | DetourNavigator::Flag_swim | DetourNavigator::Flag_openDoor | DetourNavigator::Flag_usePathgrid;
 
         api["findPath"]
-            = [](const osg::Vec3f& source, const osg::Vec3f& destination, const sol::optional<sol::table>& options) {
+            = [lua](const osg::Vec3f& source, const osg::Vec3f& destination, const sol::optional<sol::table>& options) {
                   DetourNavigator::AgentBounds agentBounds = defaultAgentBounds;
                   DetourNavigator::Flags includeFlags = defaultIncludeFlags;
                   DetourNavigator::AreaCosts areaCosts{};
@@ -252,13 +259,15 @@ namespace MWLua
                           destinationTolerance = *v;
                   }
 
-                  std::vector<osg::Vec3f> result;
+                  std::vector<osg::Vec3f> path;
 
-                  const DetourNavigator::Status status = DetourNavigator::findPath(
-                      *MWBase::Environment::get().getWorld()->getNavigator(), agentBounds, source, destination,
-                      includeFlags, areaCosts, destinationTolerance, std::back_inserter(result));
+                  const DetourNavigator::Status status
+                      = DetourNavigator::findPath(*MWBase::Environment::get().getWorld()->getNavigator(), agentBounds,
+                          source, destination, includeFlags, areaCosts, destinationTolerance, std::back_inserter(path));
 
-                  return std::make_tuple(status, std::move(result));
+                  sol::table result(lua, sol::create);
+                  LuaUtil::copyVectorToTable(path, result);
+                  return std::make_tuple(status, result);
               };
 
         api["findRandomPointAroundCircle"] = [](const osg::Vec3f& position, float maxRadius,
