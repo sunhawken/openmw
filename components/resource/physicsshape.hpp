@@ -13,6 +13,8 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 
+#include <components/vfs/pathutil.hpp>
+
 namespace NifJolt
 {
     class JoltNifLoader;
@@ -50,7 +52,7 @@ namespace Resource
         // we store the node's record index mapped to the child index of the shape in the JPH::MutableCompoundShape.
         std::map<int, int> mAnimatedShapes;
 
-        std::string mFileName;
+        VFS::Path::Normalized mFileName;
         std::string mFileHash;
 
         VisualCollisionType mVisualCollisionType = VisualCollisionType::None;
