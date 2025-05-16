@@ -1,12 +1,12 @@
 #ifndef OPENMW_MWPHYSICS_PHYSICSSYSTEM_H
 #define OPENMW_MWPHYSICS_PHYSICSSYSTEM_H
 
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
-#include <set>
 #include <span>
 #include <unordered_map>
 #include <variant>
@@ -19,7 +19,7 @@
 #include <osg/Timer>
 #include <osg/ref_ptr>
 
-#include <components/esm/util.hpp>
+#include <components/vfs/pathutil.hpp>
 
 #include "../mwworld/ptr.hpp"
 
@@ -156,12 +156,12 @@ namespace MWPhysics
         void setWaterHeight(float height);
         void disableWater();
 
-        void addObject(
-            const MWWorld::Ptr& ptr, const std::string& mesh, osg::Quat rotation, int collisionType = Layers::WORLD);
-        void addActor(const MWWorld::Ptr& ptr, const std::string& mesh);
+        void addObject(const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh, osg::Quat rotation,
+            int collisionType = Layers::WORLD);
+        void addActor(const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh);
 
         int addProjectile(
-            const MWWorld::Ptr& caster, const osg::Vec3f& position, const std::string& mesh, bool computeRadius);
+            const MWWorld::Ptr& caster, const osg::Vec3f& position, VFS::Path::NormalizedView mesh, bool computeRadius);
         void setCaster(int projectileId, const MWWorld::Ptr& caster);
         void removeProjectile(const int projectileId);
 
