@@ -258,9 +258,9 @@ namespace
                 if (mAdvanceSimulation)
                 {
                     MWWorld::Ptr standingOn;
-                    auto* ptrHolder
+                    auto* const ptrHolder
                         = static_cast<MWPhysics::PtrHolder*>(scheduler->getUserPointer(frameData.mStandingOn));
-                    if (ptrHolder)
+                    if (ptrHolder != nullptr)
                         standingOn = ptrHolder->getPtr();
                     actor->setStandingOnPtr(standingOn);
                     // the "on ground" state of an actor might have been updated by a traceDown, don't overwrite the
