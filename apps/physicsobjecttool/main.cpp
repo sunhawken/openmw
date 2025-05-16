@@ -13,11 +13,11 @@
 #include <components/misc/strings/conversion.hpp>
 #include <components/platform/platform.hpp>
 #include <components/resource/bgsmfilemanager.hpp>
-#include <components/resource/physicsshape.hpp>
-#include <components/resource/physicsshapemanager.hpp>
 #include <components/resource/foreachphysicsobject.hpp>
 #include <components/resource/imagemanager.hpp>
 #include <components/resource/niffilemanager.hpp>
+#include <components/resource/physicsshape.hpp>
+#include <components/resource/physicsshapemanager.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/settings/settings.hpp>
 #include <components/to_utf8/to_utf8.hpp>

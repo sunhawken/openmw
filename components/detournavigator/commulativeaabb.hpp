@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <Jolt/Jolt.h>
 #include <Jolt/Geometry/AABox.h>
+#include <Jolt/Jolt.h>
 
 namespace DetourNavigator
 {

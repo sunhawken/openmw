@@ -116,13 +116,13 @@ namespace MWPhysics
 
         // It is important to ignore backfaces for this check, as all actor collision should
         JPH::RayCastSettings settings;
-        settings.mBackFaceMode = JPH::EBackFaceMode::IgnoreBackFaces;
+        settings.SetBackFaceMode(JPH::EBackFaceMode::IgnoreBackFaces);
 
         // Cast ray and return closest hit
         class TraceHitCollector : public JPH::CastRayCollector
         {
         public:
-            virtual void AddHit(const JPH::RayCastResult &inResult) override
+            virtual void AddHit(const JPH::RayCastResult& inResult) override
             {
                 mSubShapeID2 = inResult.mSubShapeID2;
                 mBodyID = inResult.mBodyID;
@@ -136,7 +136,8 @@ namespace MWPhysics
         };
 
         TraceHitCollector collector;
-        physicsSystem->GetNarrowPhaseQuery().CastRay(ray, settings, collector, broadphaseLayerFilter, objectLayerFilter);
+        physicsSystem->GetNarrowPhaseQuery().CastRay(
+            ray, settings, collector, broadphaseLayerFilter, objectLayerFilter);
 
         if (collector.mHit)
         {
