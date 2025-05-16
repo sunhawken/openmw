@@ -133,91 +133,81 @@ namespace Resource
     {
     }
 
-    PhysicsShapeManager::~PhysicsShapeManager() {}
+    PhysicsShapeManager::~PhysicsShapeManager() = default;
 
-    osg::ref_ptr<const PhysicsShape> PhysicsShapeManager::getShape(const std::string& name)
+    osg::ref_ptr<const PhysicsShape> PhysicsShapeManager::getShape(VFS::Path::NormalizedView name)
     {
-        const VFS::Path::Normalized normalized(name);
+        if (osg::ref_ptr<osg::Object> obj = mCache->getRefFromObjectCache(name))
+            return osg::ref_ptr<PhysicsShape>(static_cast<PhysicsShape*>(obj.get()));
 
         osg::ref_ptr<PhysicsShape> shape;
-        osg::ref_ptr<osg::Object> obj = mCache->getRefFromObjectCache(normalized);
-        if (obj)
-            shape = osg::ref_ptr<PhysicsShape>(static_cast<PhysicsShape*>(obj.get()));
+
+        if (Misc::getFileExtension(name.value()) == "nif")
+        {
+            NifJolt::JoltNifLoader loader;
+            shape = loader.load(*mNifFileManager->get(name));
+        }
         else
         {
-            if (Misc::getFileExtension(normalized) == "nif")
+            osg::ref_ptr<const osg::Node> constNode(mSceneManager->getTemplate(name));
+            // const-trickery required because there is no const version of NodeVisitor
+            osg::ref_ptr<osg::Node> node(const_cast<osg::Node*>(constNode.get()));
+
+            // Check first if there's a custom collision node
+            unsigned int visitAllNodesMask = 0xffffffff;
+            SceneUtil::FindByNameVisitor nameFinder("Collision");
+            nameFinder.setTraversalMask(visitAllNodesMask);
+            nameFinder.setNodeMaskOverride(visitAllNodesMask);
+            node->accept(nameFinder);
+            if (nameFinder.mFoundNode)
             {
-                NifJolt::JoltNifLoader loader;
-                shape = loader.load(*mNifFileManager->get(normalized));
+                NodeToShapeVisitor visitor;
+                visitor.setTraversalMask(visitAllNodesMask);
+                visitor.setNodeMaskOverride(visitAllNodesMask);
+                nameFinder.mFoundNode->accept(visitor);
+                shape = visitor.getShape();
             }
-            else
+
+            // Generate a collision shape from the mesh
+            if (!shape)
             {
-                osg::ref_ptr<const osg::Node> constNode(mSceneManager->getTemplate(normalized));
-                osg::ref_ptr<osg::Node> node(const_cast<osg::Node*>(
-                    constNode.get())); // const-trickery required because there is no const version of NodeVisitor
-
-                // Check first if there's a custom collision node
-                unsigned int visitAllNodesMask = 0xffffffff;
-                SceneUtil::FindByNameVisitor nameFinder("Collision");
-                nameFinder.setTraversalMask(visitAllNodesMask);
-                nameFinder.setNodeMaskOverride(visitAllNodesMask);
-                node->accept(nameFinder);
-                if (nameFinder.mFoundNode)
-                {
-                    NodeToShapeVisitor visitor;
-                    visitor.setTraversalMask(visitAllNodesMask);
-                    visitor.setNodeMaskOverride(visitAllNodesMask);
-                    nameFinder.mFoundNode->accept(visitor);
-                    shape = visitor.getShape();
-                }
-
-                // Generate a collision shape from the mesh
+                NodeToShapeVisitor visitor;
+                node->accept(visitor);
+                shape = visitor.getShape();
                 if (!shape)
-                {
-                    NodeToShapeVisitor visitor;
-                    node->accept(visitor);
-                    shape = visitor.getShape();
-                    if (!shape)
-                        return osg::ref_ptr<PhysicsShape>();
-                }
-
-                if (shape != nullptr)
-                {
-                    shape->mFileName = normalized;
-                    constNode->getUserValue(Misc::OsgUserValues::sFileHash, shape->mFileHash);
-                }
+                    return osg::ref_ptr<PhysicsShape>();
             }
 
-            mCache->addEntryToObjectCache(normalized, shape);
+            if (shape != nullptr)
+            {
+                shape->mFileName = name;
+                constNode->getUserValue(Misc::OsgUserValues::sFileHash, shape->mFileHash);
+            }
         }
+
+        mCache->addEntryToObjectCache(name.value(), shape);
+
         return shape;
     }
 
-    osg::ref_ptr<PhysicsShapeInstance> PhysicsShapeManager::cacheInstance(const std::string& name)
+    osg::ref_ptr<PhysicsShapeInstance> PhysicsShapeManager::cacheInstance(VFS::Path::NormalizedView name)
     {
-        const std::string normalized = VFS::Path::normalizeFilename(name);
-
-        osg::ref_ptr<PhysicsShapeInstance> instance = createInstance(normalized);
-        if (instance)
-            mInstanceCache->addEntryToObjectCache(normalized, instance.get());
+        osg::ref_ptr<PhysicsShapeInstance> instance = createInstance(name);
+        if (instance != nullptr)
+            mInstanceCache->addEntryToObjectCache(name, instance.get());
         return instance;
     }
 
-    osg::ref_ptr<PhysicsShapeInstance> PhysicsShapeManager::getInstance(const std::string& name)
+    osg::ref_ptr<PhysicsShapeInstance> PhysicsShapeManager::getInstance(VFS::Path::NormalizedView name)
     {
-        const std::string normalized = VFS::Path::normalizeFilename(name);
-
-        osg::ref_ptr<osg::Object> obj = mInstanceCache->takeFromObjectCache(normalized);
-        if (obj.get())
+        if (osg::ref_ptr<osg::Object> obj = mInstanceCache->takeFromObjectCache(name))
             return static_cast<PhysicsShapeInstance*>(obj.get());
-        else
-            return createInstance(normalized);
+        return createInstance(name);
     }
 
-    osg::ref_ptr<PhysicsShapeInstance> PhysicsShapeManager::createInstance(const std::string& name)
+    osg::ref_ptr<PhysicsShapeInstance> PhysicsShapeManager::createInstance(VFS::Path::NormalizedView name)
     {
-        osg::ref_ptr<const PhysicsShape> shape = getShape(name);
-        if (shape)
+        if (osg::ref_ptr<const PhysicsShape> shape = getShape(name))
             return makeInstance(std::move(shape));
         return osg::ref_ptr<PhysicsShapeInstance>();
     }
