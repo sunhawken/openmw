@@ -25,6 +25,9 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
     set(JPH_PROFILE_ENABLED OFF CACHE BOOL "")
     add_definitions(-DJPH_DEBUG_RENDERER=1)
 
+    # Turn RTTI on for Jolt
+    set(CPP_RTTI_ENABLED ON)
+
     # When turning this option on, the library will be compiled using doubles for positions. This allows for much bigger worlds.
     set(DOUBLE_PRECISION ON)
 
@@ -43,8 +46,8 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
 
     include(FetchContent)
     FetchContent_Declare(joltphysics
-        URL https://github.com/jrouwe/JoltPhysics/archive/b8012e1ac1f3f2a859127ef05c097ee5f6194dcd.zip
-        URL_HASH SHA512=9da9b8bbdc091ef8baba19395ef7348a6e5283e1df2070341dfe00b5b50cbfe3766115196807ef0e682e3bf7b28100240819fb5ad011969da77b6548510818f3
+        URL https://github.com/jrouwe/JoltPhysics/archive/refs/tags/v5.3.0.zip
+        URL_HASH SHA512=fd13fb560c503bc4717d0f5b7ae1f523d3fd45d5220354a062f9a1a0324cc1349e7ebf0f5a85db872e10b81a8211c514ce4e1ff17ee6e71a0f83154b8510353d
         SOURCE_DIR fetched/joltphysics
     )
     FetchContent_MakeAvailableExcludeFromAll(joltphysics)
