@@ -105,6 +105,9 @@ namespace Terrain
         // Set player position for snow deformation subdivision
         virtual void setPlayerPosition(const osg::Vec3f& pos) {}
 
+        // Update subdivision tracker (call each frame with delta time)
+        virtual void updateSubdivisionTracker(float dt) {}
+
         ESM::RefId getWorldspace() { return mWorldspace; }
 
         Storage* getStorage() { return mStorage; }

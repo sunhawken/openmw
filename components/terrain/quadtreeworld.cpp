@@ -627,4 +627,17 @@ namespace Terrain
         }
     }
 
+    void QuadTreeWorld::updateSubdivisionTracker(float dt)
+    {
+        // Update subdivision tracker in all chunk managers
+        for (ChunkManager* cm : mChunkManagers)
+        {
+            // Cast to Terrain::ChunkManager to access updateSubdivisionTracker
+            if (Terrain::ChunkManager* tcm = dynamic_cast<Terrain::ChunkManager*>(cm))
+            {
+                tcm->updateSubdivisionTracker(dt);
+            }
+        }
+    }
+
 }

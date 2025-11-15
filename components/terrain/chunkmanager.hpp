@@ -2,11 +2,13 @@
 #define OPENMW_COMPONENTS_TERRAIN_CHUNKMANAGER_H
 
 #include <tuple>
+#include <memory>
 
 #include <components/resource/resourcemanager.hpp>
 
 #include "buffercache.hpp"
 #include "quadtreeworld.hpp"
+#include "subdivisiontracker.hpp"
 
 namespace osg
 {
@@ -91,8 +93,11 @@ namespace Terrain
         unsigned int getNodeMask() override { return mNodeMask; }
 
         // Set the player position for snow deformation subdivision calculations
-        // Will invalidate chunk cache if player has moved significantly
+        // Updates subdivision tracker and invalidates cache if needed
         void setPlayerPosition(const osg::Vec3f& pos);
+
+        // Update subdivision tracker (call each frame)
+        void updateSubdivisionTracker(float dt);
 
         void reportStats(unsigned int frameNumber, osg::Stats* stats) const override;
 
@@ -132,6 +137,9 @@ namespace Terrain
         // Track last position where we cleared cache for subdivision updates
         // When player moves beyond threshold, we need to clear cache to force chunk recreation
         osg::Vec3f mLastCacheClearPosition;
+
+        // Tracks which chunks should stay subdivided for snow trail effect
+        std::unique_ptr<SubdivisionTracker> mSubdivisionTracker;
     };
 
 }
