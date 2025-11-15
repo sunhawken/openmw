@@ -69,7 +69,21 @@ namespace Terrain
 
         const ChunkKey key{ .mCenter = center, .mLod = lod, .mLodFlags = lodFlags };
         if (osg::ref_ptr<osg::Object> obj = mCache->getRefFromObjectCache(key))
+        {
+            // DEBUG: Log when we return cached chunk (subdivision was decided earlier!)
+            float cellSize = mStorage->getCellWorldSize(mWorldspace);
+            osg::Vec2f worldChunkCenter2D(center.x() * cellSize, center.y() * cellSize);
+            float distance = (osg::Vec2f(mPlayerPosition.x(), mPlayerPosition.y()) - worldChunkCenter2D).length();
+
+            if (distance < 2048.0f)
+            {
+                Log(Debug::Warning) << "[SNOW DEBUG] CACHED chunk (subdivided earlier!):"
+                                   << " size=" << size
+                                   << " dist=" << (int)distance
+                                   << " center=(" << center.x() << "," << center.y() << ")";
+            }
             return static_cast<osg::Node*>(obj.get());
+        }
 
         const TerrainDrawable* templateGeometry = nullptr;
         const TemplateKey templateKey{ .mCenter = center, .mLod = lod };
@@ -337,16 +351,28 @@ namespace Terrain
         // Calculate horizontal distance only (ignore height/z coordinate)
         float distance = (playerPos2D - worldChunkCenter2D).length();
 
+        // Calculate chunk bounding box for debugging
+        float halfChunkSize = chunkSize * cellSize * 0.5f;
+        float minX = worldChunkCenter2D.x() - halfChunkSize;
+        float maxX = worldChunkCenter2D.x() + halfChunkSize;
+        float minY = worldChunkCenter2D.y() - halfChunkSize;
+        float maxY = worldChunkCenter2D.y() + halfChunkSize;
+
+        // Check if player is inside this chunk
+        bool playerInChunk = (mPlayerPosition.x() >= minX && mPlayerPosition.x() <= maxX &&
+                             mPlayerPosition.y() >= minY && mPlayerPosition.y() <= maxY);
+
         // DEBUG: Log chunk creation with distance info for debugging subdivision
         if (distance < 2048.0f)  // Only log nearby chunks to reduce spam
         {
-            Log(Debug::Warning) << "[SNOW DEBUG] Nearby chunk:"
+            Log(Debug::Warning) << "[SNOW DEBUG] NEW chunk:"
                                << " size=" << chunkSize
                                << " lod=" << (int)lod
                                << " dist=" << (int)distance
-                               << " player=(" << (int)mPlayerPosition.x() << "," << (int)mPlayerPosition.y() << "," << (int)mPlayerPosition.z() << ")"
+                               << (playerInChunk ? " PLAYER_INSIDE" : "")
+                               << " player=(" << (int)mPlayerPosition.x() << "," << (int)mPlayerPosition.y() << ")"
                                << " chunkCell=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
-                               << " chunkWorld=(" << (int)worldChunkCenter2D.x() << "," << (int)worldChunkCenter2D.y() << ")";
+                               << " chunkBounds=[" << (int)minX << "," << (int)minY << " to " << (int)maxX << "," << (int)maxY << "]";
         }
 
         // Subdivide based on distance
@@ -393,7 +419,10 @@ namespace Terrain
                 subdividedDrawable->setupWaterBoundingBox(-1, chunkSize * mStorage->getCellWorldSize(mWorldspace) / numVerts);
                 subdividedDrawable->createClusterCullingCallback();
 
-                Log(Debug::Info) << "[SNOW] Subdivided chunk at distance " << (int)distance << " (level " << subdivisionLevel << ")";
+                Log(Debug::Warning) << "[SNOW] Subdivided chunk at distance " << (int)distance
+                                   << " (level " << subdivisionLevel << ")"
+                                   << (playerInChunk ? " PLAYER_INSIDE_THIS_CHUNK!" : "")
+                                   << " bounds=[" << (int)minX << "," << (int)minY << " to " << (int)maxX << "," << (int)maxY << "]";
 
                 return subdividedDrawable;
             }
