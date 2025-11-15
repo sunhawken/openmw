@@ -51,6 +51,7 @@ namespace Terrain
         , mCompositeMapSize(512)
         , mCompositeMapLevel(1.f)
         , mMaxCompGeometrySize(1.f)
+        , mPlayerPosition(0.f, 0.f, 0.f)
     {
         mMultiPassRoot = new osg::StateSet;
         mMultiPassRoot->setRenderingHint(osg::StateSet::OPAQUE_BIN);
@@ -329,11 +330,13 @@ namespace Terrain
             chunkCenter.y() * mStorage->getCellWorldSize(mWorldspace)
         );
 
-        float distance = (viewPoint - worldChunkCenter).length();
+        // Use PLAYER position for subdivision (not camera viewPoint!)
+        float distance = (mPlayerPosition - worldChunkCenter).length();
 
         // DEBUG: Log all chunk creation with viewPoint and distance info
         Log(Debug::Warning) << "[SNOW DEBUG] createChunk called:"
                            << " viewPoint=(" << viewPoint.x() << "," << viewPoint.y() << "," << viewPoint.z() << ")"
+                           << " playerPos=(" << mPlayerPosition.x() << "," << mPlayerPosition.y() << "," << mPlayerPosition.z() << ")"
                            << " chunkCenter=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
                            << " worldChunkCenter=(" << worldChunkCenter.x() << "," << worldChunkCenter.y() << "," << worldChunkCenter.z() << ")"
                            << " distance=" << distance;
