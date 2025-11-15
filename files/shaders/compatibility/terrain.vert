@@ -45,26 +45,7 @@ void main(void)
     // CRITICAL: Test if shader is even running by doing unconditional deformation
     // FIXED: Use Z axis (up in OpenMW), not Y axis!
 
-    // TEST 1A: Try RAISING terrain instead of lowering (maybe Z axis is inverted?)
-    vertex.z += 100.0;  // THIS SHOULD BE VISIBLE - terrain RISES ~1.4 meters
-
-    // TEST 1B: If 1A doesn't work, try lowering instead
-    //vertex.z -= 100.0;  // THIS SHOULD BE VISIBLE - terrain drops ~1.4 meters
-
-    // TEST 1C: If neither work, try MASSIVE displacement
-    //vertex.z += 1000.0;  // HUGE - terrain rises ~14 meters!
-
-    // TEST 1D: Try X axis to verify ANY vertex modification works
-    //vertex.x += 1000.0;  // Shift terrain horizontally
-
-    // TEST 2: If TEST 1 works, comment it out and uncomment this to test the uniform
-    /*
-    if (snowDeformationEnabled)
-    {
-        // If you see terrain drop here, the uniform is being set
-        vertex.z -= 100.0;
-    }
-    */
+    
 
     // TEST 3: If TEST 2 works, comment it and uncomment this to test texture sampling
     /*
@@ -79,7 +60,7 @@ void main(void)
     */
 
     // TEST 4: If TEST 3 works, use calculated UV to follow player
-    /*
+
     if (snowDeformationEnabled)
     {
         vec3 worldPos = vertex.xyz;
@@ -88,7 +69,7 @@ void main(void)
         float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
         vertex.z -= deformationDepth;
     }
-    */
+
 
     gl_Position = modelToClip(vertex);
 
