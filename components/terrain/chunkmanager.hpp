@@ -90,6 +90,9 @@ namespace Terrain
         void setNodeMask(unsigned int mask) { mNodeMask = mask; }
         unsigned int getNodeMask() override { return mNodeMask; }
 
+        // Set the player position for snow deformation subdivision calculations
+        void setPlayerPosition(const osg::Vec3f& pos) { mPlayerPosition = pos; }
+
         void reportStats(unsigned int frameNumber, osg::Stats* stats) const override;
 
         void clearCache() override;
@@ -121,6 +124,9 @@ namespace Terrain
         unsigned int mCompositeMapSize;
         float mCompositeMapLevel;
         float mMaxCompGeometrySize;
+
+        // Player position for snow deformation subdivision (defaults to origin)
+        osg::Vec3f mPlayerPosition;
     };
 
 }

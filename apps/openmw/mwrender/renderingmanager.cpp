@@ -913,6 +913,9 @@ namespace MWRender
             float windSpeed = mSky->getBaseWindSpeed();
             mSharedUniformStateUpdater->setWindSpeed(windSpeed);
             mSharedUniformStateUpdater->setPlayerPos(playerPos);
+
+            // Update terrain with player position for snow deformation subdivision
+            mTerrain->setPlayerPosition(playerPos);
         }
 
         updateNavMesh();

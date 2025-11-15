@@ -43,6 +43,9 @@ namespace Terrain
 
         void setViewDistance(float distance) override;
 
+        // Set player position for snow deformation subdivision
+        void setPlayerPosition(const osg::Vec3f& pos) override;
+
         void cacheCell(View* view, int x, int y) override {}
         /// @note Not thread safe.
         void loadCell(int x, int y) override;

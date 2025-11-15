@@ -102,6 +102,9 @@ namespace Terrain
 
         virtual void setViewDistance(float distance) {}
 
+        // Set player position for snow deformation subdivision
+        virtual void setPlayerPosition(const osg::Vec3f& pos) {}
+
         ESM::RefId getWorldspace() { return mWorldspace; }
 
         Storage* getStorage() { return mStorage; }
