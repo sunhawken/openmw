@@ -1,5 +1,6 @@
 #include "material.hpp"
 
+#include <fstream>
 #include <osg/BlendFunc>
 #include <osg/Capability>
 #include <osg/Depth>
@@ -8,6 +9,7 @@
 #include <osg/TexMat>
 #include <osg/Texture2D>
 
+#include <components/debug/debuglog.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/depth.hpp>
 #include <components/sceneutil/util.hpp>
@@ -311,7 +313,81 @@ namespace Terrain
                 // They will be automatically merged from globalDefines by ShaderManager
                 Stereo::shaderStereoDefines(defineMap);
 
-                stateset->setAttributeAndModes(shaderManager.getProgram("terrain", defineMap));
+                auto program = shaderManager.getProgram("terrain", defineMap);
+
+                // DIAGNOSTIC: Log shader compilation info once
+                static bool logged = false;
+                if (!logged && program)
+                {
+                    logged = true;
+                    Log(Debug::Warning) << "[TERRAIN SHADER] Program created successfully";
+                    Log(Debug::Warning) << "[TERRAIN SHADER] Snow deformation define: " << defineMap["snowDeformation"];
+
+                    // Get the vertex shader and log its source
+                    auto numShaders = program->getNumShaders();
+                    Log(Debug::Warning) << "[TERRAIN SHADER] Program has " << numShaders << " shaders";
+                    for (unsigned int i = 0; i < numShaders; ++i)
+                    {
+                        auto shader = program->getShader(i);
+                        if (shader)
+                        {
+                            const char* typeStr = (shader->getType() == osg::Shader::VERTEX) ? "VERTEX" :
+                                                 (shader->getType() == osg::Shader::FRAGMENT) ? "FRAGMENT" : "OTHER";
+                            Log(Debug::Warning) << "[TERRAIN SHADER] Shader " << i << " type: " << typeStr;
+
+                            if (shader->getType() == osg::Shader::VERTEX)
+                            {
+                                std::string source = shader->getShaderSource();
+                                Log(Debug::Warning) << "[TERRAIN SHADER] Vertex shader length: " << source.length();
+
+                                // Check if hardcoded deformation is present
+                                if (source.find("vertex.y -= 100.0") != std::string::npos)
+                                {
+                                    Log(Debug::Warning) << "[TERRAIN SHADER] ✓ Hardcoded 100-unit drop FOUND in shader source!";
+                                }
+                                else
+                                {
+                                    Log(Debug::Warning) << "[TERRAIN SHADER] ✗ Hardcoded 100-unit drop NOT FOUND in shader source!";
+                                }
+
+                                // Check for snow deformation uniforms
+                                if (source.find("snowDeformationMap") != std::string::npos)
+                                {
+                                    Log(Debug::Warning) << "[TERRAIN SHADER] ✓ Snow deformation uniforms FOUND in shader";
+                                }
+                                else
+                                {
+                                    Log(Debug::Warning) << "[TERRAIN SHADER] ✗ Snow deformation uniforms NOT FOUND in shader";
+                                }
+
+                                // Log a snippet of the shader source around line 48
+                                size_t pos = source.find("vertex.y -=");
+                                if (pos != std::string::npos)
+                                {
+                                    size_t start = (pos > 200) ? pos - 200 : 0;
+                                    size_t end = std::min(pos + 200, source.length());
+                                    Log(Debug::Warning) << "[TERRAIN SHADER] Snippet around vertex.y modification:\n"
+                                                       << source.substr(start, end - start);
+                                }
+
+                                // Write full shader source to a debug file
+                                std::ofstream debugFile("/tmp/openmw_terrain_vertex_shader_debug.glsl");
+                                if (debugFile.is_open())
+                                {
+                                    debugFile << source;
+                                    debugFile.close();
+                                    Log(Debug::Warning) << "[TERRAIN SHADER] Full vertex shader source written to /tmp/openmw_terrain_vertex_shader_debug.glsl";
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (!program)
+                {
+                    Log(Debug::Error) << "[TERRAIN SHADER] FAILED to create terrain shader program!";
+                }
+
+                stateset->setAttributeAndModes(program);
                 stateset->addUniform(UniformCollection::value().mColorMode);
             }
             else
