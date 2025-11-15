@@ -37,6 +37,7 @@ namespace Terrain
     class CompositeMapRenderer;
     class View;
     class HeightCullCallback;
+    class SnowDeformationManager;
 
     /**
      * @brief The basic interface for a terrain world. How the terrain chunks are paged and displayed
@@ -108,6 +109,12 @@ namespace Terrain
         // Update subdivision tracker (call each frame with delta time)
         virtual void updateSubdivisionTracker(float dt) {}
 
+        // Update snow deformation system (call each frame)
+        virtual void updateSnowDeformation(float dt, const osg::Vec3f& playerPos) {}
+
+        // Get snow deformation manager (for accessing deformation texture)
+        virtual SnowDeformationManager* getSnowDeformationManager() { return nullptr; }
+
         ESM::RefId getWorldspace() { return mWorldspace; }
 
         Storage* getStorage() { return mStorage; }
@@ -130,6 +137,7 @@ namespace Terrain
 
         std::unique_ptr<TextureManager> mTextureManager;
         std::unique_ptr<ChunkManager> mChunkManager;
+        std::unique_ptr<SnowDeformationManager> mSnowDeformationManager;
 
         std::unique_ptr<CellBorder> mCellBorder;
 

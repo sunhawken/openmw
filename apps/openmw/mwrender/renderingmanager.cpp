@@ -917,6 +917,9 @@ namespace MWRender
             // Update terrain with player position for snow deformation subdivision
             mTerrain->setPlayerPosition(playerPos);
             mTerrain->updateSubdivisionTracker(dt);
+
+            // Update snow deformation system
+            mTerrain->updateSnowDeformation(dt, playerPos);
         }
 
         updateNavMesh();

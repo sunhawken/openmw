@@ -31,11 +31,43 @@ varying vec3 passNormal;
 #include "lib/light/lighting.glsl"
 #include "lib/view/depth.glsl"
 
+// Snow deformation system - ALWAYS ENABLED FOR TESTING
+uniform sampler2D snowDeformationMap;     // Deformation texture (R=depth, G=age)
+uniform vec2 snowDeformationCenter;       // World XZ center of deformation texture
+uniform float snowDeformationRadius;      // World radius covered by texture
+uniform bool snowDeformationEnabled;      // Runtime enable/disable
+
 void main(void)
 {
-    gl_Position = modelToClip(gl_Vertex);
+    vec4 vertex = gl_Vertex;
 
-    vec4 viewPos = modelToView(gl_Vertex);
+    // SNOW DEFORMATION - ALWAYS ACTIVE (NO @defines)
+    if (snowDeformationEnabled)
+    {
+        // Calculate world position of vertex (assuming model matrix is identity for terrain)
+        vec3 worldPos = vertex.xyz;
+
+        // Convert world XZ to deformation texture UV
+        vec2 relativePos = worldPos.xz - snowDeformationCenter;
+        vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
+
+        // Check if vertex is within deformation texture bounds
+        if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
+        {
+            // Sample deformation depth (red channel)
+            float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
+
+            // DEBUG: Always displace by 100 units to test if this code runs
+            vertex.y -= 100.0; // TESTING - should see terrain drop everywhere
+
+            // Displace vertex downward (negative Y)
+            // vertex.y -= deformationDepth;
+        }
+    }
+
+    gl_Position = modelToClip(vertex);
+
+    vec4 viewPos = modelToView(vertex);
     gl_ClipVertex = viewPos;
     euclideanDepth = length(viewPos.xyz);
     linearDepth = getLinearDepth(gl_Position.z, viewPos.z);

@@ -12,6 +12,8 @@
 #include "heightcull.hpp"
 #include "storage.hpp"
 #include "texturemanager.hpp"
+#include "snowdeformation.hpp"
+#include "snowdeformationupdater.hpp"
 
 namespace Terrain
 {
@@ -51,6 +53,19 @@ namespace Terrain
         mChunkManager->setNodeMask(nodeMask);
         mCellBorder
             = std::make_unique<CellBorder>(this, mTerrainRoot.get(), borderMask, mResourceSystem->getSceneManager());
+
+        // Create snow deformation manager
+        mSnowDeformationManager = std::make_unique<SnowDeformationManager>(
+            mResourceSystem->getSceneManager(),
+            mStorage,
+            mParent  // Add RTT camera to parent node
+        );
+        mSnowDeformationManager->setWorldspace(mWorldspace);
+
+        // Attach snow deformation updater to terrain root
+        // This will bind deformation textures and uniforms to all terrain chunks
+        osg::ref_ptr<SnowDeformationUpdater> snowUpdater = new SnowDeformationUpdater(this);
+        mTerrainRoot->addCullCallback(snowUpdater);
 
         mResourceSystem->addResourceManager(mChunkManager.get());
         mResourceSystem->addResourceManager(mTextureManager.get());
