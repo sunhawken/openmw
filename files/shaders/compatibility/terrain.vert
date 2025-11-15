@@ -32,7 +32,6 @@ varying vec3 passNormal;
 #include "lib/view/depth.glsl"
 
 // Snow deformation system - ALWAYS ENABLED FOR TESTING
-uniform mat4 osg_ViewMatrixInverse;       // OSG built-in: inverse of view matrix
 uniform sampler2D snowDeformationMap;     // Deformation texture (R=depth, G=age)
 uniform vec2 snowDeformationCenter;       // World XZ center of deformation texture
 uniform float snowDeformationRadius;      // World radius covered by texture
@@ -42,28 +41,22 @@ void main(void)
 {
     vec4 vertex = gl_Vertex;
 
-    // SNOW DEFORMATION - ALWAYS ACTIVE (NO @defines)
-    if (snowDeformationEnabled)
-    {
-        // Calculate ACTUAL world position by transforming through model matrix
-        // Terrain chunks have their own model matrices, so we need to transform properly
-        vec4 worldPos = osg_ViewMatrixInverse * gl_ModelViewMatrix * vertex;
+    // DIAGNOSTIC TEST: Remove ALL conditionals - just drop terrain unconditionally
+    // This will tell us if the shader is even being used
+    vertex.y -= 50.0;  // Drop ALL terrain by 50 units - NO CONDITIONS
 
-        // Convert world XZ to deformation texture UV
-        vec2 relativePos = worldPos.xz - snowDeformationCenter;
-        vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
-
-        // Check if vertex is within deformation texture bounds
-        if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
-        {
-            // Sample deformation depth (red channel)
-            float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
-
-            // Displace vertex downward (negative Y)
-            // The deformation texture stores depth values (0 = no deformation, >0 = deformed)
-            vertex.y -= deformationDepth;
-        }
-    }
+    // TODO: Original snow deformation code
+    // if (snowDeformationEnabled)
+    // {
+    //     vec3 worldPos = vertex.xyz;
+    //     vec2 relativePos = worldPos.xz - snowDeformationCenter;
+    //     vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
+    //     if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
+    //     {
+    //         float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
+    //         vertex.y -= deformationDepth;
+    //     }
+    // }
 
     gl_Position = modelToClip(vertex);
 
