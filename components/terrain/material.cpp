@@ -307,6 +307,9 @@ namespace Terrain
                 defineMap["reconstructNormalZ"] = reconstructNormalZ ? "1" : "0";
                 // Enable snow deformation shader code
                 defineMap["snowDeformation"] = "1";
+                // Ensure all required defines are set (some are global but need defaults)
+                defineMap["forcePPL"] = "0";  // Will be overridden by global if needed
+                defineMap["shadows_enabled"] = "0";  // Will be overridden if shadows enabled
                 Stereo::shaderStereoDefines(defineMap);
 
                 stateset->setAttributeAndModes(shaderManager.getProgram("terrain", defineMap));
