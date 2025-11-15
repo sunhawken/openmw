@@ -44,8 +44,17 @@ void main(void)
     // SNOW DEFORMATION DIAGNOSTIC TEST
     // CRITICAL: Test if shader is even running by doing unconditional deformation
 
-    // TEST 1: UNCOMMENT THIS to verify shader runs (entire terrain drops 100 units)
-    vertex.y -= 100.0;  // THIS SHOULD BE VISIBLE - terrain drops ~1.4 meters
+    // TEST 1A: Try RAISING terrain instead of lowering (maybe Y axis is inverted?)
+    vertex.y += 100.0;  // THIS SHOULD BE VISIBLE - terrain RISES ~1.4 meters
+
+    // TEST 1B: If 1A doesn't work, try lowering instead
+    //vertex.y -= 100.0;  // THIS SHOULD BE VISIBLE - terrain drops ~1.4 meters
+
+    // TEST 1C: If neither work, try MASSIVE displacement
+    //vertex.y += 1000.0;  // HUGE - terrain rises ~14 meters!
+
+    // TEST 1D: Try X or Z axis to verify ANY vertex modification works
+    //vertex.x += 1000.0;  // Shift terrain horizontally
 
     // TEST 2: If TEST 1 works, comment it out and uncomment this to test the uniform
     /*
