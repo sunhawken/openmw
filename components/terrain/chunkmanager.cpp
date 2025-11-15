@@ -323,22 +323,27 @@ namespace Terrain
         geometry->setNodeMask(mNodeMask);
 
         // SNOW DEFORMATION: Subdivide terrain near player for better deformation quality
-        // Calculate world-space chunk center for distance check
-        osg::Vec3f worldChunkCenter(
-            chunkCenter.x() * mStorage->getCellWorldSize(mWorldspace),
-            0.0f,  // Y will be terrain height, but we only care about XZ distance
-            chunkCenter.y() * mStorage->getCellWorldSize(mWorldspace)
-        );
+        // Calculate distance from player to chunk center (horizontal distance only, ignore height)
 
-        // Use PLAYER position for subdivision (not camera viewPoint!)
-        float distance = (mPlayerPosition - worldChunkCenter).length();
+        // chunkCenter is in cell units (e.g., -21, 26 means cell coordinates)
+        // Convert to world units by multiplying by cell size
+        float cellSize = mStorage->getCellWorldSize(mWorldspace);
+        osg::Vec2f worldChunkCenter2D(chunkCenter.x() * cellSize, chunkCenter.y() * cellSize);
 
-        // DEBUG: Log all chunk creation with viewPoint and distance info
-        Log(Debug::Warning) << "[SNOW DEBUG] createChunk called:"
-                           << " viewPoint=(" << viewPoint.x() << "," << viewPoint.y() << "," << viewPoint.z() << ")"
-                           << " playerPos=(" << mPlayerPosition.x() << "," << mPlayerPosition.y() << "," << mPlayerPosition.z() << ")"
+        // Player position is (X, Z, Y) in Morrowind format where:
+        // - mPlayerPosition.x() = X coordinate (east-west)
+        // - mPlayerPosition.y() = Z coordinate (north-south)
+        // - mPlayerPosition.z() = Y coordinate (height)
+        osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
+
+        // Calculate horizontal distance only (ignore height difference)
+        float distance = (playerPos2D - worldChunkCenter2D).length();
+
+        // DEBUG: Log all chunk creation with distance info
+        Log(Debug::Warning) << "[SNOW DEBUG] createChunk:"
+                           << " player=(" << mPlayerPosition.x() << "," << mPlayerPosition.y() << "," << mPlayerPosition.z() << ")"
                            << " chunkCenter=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
-                           << " worldChunkCenter=(" << worldChunkCenter.x() << "," << worldChunkCenter.y() << "," << worldChunkCenter.z() << ")"
+                           << " worldCenter2D=(" << worldChunkCenter2D.x() << "," << worldChunkCenter2D.y() << ")"
                            << " distance=" << distance;
 
         // Subdivide based on distance (simple test - subdivide everything within 512 units)
