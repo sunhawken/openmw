@@ -325,43 +325,42 @@ namespace Terrain
         // SNOW DEFORMATION: Subdivide terrain near player for better deformation quality
         // Calculate distance from player to chunk center (horizontal distance only, ignore height)
 
-        // chunkCenter is in cell units (e.g., -21, 26 means cell coordinates)
-        // Convert to world units by multiplying by cell size
+        // Convert chunk center from cell units to world units
+        // chunkCenter is in cell coordinates (e.g., 0.5, 0.5 = center of cell 0,0)
         float cellSize = mStorage->getCellWorldSize(mWorldspace);
         osg::Vec2f worldChunkCenter2D(chunkCenter.x() * cellSize, chunkCenter.y() * cellSize);
 
-        // Player position is (X, Z, Y) in Morrowind format where:
-        // - mPlayerPosition.x() = X coordinate (east-west)
-        // - mPlayerPosition.y() = Z coordinate (north-south)
-        // - mPlayerPosition.z() = Y coordinate (height)
+        // Get player's horizontal position (x=east-west, y=north-south in world units)
+        // Note: OSG uses (x,y,z) = (east-west, north-south, height)
         osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
 
-        // Calculate horizontal distance only (ignore height difference)
+        // Calculate horizontal distance only (ignore height/z coordinate)
         float distance = (playerPos2D - worldChunkCenter2D).length();
 
-        // DEBUG: Log all chunk creation with distance info
-        Log(Debug::Warning) << "[SNOW DEBUG] createChunk:"
-                           << " chunkSize=" << chunkSize
-                           << " lod=" << (int)lod
-                           << " player=(" << mPlayerPosition.x() << "," << mPlayerPosition.y() << "," << mPlayerPosition.z() << ")"
-                           << " chunkCenter=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
-                           << " worldCenter2D=(" << worldChunkCenter2D.x() << "," << worldChunkCenter2D.y() << ")"
-                           << " distance=" << distance;
+        // DEBUG: Log chunk creation with distance info for debugging subdivision
+        if (distance < 2048.0f)  // Only log nearby chunks to reduce spam
+        {
+            Log(Debug::Warning) << "[SNOW DEBUG] Nearby chunk:"
+                               << " size=" << chunkSize
+                               << " lod=" << (int)lod
+                               << " dist=" << (int)distance
+                               << " player=(" << (int)mPlayerPosition.x() << "," << (int)mPlayerPosition.y() << "," << (int)mPlayerPosition.z() << ")"
+                               << " chunkCell=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
+                               << " chunkWorld=(" << (int)worldChunkCenter2D.x() << "," << (int)worldChunkCenter2D.y() << ")";
+        }
 
         // Subdivide based on distance
-        // NOTE: Chunks can be quite large (0.5-2 cells), so distances are in thousands of units
+        // Distances chosen to localize subdivision to terrain directly under/near player
+        // For reference: typical footprint is ~48 units diameter, character height ~128 units
         int subdivisionLevel = 0;
-        if (chunkSize <= 1.0f && distance < 8192.0f)  // Small chunks within 1 cell
-            subdivisionLevel = 2;  // Very close: 16x triangles
-        else if (chunkSize <= 1.0f && distance < 16384.0f)  // Small chunks within 2 cells
-            subdivisionLevel = 1;  // Medium: 4x triangles
-        else if (chunkSize > 1.0f && distance < 20000.0f)  // Large chunks, closer
-            subdivisionLevel = 1;  // Medium subdivision for testing
+        if (chunkSize <= 1.0f && distance < 512.0f)  // Very close: ~60 meters
+            subdivisionLevel = 2;  // 16x triangles for high detail
+        else if (chunkSize <= 1.0f && distance < 1536.0f)  // Close: ~180 meters
+            subdivisionLevel = 1;  // 4x triangles for medium detail
+        // No subdivision beyond 1536 units to keep it localized
 
         if (subdivisionLevel > 0)
         {
-            Log(Debug::Warning) << "[SNOW DEBUG] Subdividing terrain chunk at distance " << distance << " with level " << subdivisionLevel;
-
             osg::ref_ptr<osg::Geometry> subdivided = TerrainSubdivider::subdivide(geometry.get(), subdivisionLevel);
             if (subdivided)
             {
@@ -394,18 +393,14 @@ namespace Terrain
                 subdividedDrawable->setupWaterBoundingBox(-1, chunkSize * mStorage->getCellWorldSize(mWorldspace) / numVerts);
                 subdividedDrawable->createClusterCullingCallback();
 
-                Log(Debug::Warning) << "[SNOW DEBUG] Successfully subdivided terrain chunk (distance: " << distance << ", level: " << subdivisionLevel << ")";
+                Log(Debug::Info) << "[SNOW] Subdivided chunk at distance " << (int)distance << " (level " << subdivisionLevel << ")";
 
                 return subdividedDrawable;
             }
             else
             {
-                Log(Debug::Warning) << "[SNOW DEBUG] Failed to subdivide terrain chunk, using original";
+                Log(Debug::Warning) << "[SNOW] Failed to subdivide terrain chunk, using original";
             }
-        }
-        else
-        {
-            Log(Debug::Warning) << "[SNOW DEBUG] No subdivision needed for chunk at distance " << distance;
         }
 
         return geometry;
