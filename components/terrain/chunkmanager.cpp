@@ -53,6 +53,7 @@ namespace Terrain
         , mMaxCompGeometrySize(1.f)
         , mPlayerPosition(0.f, 0.f, 0.f)
         , mLastCacheClearPosition(0.f, 0.f, 0.f)
+        , mSubdivisionTracker(std::make_unique<SubdivisionTracker>())
     {
         mMultiPassRoot = new osg::StateSet;
         mMultiPassRoot->setRenderingHint(osg::StateSet::OPAQUE_BIN);
@@ -110,10 +111,9 @@ namespace Terrain
         osg::Vec2f lastClearPos2D(mLastCacheClearPosition.x(), mLastCacheClearPosition.y());
         float movementDistance = (currentPos2D - lastClearPos2D).length();
 
-        // Threshold: clear cache if player moved more than 256 units (~30 meters)
-        // This ensures chunks are recreated with updated subdivision based on new position
-        // 256 units is chosen as it's half the high-detail subdivision radius (512 units)
-        const float CACHE_CLEAR_THRESHOLD = 256.0f;
+        // NEW: More frequent cache clearing (every 128 units instead of 256)
+        // This ensures chunks update subdivision levels as player moves through them
+        const float CACHE_CLEAR_THRESHOLD = 128.0f;
 
         if (movementDistance > CACHE_CLEAR_THRESHOLD)
         {
@@ -129,6 +129,15 @@ namespace Terrain
 
         // Always update the current player position for new chunk creation
         mPlayerPosition = pos;
+    }
+
+    void ChunkManager::updateSubdivisionTracker(float dt)
+    {
+        if (mSubdivisionTracker)
+        {
+            osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
+            mSubdivisionTracker->update(dt, playerPos2D);
+        }
     }
 
     void ChunkManager::reportStats(unsigned int frameNumber, osg::Stats* stats) const
@@ -370,7 +379,7 @@ namespace Terrain
         geometry->setNodeMask(mNodeMask);
 
         // SNOW DEFORMATION: Subdivide terrain near player for better deformation quality
-        // Calculate distance from player to chunk center (horizontal distance only, ignore height)
+        // Calculate distance from player to CHUNK EDGE (not center) for pre-subdivision
 
         // Convert chunk center from cell units to world units
         // chunkCenter is in cell coordinates (e.g., 0.5, 0.5 = center of cell 0,0)
@@ -381,11 +390,22 @@ namespace Terrain
         // Note: OSG uses (x,y,z) = (east-west, north-south, height)
         osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
 
-        // Calculate horizontal distance only (ignore height/z coordinate)
-        float distance = (playerPos2D - worldChunkCenter2D).length();
-
-        // Calculate chunk bounding box for debugging
+        // Calculate chunk half-size for edge distance calculation
         float halfChunkSize = chunkSize * cellSize * 0.5f;
+
+        // Calculate distance to nearest chunk edge (not center!)
+        // This allows pre-subdivision before player actually enters the chunk
+        float distanceToEdgeX = std::max(0.0f, std::abs(playerPos2D.x() - worldChunkCenter2D.x()) - halfChunkSize);
+        float distanceToEdgeY = std::max(0.0f, std::abs(playerPos2D.y() - worldChunkCenter2D.y()) - halfChunkSize);
+        float distanceToEdge = std::sqrt(distanceToEdgeX * distanceToEdgeX + distanceToEdgeY * distanceToEdgeY);
+
+        // Also calculate distance to center for reference/logging
+        float distanceToCenter = (playerPos2D - worldChunkCenter2D).length();
+
+        // Use distance to edge for subdivision decisions (allows pre-subdivision)
+        float distance = distanceToEdge;
+
+        // Calculate chunk bounding box for debugging (halfChunkSize already calculated above)
         float minX = worldChunkCenter2D.x() - halfChunkSize;
         float maxX = worldChunkCenter2D.x() + halfChunkSize;
         float minY = worldChunkCenter2D.y() - halfChunkSize;
@@ -395,28 +415,27 @@ namespace Terrain
         bool playerInChunk = (mPlayerPosition.x() >= minX && mPlayerPosition.x() <= maxX &&
                              mPlayerPosition.y() >= minY && mPlayerPosition.y() <= maxY);
 
+        // NEW: Use subdivision tracker to determine level (creates trail effect)
+        // This consults both current distance AND historical subdivision state
+        int subdivisionLevel = 0;
+        if (chunkSize <= 1.0f && mSubdivisionTracker)
+        {
+            subdivisionLevel = mSubdivisionTracker->getSubdivisionLevel(chunkCenter, distance);
+        }
+
         // DEBUG: Log chunk creation with distance info for debugging subdivision
-        if (distance < 2048.0f)  // Only log nearby chunks to reduce spam
+        if (distanceToCenter < 2048.0f)  // Only log nearby chunks to reduce spam
         {
             Log(Debug::Warning) << "[SNOW DEBUG] NEW chunk:"
                                << " size=" << chunkSize
                                << " lod=" << (int)lod
-                               << " dist=" << (int)distance
-                               << (playerInChunk ? " PLAYER_INSIDE" : "")
+                               << " distEdge=" << (int)distanceToEdge
+                               << " distCenter=" << (int)distanceToCenter
+                               << " subdivLvl=" << subdivisionLevel
+                               << (playerInChunk ? " INSIDE" : "")
                                << " player=(" << (int)mPlayerPosition.x() << "," << (int)mPlayerPosition.y() << ")"
-                               << " chunkCell=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
-                               << " chunkBounds=[" << (int)minX << "," << (int)minY << " to " << (int)maxX << "," << (int)maxY << "]";
+                               << " chunk=(" << chunkCenter.x() << "," << chunkCenter.y() << ")";
         }
-
-        // Subdivide based on distance
-        // Distances chosen to localize subdivision to terrain directly under/near player
-        // For reference: typical footprint is ~48 units diameter, character height ~128 units
-        int subdivisionLevel = 0;
-        if (chunkSize <= 1.0f && distance < 512.0f)  // Very close: ~60 meters
-            subdivisionLevel = 2;  // 16x triangles for high detail
-        else if (chunkSize <= 1.0f && distance < 1536.0f)  // Close: ~180 meters
-            subdivisionLevel = 1;  // 4x triangles for medium detail
-        // No subdivision beyond 1536 units to keep it localized
 
         if (subdivisionLevel > 0)
         {
@@ -451,6 +470,12 @@ namespace Terrain
 
                 subdividedDrawable->setupWaterBoundingBox(-1, chunkSize * mStorage->getCellWorldSize(mWorldspace) / numVerts);
                 subdividedDrawable->createClusterCullingCallback();
+
+                // Mark this chunk as subdivided in the tracker (for trail persistence)
+                if (mSubdivisionTracker)
+                {
+                    mSubdivisionTracker->markChunkSubdivided(chunkCenter, subdivisionLevel, worldChunkCenter2D);
+                }
 
                 Log(Debug::Warning) << "[SNOW] Subdivided chunk at distance " << (int)distance
                                    << " (level " << subdivisionLevel << ")"
