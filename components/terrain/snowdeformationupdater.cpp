@@ -51,27 +51,43 @@ namespace Terrain
             stateset->setTextureAttributeAndModes(mTextureUnit,
                 deformationTexture, osg::StateAttribute::ON);
 
-            // Update uniforms
+            // Update uniforms - IMPORTANT: Get the actual uniforms from the stateset, not our cached copies!
             osg::Vec2f center;
             float radius;
             manager->getDeformationTextureParams(center, radius);
 
-            mDeformationCenterUniform->set(center);
-            mDeformationRadiusUniform->set(radius);
-            mDeformationEnabledUniform->set(true);
+            // Update uniforms directly on the stateset to ensure they reach the shader
+            osg::Uniform* enabledUniform = stateset->getUniform("snowDeformationEnabled");
+            osg::Uniform* centerUniform = stateset->getUniform("snowDeformationCenter");
+            osg::Uniform* radiusUniform = stateset->getUniform("snowDeformationRadius");
+
+            if (enabledUniform) enabledUniform->set(true);
+            if (centerUniform) centerUniform->set(center);
+            if (radiusUniform) radiusUniform->set(radius);
 
             static int logCount = 0;
             if (logCount++ < 5)
             {
+                bool enabledValue = false;
+                if (enabledUniform) enabledUniform->get(enabledValue);
+
                 Log(Debug::Info) << "[SNOW UPDATER] Binding deformation texture at ("
                                 << (int)center.x() << ", " << (int)center.y()
                                 << ") radius=" << radius
-                                << " textureUnit=" << mTextureUnit;
+                                << " textureUnit=" << mTextureUnit
+                                << " ENABLED=" << (enabledValue ? "TRUE" : "FALSE")
+                                << " uniformFound=" << (enabledUniform ? "YES" : "NO");
             }
         }
         else
         {
             // Disable deformation
+            osg::Uniform* enabledUniform = stateset->getUniform("snowDeformationEnabled");
+            if (enabledUniform)
+            {
+                enabledUniform->set(false);
+            }
+
             static bool warned = false;
             if (!warned)
             {
@@ -80,7 +96,6 @@ namespace Terrain
                                    << " enabled=" << manager->isEnabled();
                 warned = true;
             }
-            mDeformationEnabledUniform->set(false);
         }
     }
 }
