@@ -341,17 +341,22 @@ namespace Terrain
 
         // DEBUG: Log all chunk creation with distance info
         Log(Debug::Warning) << "[SNOW DEBUG] createChunk:"
+                           << " chunkSize=" << chunkSize
+                           << " lod=" << (int)lod
                            << " player=(" << mPlayerPosition.x() << "," << mPlayerPosition.y() << "," << mPlayerPosition.z() << ")"
                            << " chunkCenter=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
                            << " worldCenter2D=(" << worldChunkCenter2D.x() << "," << worldChunkCenter2D.y() << ")"
                            << " distance=" << distance;
 
-        // Subdivide based on distance (simple test - subdivide everything within 512 units)
+        // Subdivide based on distance
+        // NOTE: Chunks can be quite large (0.5-2 cells), so distances are in thousands of units
         int subdivisionLevel = 0;
-        if (distance < 256.0f)
+        if (chunkSize <= 1.0f && distance < 8192.0f)  // Small chunks within 1 cell
             subdivisionLevel = 2;  // Very close: 16x triangles
-        else if (distance < 512.0f)
+        else if (chunkSize <= 1.0f && distance < 16384.0f)  // Small chunks within 2 cells
             subdivisionLevel = 1;  // Medium: 4x triangles
+        else if (chunkSize > 1.0f && distance < 20000.0f)  // Large chunks, closer
+            subdivisionLevel = 1;  // Medium subdivision for testing
 
         if (subdivisionLevel > 0)
         {
