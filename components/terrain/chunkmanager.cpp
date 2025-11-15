@@ -331,6 +331,13 @@ namespace Terrain
 
         float distance = (viewPoint - worldChunkCenter).length();
 
+        // DEBUG: Log all chunk creation with viewPoint and distance info
+        Log(Debug::Warning) << "[SNOW DEBUG] createChunk called:"
+                           << " viewPoint=(" << viewPoint.x() << "," << viewPoint.y() << "," << viewPoint.z() << ")"
+                           << " chunkCenter=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
+                           << " worldChunkCenter=(" << worldChunkCenter.x() << "," << worldChunkCenter.y() << "," << worldChunkCenter.z() << ")"
+                           << " distance=" << distance;
+
         // Subdivide based on distance (simple test - subdivide everything within 512 units)
         int subdivisionLevel = 0;
         if (distance < 256.0f)
@@ -340,7 +347,7 @@ namespace Terrain
 
         if (subdivisionLevel > 0)
         {
-            Log(Debug::Verbose) << "Subdividing terrain chunk at distance " << distance << " with level " << subdivisionLevel;
+            Log(Debug::Warning) << "[SNOW DEBUG] Subdividing terrain chunk at distance " << distance << " with level " << subdivisionLevel;
 
             osg::ref_ptr<osg::Geometry> subdivided = TerrainSubdivider::subdivide(geometry.get(), subdivisionLevel);
             if (subdivided)
@@ -374,14 +381,18 @@ namespace Terrain
                 subdividedDrawable->setupWaterBoundingBox(-1, chunkSize * mStorage->getCellWorldSize(mWorldspace) / numVerts);
                 subdividedDrawable->createClusterCullingCallback();
 
-                Log(Debug::Info) << "Successfully subdivided terrain chunk (distance: " << distance << ", level: " << subdivisionLevel << ")";
+                Log(Debug::Warning) << "[SNOW DEBUG] Successfully subdivided terrain chunk (distance: " << distance << ", level: " << subdivisionLevel << ")";
 
                 return subdividedDrawable;
             }
             else
             {
-                Log(Debug::Warning) << "Failed to subdivide terrain chunk, using original";
+                Log(Debug::Warning) << "[SNOW DEBUG] Failed to subdivide terrain chunk, using original";
             }
+        }
+        else
+        {
+            Log(Debug::Warning) << "[SNOW DEBUG] No subdivision needed for chunk at distance " << distance;
         }
 
         return geometry;
