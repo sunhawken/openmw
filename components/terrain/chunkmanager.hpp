@@ -91,7 +91,8 @@ namespace Terrain
         unsigned int getNodeMask() override { return mNodeMask; }
 
         // Set the player position for snow deformation subdivision calculations
-        void setPlayerPosition(const osg::Vec3f& pos) { mPlayerPosition = pos; }
+        // Will invalidate chunk cache if player has moved significantly
+        void setPlayerPosition(const osg::Vec3f& pos);
 
         void reportStats(unsigned int frameNumber, osg::Stats* stats) const override;
 
@@ -127,6 +128,10 @@ namespace Terrain
 
         // Player position for snow deformation subdivision (defaults to origin)
         osg::Vec3f mPlayerPosition;
+
+        // Track last position where we cleared cache for subdivision updates
+        // When player moves beyond threshold, we need to clear cache to force chunk recreation
+        osg::Vec3f mLastCacheClearPosition;
     };
 
 }
