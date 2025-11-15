@@ -32,6 +32,7 @@ varying vec3 passNormal;
 #include "lib/view/depth.glsl"
 
 // Snow deformation system - ALWAYS ENABLED FOR TESTING
+uniform mat4 osg_ViewMatrixInverse;       // OSG built-in: inverse of view matrix
 uniform sampler2D snowDeformationMap;     // Deformation texture (R=depth, G=age)
 uniform vec2 snowDeformationCenter;       // World XZ center of deformation texture
 uniform float snowDeformationRadius;      // World radius covered by texture
@@ -44,8 +45,9 @@ void main(void)
     // SNOW DEFORMATION - ALWAYS ACTIVE (NO @defines)
     if (snowDeformationEnabled)
     {
-        // Calculate world position of vertex (assuming model matrix is identity for terrain)
-        vec3 worldPos = vertex.xyz;
+        // Calculate ACTUAL world position by transforming through model matrix
+        // Terrain chunks have their own model matrices, so we need to transform properly
+        vec4 worldPos = osg_ViewMatrixInverse * gl_ModelViewMatrix * vertex;
 
         // Convert world XZ to deformation texture UV
         vec2 relativePos = worldPos.xz - snowDeformationCenter;
@@ -57,11 +59,9 @@ void main(void)
             // Sample deformation depth (red channel)
             float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
 
-            // DEBUG: Always displace by 100 units to test if this code runs
-            vertex.y -= 100.0; // TESTING - should see terrain drop everywhere
-
             // Displace vertex downward (negative Y)
-            // vertex.y -= deformationDepth;
+            // The deformation texture stores depth values (0 = no deformation, >0 = deformed)
+            vertex.y -= deformationDepth;
         }
     }
 
