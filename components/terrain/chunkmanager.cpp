@@ -5,6 +5,7 @@
 
 #include <osgUtil/IncrementalCompileOperation>
 
+#include <components/debug/debuglog.hpp>
 #include <components/esm/util.hpp>
 #include <components/resource/objectcache.hpp>
 #include <components/resource/scenemanager.hpp>
@@ -15,6 +16,7 @@
 #include "material.hpp"
 #include "storage.hpp"
 #include "terraindrawable.hpp"
+#include "terrainsubdivider.hpp"
 #include "texturemanager.hpp"
 
 namespace Terrain
@@ -74,7 +76,7 @@ namespace Terrain
         if (pair.has_value() && templateKey == TemplateKey{ .mCenter = pair->first.mCenter, .mLod = pair->first.mLod })
             templateGeometry = static_cast<const TerrainDrawable*>(pair->second.get());
 
-        osg::ref_ptr<osg::Node> node = createChunk(size, center, lod, lodFlags, compile, templateGeometry);
+        osg::ref_ptr<osg::Node> node = createChunk(size, center, lod, lodFlags, compile, templateGeometry, viewPoint);
         mCache->addEntryToObjectCache(key, node.get());
         return node;
     }
@@ -213,7 +215,7 @@ namespace Terrain
     }
 
     osg::ref_ptr<osg::Node> ChunkManager::createChunk(float chunkSize, const osg::Vec2f& chunkCenter, unsigned char lod,
-        unsigned int lodFlags, bool compile, const TerrainDrawable* templateGeometry)
+        unsigned int lodFlags, bool compile, const TerrainDrawable* templateGeometry, const osg::Vec3f& viewPoint)
     {
         osg::ref_ptr<TerrainDrawable> geometry(new TerrainDrawable);
 
@@ -318,6 +320,69 @@ namespace Terrain
             mSceneManager->getIncrementalCompileOperation()->add(geometry);
         }
         geometry->setNodeMask(mNodeMask);
+
+        // SNOW DEFORMATION: Subdivide terrain near player for better deformation quality
+        // Calculate world-space chunk center for distance check
+        osg::Vec3f worldChunkCenter(
+            chunkCenter.x() * mStorage->getCellWorldSize(mWorldspace),
+            0.0f,  // Y will be terrain height, but we only care about XZ distance
+            chunkCenter.y() * mStorage->getCellWorldSize(mWorldspace)
+        );
+
+        float distance = (viewPoint - worldChunkCenter).length();
+
+        // Subdivide based on distance (simple test - subdivide everything within 512 units)
+        int subdivisionLevel = 0;
+        if (distance < 256.0f)
+            subdivisionLevel = 2;  // Very close: 16x triangles
+        else if (distance < 512.0f)
+            subdivisionLevel = 1;  // Medium: 4x triangles
+
+        if (subdivisionLevel > 0)
+        {
+            Log(Debug::Verbose) << "Subdividing terrain chunk at distance " << distance << " with level " << subdivisionLevel;
+
+            osg::ref_ptr<osg::Geometry> subdivided = TerrainSubdivider::subdivide(geometry.get(), subdivisionLevel);
+            if (subdivided)
+            {
+                // Copy TerrainDrawable-specific data to the subdivided geometry
+                osg::ref_ptr<TerrainDrawable> subdividedDrawable = new TerrainDrawable;
+
+                // Copy vertex data from subdivided geometry
+                subdividedDrawable->setVertexArray(subdivided->getVertexArray());
+                subdividedDrawable->setNormalArray(subdivided->getNormalArray(), osg::Array::BIND_PER_VERTEX);
+                subdividedDrawable->setColorArray(subdivided->getColorArray(), osg::Array::BIND_PER_VERTEX);
+                subdividedDrawable->setTexCoordArrayList(subdivided->getTexCoordArrayList());
+
+                // Copy primitive sets
+                for (unsigned int i = 0; i < subdivided->getNumPrimitiveSets(); ++i)
+                    subdividedDrawable->addPrimitiveSet(subdivided->getPrimitiveSet(i));
+
+                // Copy TerrainDrawable-specific properties
+                subdividedDrawable->setPasses(geometry->getPasses());
+                subdividedDrawable->setCompositeMap(geometry->getCompositeMap());
+                subdividedDrawable->setCompositeMapRenderer(mCompositeMapRenderer);
+                subdividedDrawable->setStateSet(geometry->getStateSet());
+                subdividedDrawable->setNodeMask(geometry->getNodeMask());
+                subdividedDrawable->setUseDisplayList(false);
+                subdividedDrawable->setUseVertexBufferObjects(true);
+
+                // Set light list callback if this is a small chunk
+                if (chunkSize <= 1.f)
+                    subdividedDrawable->setLightListCallback(new SceneUtil::LightListCallback);
+
+                subdividedDrawable->setupWaterBoundingBox(-1, chunkSize * mStorage->getCellWorldSize(mWorldspace) / numVerts);
+                subdividedDrawable->createClusterCullingCallback();
+
+                Log(Debug::Info) << "Successfully subdivided terrain chunk (distance: " << distance << ", level: " << subdivisionLevel << ")";
+
+                return subdividedDrawable;
+            }
+            else
+            {
+                Log(Debug::Warning) << "Failed to subdivide terrain chunk, using original";
+            }
+        }
 
         return geometry;
     }
