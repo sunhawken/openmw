@@ -118,7 +118,7 @@ namespace Terrain
         if (source->getStateSet())
             result->setStateSet(osg::clone(source->getStateSet(), osg::CopyOp::DEEP_COPY_ALL));
 
-        OSG_INFO << "TerrainSubdivider::subdivide: subdivided " << srcVerts->size()
+        OSG_WARN << "[SNOW DEBUG] TerrainSubdivider::subdivide: subdivided " << srcVerts->size()
                  << " verts to " << dstVerts->size() << " verts (level " << levels << ")" << std::endl;
 
         return result;
