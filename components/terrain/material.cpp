@@ -310,6 +310,8 @@ namespace Terrain
                 // Ensure all required defines are set (some are global but need defaults)
                 defineMap["forcePPL"] = "0";  // Will be overridden by global if needed
                 defineMap["shadows_enabled"] = "0";  // Will be overridden if shadows enabled
+                defineMap["useUBO"] = "0";  // Will be overridden by global if UBO lighting enabled
+                defineMap["useGPUShader4"] = "0";  // Will be overridden by global if GPU shader 4 available
                 Stereo::shaderStereoDefines(defineMap);
 
                 stateset->setAttributeAndModes(shaderManager.getProgram("terrain", defineMap));
