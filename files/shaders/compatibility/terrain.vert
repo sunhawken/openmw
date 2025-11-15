@@ -36,6 +36,7 @@ uniform sampler2D snowDeformationMap;     // Deformation texture (R=depth, G=age
 uniform vec2 snowDeformationCenter;       // World XZ center of deformation texture
 uniform float snowDeformationRadius;      // World radius covered by texture
 uniform bool snowDeformationEnabled;      // Runtime enable/disable
+uniform vec3 chunkWorldOffset;            // Chunk's world position (for local->world conversion)
 
 void main(void)
 {
@@ -82,9 +83,14 @@ void main(void)
     /*
     if (snowDeformationEnabled)
     {
-        vec3 worldPos = vertex.xyz;
+        // Convert chunk-local coordinates to world space
+        vec3 worldPos = vertex.xyz + chunkWorldOffset;
+
+        // Calculate UV based on distance from player
         vec2 relativePos = worldPos.xz - snowDeformationCenter;
         vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
+
+        // Sample deformation and apply
         float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
         vertex.z -= deformationDepth;
     }
