@@ -56,27 +56,34 @@ namespace Terrain
             float radius;
             manager->getDeformationTextureParams(center, radius);
 
-            // Update uniforms directly on the stateset to ensure they reach the shader
-            osg::Uniform* enabledUniform = stateset->getUniform("snowDeformationEnabled");
-            osg::Uniform* centerUniform = stateset->getUniform("snowDeformationCenter");
-            osg::Uniform* radiusUniform = stateset->getUniform("snowDeformationRadius");
+            // FIX: Use our cached uniforms and add them to stateset if missing
+            // This ensures the uniforms actually reach the shader
+            mDeformationEnabledUniform->set(true);
+            mDeformationCenterUniform->set(center);
+            mDeformationRadiusUniform->set(radius);
 
-            if (enabledUniform) enabledUniform->set(true);
-            if (centerUniform) centerUniform->set(center);
-            if (radiusUniform) radiusUniform->set(radius);
+            // Make sure uniforms are in the stateset
+            if (!stateset->getUniform("snowDeformationEnabled"))
+                stateset->addUniform(mDeformationEnabledUniform);
+            if (!stateset->getUniform("snowDeformationCenter"))
+                stateset->addUniform(mDeformationCenterUniform);
+            if (!stateset->getUniform("snowDeformationRadius"))
+                stateset->addUniform(mDeformationRadiusUniform);
+            if (!stateset->getUniform("snowDeformationMap"))
+                stateset->addUniform(mDeformationMapUniform);
 
             static int logCount = 0;
-            if (logCount++ < 5)
+            if (logCount++ < 10)
             {
                 bool enabledValue = false;
-                if (enabledUniform) enabledUniform->get(enabledValue);
+                mDeformationEnabledUniform->get(enabledValue);
 
                 Log(Debug::Info) << "[SNOW UPDATER] Binding deformation texture at ("
                                 << (int)center.x() << ", " << (int)center.y()
                                 << ") radius=" << radius
                                 << " textureUnit=" << mTextureUnit
                                 << " ENABLED=" << (enabledValue ? "TRUE" : "FALSE")
-                                << " uniformFound=" << (enabledUniform ? "YES" : "NO");
+                                << " texture=" << deformationTexture;
             }
         }
         else

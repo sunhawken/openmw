@@ -422,11 +422,12 @@ namespace Terrain
         if (currentTimeUniform)
             currentTimeUniform->set(mCurrentTime);
 
-        // Enable RTT camera and footprint group for this frame
-        mRTTCamera->setNodeMask(~0u);
-        mFootprintGroup->setNodeMask(~0u);
+        // DISABLED FOR TESTING: Keep RTT camera off to verify static test pattern works
+        // The test pattern in the texture should be visible without RTT rendering
+        // TODO: Re-enable once we confirm static deformation works
+        // mRTTCamera->setNodeMask(~0u);
+        // mFootprintGroup->setNodeMask(~0u);
 
-        // NOTE: The rendering will happen automatically in the next frame
-        // The node masks will be disabled after integration with update loop
+        Log(Debug::Info) << "[SNOW] Footprint stamping DISABLED for testing";
     }
 }
