@@ -305,6 +305,8 @@ namespace Terrain
                 defineMap["parallax"] = parallax ? "1" : "0";
                 defineMap["writeNormals"] = (it == layers.end() - 1) ? "1" : "0";
                 defineMap["reconstructNormalZ"] = reconstructNormalZ ? "1" : "0";
+                // Enable snow deformation shader code
+                defineMap["snowDeformation"] = "1";
                 Stereo::shaderStereoDefines(defineMap);
 
                 stateset->setAttributeAndModes(shaderManager.getProgram("terrain", defineMap));

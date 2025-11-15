@@ -21,6 +21,7 @@
 #include "storage.hpp"
 #include "terraindrawable.hpp"
 #include "viewdata.hpp"
+#include "snowdeformation.hpp"
 
 namespace
 {
@@ -638,6 +639,19 @@ namespace Terrain
                 tcm->updateSubdivisionTracker(dt);
             }
         }
+    }
+
+    void QuadTreeWorld::updateSnowDeformation(float dt, const osg::Vec3f& playerPos)
+    {
+        if (mSnowDeformationManager)
+        {
+            mSnowDeformationManager->update(dt, playerPos);
+        }
+    }
+
+    SnowDeformationManager* QuadTreeWorld::getSnowDeformationManager()
+    {
+        return mSnowDeformationManager.get();
     }
 
 }

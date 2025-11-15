@@ -49,6 +49,12 @@ namespace Terrain
         // Update subdivision tracker (call each frame)
         void updateSubdivisionTracker(float dt) override;
 
+        // Update snow deformation system
+        void updateSnowDeformation(float dt, const osg::Vec3f& playerPos) override;
+
+        // Get snow deformation manager
+        SnowDeformationManager* getSnowDeformationManager() override;
+
         void cacheCell(View* view, int x, int y) override {}
         /// @note Not thread safe.
         void loadCell(int x, int y) override;
