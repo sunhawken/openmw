@@ -52,6 +52,7 @@ namespace Terrain
         , mCompositeMapLevel(1.f)
         , mMaxCompGeometrySize(1.f)
         , mPlayerPosition(0.f, 0.f, 0.f)
+        , mLastCacheClearPosition(0.f, 0.f, 0.f)
     {
         mMultiPassRoot = new osg::StateSet;
         mMultiPassRoot->setRenderingHint(osg::StateSet::OPAQUE_BIN);
@@ -102,6 +103,34 @@ namespace Terrain
         mCache->call(f);
     }
 
+    void ChunkManager::setPlayerPosition(const osg::Vec3f& pos)
+    {
+        // Calculate how far player has moved since last cache clear (horizontal distance only)
+        osg::Vec2f currentPos2D(pos.x(), pos.y());
+        osg::Vec2f lastClearPos2D(mLastCacheClearPosition.x(), mLastCacheClearPosition.y());
+        float movementDistance = (currentPos2D - lastClearPos2D).length();
+
+        // Threshold: clear cache if player moved more than 256 units (~30 meters)
+        // This ensures chunks are recreated with updated subdivision based on new position
+        // 256 units is chosen as it's half the high-detail subdivision radius (512 units)
+        const float CACHE_CLEAR_THRESHOLD = 256.0f;
+
+        if (movementDistance > CACHE_CLEAR_THRESHOLD)
+        {
+            Log(Debug::Info) << "[SNOW] Player moved " << (int)movementDistance
+                            << " units, clearing chunk cache to update subdivisions";
+
+            // Clear the cache to force chunk recreation with new subdivisions
+            clearCache();
+
+            // Update the last clear position
+            mLastCacheClearPosition = pos;
+        }
+
+        // Always update the current player position for new chunk creation
+        mPlayerPosition = pos;
+    }
+
     void ChunkManager::reportStats(unsigned int frameNumber, osg::Stats* stats) const
     {
         Resource::reportStats("Terrain Chunk", frameNumber, mCache->getStats(), *stats);
@@ -112,6 +141,10 @@ namespace Terrain
         GenericResourceManager<ChunkKey>::clearCache();
 
         mBufferCache.clearCache();
+
+        // Update last cache clear position to current player position
+        // This prevents immediate re-clearing after manual cache clear
+        mLastCacheClearPosition = mPlayerPosition;
     }
 
     void ChunkManager::releaseGLObjects(osg::State* state)
