@@ -51,6 +51,7 @@ namespace Terrain
         , mCompositeMapSize(512)
         , mCompositeMapLevel(1.f)
         , mMaxCompGeometrySize(1.f)
+        , mPlayerPosition(0.f, 0.f, 0.f)
     {
         mMultiPassRoot = new osg::StateSet;
         mMultiPassRoot->setRenderingHint(osg::StateSet::OPAQUE_BIN);
@@ -329,7 +330,16 @@ namespace Terrain
             chunkCenter.y() * mStorage->getCellWorldSize(mWorldspace)
         );
 
-        float distance = (viewPoint - worldChunkCenter).length();
+        // Use PLAYER position for subdivision (not camera viewPoint!)
+        float distance = (mPlayerPosition - worldChunkCenter).length();
+
+        // DEBUG: Log all chunk creation with viewPoint and distance info
+        Log(Debug::Warning) << "[SNOW DEBUG] createChunk called:"
+                           << " viewPoint=(" << viewPoint.x() << "," << viewPoint.y() << "," << viewPoint.z() << ")"
+                           << " playerPos=(" << mPlayerPosition.x() << "," << mPlayerPosition.y() << "," << mPlayerPosition.z() << ")"
+                           << " chunkCenter=(" << chunkCenter.x() << "," << chunkCenter.y() << ")"
+                           << " worldChunkCenter=(" << worldChunkCenter.x() << "," << worldChunkCenter.y() << "," << worldChunkCenter.z() << ")"
+                           << " distance=" << distance;
 
         // Subdivide based on distance (simple test - subdivide everything within 512 units)
         int subdivisionLevel = 0;
@@ -340,7 +350,7 @@ namespace Terrain
 
         if (subdivisionLevel > 0)
         {
-            Log(Debug::Verbose) << "Subdividing terrain chunk at distance " << distance << " with level " << subdivisionLevel;
+            Log(Debug::Warning) << "[SNOW DEBUG] Subdividing terrain chunk at distance " << distance << " with level " << subdivisionLevel;
 
             osg::ref_ptr<osg::Geometry> subdivided = TerrainSubdivider::subdivide(geometry.get(), subdivisionLevel);
             if (subdivided)
@@ -374,14 +384,18 @@ namespace Terrain
                 subdividedDrawable->setupWaterBoundingBox(-1, chunkSize * mStorage->getCellWorldSize(mWorldspace) / numVerts);
                 subdividedDrawable->createClusterCullingCallback();
 
-                Log(Debug::Info) << "Successfully subdivided terrain chunk (distance: " << distance << ", level: " << subdivisionLevel << ")";
+                Log(Debug::Warning) << "[SNOW DEBUG] Successfully subdivided terrain chunk (distance: " << distance << ", level: " << subdivisionLevel << ")";
 
                 return subdividedDrawable;
             }
             else
             {
-                Log(Debug::Warning) << "Failed to subdivide terrain chunk, using original";
+                Log(Debug::Warning) << "[SNOW DEBUG] Failed to subdivide terrain chunk, using original";
             }
+        }
+        else
+        {
+            Log(Debug::Warning) << "[SNOW DEBUG] No subdivision needed for chunk at distance " << distance;
         }
 
         return geometry;

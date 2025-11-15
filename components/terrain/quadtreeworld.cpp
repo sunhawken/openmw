@@ -614,4 +614,17 @@ namespace Terrain
         mViewDataMap->rebuildViews();
     }
 
+    void QuadTreeWorld::setPlayerPosition(const osg::Vec3f& pos)
+    {
+        // Pass player position to all chunk managers for subdivision calculations
+        for (ChunkManager* cm : mChunkManagers)
+        {
+            // Cast to Terrain::ChunkManager to access setPlayerPosition
+            if (Terrain::ChunkManager* tcm = dynamic_cast<Terrain::ChunkManager*>(cm))
+            {
+                tcm->setPlayerPosition(pos);
+            }
+        }
+    }
+
 }
