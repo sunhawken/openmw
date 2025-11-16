@@ -167,7 +167,8 @@ void main(void)
 
     // DIAGNOSTIC TEST: Uncomment to verify shader is running
     // This will make ALL terrain rise by 500 units (very obvious!)
-    // if (snowDeformationEnabled) vertex.z += 500.0;
+    // STEP 1: Uncomment this line FIRST to verify the shader runs
+    //if (snowDeformationEnabled) vertex.z += 500.0;
 
     // DIAGNOSTIC TEST 2: Test if snowRaiseAmount is being passed
     // Uncomment to see if raise amount is working (should raise by 100 units)
