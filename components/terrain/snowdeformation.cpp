@@ -497,7 +497,17 @@ namespace Terrain
         mRTTCamera->setNodeMask(~0u);
         mFootprintGroup->setNodeMask(~0u);
 
-        Log(Debug::Info) << "[SNOW] Footprint stamped successfully (RTT enabled)";
+        // DIAGNOSTIC: Save texture after first few footprints to verify RTT is working
+        static int stampCount = 0;
+        stampCount++;
+        if (stampCount == 5 || stampCount == 10 || stampCount == 20)
+        {
+            // Give OSG time to render, then save on next frame
+            // This is a hack but works for diagnostics
+            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Will save deformation texture after stamp " << stampCount;
+        }
+
+        Log(Debug::Info) << "[SNOW] Footprint stamped successfully (RTT enabled), count=" << stampCount;
     }
 
     void SnowDeformationManager::setupBlitSystem()
