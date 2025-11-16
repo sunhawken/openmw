@@ -315,6 +315,12 @@ namespace Terrain
 
                 auto program = shaderManager.getProgram("terrain", defineMap);
 
+                // Bind terrainWeights attribute to index 6 (must be done before linking)
+                if (program)
+                {
+                    program->addBindAttribLocation("terrainWeights", 6);
+                }
+
                 // DIAGNOSTIC: Log shader compilation info for ALL programs (not just first)
                 static int programCount = 0;
                 if (program && programCount < 10)  // Log first 10 programs
