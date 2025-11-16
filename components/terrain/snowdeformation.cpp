@@ -14,6 +14,15 @@
 
 namespace Terrain
 {
+    // ============================================================================
+    // TRAIL SYSTEM CONFIGURATION
+    // ============================================================================
+    // Default trail decay time: 3 minutes (180 seconds)
+    // - Trails remain visible for several minutes before fading
+    // - Configurable via mDecayTime
+    // ============================================================================
+    static constexpr float DEFAULT_TRAIL_DECAY_TIME = 180.0f;  // 3 minutes
+
     SnowDeformationManager::SnowDeformationManager(
         Resource::SceneManager* sceneManager,
         Storage* terrainStorage,
@@ -36,13 +45,13 @@ namespace Terrain
         , mTimeSinceLastFootprint(999.0f)  // Start high to stamp immediately
         , mLastBlitCenter(0.0f, 0.0f)
         , mBlitThreshold(50.0f)  // Blit when player moves 50+ units
-        , mDecayTime(120.0f)  // 2 minutes for full restoration
+        , mDecayTime(DEFAULT_TRAIL_DECAY_TIME)  // TRAIL DECAY: Trails fade out over 3 minutes
         , mTimeSinceLastDecay(0.0f)
-        , mDecayUpdateInterval(0.1f)  // Apply decay every 0.1 seconds
+        , mDecayUpdateInterval(0.1f)  // Apply decay every 0.1 seconds for smooth restoration
         , mCurrentTerrainType("snow")
         , mCurrentTime(0.0f)
     {
-        Log(Debug::Info) << "[SNOW] SnowDeformationManager created";
+        Log(Debug::Info) << "[SNOW] SnowDeformationManager created with trail decay time: " << mDecayTime << "s";
 
         // Load snow detection patterns
         SnowDetection::loadSnowPatterns();
@@ -234,6 +243,13 @@ namespace Terrain
 
         std::string fragSource = R"(
             #version 120
+            // ====================================================================
+            // SNOW TRAIL SYSTEM - Footprint Stamping Shader (Inline Version)
+            // ====================================================================
+            // Implements non-additive trail system with age preservation
+            // Matches external shader: files/shaders/compatibility/snow_footprint.frag
+            // ====================================================================
+
             uniform sampler2D previousDeformation;
             uniform vec2 deformationCenter;      // World XY center of texture
             uniform float deformationRadius;     // World radius covered by texture
@@ -245,26 +261,45 @@ namespace Terrain
 
             void main()
             {
-                // Sample previous deformation at this UV
+                // Sample previous deformation state
                 vec4 prevDeform = texture2D(previousDeformation, texUV);
-                float prevDepth = prevDeform.r;
-                float prevAge = prevDeform.g;
+                float prevDepth = prevDeform.r;  // Previous deformation depth
+                float prevAge = prevDeform.g;    // Timestamp when first deformed
 
                 // Convert UV (0-1) to world position
                 // UV (0,0) = bottom-left, UV (1,1) = top-right
                 vec2 worldPos = deformationCenter + (texUV - 0.5) * 2.0 * deformationRadius;
 
-                // Calculate distance from footprint center
+                // Calculate distance from current footprint center
                 float dist = length(worldPos - footprintCenter);
 
-                // Circular falloff: full depth at center, fades to zero at radius
+                // Smooth circular falloff for realistic footprint shape
                 float influence = 1.0 - smoothstep(footprintRadius * 0.5, footprintRadius, dist);
 
-                // Accumulate deformation (keep maximum depth)
-                float newDepth = max(prevDepth, influence * deformationDepth);
+                // Calculate new footprint depth
+                float newFootprintDepth = influence * deformationDepth;
 
-                // Update age where new footprint is stamped
-                float age = (influence > 0.01) ? currentTime : prevAge;
+                // NON-ADDITIVE: Use max() blending so multiple passes don't deepen snow
+                float newDepth = max(prevDepth, newFootprintDepth);
+
+                // AGE PRESERVATION: Don't reset age on repeat passes
+                // This creates "plowing through snow" effect where trails don't refresh
+                float age;
+                if (prevDepth > 0.01)
+                {
+                    // Already deformed - preserve original age (no refresh)
+                    age = prevAge;
+                }
+                else if (newFootprintDepth > 0.01)
+                {
+                    // Fresh snow being deformed - mark with current time
+                    age = currentTime;
+                }
+                else
+                {
+                    // No deformation - keep previous age (if any)
+                    age = prevAge;
+                }
 
                 gl_FragColor = vec4(newDepth, age, 0.0, 1.0);
             }
@@ -349,8 +384,16 @@ namespace Terrain
         // Update terrain-specific parameters based on current terrain texture
         updateTerrainParameters(playerPos);
 
-        // IMPORTANT: We can only do ONE RTT operation per frame to avoid conflicts
-        // Priority: blit > footprint > decay
+        // ====================================================================
+        // TRAIL SYSTEM UPDATE PRIORITY
+        // ====================================================================
+        // Only ONE RTT operation per frame to avoid ping-pong conflicts
+        // Priority order: blit > footprint > decay
+        //
+        // - Blit: Highest priority - must preserve trails when recentering
+        // - Footprint: Medium priority - create new trail deformation
+        // - Decay: Lowest priority - gradual restoration can wait
+        // ====================================================================
 
         // Check if we need to blit (texture recenter)
         osg::Vec2f currentCenter(playerPos.x(), playerPos.y());
@@ -492,10 +535,22 @@ namespace Terrain
         if (!mFootprintStateSet || !mRTTCamera || !mFootprintQuad)
             return;
 
-        Log(Debug::Info) << "[SNOW] Stamping footprint at "
+        // ====================================================================
+        // TRAIL CREATION
+        // ====================================================================
+        // Stamps a footprint at the player's current position
+        //
+        // Non-additive behavior:
+        // - Shader uses max() blending (doesn't deepen existing trails)
+        // - Age is preserved on repeat passes (doesn't refresh decay timer)
+        // - Creates "plowing through snow" effect
+        // ====================================================================
+
+        Log(Debug::Info) << "[SNOW TRAIL] Stamping footprint at "
                         << (int)position.x() << ", " << (int)position.y()
                         << " with depth=" << mDeformationDepth
-                        << ", radius=" << mFootprintRadius;
+                        << ", radius=" << mFootprintRadius
+                        << ", time=" << mCurrentTime;
 
         // CRITICAL FIX: Update quad Z position to match current terrain/player altitude
         // The quad must be within the camera's view frustum to render
@@ -708,31 +763,52 @@ namespace Terrain
 
         std::string fragSource = R"(
             #version 120
-            uniform sampler2D currentDeformation;
-            uniform float currentTime;
-            uniform float decayTime;
+            // ====================================================================
+            // SNOW TRAIL SYSTEM - Decay Shader
+            // ====================================================================
+            // Gradually restores snow surface to pristine state over time
+            //
+            // Decay Behavior:
+            // - Linear decay based on time since first deformation
+            // - Trails fade out smoothly over configured decay time
+            // - Age is preserved (doesn't reset) for consistent decay
+            // ====================================================================
+
+            uniform sampler2D currentDeformation;  // Current deformation texture
+            uniform float currentTime;             // Current game time
+            uniform float decayTime;               // Time for complete restoration (e.g., 180s = 3 minutes)
             varying vec2 texUV;
 
             void main()
             {
+                // Sample current deformation state
                 vec4 deform = texture2D(currentDeformation, texUV);
-                float depth = deform.r;
-                float age = deform.g;
+                float depth = deform.r;  // Current deformation depth
+                float age = deform.g;    // Timestamp when first deformed
 
+                // Only apply decay if there's deformation present
                 if (depth > 0.01)
                 {
-                    // Calculate how long ago this deformation was created
+                    // Calculate how long ago this area was first deformed
                     float timeSinceCreation = currentTime - age;
 
-                    // Linear decay over decayTime seconds
+                    // Linear decay factor (0.0 = fresh, 1.0 = fully decayed)
+                    // Trail fades out gradually over decayTime seconds
                     float decayFactor = clamp(timeSinceCreation / decayTime, 0.0, 1.0);
+
+                    // Reduce depth by decay factor
+                    // depth * (1.0 - decayFactor):
+                    //   - At t=0:          decayFactor=0.0, depth unchanged (100%)
+                    //   - At t=decayTime:  decayFactor=1.0, depth=0.0 (fully restored)
                     depth *= (1.0 - decayFactor);
 
-                    // If depth is very small, zero it out
+                    // Clean up very small depths to avoid floating point artifacts
                     if (depth < 0.01)
                         depth = 0.0;
                 }
 
+                // Output updated deformation
+                // Age is preserved - decay continues based on original timestamp
                 gl_FragColor = vec4(depth, age, 0.0, 1.0);
             }
         )";
@@ -813,6 +889,17 @@ namespace Terrain
     {
         if (!mDecayStateSet || !mRTTCamera || !mDecayQuad)
             return;
+
+        // ====================================================================
+        // TRAIL DECAY SYSTEM
+        // ====================================================================
+        // Gradually restores snow surface over time
+        //
+        // Behavior:
+        // - Linear decay based on time since first deformation
+        // - Age is preserved (decay continues from original timestamp)
+        // - Trails fade out smoothly over mDecayTime seconds (default 180s)
+        // ====================================================================
 
         // Update decay quad Z position to match current altitude
         osg::Vec3Array* vertices = static_cast<osg::Vec3Array*>(mDecayQuad->getVertexArray());
