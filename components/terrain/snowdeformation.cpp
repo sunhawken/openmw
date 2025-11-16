@@ -256,8 +256,13 @@ namespace Terrain
                             {
                                 Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** VIEWPORT MISMATCH! ***";
                                 Log(Debug::Error) << "[SNOW DIAGNOSTIC] GL viewport doesn't match camera viewport!";
-                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] Forcing viewport to camera settings...";
-                                glViewport(vp->x(), vp->y(), vp->width(), vp->height());
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] Expected: " << vp->width() << "x" << vp->height();
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] Got: " << glViewport[2] << "x" << glViewport[3];
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] Forcing viewport via OSG State...";
+
+                                // Use OSG's state mechanism to apply viewport
+                                // This is the portable way to set viewport in OSG
+                                state->applyAttribute(vp);
 
                                 // Verify it stuck
                                 GLint newViewport[4];
@@ -265,6 +270,15 @@ namespace Terrain
                                 Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Viewport after force: "
                                                    << newViewport[0] << "," << newViewport[1]
                                                    << " " << newViewport[2] << "x" << newViewport[3];
+
+                                if (newViewport[2] == (GLint)vp->width() && newViewport[3] == (GLint)vp->height())
+                                {
+                                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ✓ Viewport correction SUCCEEDED!";
+                                }
+                                else
+                                {
+                                    Log(Debug::Error) << "[SNOW DIAGNOSTIC] ✗ Viewport correction FAILED - still wrong!";
+                                }
                             }
                         }
                         else
