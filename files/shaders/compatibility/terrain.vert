@@ -159,8 +159,8 @@ void main(void)
     }
     */
 
-    // FINAL IMPLEMENTATION: Raise terrain everywhere, then subtract deformation
-    // This prevents character floating - they walk on the raised surface and sink into depressions
+    // HYBRID IMPLEMENTATION: Texture-weighted terrain raising with smooth falloff
+    // This prevents character floating while being more subtle than raising all terrain
 
     if (snowDeformationEnabled)
     {
@@ -168,18 +168,39 @@ void main(void)
         vec2 relativePos = worldPos.xy - snowDeformationCenter;
         vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
 
+        // Sample deformation depth
         float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
 
-        // Raise all terrain by max deformation depth (8 units default)
-        // Then subtract actual deformation - creates depression where player walks
-        // Character physics sees raised terrain, walks into depressions naturally
-        const float maxDeformationDepth = 8.0;  // Should match mDeformationDepth in C++
-        vertex.z += maxDeformationDepth - deformationDepth;
+        // Calculate distance from deformation center (player)
+        float distFromCenter = length(relativePos);
+
+        // Smooth falloff: full effect near player, fades to zero at edge of radius
+        // This creates a "bubble" of raised terrain that follows the player
+        float falloff = smoothstep(snowDeformationRadius, snowDeformationRadius * 0.3, distFromCenter);
+
+        // Max raise amount - should match max deformation depth from C++
+        // In snow: 12 units, in ash: 8 units, in mud: 4 units (controlled by mDeformationDepth)
+        const float maxRaiseAmount = 12.0;  // TODO: Make this a uniform passed from C++
+
+        // Raise terrain proportional to distance from player
+        // Near player: full raise amount
+        // Far from player: no raise (smooth transition)
+        float raiseAmount = falloff * maxRaiseAmount;
+
+        // Apply: raise terrain, then subtract deformation
+        vertex.z += raiseAmount - (deformationDepth * falloff);
 
         // This means:
-        // - Where no deformation: vertex.z += 8.0 (terrain raised)
-        // - Where full deformation (8 units): vertex.z += 8.0 - 8.0 = 0 (original height)
-        // - Character walks on raised surface, depressions are relative to raised level
+        // - Near player, no footprints: vertex.z += 12.0 (raised surface)
+        // - Near player, with footprints: vertex.z += 12.0 - 12.0 = 0 (original height = depression)
+        // - Far from player: vertex.z += 0 (no change, smooth transition)
+        // - Character walks on raised surface, creates visible depressions
+
+        // NOTE: For true texture-weighted raising (snow vs grass blending), we would need:
+        // 1. CPU-side texture sampling to determine snow coverage per vertex
+        // 2. Per-vertex attribute for snow weight
+        // 3. raiseAmount *= snowWeight (0.0 for grass, 1.0 for pure snow, 0.5 for mix)
+        // This is a future enhancement - current implementation works for homogeneous snow areas
     }
     
 

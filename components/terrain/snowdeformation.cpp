@@ -24,33 +24,52 @@ namespace Terrain
         , mEnabled(true)
         , mActive(false)
         , mCurrentTextureIndex(0)
-        , mTextureResolution(512)
-        , mWorldTextureRadius(150.0f)
+        , mTextureResolution(1024)  // Increased from 512 for better quality
+        , mWorldTextureRadius(300.0f)  // Increased from 150 for larger coverage
         , mTextureCenter(0.0f, 0.0f)
-        , mFootprintRadius(24.0f)
-        , mFootprintInterval(2.0f)  // Changed from 15.0 - stamp every 2 units for CONTINUOUS TRAIL (like God of War)
-        , mDeformationDepth(8.0f)
+        , mFootprintRadius(24.0f)  // Default for snow, will be updated per-terrain
+        , mFootprintInterval(2.0f)  // Default, will be updated per-terrain
+        , mDeformationDepth(8.0f)  // Default, will be updated per-terrain
         , mLastFootprintPos(0.0f, 0.0f, 0.0f)
         , mTimeSinceLastFootprint(999.0f)  // Start high to stamp immediately
+        , mLastBlitCenter(0.0f, 0.0f)
+        , mBlitThreshold(50.0f)  // Blit when player moves 50+ units
+        , mDecayTime(120.0f)  // 2 minutes for full restoration
+        , mTimeSinceLastDecay(0.0f)
+        , mDecayUpdateInterval(0.1f)  // Apply decay every 0.1 seconds
+        , mCurrentTerrainType("snow")
         , mCurrentTime(0.0f)
-        , mDebugVisualization(true)  // Enable debug HUD by default
     {
         Log(Debug::Info) << "[SNOW] SnowDeformationManager created";
 
         // Load snow detection patterns
         SnowDetection::loadSnowPatterns();
 
+        // Initialize terrain-based parameters
+        mTerrainParams = {
+            {60.0f, 12.0f, 2.0f, "snow"},   // Snow: wide radius (body), deep, frequent
+            {30.0f, 8.0f, 3.0f, "ash"},     // Ash: medium radius (feet+), medium depth
+            {15.0f, 4.0f, 5.0f, "mud"},     // Mud: narrow radius (feet only), shallow
+            {20.0f, 6.0f, 4.0f, "dirt"},    // Dirt: similar to mud
+            {25.0f, 7.0f, 3.5f, "sand"}     // Sand: between ash and mud
+        };
+
         // TODO: Load settings
         // mTextureResolution = Settings::terrain().mSnowDeformationResolution;
         // mWorldTextureRadius = Settings::terrain().mSnowDeformationRadius;
-        // mFootprintRadius = Settings::terrain().mSnowFootprintRadius;
         // etc.
 
         // Setup RTT system
         setupRTT(rootNode);
         createDeformationTextures();
         setupFootprintStamping();
-        setupDebugHUD(rootNode);
+        setupBlitSystem();
+        setupDecaySystem();
+
+        // Initialize blit center to current position (will be updated on first frame)
+        mLastBlitCenter = mTextureCenter;
+
+        Log(Debug::Info) << "[SNOW] All deformation systems initialized";
     }
 
     SnowDeformationManager::~SnowDeformationManager()
@@ -108,82 +127,28 @@ namespace Terrain
             mDeformationTexture[i]->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
             mDeformationTexture[i]->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 
-            // Allocate texture memory with initial black color
+            // Allocate texture memory - initialize to zero (no deformation)
             osg::ref_ptr<osg::Image> image = new osg::Image;
             image->allocateImage(mTextureResolution, mTextureResolution, 1, GL_RGBA, GL_FLOAT);
             float* data = reinterpret_cast<float*>(image->data());
 
-            // DEBUG: Fill with test pattern to verify shader is sampling
-            // Create a circular depression in the center for testing
-            int centerX = mTextureResolution / 2;
-            int centerY = mTextureResolution / 2;
-            float testRadius = mTextureResolution / 4.0f;
-
+            // Initialize all pixels to zero
             for (int y = 0; y < mTextureResolution; y++)
             {
                 for (int x = 0; x < mTextureResolution; x++)
                 {
                     int idx = (y * mTextureResolution + x) * 4; // RGBA
-
-                    // Calculate distance from center
-                    float dx = x - centerX;
-                    float dy = y - centerY;
-                    float dist = std::sqrt(dx*dx + dy*dy);
-
-                    // Create circular depression
-                    float depth = 0.0f;
-                    if (dist < testRadius)
-                    {
-                        // Smooth falloff
-                        float t = 1.0f - (dist / testRadius);
-                        depth = t * t * 50.0f; // 50 units deep at center
-                    }
-
-                    data[idx + 0] = depth;  // R = depth
-                    data[idx + 1] = 0.0f;   // G = age
-                    data[idx + 2] = 0.0f;   // B = unused
-                    data[idx + 3] = 1.0f;   // A = 1.0
+                    data[idx + 0] = 0.0f;  // R = depth (no deformation)
+                    data[idx + 1] = 0.0f;  // G = age
+                    data[idx + 2] = 0.0f;  // B = unused
+                    data[idx + 3] = 1.0f;  // A = 1.0
                 }
             }
-
-            Log(Debug::Info) << "[SNOW DEBUG] Created test pattern in deformation texture "
-                            << i << " (50 unit deep circle at center)";
 
             mDeformationTexture[i]->setImage(image);
 
-            // DIAGNOSTIC: Save texture to disk as TGA (PNG doesn't support float textures)
-            // Convert float data to visible 8-bit grayscale for debugging
-            osg::ref_ptr<osg::Image> debugImage = new osg::Image;
-            debugImage->allocateImage(mTextureResolution, mTextureResolution, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE);
-            unsigned char* debugData = debugImage->data();
-
-            float maxDepthFound = 0.0f;
-            for (int y = 0; y < mTextureResolution; y++)
-            {
-                for (int x = 0; x < mTextureResolution; x++)
-                {
-                    int srcIdx = (y * mTextureResolution + x) * 4;
-                    int dstIdx = y * mTextureResolution + x;
-                    // Scale depth value (0-50) to 0-255 for visibility
-                    float depth = data[srcIdx];
-                    if (depth > maxDepthFound) maxDepthFound = depth;
-                    debugData[dstIdx] = static_cast<unsigned char>(std::min(255.0f, depth * 5.0f));
-                }
-            }
-
-            Log(Debug::Info) << "[SNOW DEBUG] Test pattern max depth: " << maxDepthFound
-                            << " (expected ~50)";
-
-            std::string filename = "deformation_texture_" + std::to_string(i) + "_test_pattern.tga";
-            bool success = osgDB::writeImageFile(*debugImage, filename);
-            if (success)
-            {
-                Log(Debug::Info) << "[SNOW DEBUG] Saved test pattern to: " << filename;
-            }
-            else
-            {
-                Log(Debug::Warning) << "[SNOW DEBUG] Failed to save test pattern to: " << filename;
-            }
+            Log(Debug::Info) << "[SNOW] Created deformation texture " << i
+                            << " (" << mTextureResolution << "x" << mTextureResolution << ")";
         }
 
         mCurrentTextureIndex = 0;
@@ -342,6 +307,20 @@ namespace Terrain
         if (!mActive)
             return;
 
+        // Update terrain-specific parameters based on current terrain texture
+        updateTerrainParameters(playerPos);
+
+        // Check if we need to blit (texture recenter)
+        osg::Vec2f currentCenter(playerPos.x(), playerPos.y());
+        float distanceFromLastBlit = (currentCenter - mLastBlitCenter).length();
+
+        if (distanceFromLastBlit > mBlitThreshold)
+        {
+            // Blit old texture to new position before recentering
+            blitTexture(mTextureCenter, currentCenter);
+            mLastBlitCenter = currentCenter;
+        }
+
         // Update deformation texture center to follow player
         updateCameraPosition(playerPos);
 
@@ -356,47 +335,13 @@ namespace Terrain
             mTimeSinceLastFootprint = 0.0f;
         }
 
-        // DIAGNOSTIC: Save texture every 5 seconds to see if it's changing
-        static float timeSinceLastSave = 0.0f;
-        static int saveCount = 0;
-        timeSinceLastSave += dt;
-        if (timeSinceLastSave > 5.0f && saveCount < 5)  // Only save 5 times to avoid spam
+        // Apply decay periodically
+        mTimeSinceLastDecay += dt;
+        if (mTimeSinceLastDecay > mDecayUpdateInterval)
         {
-            osg::Image* img = mDeformationTexture[mCurrentTextureIndex]->getImage();
-            if (img && img->getPixelFormat() == GL_RGBA && img->getDataType() == GL_FLOAT)
-            {
-                // Convert float to grayscale for debugging
-                const float* data = reinterpret_cast<const float*>(img->data());
-                osg::ref_ptr<osg::Image> debugImage = new osg::Image;
-                debugImage->allocateImage(mTextureResolution, mTextureResolution, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE);
-                unsigned char* debugData = debugImage->data();
-
-                for (int y = 0; y < mTextureResolution; y++)
-                {
-                    for (int x = 0; x < mTextureResolution; x++)
-                    {
-                        int srcIdx = (y * mTextureResolution + x) * 4;
-                        int dstIdx = y * mTextureResolution + x;
-                        float depth = data[srcIdx];
-                        debugData[dstIdx] = static_cast<unsigned char>(std::min(255.0f, depth * 5.0f));
-                    }
-                }
-
-                std::string filename = "deformation_runtime_" + std::to_string(saveCount) + ".tga";
-                if (osgDB::writeImageFile(*debugImage, filename))
-                {
-                    Log(Debug::Info) << "[SNOW DEBUG] Saved runtime texture to: " << filename
-                                    << " at player pos (" << (int)playerPos.x() << ", " << (int)playerPos.y() << ")";
-                }
-            }
-            timeSinceLastSave = 0.0f;
-            saveCount++;
+            applyDecay(mTimeSinceLastDecay);
+            mTimeSinceLastDecay = 0.0f;
         }
-
-        // Update debug HUD
-        updateDebugHUD();
-
-        // TODO: Apply decay over time
     }
 
     bool SnowDeformationManager::shouldBeActive(const osg::Vec3f& worldPos)
@@ -521,80 +466,71 @@ namespace Terrain
         Log(Debug::Info) << "[SNOW] Footprint stamped successfully (RTT enabled)";
     }
 
-    void SnowDeformationManager::setupDebugHUD(osg::Group* rootNode)
+    void SnowDeformationManager::setupBlitSystem()
     {
-        // Create HUD camera that renders on top of everything
-        mDebugHUDCamera = new osg::Camera;
-        mDebugHUDCamera->setRenderOrder(osg::Camera::POST_RENDER);
-        mDebugHUDCamera->setClearMask(0);  // Don't clear anything
-        mDebugHUDCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-        mDebugHUDCamera->setViewMatrix(osg::Matrix::identity());
+        // Create blit group and quad for texture scrolling
+        mBlitGroup = new osg::Group;
+        mRTTCamera->addChild(mBlitGroup);
 
-        // Use normalized coordinates (0-1) so it works at any resolution
-        mDebugHUDCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
+        mBlitQuad = new osg::Geometry;
+        mBlitQuad->setUseDisplayList(false);
+        mBlitQuad->setUseVertexBufferObjects(true);
 
-        // Create quad in top-right corner (20% of screen size)
-        float hudSize = 0.2f;  // 20% of screen
-        float margin = 0.01f;  // 1% margin
-        float left = 1.0f - hudSize - margin;
-        float bottom = 1.0f - hudSize - margin;
-        float right = 1.0f - margin;
-        float top = 1.0f - margin;
-
-        mDebugQuad = new osg::Geometry;
-        mDebugQuad->setUseDisplayList(false);
-        mDebugQuad->setUseVertexBufferObjects(true);
-
+        // Full-screen quad
         osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
-        vertices->push_back(osg::Vec3(left, bottom, 0.0f));
-        vertices->push_back(osg::Vec3(right, bottom, 0.0f));
-        vertices->push_back(osg::Vec3(right, top, 0.0f));
-        vertices->push_back(osg::Vec3(left, top, 0.0f));
-        mDebugQuad->setVertexArray(vertices);
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
+        mBlitQuad->setVertexArray(vertices);
 
         osg::ref_ptr<osg::Vec2Array> uvs = new osg::Vec2Array;
         uvs->push_back(osg::Vec2(0.0f, 0.0f));
         uvs->push_back(osg::Vec2(1.0f, 0.0f));
         uvs->push_back(osg::Vec2(1.0f, 1.0f));
         uvs->push_back(osg::Vec2(0.0f, 1.0f));
-        mDebugQuad->setTexCoordArray(0, uvs);
+        mBlitQuad->setTexCoordArray(0, uvs);
 
-        mDebugQuad->addPrimitiveSet(new osg::DrawArrays(GL_QUADS, 0, 4));
+        mBlitQuad->addPrimitiveSet(new osg::DrawArrays(GL_QUADS, 0, 4));
 
-        // Create state set with simple texture display shader
-        osg::ref_ptr<osg::StateSet> stateSet = new osg::StateSet;
-
-        // Create simple passthrough shader
+        // Create blit shader
+        mBlitStateSet = new osg::StateSet;
         osg::ref_ptr<osg::Program> program = new osg::Program;
 
         std::string vertSource = R"(
             #version 120
-            varying vec2 texCoord;
+            varying vec2 texUV;
             void main()
             {
                 gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
-                texCoord = gl_MultiTexCoord0.xy;
+                texUV = gl_MultiTexCoord0.xy;
             }
         )";
 
         std::string fragSource = R"(
             #version 120
-            uniform sampler2D debugTexture;
-            varying vec2 texCoord;
+            uniform sampler2D sourceTexture;
+            uniform vec2 oldCenter;
+            uniform vec2 newCenter;
+            uniform float textureRadius;
+            varying vec2 texUV;
+
             void main()
             {
-                vec4 texColor = texture2D(debugTexture, texCoord);
-                // Visualize the depth channel (R) as grayscale, scaled for visibility
-                float depth = texColor.r;
-                // Scale by 10 to make small deformations visible (50 units -> 0.5 brightness)
-                float brightness = depth * 0.1;
-                gl_FragColor = vec4(brightness, brightness, brightness, 1.0);
+                // Calculate world position for this UV in the NEW coordinate system
+                vec2 worldPos = newCenter + (texUV - 0.5) * 2.0 * textureRadius;
 
-                // Add a colored border to make it obvious
-                if (texCoord.x < 0.02 || texCoord.x > 0.98 ||
-                    texCoord.y < 0.02 || texCoord.y > 0.98)
+                // Calculate UV in the OLD coordinate system
+                vec2 oldUV = ((worldPos - oldCenter) / textureRadius) * 0.5 + 0.5;
+
+                // Sample from old texture if UV is valid, otherwise zero
+                if (oldUV.x >= 0.0 && oldUV.x <= 1.0 && oldUV.y >= 0.0 && oldUV.y <= 1.0)
                 {
-                    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);  // Red border
+                    gl_FragColor = texture2D(sourceTexture, oldUV);
+                }
+                else
+                {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);  // No deformation
                 }
             }
         )";
@@ -603,54 +539,252 @@ namespace Terrain
         osg::ref_ptr<osg::Shader> fragShader = new osg::Shader(osg::Shader::FRAGMENT, fragSource);
         program->addShader(vertShader);
         program->addShader(fragShader);
+        mBlitStateSet->setAttributeAndModes(program, osg::StateAttribute::ON);
 
-        stateSet->setAttributeAndModes(program, osg::StateAttribute::ON);
-        stateSet->addUniform(new osg::Uniform("debugTexture", 0));
+        mBlitStateSet->addUniform(new osg::Uniform("sourceTexture", 0));
+        mBlitStateSet->addUniform(new osg::Uniform("oldCenter", osg::Vec2f(0.0f, 0.0f)));
+        mBlitStateSet->addUniform(new osg::Uniform("newCenter", osg::Vec2f(0.0f, 0.0f)));
+        mBlitStateSet->addUniform(new osg::Uniform("textureRadius", mWorldTextureRadius));
 
-        // Bind the deformation texture
-        stateSet->setTextureAttributeAndModes(0, mDeformationTexture[0].get(), osg::StateAttribute::ON);
-
-        // Disable depth test so it draws on top
-        stateSet->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
-        stateSet->setRenderBinDetails(1000, "RenderBin");  // Render last
-
-        mDebugQuad->setStateSet(stateSet);
+        mBlitQuad->setStateSet(mBlitStateSet);
 
         osg::ref_ptr<osg::Geode> geode = new osg::Geode;
-        geode->addDrawable(mDebugQuad);
-        mDebugHUDCamera->addChild(geode);
+        geode->addDrawable(mBlitQuad);
+        mBlitGroup->addChild(geode);
 
-        // Start enabled
-        mDebugHUDCamera->setNodeMask(mDebugVisualization ? ~0u : 0);
+        // Start disabled
+        mBlitGroup->setNodeMask(0);
 
-        rootNode->addChild(mDebugHUDCamera);
-
-        Log(Debug::Info) << "[SNOW DEBUG] HUD overlay created (top-right corner, 20% screen size, RED BORDER)";
+        Log(Debug::Info) << "[SNOW] Blit system setup complete";
     }
 
-    void SnowDeformationManager::updateDebugHUD()
+    void SnowDeformationManager::setupDecaySystem()
     {
-        if (!mDebugQuad || !mDebugVisualization)
+        // Create decay group and quad
+        mDecayGroup = new osg::Group;
+        mRTTCamera->addChild(mDecayGroup);
+
+        mDecayQuad = new osg::Geometry;
+        mDecayQuad->setUseDisplayList(false);
+        mDecayQuad->setUseVertexBufferObjects(true);
+
+        // Full-screen quad
+        osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
+        mDecayQuad->setVertexArray(vertices);
+
+        osg::ref_ptr<osg::Vec2Array> uvs = new osg::Vec2Array;
+        uvs->push_back(osg::Vec2(0.0f, 0.0f));
+        uvs->push_back(osg::Vec2(1.0f, 0.0f));
+        uvs->push_back(osg::Vec2(1.0f, 1.0f));
+        uvs->push_back(osg::Vec2(0.0f, 1.0f));
+        mDecayQuad->setTexCoordArray(0, uvs);
+
+        mDecayQuad->addPrimitiveSet(new osg::DrawArrays(GL_QUADS, 0, 4));
+
+        // Create decay shader
+        mDecayStateSet = new osg::StateSet;
+        osg::ref_ptr<osg::Program> program = new osg::Program;
+
+        std::string vertSource = R"(
+            #version 120
+            varying vec2 texUV;
+            void main()
+            {
+                gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+                texUV = gl_MultiTexCoord0.xy;
+            }
+        )";
+
+        std::string fragSource = R"(
+            #version 120
+            uniform sampler2D currentDeformation;
+            uniform float currentTime;
+            uniform float decayTime;
+            varying vec2 texUV;
+
+            void main()
+            {
+                vec4 deform = texture2D(currentDeformation, texUV);
+                float depth = deform.r;
+                float age = deform.g;
+
+                if (depth > 0.01)
+                {
+                    // Calculate how long ago this deformation was created
+                    float timeSinceCreation = currentTime - age;
+
+                    // Linear decay over decayTime seconds
+                    float decayFactor = clamp(timeSinceCreation / decayTime, 0.0, 1.0);
+                    depth *= (1.0 - decayFactor);
+
+                    // If depth is very small, zero it out
+                    if (depth < 0.01)
+                        depth = 0.0;
+                }
+
+                gl_FragColor = vec4(depth, age, 0.0, 1.0);
+            }
+        )";
+
+        osg::ref_ptr<osg::Shader> vertShader = new osg::Shader(osg::Shader::VERTEX, vertSource);
+        osg::ref_ptr<osg::Shader> fragShader = new osg::Shader(osg::Shader::FRAGMENT, fragSource);
+        program->addShader(vertShader);
+        program->addShader(fragShader);
+        mDecayStateSet->setAttributeAndModes(program, osg::StateAttribute::ON);
+
+        mDecayStateSet->addUniform(new osg::Uniform("currentDeformation", 0));
+        mDecayStateSet->addUniform(new osg::Uniform("currentTime", 0.0f));
+        mDecayStateSet->addUniform(new osg::Uniform("decayTime", mDecayTime));
+
+        mDecayQuad->setStateSet(mDecayStateSet);
+
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->addDrawable(mDecayQuad);
+        mDecayGroup->addChild(geode);
+
+        // Start disabled
+        mDecayGroup->setNodeMask(0);
+
+        Log(Debug::Info) << "[SNOW] Decay system setup complete (decay time: " << mDecayTime << "s)";
+    }
+
+    void SnowDeformationManager::blitTexture(const osg::Vec2f& oldCenter, const osg::Vec2f& newCenter)
+    {
+        if (!mBlitStateSet || !mRTTCamera)
             return;
 
-        // Update the texture binding to show the current deformation texture
-        osg::StateSet* stateSet = mDebugQuad->getStateSet();
-        if (stateSet)
+        Log(Debug::Info) << "[SNOW] Blitting texture from (" << (int)oldCenter.x() << ", " << (int)oldCenter.y()
+                        << ") to (" << (int)newCenter.x() << ", " << (int)newCenter.y() << ")";
+
+        // Swap ping-pong buffers
+        int sourceIndex = mCurrentTextureIndex;
+        mCurrentTextureIndex = 1 - mCurrentTextureIndex;
+
+        // Bind source texture
+        mBlitStateSet->setTextureAttributeAndModes(0,
+            mDeformationTexture[sourceIndex].get(),
+            osg::StateAttribute::ON);
+
+        // Attach destination texture as render target
+        mRTTCamera->detach(osg::Camera::COLOR_BUFFER);
+        mRTTCamera->attach(osg::Camera::COLOR_BUFFER,
+            mDeformationTexture[mCurrentTextureIndex].get());
+
+        // Update shader uniforms
+        osg::Uniform* oldCenterUniform = mBlitStateSet->getUniform("oldCenter");
+        if (oldCenterUniform)
+            oldCenterUniform->set(oldCenter);
+
+        osg::Uniform* newCenterUniform = mBlitStateSet->getUniform("newCenter");
+        if (newCenterUniform)
+            newCenterUniform->set(newCenter);
+
+        // Enable blit rendering
+        mBlitGroup->setNodeMask(~0u);
+        mRTTCamera->setNodeMask(~0u);
+
+        // Disable footprint group temporarily so only blit renders
+        mFootprintGroup->setNodeMask(0);
+        mDecayGroup->setNodeMask(0);
+
+        // OSG will render on the next frame
+        // We need to disable the blit after rendering - this happens automatically
+        // since we re-enable footprint group in stampFootprint()
+    }
+
+    void SnowDeformationManager::applyDecay(float dt)
+    {
+        if (!mDecayStateSet || !mRTTCamera)
+            return;
+
+        // Swap ping-pong buffers
+        int sourceIndex = mCurrentTextureIndex;
+        mCurrentTextureIndex = 1 - mCurrentTextureIndex;
+
+        // Bind source texture
+        mDecayStateSet->setTextureAttributeAndModes(0,
+            mDeformationTexture[sourceIndex].get(),
+            osg::StateAttribute::ON);
+
+        // Attach destination texture as render target
+        mRTTCamera->detach(osg::Camera::COLOR_BUFFER);
+        mRTTCamera->attach(osg::Camera::COLOR_BUFFER,
+            mDeformationTexture[mCurrentTextureIndex].get());
+
+        // Update shader uniforms
+        osg::Uniform* currentTimeUniform = mDecayStateSet->getUniform("currentTime");
+        if (currentTimeUniform)
+            currentTimeUniform->set(mCurrentTime);
+
+        // Enable decay rendering
+        mDecayGroup->setNodeMask(~0u);
+        mRTTCamera->setNodeMask(~0u);
+
+        // Disable other groups
+        mFootprintGroup->setNodeMask(0);
+        mBlitGroup->setNodeMask(0);
+
+        static int logCount = 0;
+        if (logCount++ < 5)
         {
-            stateSet->setTextureAttributeAndModes(0,
-                mDeformationTexture[mCurrentTextureIndex].get(),
-                osg::StateAttribute::ON);
+            Log(Debug::Info) << "[SNOW] Applying decay at time " << mCurrentTime;
         }
     }
 
-    void SnowDeformationManager::setDebugVisualization(bool enabled)
+    void SnowDeformationManager::updateTerrainParameters(const osg::Vec3f& playerPos)
     {
-        mDebugVisualization = enabled;
-        if (mDebugHUDCamera)
+        // Detect terrain texture at player position
+        std::string terrainType = detectTerrainTexture(playerPos);
+
+        // Only update if terrain type changed
+        if (terrainType == mCurrentTerrainType)
+            return;
+
+        mCurrentTerrainType = terrainType;
+
+        // Find matching parameters
+        for (const auto& params : mTerrainParams)
         {
-            mDebugHUDCamera->setNodeMask(enabled ? ~0u : 0);
-            Log(Debug::Info) << "[SNOW DEBUG] HUD visualization "
-                            << (enabled ? "enabled" : "disabled");
+            if (terrainType.find(params.pattern) != std::string::npos)
+            {
+                mFootprintRadius = params.radius;
+                mDeformationDepth = params.depth;
+                mFootprintInterval = params.interval;
+
+                Log(Debug::Info) << "[SNOW] Terrain type changed to '" << terrainType
+                                << "' - radius=" << params.radius
+                                << ", depth=" << params.depth
+                                << ", interval=" << params.interval;
+                return;
+            }
         }
+
+        // Default to snow parameters if no match
+        Log(Debug::Info) << "[SNOW] Unknown terrain type '" << terrainType << "', using snow defaults";
+    }
+
+    std::string SnowDeformationManager::detectTerrainTexture(const osg::Vec3f& worldPos)
+    {
+        // TODO: Implement actual terrain texture detection by querying terrain storage
+        // For now, return snow for testing
+        // Real implementation would:
+        // 1. Get terrain chunk at worldPos
+        // 2. Query texture layers for that chunk
+        // 3. Sample blendmaps at player's UV coordinate
+        // 4. Return the dominant texture name
+
+        // Placeholder: always return "snow"
+        return "snow";
+    }
+
+    void SnowDeformationManager::getDeformationParams(float& outRadius, float& outDepth, float& outInterval) const
+    {
+        outRadius = mFootprintRadius;
+        outDepth = mDeformationDepth;
+        outInterval = mFootprintInterval;
     }
 }
