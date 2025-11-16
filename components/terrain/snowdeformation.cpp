@@ -453,7 +453,9 @@ namespace Terrain
             return;
 
         Log(Debug::Info) << "[SNOW] Stamping footprint at "
-                        << (int)position.x() << ", " << (int)position.y();
+                        << (int)position.x() << ", " << (int)position.y()
+                        << " with depth=" << mDeformationDepth
+                        << ", radius=" << mFootprintRadius;
 
         // Swap ping-pong buffers
         int prevIndex = mCurrentTextureIndex;
@@ -469,7 +471,7 @@ namespace Terrain
         mRTTCamera->attach(osg::Camera::COLOR_BUFFER,
             mDeformationTexture[mCurrentTextureIndex].get());
 
-        // Update shader uniforms - use XY not XZ!
+        // Update shader uniforms (IMPORTANT: update terrain-specific parameters!)
         osg::Uniform* footprintCenterUniform = mFootprintStateSet->getUniform("footprintCenter");
         if (footprintCenterUniform)
             footprintCenterUniform->set(osg::Vec2f(position.x(), position.y()));
@@ -481,6 +483,15 @@ namespace Terrain
         osg::Uniform* currentTimeUniform = mFootprintStateSet->getUniform("currentTime");
         if (currentTimeUniform)
             currentTimeUniform->set(mCurrentTime);
+
+        // UPDATE terrain-specific parameters that may have changed
+        osg::Uniform* deformationDepthUniform = mFootprintStateSet->getUniform("deformationDepth");
+        if (deformationDepthUniform)
+            deformationDepthUniform->set(mDeformationDepth);
+
+        osg::Uniform* footprintRadiusUniform = mFootprintStateSet->getUniform("footprintRadius");
+        if (footprintRadiusUniform)
+            footprintRadiusUniform->set(mFootprintRadius);
 
         // Enable RTT rendering to stamp footprint
         mRTTCamera->setNodeMask(~0u);
