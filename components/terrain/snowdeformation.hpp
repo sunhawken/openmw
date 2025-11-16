@@ -60,8 +60,8 @@ namespace Terrain
         /// Stamp a footprint at the current player position
         void stampFootprint(const osg::Vec3f& position);
 
-        /// Enable/disable debug visualization overlay
-        void setDebugVisualization(bool enabled);
+        /// Get current deformation parameters (may vary by terrain texture)
+        void getDeformationParams(float& outRadius, float& outDepth, float& outInterval) const;
 
     private:
         /// Initialize RTT camera and deformation textures
@@ -73,15 +73,29 @@ namespace Terrain
         /// Create footprint stamping geometry and shaders
         void setupFootprintStamping();
 
+        /// Setup blit system for texture scrolling
+        void setupBlitSystem();
+
+        /// Setup decay system for gradual snow restoration
+        void setupDecaySystem();
+
         /// Update RTT camera position to follow player
         void updateCameraPosition(const osg::Vec3f& playerPos);
 
         /// Render a footprint into the deformation texture
         void renderFootprint(const osg::Vec3f& worldPos);
 
-        /// Setup debug HUD camera
-        void setupDebugHUD(osg::Group* rootNode);
-        void updateDebugHUD();
+        /// Blit old texture content to new position when texture recenters
+        void blitTexture(const osg::Vec2f& oldCenter, const osg::Vec2f& newCenter);
+
+        /// Apply decay to the deformation texture
+        void applyDecay(float dt);
+
+        /// Update deformation parameters based on terrain texture at position
+        void updateTerrainParameters(const osg::Vec3f& playerPos);
+
+        /// Detect terrain texture at position
+        std::string detectTerrainTexture(const osg::Vec3f& worldPos);
 
         Resource::SceneManager* mSceneManager;
         Storage* mTerrainStorage;
@@ -111,12 +125,32 @@ namespace Terrain
         osg::ref_ptr<osg::Geometry> mFootprintQuad;
         osg::ref_ptr<osg::StateSet> mFootprintStateSet;
 
-        // Debug HUD
-        osg::ref_ptr<osg::Camera> mDebugHUDCamera;
-        osg::ref_ptr<osg::Geometry> mDebugQuad;
-        bool mDebugVisualization;
+        // Blit system (for texture scrolling)
+        osg::ref_ptr<osg::Group> mBlitGroup;
+        osg::ref_ptr<osg::Geometry> mBlitQuad;
+        osg::ref_ptr<osg::StateSet> mBlitStateSet;
+        osg::Vec2f mLastBlitCenter;      // Last center position when blit was performed
+        float mBlitThreshold;            // Distance player must move before blit (units)
 
-        // Game time for decay
+        // Decay system
+        osg::ref_ptr<osg::Group> mDecayGroup;
+        osg::ref_ptr<osg::Geometry> mDecayQuad;
+        osg::ref_ptr<osg::StateSet> mDecayStateSet;
+        float mDecayTime;                // Time for full restoration (seconds)
+        float mTimeSinceLastDecay;       // Accumulator for decay updates
+        float mDecayUpdateInterval;      // How often to apply decay (seconds)
+
+        // Texture-based parameters
+        struct TerrainParams {
+            float radius;
+            float depth;
+            float interval;
+            std::string pattern;
+        };
+        std::vector<TerrainParams> mTerrainParams;
+        std::string mCurrentTerrainType;
+
+        // Game time
         float mCurrentTime;
     };
 }
