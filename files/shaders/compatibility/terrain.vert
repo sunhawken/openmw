@@ -31,192 +31,75 @@ varying vec3 passNormal;
 #include "lib/light/lighting.glsl"
 #include "lib/view/depth.glsl"
 
-// Snow deformation system - ALWAYS ENABLED FOR TESTING
-uniform sampler2D snowDeformationMap;     // Deformation texture (R=depth, G=age)
-uniform vec2 snowDeformationCenter;       // World XZ center of deformation texture
-uniform float snowDeformationRadius;      // World radius covered by texture
-uniform bool snowDeformationEnabled;      // Runtime enable/disable
-uniform vec3 chunkWorldOffset;            // Chunk's world position (for local->world conversion)
-uniform float snowRaiseAmount;            // How much to raise terrain (matches deformation depth)
+// ============================================================================
+// SNOW DEFORMATION SYSTEM - Vertex Shader Array Approach
+// ============================================================================
+// Uses array of footprint positions passed from C++ instead of RTT texture
+// Simple, efficient, no rendering complexity
+// ============================================================================
+uniform vec3 snowFootprintPositions[500];  // Array of footprint positions (X, Y, timestamp)
+uniform int snowFootprintCount;            // Number of active footprints
+uniform float snowFootprintRadius;         // Footprint radius in world units
+uniform float snowDeformationDepth;        // Maximum deformation depth
+uniform float snowCurrentTime;             // Current game time
+uniform float snowDecayTime;               // Time for trails to fully fade (default 180s)
+uniform bool snowDeformationEnabled;       // Runtime enable/disable
+uniform vec3 chunkWorldOffset;             // Chunk's world position (for local->world conversion)
 
 void main(void)
 {
     vec4 vertex = gl_Vertex;
 
-    // SNOW DEFORMATION DIAGNOSTIC TEST
-    // CRITICAL: Test if shader is even running by doing unconditional deformation
-    // FIXED: Use Z axis (up in OpenMW), not Y axis!
-
-    
-
-    // ============================================================================
-    // PROGRESSIVE DIAGNOSTIC TESTS - Uncomment ONE test at a time, in order
-    // Using GEOMETRY (altitude) tests - much more obvious than color!
-    // ============================================================================
-
-    // TEST 1: Is the shader even running?
-    // Expected: ALL terrain rises by 500 units (very obvious!)
-    // If this doesn't work: Shader isn't being used at all OR terrain uses multiple shaders
-    /*
-    vertex.z += 500.0;
-    */
-
-    // TEST 2: Is snowDeformationEnabled uniform being set to true?
-    // Expected: ALL terrain rises by 500 units when system is active
-    // If this doesn't work: The uniform isn't being set or is false
-    /*
-    if (snowDeformationEnabled)
+    // ========================================================================
+    // SNOW DEFORMATION - Vertex Shader Array Approach
+    // ========================================================================
+    // Loop through footprint positions, apply deformation where close
+    // ========================================================================
+    if (snowDeformationEnabled && snowFootprintCount > 0)
     {
-        vertex.z += 500.0;
-    }
-    */
-
-    // TEST 3: Are uniforms being passed correctly?
-    // Expected: Terrain rises by different amounts based on snowDeformationRadius
-    // If rises by 500: radius is set correctly (150 * ~3.33 = 500)
-    // If no rise: radius is zero or uniform not set
-    /*
-    if (snowDeformationEnabled)
-    {
-        vertex.z += snowDeformationRadius * 3.33;  // Should be 500 units if radius=150
-    }
-    */
-
-    // TEST 4: Is chunkWorldOffset being set?
-    // Expected: Terrain creates a "staircase" pattern based on chunk positions
-    // If all flat: chunkWorldOffset is zero (PROBLEM!)
-    // If staircase/waves: chunkWorldOffset is being set correctly
-
-    /*
-    if (snowDeformationEnabled)
-    {
-        // Create visible pattern from chunk offset
-        // NOTE: chunkWorldOffset is Vec3(X, Y, 0) where X=East, Y=North, Z=Up (always 0 for terrain)
-        // chunkWorldOffset is in WORLD coordinates (e.g., 4096, 8192, etc.)
-        float pattern = mod(abs(chunkWorldOffset.x) + abs(chunkWorldOffset.y), 1000.0);
-        vertex.z += pattern * 0.5;  // Creates steps/waves
-    }
-    */
-    
-
-    // TEST 5: Is world position calculation working?
-    // Expected: Terrain within 300 units of player rises 500 units (circular plateau)
-    // If no plateau: World position calculation is broken
-    /*
-    if (snowDeformationEnabled)
-    {
+        // Convert vertex from chunk-local to world space
         vec3 worldPos = vertex.xyz + chunkWorldOffset;
-        vec2 relativePos = worldPos.xy - snowDeformationCenter;
-        float distFromPlayer = length(relativePos);
 
-        if (distFromPlayer < snowDeformationRadius * 2.0)  // 300 units
-            vertex.z += 500.0;  // Circular plateau around player
-    }
-    */
+        // Accumulate total deformation from all nearby footprints
+        float totalDeformation = 0.0;
 
-    // TEST 6: Are UVs being calculated correctly?
-    // Expected: Smooth circular cone rising 500 units at center, tapering to 0 at edges
-    // Center under player = peak (500), edges (150 units away) = ground level
-    /*
-    if (snowDeformationEnabled)
-    {
-        vec3 worldPos = vertex.xyz + chunkWorldOffset;
-        vec2 relativePos = worldPos.xy - snowDeformationCenter;
-        vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
-
-        if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
+        // Loop through all active footprints
+        for (int i = 0; i < snowFootprintCount; i++)
         {
-            // Create cone shape from UVs (center high, edges low)
-            float distFromCenter = length(deformUV - vec2(0.5, 0.5));
-            float height = max(0.0, 1.0 - distFromCenter * 2.0);  // 1.0 at center, 0.0 at edge
-            vertex.z += height * 500.0;  // 500 units at center
+            vec3 footprint = snowFootprintPositions[i];
+            vec2 footprintPos = footprint.xy;  // X, Y position
+            float timestamp = footprint.z;     // Time when created
+
+            // Calculate distance from vertex to footprint center (ground plane only)
+            vec2 diff = worldPos.xy - footprintPos;
+            float dist = length(diff);
+
+            // Skip if outside footprint radius
+            if (dist > snowFootprintRadius)
+                continue;
+
+            // Calculate age-based decay
+            float age = snowCurrentTime - timestamp;
+            float decayFactor = clamp(age / snowDecayTime, 0.0, 1.0);
+
+            // Calculate distance-based falloff (smooth circular depression)
+            float radiusFactor = 1.0 - (dist / snowFootprintRadius);
+            radiusFactor = smoothstep(0.0, 1.0, radiusFactor);
+
+            // Combine distance falloff with decay
+            float deformation = snowDeformationDepth * radiusFactor * (1.0 - decayFactor);
+
+            // Accumulate (take maximum, not sum, to avoid over-deepening)
+            totalDeformation = max(totalDeformation, deformation);
         }
-    }
-    */
 
-    // TEST 7: Can we sample the texture at center?
-    // Expected: ALL terrain rises/sinks based on texture center value
-    // Should rise/sink by 100 units everywhere if test pattern exists (50 * 2)
-    /*
-    if (snowDeformationEnabled)
-    {
-        vec2 testUV = vec2(0.5, 0.5);  // Always sample center
-        float deformationDepth = texture2D(snowDeformationMap, testUV).r;
-        vertex.z -= deformationDepth * 2.0;  // Should be -100 if test pattern = 50
-    }
-    */
+        // Apply deformation: raise terrain uniformly, then subtract where footprints are
+        vertex.z += snowDeformationDepth - totalDeformation;
 
-    // TEST 8: Can we sample the texture with calculated UVs?
-    // Expected: Circular depression following player (100 units deep at center)
-    /*
-    if (snowDeformationEnabled)
-    {
-        vec3 worldPos = vertex.xyz + chunkWorldOffset;
-        vec2 relativePos = worldPos.xy - snowDeformationCenter;
-        vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
-
-        float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
-        vertex.z -= deformationDepth * 2.0;  // 100 units at center (50 * 2)
-    }
-    */
-
-    // UNIFORM TERRAIN RAISING: All snow terrain raised to create "plowing through snow" effect
-    // The terrain is raised uniformly across ALL snow areas
-    // Where the player walks, deformation creates depressions (trails) in the raised snow
-    // IMPORTANT: snowRaiseAmount is passed from C++ as a uniform (configurable per terrain type)
-
-    // DIAGNOSTIC TEST: Uncomment to verify shader is running
-    // This will make ALL terrain rise by 500 units (very obvious!)
-    // STEP 1: Uncomment this line FIRST to verify the shader runs
-    //if (snowDeformationEnabled) vertex.z += 500.0;
-
-    // DIAGNOSTIC TEST 2: Test if snowRaiseAmount is being passed
-    // Uncomment to see if raise amount is working (should raise by 100 units)
-    //if (snowDeformationEnabled) vertex.z += snowRaiseAmount;
-
-    // DIAGNOSTIC TEST 3: Test if texture has data
-    // This will create MASSIVE SPIKES (500 units) where footprints exist
-    // if (snowDeformationEnabled) {
-    //     vec3 worldPos = vertex.xyz + chunkWorldOffset;
-    //     vec2 relativePos = worldPos.xy - snowDeformationCenter;
-    //     vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
-    //     float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
-    //     if (deformationDepth > 0.01) vertex.z += 500.0;
-    // }
-
-    if (snowDeformationEnabled)
-    {
-        // Convert vertex from chunk-local space to world space
-        vec3 worldPos = vertex.xyz + chunkWorldOffset;
-
-        // CRITICAL: OpenMW coordinate system
-        // X = East/West, Y = North/South, Z = Up/Down (altitude)
-        // Ground plane is X-Y, deformation is on Z axis
-        // Calculate relative position from deformation texture center (player position) on ground plane
-        vec2 relativePos = worldPos.xy - snowDeformationCenter;  // Use XY (ground plane)
-
-        // Convert world position to deformation texture UV coordinates (0-1)
-        vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
-
-        // Sample deformation depth from trail texture (R channel)
-        float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
-
-        // Apply deformation: raise ALL terrain uniformly, then subtract deformation depth
-        // snowRaiseAmount comes from C++ and matches the footprint depth exactly
-        // Deformation is applied to Z axis (vertical in OpenMW - Z is UP!)
-        vertex.z += snowRaiseAmount - deformationDepth;  // Deform Z (up)!
-
-        // This creates:
-        // - Untouched snow: vertex.z += snowRaiseAmount (raised terrain)
-        // - Where player walked: vertex.z += snowRaiseAmount - snowRaiseAmount = 0 (ground level)
-        // - Visible trails as if plowing through deep snow
-        // - Character walks on top of raised snow, trails show where they've been
-
-        // FUTURE ENHANCEMENT: Weight by snow texture coverage for gradual transitions
-        // This would require per-vertex texture blend weights from CPU:
-        // float snowWeight = getSnowCoverage(worldPos);  // 0.0 to 1.0
-        // vertex.z += (snowRaiseAmount * snowWeight) - (deformationDepth * snowWeight);
-        // This would allow smooth transitions between snow and non-snow areas
+        // Result:
+        // - Untouched snow: +snowDeformationDepth (raised)
+        // - Fresh footprint: +0 (ground level)
+        // - Old footprint: gradually returns to +snowDeformationDepth (restored)
     }
     
 

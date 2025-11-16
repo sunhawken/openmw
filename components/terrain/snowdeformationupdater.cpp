@@ -8,122 +8,41 @@ namespace Terrain
 {
     SnowDeformationUpdater::SnowDeformationUpdater(World* terrainWorld)
         : mTerrainWorld(terrainWorld)
-        , mTextureUnit(7)  // Use texture unit 7 for deformation map
     {
-        // Create uniforms with default values
-        mDeformationMapUniform = new osg::Uniform("snowDeformationMap", mTextureUnit);
-        mDeformationCenterUniform = new osg::Uniform("snowDeformationCenter", osg::Vec2f(0.0f, 0.0f));
-        mDeformationRadiusUniform = new osg::Uniform("snowDeformationRadius", 150.0f);
-        mDeformationEnabledUniform = new osg::Uniform("snowDeformationEnabled", false);
-        mRaiseAmountUniform = new osg::Uniform("snowRaiseAmount", 100.0f);  // Default for snow terrain
+        Log(Debug::Info) << "[SNOW UPDATER] Created (vertex shader array approach)";
     }
 
     void SnowDeformationUpdater::setDefaults(osg::StateSet* stateset)
     {
-        // Add uniforms to stateset
-        stateset->addUniform(mDeformationMapUniform);
-        stateset->addUniform(mDeformationCenterUniform);
-        stateset->addUniform(mDeformationRadiusUniform);
-        stateset->addUniform(mDeformationEnabledUniform);
-        stateset->addUniform(mRaiseAmountUniform);
+        if (!mTerrainWorld)
+            return;
 
-        // DON'T set chunkWorldOffset here - it's per-chunk and set in chunkmanager.cpp
-        // We just need to make sure we don't override it
+        SnowDeformationManager* manager = mTerrainWorld->getSnowDeformationManager();
+        if (!manager)
+            return;
+
+        // Add all snow deformation uniforms to the terrain stateset
+        // These will be shared across all terrain chunks
+        stateset->addUniform(manager->getFootprintPositionsUniform());
+        stateset->addUniform(manager->getFootprintCountUniform());
+        stateset->addUniform(manager->getFootprintRadiusUniform());
+        stateset->addUniform(manager->getDeformationDepthUniform());
+        stateset->addUniform(manager->getCurrentTimeUniform());
+        stateset->addUniform(manager->getDecayTimeUniform());
+
+        // Create and add the enabled uniform (defaults to true for testing)
+        osg::ref_ptr<osg::Uniform> enabledUniform = new osg::Uniform("snowDeformationEnabled", true);
+        stateset->addUniform(enabledUniform);
+
+        Log(Debug::Info) << "[SNOW UPDATER] Uniforms added to terrain stateset";
     }
 
     void SnowDeformationUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
     {
-        if (!mTerrainWorld)
-        {
-            Log(Debug::Warning) << "[SNOW UPDATER] No terrain world!";
-            return;
-        }
+        // With the vertex shader array approach, uniforms are updated directly by
+        // SnowDeformationManager in its update() function
+        // This callback is now essentially a no-op, but kept for API compatibility
 
-        SnowDeformationManager* manager = mTerrainWorld->getSnowDeformationManager();
-        if (!manager)
-        {
-            Log(Debug::Warning) << "[SNOW UPDATER] No deformation manager!";
-            mDeformationEnabledUniform->set(false);
-            return;
-        }
-
-        // Get current deformation texture
-        osg::Texture2D* deformationTexture = manager->getDeformationTexture();
-
-        if (deformationTexture && manager->isEnabled())
-        {
-            // Bind deformation texture
-            stateset->setTextureAttributeAndModes(mTextureUnit,
-                deformationTexture, osg::StateAttribute::ON);
-
-            // Get deformation texture parameters from manager
-            osg::Vec2f center;
-            float radius;
-            manager->getDeformationTextureParams(center, radius);
-
-            // Get current deformation parameters (terrain-specific)
-            float footprintRadius, deformationDepth, footprintInterval;
-            manager->getDeformationParams(footprintRadius, deformationDepth, footprintInterval);
-
-            // DIAGNOSTIC: Log raise amount value
-            static int raiseLogCount = 0;
-            if (raiseLogCount++ < 5)
-            {
-                Log(Debug::Info) << "[SNOW UPDATER DIAGNOSTIC] deformationDepth from manager = " << deformationDepth
-                                << " (this should be 100.0 for snow)";
-            }
-
-            // Update uniforms - Use our cached uniforms and add them to stateset if missing
-            // This ensures the uniforms actually reach the shader
-            mDeformationEnabledUniform->set(true);
-            mDeformationCenterUniform->set(center);
-            mDeformationRadiusUniform->set(radius);
-            mRaiseAmountUniform->set(deformationDepth);  // CRITICAL: Pass depth as raise amount to shader
-
-            // Make sure uniforms are in the stateset
-            if (!stateset->getUniform("snowDeformationEnabled"))
-                stateset->addUniform(mDeformationEnabledUniform);
-            if (!stateset->getUniform("snowDeformationCenter"))
-                stateset->addUniform(mDeformationCenterUniform);
-            if (!stateset->getUniform("snowDeformationRadius"))
-                stateset->addUniform(mDeformationRadiusUniform);
-            if (!stateset->getUniform("snowDeformationMap"))
-                stateset->addUniform(mDeformationMapUniform);
-            if (!stateset->getUniform("snowRaiseAmount"))
-                stateset->addUniform(mRaiseAmountUniform);
-
-            static int logCount = 0;
-            if (logCount++ < 10)
-            {
-                bool enabledValue = false;
-                mDeformationEnabledUniform->get(enabledValue);
-
-                Log(Debug::Info) << "[SNOW UPDATER] Binding deformation texture at ("
-                                << (int)center.x() << ", " << (int)center.y()
-                                << ") radius=" << radius
-                                << " raiseAmount=" << deformationDepth
-                                << " textureUnit=" << mTextureUnit
-                                << " ENABLED=" << (enabledValue ? "TRUE" : "FALSE")
-                                << " texture=" << deformationTexture;
-            }
-        }
-        else
-        {
-            // Disable deformation
-            osg::Uniform* enabledUniform = stateset->getUniform("snowDeformationEnabled");
-            if (enabledUniform)
-            {
-                enabledUniform->set(false);
-            }
-
-            static bool warned = false;
-            if (!warned)
-            {
-                Log(Debug::Warning) << "[SNOW UPDATER] No deformation texture or disabled! "
-                                   << "texture=" << (deformationTexture ? "valid" : "null")
-                                   << " enabled=" << manager->isEnabled();
-                warned = true;
-            }
-        }
+        // Could add per-frame diagnostics here if needed
     }
 }

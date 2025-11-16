@@ -2,16 +2,16 @@
 #define OPENMW_COMPONENTS_TERRAIN_SNOWDEFORMATIONUPDATER_H
 
 #include <osg/StateSet>
-#include <osg/Uniform>
-#include <osg/Texture2D>
 #include <components/sceneutil/statesetupdater.hpp>
 
 namespace Terrain
 {
-    class SnowDeformationManager;
     class World;
 
-    /// StateSetUpdater that binds snow deformation textures and uniforms to terrain
+    /// StateSetUpdater that adds snow deformation uniforms to terrain
+    /// With the vertex shader array approach, this simply adds the uniform
+    /// references to the terrain stateset. The uniforms are updated directly
+    /// by SnowDeformationManager each frame.
     class SnowDeformationUpdater : public SceneUtil::StateSetUpdater
     {
     public:
@@ -22,12 +22,6 @@ namespace Terrain
 
     private:
         World* mTerrainWorld;
-        osg::ref_ptr<osg::Uniform> mDeformationMapUniform;
-        osg::ref_ptr<osg::Uniform> mDeformationCenterUniform;
-        osg::ref_ptr<osg::Uniform> mDeformationRadiusUniform;
-        osg::ref_ptr<osg::Uniform> mDeformationEnabledUniform;
-        osg::ref_ptr<osg::Uniform> mRaiseAmountUniform;
-        int mTextureUnit;
     };
 }
 
