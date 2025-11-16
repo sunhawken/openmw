@@ -86,6 +86,7 @@ void main(void)
     // If all flat: chunkWorldOffset is zero (PROBLEM!)
     // If staircase/waves: chunkWorldOffset is being set correctly
 
+    /*
     if (snowDeformationEnabled)
     {
         // Create visible pattern from chunk offset
@@ -94,7 +95,7 @@ void main(void)
         float pattern = mod(abs(chunkWorldOffset.x) + abs(chunkWorldOffset.y), 1000.0);
         vertex.z += pattern * 0.5;  // Creates steps/waves
     }
-    
+    */
     
 
     // TEST 5: Is world position calculation working?
@@ -158,9 +159,9 @@ void main(void)
     }
     */
 
-    // TEST 9: FINAL - Full implementation with normal depth
-    // Expected: Subtle 50-unit depression following player
-    /*
+    // FINAL IMPLEMENTATION: Raise terrain everywhere, then subtract deformation
+    // This prevents character floating - they walk on the raised surface and sink into depressions
+
     if (snowDeformationEnabled)
     {
         vec3 worldPos = vertex.xyz + chunkWorldOffset;
@@ -168,9 +169,19 @@ void main(void)
         vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
 
         float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
-        vertex.z -= deformationDepth;  // Normal 50 units
+
+        // Raise all terrain by max deformation depth (8 units default)
+        // Then subtract actual deformation - creates depression where player walks
+        // Character physics sees raised terrain, walks into depressions naturally
+        const float maxDeformationDepth = 8.0;  // Should match mDeformationDepth in C++
+        vertex.z += maxDeformationDepth - deformationDepth;
+
+        // This means:
+        // - Where no deformation: vertex.z += 8.0 (terrain raised)
+        // - Where full deformation (8 units): vertex.z += 8.0 - 8.0 = 0 (original height)
+        // - Character walks on raised surface, depressions are relative to raised level
     }
-    */
+    
 
     // ============================================================================
     // INSTRUCTIONS:
