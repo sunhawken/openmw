@@ -79,9 +79,9 @@ namespace Terrain
             osg::Vec3(0.0f, 0.0f, 1.0f)     // Up = North (Z axis)
         );
 
-        // Clear to black (no deformation initially)
-        mRTTCamera->setClearMask(GL_COLOR_BUFFER_BIT);
-        mRTTCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
+        // DON'T CLEAR - we're accumulating deformation via ping-pong
+        // The footprint shader reads from previous texture and writes to current
+        mRTTCamera->setClearMask(0);  // No clearing!
         mRTTCamera->setViewport(0, 0, mTextureResolution, mTextureResolution);
 
         // Start disabled
@@ -239,15 +239,15 @@ namespace Terrain
         // For now, we'll use inline shaders to ensure they work
         std::string vertSource = R"(
             #version 120
-            uniform vec2 deformationCenter;
-            uniform float deformationRadius;
-            varying vec2 worldPos;
             varying vec2 texUV;
 
             void main()
             {
-                gl_Position = gl_Vertex;
-                worldPos = deformationCenter + gl_Vertex.xy * deformationRadius;
+                // Transform vertex through RTT camera's projection/view matrices
+                // The quad covers the entire deformation texture area in world space
+                gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+
+                // UV coordinates for sampling previous deformation texture
                 texUV = gl_MultiTexCoord0.xy;
             }
         )";
@@ -255,23 +255,35 @@ namespace Terrain
         std::string fragSource = R"(
             #version 120
             uniform sampler2D previousDeformation;
-            uniform vec2 footprintCenter;
-            uniform float footprintRadius;
-            uniform float deformationDepth;
-            uniform float currentTime;
-            varying vec2 worldPos;
+            uniform vec2 deformationCenter;      // World XY center of texture
+            uniform float deformationRadius;     // World radius covered by texture
+            uniform vec2 footprintCenter;        // World XY position of new footprint
+            uniform float footprintRadius;       // World radius of footprint
+            uniform float deformationDepth;      // Maximum depth in world units
+            uniform float currentTime;           // Current game time
             varying vec2 texUV;
 
             void main()
             {
+                // Sample previous deformation at this UV
                 vec4 prevDeform = texture2D(previousDeformation, texUV);
                 float prevDepth = prevDeform.r;
                 float prevAge = prevDeform.g;
 
+                // Convert UV (0-1) to world position
+                // UV (0,0) = bottom-left, UV (1,1) = top-right
+                vec2 worldPos = deformationCenter + (texUV - 0.5) * 2.0 * deformationRadius;
+
+                // Calculate distance from footprint center
                 float dist = length(worldPos - footprintCenter);
+
+                // Circular falloff: full depth at center, fades to zero at radius
                 float influence = 1.0 - smoothstep(footprintRadius * 0.5, footprintRadius, dist);
 
+                // Accumulate deformation (keep maximum depth)
                 float newDepth = max(prevDepth, influence * deformationDepth);
+
+                // Update age where new footprint is stamped
                 float age = (influence > 0.01) ? currentTime : prevAge;
 
                 gl_FragColor = vec4(newDepth, age, 0.0, 1.0);
@@ -502,13 +514,11 @@ namespace Terrain
         if (currentTimeUniform)
             currentTimeUniform->set(mCurrentTime);
 
-        // DISABLED FOR TESTING: Keep RTT camera off to verify static test pattern works
-        // The test pattern in the texture should be visible without RTT rendering
-        // TODO: Re-enable once we confirm static deformation works
-        // mRTTCamera->setNodeMask(~0u);
-        // mFootprintGroup->setNodeMask(~0u);
+        // Enable RTT rendering to stamp footprint
+        mRTTCamera->setNodeMask(~0u);
+        mFootprintGroup->setNodeMask(~0u);
 
-        Log(Debug::Info) << "[SNOW] Footprint stamping DISABLED for testing";
+        Log(Debug::Info) << "[SNOW] Footprint stamped successfully (RTT enabled)";
     }
 
     void SnowDeformationManager::setupDebugHUD(osg::Group* rootNode)
