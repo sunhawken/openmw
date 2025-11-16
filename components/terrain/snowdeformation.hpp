@@ -107,6 +107,7 @@ namespace Terrain
         osg::ref_ptr<osg::Camera> mRTTCamera;
         osg::ref_ptr<osg::Texture2D> mDeformationTexture[2];  // Ping-pong buffers
         int mCurrentTextureIndex;
+        bool mTexturesInitialized;  // Track if textures have been cleared once
 
         // Deformation texture parameters
         int mTextureResolution;        // Texture size (512 or 1024)
