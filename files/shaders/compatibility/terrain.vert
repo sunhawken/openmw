@@ -74,6 +74,16 @@ void main(void)
             weights = terrainWeights;
         #endif
 
+        // FALLBACK: If terrain weights appear to be uninitialized (pure rock everywhere),
+        // fall back to treating all terrain as deformable snow (legacy behavior).
+        // This ensures deformation works even if the attribute binding fails.
+        bool usingWeights = (weights.x + weights.y + weights.z) > 0.01;
+        if (!usingWeights)
+        {
+            // Fallback to legacy mode: treat all terrain as pure snow
+            weights = vec4(1.0, 0.0, 0.0, 0.0);
+        }
+
         // Calculate terrain-specific lift and max deformation based on weights
         // Each terrain type has different deformation characteristics:
         // - Snow: deep, soft (100 units)
