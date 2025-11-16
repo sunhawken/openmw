@@ -21,12 +21,14 @@ namespace Terrain
         if (!manager)
             return;
 
-        // Add all snow deformation uniforms to the terrain stateset
+        // Add all terrain deformation uniforms to the terrain stateset
         // These will be shared across all terrain chunks
         stateset->addUniform(manager->getFootprintPositionsUniform());
         stateset->addUniform(manager->getFootprintCountUniform());
         stateset->addUniform(manager->getFootprintRadiusUniform());
         stateset->addUniform(manager->getDeformationDepthUniform());
+        stateset->addUniform(manager->getAshDeformationDepthUniform());
+        stateset->addUniform(manager->getMudDeformationDepthUniform());
         stateset->addUniform(manager->getCurrentTimeUniform());
         stateset->addUniform(manager->getDecayTimeUniform());
 
@@ -34,7 +36,7 @@ namespace Terrain
         osg::ref_ptr<osg::Uniform> enabledUniform = new osg::Uniform("snowDeformationEnabled", true);
         stateset->addUniform(enabledUniform);
 
-        Log(Debug::Info) << "[SNOW UPDATER] Uniforms added to terrain stateset";
+        Log(Debug::Info) << "[TERRAIN DEFORM] Uniforms added (snow, ash, mud)";
     }
 
     void SnowDeformationUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
