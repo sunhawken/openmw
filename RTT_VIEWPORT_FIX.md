@@ -1,8 +1,8 @@
-# RTT Viewport Fix - CRITICAL ISSUE FOUND AND RESOLVED
+# RTT Viewport Fix - CRITICAL ISSUE FOUND (IN PROGRESS)
 
 **Date**: 2025-11-16
-**Status**: ✅ **ROOT CAUSE IDENTIFIED - FIX IMPLEMENTED**
-**Issue**: RTT camera was rendering with wrong viewport size
+**Status**: 🟡 **ROOT CAUSE IDENTIFIED - PARTIAL FIX (viewport still being overridden)**
+**Issue**: RTT camera viewport being changed during render, PROTECTED flag not working
 
 ---
 
@@ -281,3 +281,128 @@ This would confirm:
 ---
 
 **Let's test it!** 🚀
+
+---
+
+## 🔄 UPDATE - Latest Test Results (2025-11-16)
+
+### What We've Implemented:
+
+**Fix Attempt #1**: Force viewport in InitialDrawCallback
+- ✅ Successfully detects mismatch (1280x720 vs 1024x1024)
+- ✅ Successfully forces to 1024x1024 via `state->applyAttribute(vp)`
+- ❌ Viewport changes back to 800x600 during render!
+
+**Fix Attempt #2**: Add viewport to StateSet with PROTECTED flag
+```cpp
+cameraState->setAttributeAndModes(rttViewport,
+    osg::StateAttribute::ON |
+    osg::StateAttribute::OVERRIDE |
+    osg::StateAttribute::PROTECTED);
+```
+- ❌ **PROTECTED flag has NO EFFECT**
+- Viewport still changes from 1024x1024 → 800x600 during render
+
+### Current Diagnostic Output:
+
+```
+[SNOW DIAGNOSTIC] INITIAL Draw Callback #1 - BEFORE RENDER
+[SNOW DIAGNOSTIC] GL Viewport: 0,0 1280x720              ← Main window
+[SNOW DIAGNOSTIC] Camera's Viewport Setting: 0,0 1024x1024  ← What we want
+[SNOW DIAGNOSTIC] *** VIEWPORT MISMATCH! ***
+[SNOW DIAGNOSTIC] Forcing viewport via OSG State...
+[SNOW DIAGNOSTIC] Viewport after force: 0,0 1024x1024    ✓ Fixed!
+[SNOW DIAGNOSTIC] ✓ Viewport correction SUCCEEDED!
+
+[SNOW DIAGNOSTIC] FINAL Draw Callback #1 - AFTER RENDER
+[SNOW DIAGNOSTIC] Final viewport: 0,0 800x600            ✗ Changed AGAIN!
+```
+
+**Result**:
+- Saved images: **Still pitch black** ⬛
+- Max depth: **Still 0**
+- No terrain deformation visible
+
+---
+
+## 🔍 Key Findings
+
+### What We Know:
+1. ✅ **FBO is COMPLETE** (status 36053)
+2. ✅ **Callbacks are executing** (cull + initial draw + final draw)
+3. ✅ **Camera is rendering** (final callback reached)
+4. ✅ **2 buffer attachments** (color + depth)
+5. ✅ **Can force viewport to 1024x1024** in initial callback
+6. ❌ **Viewport gets overridden to 800x600** during render
+7. ❌ **PROTECTED flag doesn't prevent override**
+
+### The Mystery of 800x600:
+- **Not** the window size (1280x720)
+- **Not** the texture size (1024x1024)
+- **Not** a known OpenMW viewport
+- Where does `800x600` come from?
+
+### What This Means:
+Even though we successfully force the viewport to 1024x1024, something in the OSG or OpenMW rendering pipeline is **changing it back during the actual rendering**. The PROTECTED flag should prevent this, but it doesn't work.
+
+Possible explanations:
+1. **OpenMW viewport management** - OpenMW might have custom viewport handling that ignores PROTECTED
+2. **OSG render stages** - Some render stage might be resetting viewport
+3. **Graphics driver** - Driver might be caching/overriding viewport
+4. **Multiple render passes** - Viewport might be correct for one pass but wrong for geometry pass
+
+---
+
+## 🎯 What Needs to Happen Next
+
+The viewport MUST stay at 1024x1024 throughout the entire render. We need to find a way to either:
+
+**Option A**: Find where the viewport is being changed and prevent it
+- Add more granular callbacks to track viewport changes
+- Check if OpenMW has viewport override mechanisms
+- Look for render stage hooks
+
+**Option B**: Force viewport at multiple points during render
+- Set viewport in both initial AND final callbacks
+- Add viewport setting to the geometry's draw callback
+- Override viewport in every possible render stage
+
+**Option C**: Use a different RTT approach entirely
+- Use osg::Image as render target instead of texture
+- Use FBO directly without OSG Camera abstraction
+- Render to texture manually without RTT camera
+
+**Option D**: Force OpenMW to respect our viewport
+- Check OpenMW's camera management code
+- Look for viewport handling in OpenMW's renderer
+- See how other RTT cameras (water, shadows) handle this
+
+---
+
+## 📋 Commit History
+
+1. **`567aba40`** - Diagnostic tests (clear disabled, GL_RGBA8, callbacks)
+2. **`011940c8`** - Windows build fix (GLExtensions)
+3. **`a604916c`** - Viewport mismatch detection and auto-correction
+4. **`fc9d45ea`** - Documentation
+5. **`52a6382e`** - Windows build fix (use OSG State for viewport)
+6. **`0d299d7b`** - Add viewport to StateSet with PROTECTED flag ← Current
+
+---
+
+## 🚧 Current Status
+
+**Blocker**: Viewport protection is not working. The viewport is being overridden to 800x600 during rendering despite our attempts to protect it.
+
+**Next Steps**: See NEXT_CHALLENGE.md for detailed analysis and proposed solutions.
+
+**Confidence Level**: 🟡 **MEDIUM**
+- We've identified the exact problem (viewport override)
+- We can detect and temporarily fix it (in initial callback)
+- But we can't PREVENT the override (PROTECTED flag fails)
+- Need deeper investigation into OSG/OpenMW viewport handling
+
+**Estimated Effort**:
+- If there's an OpenMW setting/flag we're missing: **Low** (1-2 hours)
+- If we need to patch OpenMW's viewport handling: **Medium** (1 day)
+- If we need to switch RTT approaches: **High** (2-3 days)
