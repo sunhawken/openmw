@@ -68,21 +68,12 @@ void main(void)
         // Convert vertex from chunk-local to world space
         vec3 worldPos = vertex.xyz + chunkWorldOffset;
 
-        // Read terrain weights for this vertex (default to rock if not provided)
-        vec4 weights = vec4(0.0, 0.0, 0.0, 1.0);  // Default: pure rock (no deformation)
-        #ifdef GL_ARB_vertex_shader
-            weights = terrainWeights;
-        #endif
-
-        // FALLBACK: If terrain weights appear to be uninitialized (pure rock everywhere),
-        // fall back to treating all terrain as deformable snow (legacy behavior).
-        // This ensures deformation works even if the attribute binding fails.
-        bool usingWeights = (weights.x + weights.y + weights.z) > 0.01;
-        if (!usingWeights)
-        {
-            // Fallback to legacy mode: treat all terrain as pure snow
-            weights = vec4(1.0, 0.0, 0.0, 0.0);
-        }
+        // Read terrain weights for this vertex
+        // Note: We need to distinguish between "attribute not bound" vs "genuine rock weight"
+        // The CPU-side code always binds the attribute for chunks within deformation distance.
+        // So if we're here (snowDeformationEnabled && snowFootprintCount > 0), we can trust
+        // the attribute value. Pure rock (0,0,0,1) means the terrain should NOT deform.
+        vec4 weights = terrainWeights;
 
         // Calculate terrain-specific lift and max deformation based on weights
         // Each terrain type has different deformation characteristics:
