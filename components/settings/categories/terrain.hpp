@@ -38,6 +38,17 @@ namespace Settings
         SettingValue<float> mObjectPagingMinSizeCostMultiplier{ mIndex, "Terrain",
             "object paging min size cost multiplier", makeMaxStrictSanitizerFloat(0) };
         SettingValue<bool> mWaterCulling{ mIndex, "Terrain", "water culling" };
+
+        // Snow deformation settings
+        SettingValue<bool> mSnowDeformationEnabled{ mIndex, "Terrain", "snow deformation enabled" };
+        SettingValue<int> mSnowMaxFootprints{ mIndex, "Terrain", "snow max footprints",
+            makeClampSanitizerInt(1, 500) };
+        SettingValue<float> mSnowFootprintRadius{ mIndex, "Terrain", "snow footprint radius",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mSnowDeformationDepth{ mIndex, "Terrain", "snow deformation depth",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mSnowDecayTime{ mIndex, "Terrain", "snow decay time",
+            makeMaxStrictSanitizerFloat(1.0f) };
     };
 }
 
