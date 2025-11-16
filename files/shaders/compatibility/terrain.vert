@@ -165,13 +165,34 @@ void main(void)
     // Where the player walks, deformation creates depressions (trails) in the raised snow
     // IMPORTANT: snowRaiseAmount is passed from C++ as a uniform (configurable per terrain type)
 
+    // DIAGNOSTIC TEST: Uncomment to verify shader is running
+    // This will make ALL terrain rise by 500 units (very obvious!)
+    // if (snowDeformationEnabled) vertex.z += 500.0;
+
+    // DIAGNOSTIC TEST 2: Test if snowRaiseAmount is being passed
+    // Uncomment to see if raise amount is working (should raise by 100 units)
+    //if (snowDeformationEnabled) vertex.z += snowRaiseAmount;
+
+    // DIAGNOSTIC TEST 3: Test if texture has data
+    // This will create MASSIVE SPIKES (500 units) where footprints exist
+    // if (snowDeformationEnabled) {
+    //     vec3 worldPos = vertex.xyz + chunkWorldOffset;
+    //     vec2 relativePos = worldPos.xy - snowDeformationCenter;
+    //     vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
+    //     float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
+    //     if (deformationDepth > 0.01) vertex.z += 500.0;
+    // }
+
     if (snowDeformationEnabled)
     {
         // Convert vertex from chunk-local space to world space
         vec3 worldPos = vertex.xyz + chunkWorldOffset;
 
-        // Calculate relative position from deformation texture center (player position)
-        vec2 relativePos = worldPos.xy - snowDeformationCenter;
+        // CRITICAL: OpenMW coordinate system
+        // X = East/West, Y = North/South, Z = Up/Down (altitude)
+        // Ground plane is X-Y, deformation is on Z axis
+        // Calculate relative position from deformation texture center (player position) on ground plane
+        vec2 relativePos = worldPos.xy - snowDeformationCenter;  // Use XY (ground plane)
 
         // Convert world position to deformation texture UV coordinates (0-1)
         vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
@@ -181,7 +202,8 @@ void main(void)
 
         // Apply deformation: raise ALL terrain uniformly, then subtract deformation depth
         // snowRaiseAmount comes from C++ and matches the footprint depth exactly
-        vertex.z += snowRaiseAmount - deformationDepth;
+        // Deformation is applied to Z axis (vertical in OpenMW - Z is UP!)
+        vertex.z += snowRaiseAmount - deformationDepth;  // Deform Z (up)!
 
         // This creates:
         // - Untouched snow: vertex.z += snowRaiseAmount (raised terrain)
@@ -196,16 +218,6 @@ void main(void)
         // This would allow smooth transitions between snow and non-snow areas
     }
     
-
-    // ============================================================================
-    // INSTRUCTIONS:
-    // 1. Uncomment TEST 1 first - ALL terrain should rise massively
-    // 2. If it works, comment it out and try TEST 2
-    // 3. Continue through tests until one FAILS
-    // 4. The first test that fails tells us where the problem is!
-    //
-    // IMPORTANT: Tests use Z axis (up in OpenMW). Positive Z = up, negative Z = down
-    // ============================================================================
 
 
     gl_Position = modelToClip(vertex);

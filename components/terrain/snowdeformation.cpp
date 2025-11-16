@@ -348,6 +348,17 @@ namespace Terrain
         mTimeSinceLastFootprint += dt;
 
         float distanceMoved = (playerPos - mLastFootprintPos).length();
+
+        // DIAGNOSTIC: Log first few movement checks
+        static int moveCheckCount = 0;
+        if (moveCheckCount++ < 10)
+        {
+            Log(Debug::Info) << "[SNOW UPDATE] distanceMoved=" << distanceMoved
+                            << " footprintInterval=" << mFootprintInterval
+                            << " timeSinceLast=" << mTimeSinceLastFootprint
+                            << " willStamp=" << (distanceMoved > mFootprintInterval || mTimeSinceLastFootprint > 0.5f);
+        }
+
         if (distanceMoved > mFootprintInterval || mTimeSinceLastFootprint > 0.5f)
         {
             stampFootprint(playerPos);
@@ -421,9 +432,10 @@ namespace Terrain
 
     void SnowDeformationManager::updateCameraPosition(const osg::Vec3f& playerPos)
     {
-        // Update texture center to player's XY position (ground plane)
-        // OpenMW: X=East, Y=North, Z=Up
-        mTextureCenter.set(playerPos.x(), playerPos.y());
+        // CRITICAL: OpenMW coordinate system
+        // X = East/West, Y = North/South, Z = Up/Down (altitude)
+        // Texture center should follow player on the GROUND PLANE (X and Y), not altitude (Z)
+        mTextureCenter.set(playerPos.x(), playerPos.y());  // Use XY (ground plane)
 
         static int logCount = 0;
         if (logCount++ < 3)
@@ -432,7 +444,7 @@ namespace Terrain
                             << ", " << (int)playerPos.y() << ", " << (int)playerPos.z() << ")"
                             << " → TextureCenter=(" << (int)mTextureCenter.x()
                             << ", " << (int)mTextureCenter.y() << ")"
-                            << " [Fixed: using XY not XZ]";
+                            << " [Using XY ground plane, Z=" << (int)playerPos.z() << " is altitude]";
         }
 
         // Move RTT camera to center over player
@@ -440,7 +452,7 @@ namespace Terrain
         if (mRTTCamera)
         {
             mRTTCamera->setViewMatrixAsLookAt(
-                osg::Vec3(playerPos.x(), playerPos.y(), playerPos.z() + 100.0f),  // Eye 100 units above player
+                osg::Vec3(playerPos.x(), playerPos.y(), playerPos.z() + 100.0f),  // Eye 100 units above player (Z+ is up)
                 osg::Vec3(playerPos.x(), playerPos.y(), playerPos.z()),            // Look at player position
                 osg::Vec3(0.0f, 1.0f, 0.0f)                                        // Up = North (Y axis)
             );

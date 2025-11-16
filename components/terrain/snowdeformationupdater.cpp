@@ -65,6 +65,14 @@ namespace Terrain
             float footprintRadius, deformationDepth, footprintInterval;
             manager->getDeformationParams(footprintRadius, deformationDepth, footprintInterval);
 
+            // DIAGNOSTIC: Log raise amount value
+            static int raiseLogCount = 0;
+            if (raiseLogCount++ < 5)
+            {
+                Log(Debug::Info) << "[SNOW UPDATER DIAGNOSTIC] deformationDepth from manager = " << deformationDepth
+                                << " (this should be 100.0 for snow)";
+            }
+
             // Update uniforms - Use our cached uniforms and add them to stateset if missing
             // This ensures the uniforms actually reach the shader
             mDeformationEnabledUniform->set(true);
