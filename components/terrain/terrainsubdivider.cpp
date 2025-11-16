@@ -7,7 +7,7 @@
 #include <osg/CopyOp>
 #include <osg/PrimitiveSet>
 #include <osg/Notify>
-
+#include <components/debug/debuglog.hpp>
 #include <cmath>
 
 namespace Terrain
