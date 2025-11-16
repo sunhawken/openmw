@@ -623,9 +623,14 @@ namespace Terrain
                         << " Footprint group enabled=" << (mFootprintGroup->getNodeMask() != 0)
                         << " Current texture index=" << mCurrentTextureIndex;
 
-        // DIAGNOSTIC CALLBACK DISABLED: Was causing crashes when reading GPU framebuffer
-        // The RTT camera is working correctly (footprints are being stamped)
-        // To verify RTT output, use shader diagnostic tests in terrain.vert instead
+        // AUTO-SAVE: Save first few footprints for verification
+        if (stampCount == 5 || stampCount == 10 || stampCount == 20)
+        {
+            std::string filename = "snow_footprint_" + std::to_string(stampCount) + ".png";
+            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Auto-saving texture after " << stampCount << " footprints";
+            // Note: Saving is deferred to next frame via callback
+            saveDeformationTexture(filename, true);
+        }
     }
 
     void SnowDeformationManager::setupBlitSystem()
@@ -995,5 +1000,141 @@ namespace Terrain
         outRadius = mFootprintRadius;
         outDepth = mDeformationDepth;
         outInterval = mFootprintInterval;
+    }
+
+    void SnowDeformationManager::saveDeformationTexture(const std::string& filename, bool debugInfo)
+    {
+        // ====================================================================
+        // DIAGNOSTIC: Save RTT deformation texture for inspection
+        // ====================================================================
+        // This function captures the current deformation texture from GPU
+        // and saves it to disk for debugging purposes
+        // ====================================================================
+
+        if (!mActive || !mDeformationTexture[mCurrentTextureIndex])
+        {
+            Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Cannot save texture - system not active or texture invalid";
+            return;
+        }
+
+        osg::Texture2D* tex = mDeformationTexture[mCurrentTextureIndex].get();
+
+        // Get or create Image from texture
+        osg::ref_ptr<osg::Image> image = tex->getImage();
+        if (!image)
+        {
+            // RTT textures don't have CPU-side images by default
+            // Create one and request GPU readback
+            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Creating image for GPU readback...";
+
+            image = new osg::Image;
+            image->allocateImage(mTextureResolution, mTextureResolution, 1, GL_RGBA, GL_FLOAT);
+
+            // Attach a camera callback to read back the texture data
+            // This is necessary because RTT textures are GPU-only
+            struct ReadbackCallback : public osg::Camera::DrawCallback
+            {
+                osg::ref_ptr<osg::Image> targetImage;
+                osg::ref_ptr<osg::Texture2D> sourceTexture;
+                std::string saveFilename;
+                bool includeDebugInfo;
+                osg::Vec2f textureCenter;
+                float textureRadius;
+                osg::Vec3f playerPos;
+
+                ReadbackCallback(osg::Image* img, osg::Texture2D* tex, const std::string& filename,
+                                bool debugInfo, const osg::Vec2f& center, float radius, const osg::Vec3f& player)
+                    : targetImage(img), sourceTexture(tex), saveFilename(filename)
+                    , includeDebugInfo(debugInfo), textureCenter(center)
+                    , textureRadius(radius), playerPos(player)
+                {}
+
+                virtual void operator()(osg::RenderInfo& renderInfo) const
+                {
+                    // Read pixels from framebuffer
+                    glReadPixels(0, 0, targetImage->s(), targetImage->t(),
+                                GL_RGBA, GL_FLOAT, targetImage->data());
+
+                    Log(Debug::Info) << "[SNOW DIAGNOSTIC] Texture readback complete, saving to " << saveFilename;
+
+                    // Convert RGBA16F to RGBA8 for saving
+                    osg::ref_ptr<osg::Image> saveImage = new osg::Image;
+                    saveImage->allocateImage(targetImage->s(), targetImage->t(), 1, GL_RGBA, GL_UNSIGNED_BYTE);
+
+                    const float* srcData = (const float*)targetImage->data();
+                    unsigned char* dstData = saveImage->data();
+
+                    for (int i = 0; i < targetImage->s() * targetImage->t(); ++i)
+                    {
+                        // R channel = depth (0.0-1.0)
+                        // G channel = age (game time, potentially very large)
+                        // Visualize depth in R channel, normalize age for G channel
+
+                        float depth = srcData[i * 4 + 0];
+                        float age = srcData[i * 4 + 1];
+
+                        // Depth → Red channel (direct mapping)
+                        dstData[i * 4 + 0] = static_cast<unsigned char>(depth * 255.0f);
+
+                        // Age → Green channel (show if deformed)
+                        dstData[i * 4 + 1] = (depth > 0.01f) ? 255 : 0;
+
+                        // Blue → unused
+                        dstData[i * 4 + 2] = 0;
+
+                        // Alpha
+                        dstData[i * 4 + 3] = 255;
+                    }
+
+                    // Save to file
+                    if (osgDB::writeImageFile(*saveImage, saveFilename))
+                    {
+                        Log(Debug::Info) << "[SNOW DIAGNOSTIC] Texture saved successfully!";
+
+                        if (includeDebugInfo)
+                        {
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] ====== DEBUG INFO ======";
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Player position: ("
+                                           << (int)playerPos.x() << ", "
+                                           << (int)playerPos.y() << ", "
+                                           << (int)playerPos.z() << ")";
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Texture center: ("
+                                           << (int)textureCenter.x() << ", "
+                                           << (int)textureCenter.y() << ")";
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Texture radius: " << textureRadius;
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Camera eye: ("
+                                           << (int)playerPos.x() << ", "
+                                           << (int)playerPos.y() << ", "
+                                           << (int)(playerPos.z() + 100.0f) << ")";
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Camera look-at: ("
+                                           << (int)playerPos.x() << ", "
+                                           << (int)playerPos.y() << ", "
+                                           << (int)playerPos.z() << ")";
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Camera up: (0, -1, 0) [-Y = South]";
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Coordinate system: X=East/West, Y=North/South, Z=Up";
+                            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Visualization: Red=Depth, Green=Deformed areas";
+                        }
+                    }
+                    else
+                    {
+                        Log(Debug::Error) << "[SNOW DIAGNOSTIC] Failed to save texture to " << saveFilename;
+                    }
+                }
+            };
+
+            // Attach callback to next frame
+            osg::ref_ptr<ReadbackCallback> callback = new ReadbackCallback(
+                image.get(), tex, filename, debugInfo,
+                mTextureCenter, mWorldTextureRadius, mCurrentPlayerPos
+            );
+
+            mRTTCamera->setFinalDrawCallback(callback);
+
+            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Readback callback attached, will save on next frame";
+        }
+        else
+        {
+            Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Texture already has an Image - this shouldn't happen for RTT textures";
+        }
     }
 }

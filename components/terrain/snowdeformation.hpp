@@ -84,6 +84,11 @@ namespace Terrain
         /// Get current deformation parameters (may vary by terrain texture)
         void getDeformationParams(float& outRadius, float& outDepth, float& outInterval) const;
 
+        /// DIAGNOSTIC: Save current deformation texture to file for inspection
+        /// @param filename Output filename (e.g., "snow_deformation.png")
+        /// @param debugInfo If true, adds camera info overlay to saved image
+        void saveDeformationTexture(const std::string& filename, bool debugInfo = true);
+
     private:
         /// Initialize RTT camera and deformation textures
         void setupRTT(osg::Group* rootNode);
