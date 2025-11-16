@@ -51,11 +51,6 @@ namespace Terrain
         };
 
         sPatternsLoaded = true;
-
-        Log(Debug::Info) << "[SNOW] Loaded texture patterns: "
-                        << sSnowPatterns.size() << " snow, "
-                        << sAshPatterns.size() << " ash, "
-                        << sMudPatterns.size() << " mud";
     }
 
     bool SnowDetection::isSnowTexture(const std::string& texturePath)
@@ -149,9 +144,6 @@ namespace Terrain
         // TESTING MODE: Always return true to enable deformation on all terrain
         // This allows testing the system without texture detection
         // TODO: Implement actual snow texture detection when ready
-
-        Log(Debug::Verbose) << "[SNOW] Snow detection active at position ("
-                           << (int)worldPos.x() << ", " << (int)worldPos.z() << ")";
 
         return true;  // Enable deformation everywhere for testing
     }

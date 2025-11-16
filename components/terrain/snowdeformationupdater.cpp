@@ -9,7 +9,6 @@ namespace Terrain
     SnowDeformationUpdater::SnowDeformationUpdater(World* terrainWorld)
         : mTerrainWorld(terrainWorld)
     {
-        Log(Debug::Info) << "[SNOW UPDATER] Created (vertex shader array approach)";
     }
 
     void SnowDeformationUpdater::setDefaults(osg::StateSet* stateset)
@@ -35,8 +34,6 @@ namespace Terrain
         // Create and add the enabled uniform (defaults to true for testing)
         osg::ref_ptr<osg::Uniform> enabledUniform = new osg::Uniform("snowDeformationEnabled", true);
         stateset->addUniform(enabledUniform);
-
-        Log(Debug::Info) << "[TERRAIN DEFORM] Uniforms added (snow, ash, mud)";
     }
 
     void SnowDeformationUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
