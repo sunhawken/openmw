@@ -60,6 +60,9 @@ namespace Terrain
         /// Stamp a footprint at the current player position
         void stampFootprint(const osg::Vec3f& position);
 
+        /// Enable/disable debug visualization overlay
+        void setDebugVisualization(bool enabled);
+
     private:
         /// Initialize RTT camera and deformation textures
         void setupRTT(osg::Group* rootNode);
@@ -75,6 +78,10 @@ namespace Terrain
 
         /// Render a footprint into the deformation texture
         void renderFootprint(const osg::Vec3f& worldPos);
+
+        /// Setup debug HUD camera
+        void setupDebugHUD(osg::Group* rootNode);
+        void updateDebugHUD();
 
         Resource::SceneManager* mSceneManager;
         Storage* mTerrainStorage;
@@ -103,6 +110,11 @@ namespace Terrain
         osg::ref_ptr<osg::Group> mFootprintGroup;  // Group for footprint geometry
         osg::ref_ptr<osg::Geometry> mFootprintQuad;
         osg::ref_ptr<osg::StateSet> mFootprintStateSet;
+
+        // Debug HUD
+        osg::ref_ptr<osg::Camera> mDebugHUDCamera;
+        osg::ref_ptr<osg::Geometry> mDebugQuad;
+        bool mDebugVisualization;
 
         // Game time for decay
         float mCurrentTime;

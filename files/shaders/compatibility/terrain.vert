@@ -48,33 +48,138 @@ void main(void)
 
     
 
-    // TEST 3: If TEST 2 works, comment it and uncomment this to test texture sampling
+    // ============================================================================
+    // PROGRESSIVE DIAGNOSTIC TESTS - Uncomment ONE test at a time, in order
+    // Using GEOMETRY (altitude) tests - much more obvious than color!
+    // ============================================================================
+
+    // TEST 1: Is the shader even running?
+    // Expected: ALL terrain rises by 500 units (very obvious!)
+    // If this doesn't work: Shader isn't being used at all OR terrain uses multiple shaders
+    /*
+    vertex.z += 500.0;
+    */
+
+    // TEST 2: Is snowDeformationEnabled uniform being set to true?
+    // Expected: ALL terrain rises by 500 units when system is active
+    // If this doesn't work: The uniform isn't being set or is false
     /*
     if (snowDeformationEnabled)
     {
-        vec2 testUV = vec2(0.5, 0.5);
-        float deformationDepth = texture2D(snowDeformationMap, testUV).r;
-
-        // Debug: multiply by large value to see if we're reading ANYTHING
-        vertex.z -= deformationDepth * 2.0;  // Should be ~100 units at center
+        vertex.z += 500.0;
     }
     */
 
-    // TEST 4: If TEST 3 works, use calculated UV to follow player
-
+    // TEST 3: Are uniforms being passed correctly?
+    // Expected: Terrain rises by different amounts based on snowDeformationRadius
+    // If rises by 500: radius is set correctly (150 * ~3.33 = 500)
+    // If no rise: radius is zero or uniform not set
+    /*
     if (snowDeformationEnabled)
     {
-        // Convert chunk-local coordinates to world space
-        vec3 worldPos = vertex.xyz + chunkWorldOffset;
+        vertex.z += snowDeformationRadius * 3.33;  // Should be 500 units if radius=150
+    }
+    */
 
-        // Calculate UV based on distance from player
-        vec2 relativePos = worldPos.xz - snowDeformationCenter;
+    // TEST 4: Is chunkWorldOffset being set?
+    // Expected: Terrain creates a "staircase" pattern based on chunk positions
+    // If all flat: chunkWorldOffset is zero (PROBLEM!)
+    // If staircase/waves: chunkWorldOffset is being set correctly
+    
+    if (snowDeformationEnabled)
+    {
+        // Create visible pattern from chunk offset
+        // NOTE: chunkWorldOffset is Vec3(X, Y, 0) where X=East, Y=North, Z=unused
+        float pattern = mod(abs(chunkWorldOffset.x) + abs(chunkWorldOffset.y), 1000.0);
+        vertex.z += pattern * 0.5;  // Creates steps/waves
+    }
+    
+    
+
+    // TEST 5: Is world position calculation working?
+    // Expected: Terrain within 300 units of player rises 500 units (circular plateau)
+    // If no plateau: World position calculation is broken
+    /*
+    if (snowDeformationEnabled)
+    {
+        vec3 worldPos = vertex.xyz + chunkWorldOffset;
+        vec2 relativePos = worldPos.xy - snowDeformationCenter;
+        float distFromPlayer = length(relativePos);
+
+        if (distFromPlayer < snowDeformationRadius * 2.0)  // 300 units
+            vertex.z += 500.0;  // Circular plateau around player
+    }
+    */
+
+    // TEST 6: Are UVs being calculated correctly?
+    // Expected: Smooth circular cone rising 500 units at center, tapering to 0 at edges
+    // Center under player = peak (500), edges (150 units away) = ground level
+    /*
+    if (snowDeformationEnabled)
+    {
+        vec3 worldPos = vertex.xyz + chunkWorldOffset;
+        vec2 relativePos = worldPos.xy - snowDeformationCenter;
         vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
 
-        // Sample deformation and apply
-        float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
-        vertex.z -= deformationDepth;
+        if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
+        {
+            // Create cone shape from UVs (center high, edges low)
+            float distFromCenter = length(deformUV - vec2(0.5, 0.5));
+            float height = max(0.0, 1.0 - distFromCenter * 2.0);  // 1.0 at center, 0.0 at edge
+            vertex.z += height * 500.0;  // 500 units at center
+        }
     }
+    */
+
+    // TEST 7: Can we sample the texture at center?
+    // Expected: ALL terrain rises/sinks based on texture center value
+    // Should rise/sink by 100 units everywhere if test pattern exists (50 * 2)
+    /*
+    if (snowDeformationEnabled)
+    {
+        vec2 testUV = vec2(0.5, 0.5);  // Always sample center
+        float deformationDepth = texture2D(snowDeformationMap, testUV).r;
+        vertex.z -= deformationDepth * 2.0;  // Should be -100 if test pattern = 50
+    }
+    */
+
+    // TEST 8: Can we sample the texture with calculated UVs?
+    // Expected: Circular depression following player (100 units deep at center)
+    /*
+    if (snowDeformationEnabled)
+    {
+        vec3 worldPos = vertex.xyz + chunkWorldOffset;
+        vec2 relativePos = worldPos.xy - snowDeformationCenter;
+        vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
+
+        float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
+        vertex.z -= deformationDepth * 2.0;  // 100 units at center (50 * 2)
+    }
+    */
+
+    // TEST 9: FINAL - Full implementation with normal depth
+    // Expected: Subtle 50-unit depression following player
+    /*
+    if (snowDeformationEnabled)
+    {
+        vec3 worldPos = vertex.xyz + chunkWorldOffset;
+        vec2 relativePos = worldPos.xy - snowDeformationCenter;
+        vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
+
+        float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
+        vertex.z -= deformationDepth;  // Normal 50 units
+    }
+    */
+
+    // ============================================================================
+    // INSTRUCTIONS:
+    // 1. Uncomment TEST 1 first - ALL terrain should rise massively
+    // 2. If it works, comment it out and try TEST 2
+    // 3. Continue through tests until one FAILS
+    // 4. The first test that fails tells us where the problem is!
+    //
+    // IMPORTANT: Tests use Z axis (up in OpenMW). Positive Z = up, negative Z = down
+    // ============================================================================
 
 
     gl_Position = modelToClip(vertex);

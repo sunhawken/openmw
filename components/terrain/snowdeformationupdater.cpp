@@ -24,6 +24,9 @@ namespace Terrain
         stateset->addUniform(mDeformationCenterUniform);
         stateset->addUniform(mDeformationRadiusUniform);
         stateset->addUniform(mDeformationEnabledUniform);
+
+        // DON'T set chunkWorldOffset here - it's per-chunk and set in chunkmanager.cpp
+        // We just need to make sure we don't override it
     }
 
     void SnowDeformationUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
