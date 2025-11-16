@@ -10,6 +10,8 @@
 #include <osg/Program>
 #include <osg/Shader>
 #include <osg/Uniform>
+#include <osg/FrameBufferObject>
+#include <osg/GLExtensions>
 #include <osgDB/WriteFile>
 
 namespace Terrain
@@ -192,36 +194,56 @@ namespace Terrain
                     Log(Debug::Warning) << "[SNOW DIAGNOSTIC] INITIAL Draw Callback #" << callCount << " - BEFORE RENDER";
                     Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
 
-                    // Check FBO completeness
-                    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-                    const char* statusStr = "UNKNOWN";
-                    switch (status)
+                    // Check FBO completeness using OSG's extension mechanism
+                    osg::State* state = renderInfo.getState();
+                    if (state)
                     {
-                        case GL_FRAMEBUFFER_COMPLETE: statusStr = "COMPLETE"; break;
-                        case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: statusStr = "INCOMPLETE_ATTACHMENT"; break;
-                        case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: statusStr = "MISSING_ATTACHMENT"; break;
-                        case GL_FRAMEBUFFER_UNSUPPORTED: statusStr = "UNSUPPORTED"; break;
-                        case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER: statusStr = "INCOMPLETE_DRAW_BUFFER"; break;
-                        case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER: statusStr = "INCOMPLETE_READ_BUFFER"; break;
-                    }
+                        const osg::GLExtensions* ext = state->get<osg::GLExtensions>();
+                        if (ext && ext->isFrameBufferObjectSupported)
+                        {
+                            GLenum status = ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT);
+                            const char* statusStr = "UNKNOWN";
 
-                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO status: " << status << " (" << statusStr << ")";
+                            if (status == GL_FRAMEBUFFER_COMPLETE_EXT)
+                                statusStr = "COMPLETE";
+                            else if (status == GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT_EXT)
+                                statusStr = "INCOMPLETE_ATTACHMENT";
+                            else if (status == GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT_EXT)
+                                statusStr = "MISSING_ATTACHMENT";
+                            else if (status == GL_FRAMEBUFFER_UNSUPPORTED_EXT)
+                                statusStr = "UNSUPPORTED";
+                            else if (status == GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER_EXT)
+                                statusStr = "INCOMPLETE_DRAW_BUFFER";
+                            else if (status == GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER_EXT)
+                                statusStr = "INCOMPLETE_READ_BUFFER";
 
-                    if (status != GL_FRAMEBUFFER_COMPLETE)
-                    {
-                        Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** FBO NOT COMPLETE! ***";
-                        Log(Debug::Error) << "[SNOW DIAGNOSTIC] This means the framebuffer is not ready to render!";
+                            Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO status: " << status << " (" << statusStr << ")";
+
+                            if (status != GL_FRAMEBUFFER_COMPLETE_EXT)
+                            {
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** FBO NOT COMPLETE! ***";
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] This means the framebuffer is not ready to render!";
+                            }
+                            else
+                            {
+                                Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO is COMPLETE - ready to render";
+                            }
+                        }
+                        else
+                        {
+                            Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO extensions not available";
+                        }
+
+                        // Get current viewport
+                        GLint viewport[4];
+                        glGetIntegerv(GL_VIEWPORT, viewport);
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Viewport: " << viewport[0] << "," << viewport[1]
+                                           << " " << viewport[2] << "x" << viewport[3];
                     }
                     else
                     {
-                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO is COMPLETE - ready to render";
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] No GL state available in initial callback";
                     }
-
-                    // Get current viewport
-                    GLint viewport[4];
-                    glGetIntegerv(GL_VIEWPORT, viewport);
-                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Viewport: " << viewport[0] << "," << viewport[1]
-                                       << " " << viewport[2] << "x" << viewport[3];
                 }
             }
         };
