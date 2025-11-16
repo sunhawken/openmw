@@ -160,21 +160,33 @@ namespace Terrain
         Log(Debug::Warning) << "[SNOW RTT TEST] If quad renders, red should accumulate over frames";
 
         // Set viewport to match texture resolution
-        mRTTCamera->setViewport(0, 0, mTextureResolution, mTextureResolution);
+        // CRITICAL: Create viewport object that we can protect
+        osg::ref_ptr<osg::Viewport> rttViewport = new osg::Viewport(0, 0, mTextureResolution, mTextureResolution);
+        mRTTCamera->setViewport(rttViewport);
 
         // ====================================================================
-        // FIX 1: OVERRIDE INHERITED STATE
+        // FIX 1: OVERRIDE INHERITED STATE + PROTECT VIEWPORT
         // ====================================================================
         // The camera might be inheriting render state from the parent scene
         // that's preventing rendering. Explicitly override all state with
         // PROTECTED flags to ensure our settings take precedence.
+        //
+        // CRITICAL: Also add the viewport to the state set with PROTECTED flag
+        // to prevent it from being changed during rendering!
         // ====================================================================
         osg::ref_ptr<osg::StateSet> cameraState = new osg::StateSet;
         cameraState->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
         cameraState->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
         cameraState->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
         cameraState->setMode(GL_BLEND, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
+
+        // CRITICAL FIX: Protect the viewport from being changed!
+        // This prevents OSG or other code from changing the viewport during rendering
+        cameraState->setAttributeAndModes(rttViewport, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
+
         mRTTCamera->setStateSet(cameraState);
+
+        Log(Debug::Warning) << "[SNOW RTT TEST] Viewport PROTECTED in camera state set to prevent changes during render";
 
         // ====================================================================
         // FIX 2: ADD DIAGNOSTIC CALLBACKS WITH ENHANCED LOGGING
