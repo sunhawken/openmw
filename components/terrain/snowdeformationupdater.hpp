@@ -26,6 +26,7 @@ namespace Terrain
         osg::ref_ptr<osg::Uniform> mDeformationCenterUniform;
         osg::ref_ptr<osg::Uniform> mDeformationRadiusUniform;
         osg::ref_ptr<osg::Uniform> mDeformationEnabledUniform;
+        osg::ref_ptr<osg::Uniform> mRaiseAmountUniform;
         int mTextureUnit;
     };
 }
