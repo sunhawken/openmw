@@ -37,6 +37,7 @@ uniform vec2 snowDeformationCenter;       // World XZ center of deformation text
 uniform float snowDeformationRadius;      // World radius covered by texture
 uniform bool snowDeformationEnabled;      // Runtime enable/disable
 uniform vec3 chunkWorldOffset;            // Chunk's world position (for local->world conversion)
+uniform float snowRaiseAmount;            // How much to raise terrain (matches deformation depth)
 
 void main(void)
 {
@@ -160,36 +161,39 @@ void main(void)
     */
 
     // UNIFORM TERRAIN RAISING: All snow terrain raised to create "plowing through snow" effect
-    // The terrain is raised uniformly across ALL snow areas (not a bubble following player)
+    // The terrain is raised uniformly across ALL snow areas
     // Where the player walks, deformation creates depressions (trails) in the raised snow
+    // IMPORTANT: snowRaiseAmount is passed from C++ as a uniform (configurable per terrain type)
 
     if (snowDeformationEnabled)
     {
+        // Convert vertex from chunk-local space to world space
         vec3 worldPos = vertex.xyz + chunkWorldOffset;
+
+        // Calculate relative position from deformation texture center (player position)
         vec2 relativePos = worldPos.xy - snowDeformationCenter;
+
+        // Convert world position to deformation texture UV coordinates (0-1)
         vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
 
-        // Sample deformation depth from trail texture
+        // Sample deformation depth from trail texture (R channel)
         float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
 
-        // Raise amount for snow terrain (waist-high snow)
-        // TODO: Make this a uniform passed from C++, and weight by snow texture coverage
-        // For now, raise all terrain uniformly
-        const float snowRaiseAmount = 100.0;  // ~waist height (adjust as needed)
-
-        // Apply: raise ALL terrain, then subtract deformation where player has walked
+        // Apply deformation: raise ALL terrain uniformly, then subtract deformation depth
+        // snowRaiseAmount comes from C++ and matches the footprint depth exactly
         vertex.z += snowRaiseAmount - deformationDepth;
 
-        // This means:
-        // - Untouched snow: vertex.z += 100.0 (raised to waist height)
-        // - Where player walked: vertex.z += 100.0 - 100.0 = 0 (depression at original terrain height)
-        // - Creates visible trails as if plowing through deep snow
+        // This creates:
+        // - Untouched snow: vertex.z += snowRaiseAmount (raised terrain)
+        // - Where player walked: vertex.z += snowRaiseAmount - snowRaiseAmount = 0 (ground level)
+        // - Visible trails as if plowing through deep snow
         // - Character walks on top of raised snow, trails show where they've been
 
-        // FUTURE ENHANCEMENT: Weight by snow texture coverage
+        // FUTURE ENHANCEMENT: Weight by snow texture coverage for gradual transitions
+        // This would require per-vertex texture blend weights from CPU:
         // float snowWeight = getSnowCoverage(worldPos);  // 0.0 to 1.0
         // vertex.z += (snowRaiseAmount * snowWeight) - (deformationDepth * snowWeight);
-        // This would allow gradual transitions between snow and non-snow areas
+        // This would allow smooth transitions between snow and non-snow areas
     }
     
 

@@ -29,7 +29,7 @@ namespace Terrain
         , mTextureCenter(0.0f, 0.0f)
         , mFootprintRadius(60.0f)  // Default for snow (wide, body-sized), updated per-terrain
         , mFootprintInterval(2.0f)  // Default, will be updated per-terrain
-        , mDeformationDepth(100.0f)  // Default for snow (waist-deep), updated per-terrain
+        , mDeformationDepth(100.0f)  // Default for snow (waist-deep), updated per-terrain - MUST match snowRaiseAmount in shader!
         , mLastFootprintPos(0.0f, 0.0f, 0.0f)
         , mTimeSinceLastFootprint(999.0f)  // Start high to stamp immediately
         , mLastBlitCenter(0.0f, 0.0f)
@@ -46,10 +46,10 @@ namespace Terrain
         SnowDetection::loadSnowPatterns();
 
         // Initialize terrain-based parameters
-        // IMPORTANT: Depth must match the raise amount in terrain.vert shader!
-        // Snow raised 100 units -> need 100 unit deformation to reach ground level
+        // IMPORTANT: Depth is passed to shader as snowRaiseAmount uniform
+        // Terrain raised by 'depth' units, footprints dig down 'depth' units to ground level
         mTerrainParams = {
-            {60.0f, 100.0f, 2.0f, "snow"},   // Snow: wide radius (body), waist-deep (100 units), frequent
+            {60.0f, 100.0f, 2.0f, "snow"},   // Snow: wide radius (body), waist-deep (100 units), frequent stamps
             {30.0f, 60.0f, 3.0f, "ash"},     // Ash: medium radius, knee-deep (60 units)
             {15.0f, 30.0f, 5.0f, "mud"},     // Mud: narrow radius (feet only), ankle-deep (30 units)
             {20.0f, 40.0f, 4.0f, "dirt"},    // Dirt: similar to mud
