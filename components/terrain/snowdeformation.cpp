@@ -63,10 +63,12 @@ namespace Terrain
         mFootprintCountUniform = new osg::Uniform("snowFootprintCount", 0);
         mFootprintRadiusUniform = new osg::Uniform("snowFootprintRadius", mFootprintRadius);
         mDeformationDepthUniform = new osg::Uniform("snowDeformationDepth", mDeformationDepth);
+        mAshDeformationDepthUniform = new osg::Uniform("ashDeformationDepth", Settings::terrain().mAshDeformationDepth.get());
+        mMudDeformationDepthUniform = new osg::Uniform("mudDeformationDepth", Settings::terrain().mMudDeformationDepth.get());
         mCurrentTimeUniform = new osg::Uniform("snowCurrentTime", 0.0f);
         mDecayTimeUniform = new osg::Uniform("snowDecayTime", mDecayTime);
 
-        Log(Debug::Info) << "[SNOW] Shader uniforms created";
+        Log(Debug::Info) << "[SNOW] Shader uniforms created (snow, ash, mud)";
     }
 
     SnowDeformationManager::~SnowDeformationManager()

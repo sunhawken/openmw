@@ -74,6 +74,8 @@ namespace Terrain
         osg::Uniform* getFootprintCountUniform() const { return mFootprintCountUniform.get(); }
         osg::Uniform* getFootprintRadiusUniform() const { return mFootprintRadiusUniform.get(); }
         osg::Uniform* getDeformationDepthUniform() const { return mDeformationDepthUniform.get(); }
+        osg::Uniform* getAshDeformationDepthUniform() const { return mAshDeformationDepthUniform.get(); }
+        osg::Uniform* getMudDeformationDepthUniform() const { return mMudDeformationDepthUniform.get(); }
         osg::Uniform* getCurrentTimeUniform() const { return mCurrentTimeUniform.get(); }
         osg::Uniform* getDecayTimeUniform() const { return mDecayTimeUniform.get(); }
 
@@ -100,12 +102,14 @@ namespace Terrain
         std::deque<osg::Vec3f> mFootprints;  // Vec3(X, Y, timestamp)
 
         // Shader uniforms
-        osg::ref_ptr<osg::Uniform> mFootprintPositionsUniform;  // vec3 array
-        osg::ref_ptr<osg::Uniform> mFootprintCountUniform;      // int
-        osg::ref_ptr<osg::Uniform> mFootprintRadiusUniform;     // float
-        osg::ref_ptr<osg::Uniform> mDeformationDepthUniform;    // float
-        osg::ref_ptr<osg::Uniform> mCurrentTimeUniform;         // float
-        osg::ref_ptr<osg::Uniform> mDecayTimeUniform;           // float
+        osg::ref_ptr<osg::Uniform> mFootprintPositionsUniform;     // vec3 array
+        osg::ref_ptr<osg::Uniform> mFootprintCountUniform;         // int
+        osg::ref_ptr<osg::Uniform> mFootprintRadiusUniform;        // float
+        osg::ref_ptr<osg::Uniform> mDeformationDepthUniform;       // float (snow depth)
+        osg::ref_ptr<osg::Uniform> mAshDeformationDepthUniform;    // float (ash depth)
+        osg::ref_ptr<osg::Uniform> mMudDeformationDepthUniform;    // float (mud depth)
+        osg::ref_ptr<osg::Uniform> mCurrentTimeUniform;            // float
+        osg::ref_ptr<osg::Uniform> mDecayTimeUniform;              // float
 
         // Footprint parameters
         float mFootprintRadius;

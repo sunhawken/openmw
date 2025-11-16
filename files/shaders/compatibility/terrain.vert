@@ -32,10 +32,10 @@ varying vec3 passNormal;
 #include "lib/view/depth.glsl"
 
 // ============================================================================
-// SNOW DEFORMATION SYSTEM - Vertex Shader Array Approach
+// TERRAIN DEFORMATION SYSTEM - Multi-Terrain Support (Snow, Ash, Mud)
 // ============================================================================
 // Uses array of footprint positions passed from C++ instead of RTT texture
-// Simple, efficient, no rendering complexity
+// Terrain weights computed per-vertex for smooth transitions
 // ============================================================================
 uniform vec3 snowFootprintPositions[500];  // Array of footprint positions (X, Y, timestamp)
 uniform int snowFootprintCount;            // Number of active footprints
@@ -46,70 +46,93 @@ uniform float snowDecayTime;               // Time for trails to fully fade (def
 uniform bool snowDeformationEnabled;       // Runtime enable/disable
 uniform vec3 chunkWorldOffset;             // Chunk's world position (for local->world conversion)
 
+// Terrain-specific deformation parameters
+uniform float ashDeformationDepth;         // Ash deformation depth (default 20)
+uniform float mudDeformationDepth;         // Mud deformation depth (default 10)
+
+// Terrain weight vertex attribute (snow, ash, mud, rock) - per vertex
+attribute vec4 terrainWeights;             // x=snow, y=ash, z=mud, w=rock
+
 void main(void)
 {
     vec4 vertex = gl_Vertex;
 
     // ========================================================================
-    // SNOW DEFORMATION - Vertex Shader Array Approach
+    // TERRAIN DEFORMATION - Multi-Terrain Support (Snow, Ash, Mud)
     // ========================================================================
-    // Loop through footprint positions, apply deformation where close
-    //
-    // TODO: Add texture-weighted deformation
-    // Currently all vertices deform equally. Future enhancement:
-    // - Sample terrain textures at vertex position
-    // - Weight deformation by texture type (snow=1.0, rock=0.0, mixed=0.5)
-    // - This allows gradual transitions between terrain types
+    // Loop through footprint positions, apply weighted deformation
+    // Vertices have per-terrain weights for smooth transitions
     // ========================================================================
     if (snowDeformationEnabled && snowFootprintCount > 0)
     {
         // Convert vertex from chunk-local to world space
         vec3 worldPos = vertex.xyz + chunkWorldOffset;
 
-        // Accumulate total deformation from all nearby footprints
-        float totalDeformation = 0.0;
+        // Read terrain weights for this vertex (default to rock if not provided)
+        vec4 weights = vec4(0.0, 0.0, 0.0, 1.0);  // Default: pure rock (no deformation)
+        #ifdef GL_ARB_vertex_shader
+            weights = terrainWeights;
+        #endif
 
-        // TODO: Sample texture weight here for texture-based deformation
-        // float terrainWeight = sampleTerrainTexture(worldPos.xy);
-        // For now, assume uniform deformation (weight = 1.0)
+        // Calculate terrain-specific lift and max deformation based on weights
+        // Each terrain type has different deformation characteristics:
+        // - Snow: deep, soft (100 units)
+        // - Ash: medium (20 units)
+        // - Mud: shallow (10 units)
+        // - Rock: no deformation (0 units)
+        float baseLift = weights.x * snowDeformationDepth +
+                        weights.y * ashDeformationDepth +
+                        weights.z * mudDeformationDepth;
 
-        // Loop through all active footprints
-        for (int i = 0; i < snowFootprintCount; i++)
+        float maxDeform = baseLift;  // Maximum deformation matches base lift
+
+        // Only process if this vertex is deformable (not pure rock)
+        if (maxDeform > 0.01)
         {
-            vec3 footprint = snowFootprintPositions[i];
-            vec2 footprintPos = footprint.xy;  // X, Y position
-            float timestamp = footprint.z;     // Time when created
+            // Accumulate total deformation from all nearby footprints
+            float totalDeformation = 0.0;
 
-            // Calculate distance from vertex to footprint center (ground plane only)
-            vec2 diff = worldPos.xy - footprintPos;
-            float dist = length(diff);
+            // Loop through all active footprints
+            for (int i = 0; i < snowFootprintCount; i++)
+            {
+                vec3 footprint = snowFootprintPositions[i];
+                vec2 footprintPos = footprint.xy;  // X, Y position
+                float timestamp = footprint.z;     // Time when created
 
-            // Skip if outside footprint radius
-            if (dist > snowFootprintRadius)
-                continue;
+                // Calculate distance from vertex to footprint center (ground plane only)
+                vec2 diff = worldPos.xy - footprintPos;
+                float dist = length(diff);
 
-            // Calculate age-based decay
-            float age = snowCurrentTime - timestamp;
-            float decayFactor = clamp(age / snowDecayTime, 0.0, 1.0);
+                // Skip if outside footprint radius
+                if (dist > snowFootprintRadius)
+                    continue;
 
-            // Calculate distance-based falloff (smooth circular depression)
-            float radiusFactor = 1.0 - (dist / snowFootprintRadius);
-            radiusFactor = smoothstep(0.0, 1.0, radiusFactor);
+                // Calculate age-based decay
+                float age = snowCurrentTime - timestamp;
+                float decayFactor = clamp(age / snowDecayTime, 0.0, 1.0);
 
-            // Combine distance falloff with decay
-            float deformation = snowDeformationDepth * radiusFactor * (1.0 - decayFactor);
+                // Calculate distance-based falloff (smooth circular depression)
+                float radiusFactor = 1.0 - (dist / snowFootprintRadius);
+                radiusFactor = smoothstep(0.0, 1.0, radiusFactor);
 
-            // Accumulate (take maximum, not sum, to avoid over-deepening)
-            totalDeformation = max(totalDeformation, deformation);
+                // Combine distance falloff with decay
+                // Use maxDeform (weighted) instead of uniform snowDeformationDepth
+                float deformation = maxDeform * radiusFactor * (1.0 - decayFactor);
+
+                // Accumulate (take maximum, not sum, to avoid over-deepening)
+                totalDeformation = max(totalDeformation, deformation);
+            }
+
+            // Apply deformation: raise terrain by baseLift, then subtract where footprints are
+            vertex.z += baseLift - totalDeformation;
+
+            // Result:
+            // - Pure snow vertex: lifts 100, deforms up to 100
+            // - Pure ash vertex: lifts 20, deforms up to 20
+            // - Pure mud vertex: lifts 10, deforms up to 10
+            // - Mixed (50% snow, 50% rock): lifts 50, deforms up to 50
+            // - Pure rock vertex: lifts 0, no deformation (excluded by if check)
         }
-
-        // Apply deformation: raise terrain uniformly, then subtract where footprints are
-        vertex.z += snowDeformationDepth - totalDeformation;
-
-        // Result:
-        // - Untouched snow: +snowDeformationDepth (raised)
-        // - Fresh footprint: +0 (ground level)
-        // - Old footprint: gradually returns to +snowDeformationDepth (restored)
     }
     
 
