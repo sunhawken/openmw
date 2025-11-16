@@ -159,34 +159,32 @@ namespace Terrain
         Log(Debug::Warning) << "[SNOW RTT TEST] *** CLEAR DISABLED FOR TESTING ***";
         Log(Debug::Warning) << "[SNOW RTT TEST] If quad renders, red should accumulate over frames";
 
-        // Set viewport to match texture resolution
-        // CRITICAL: Create viewport object that we can protect
-        osg::ref_ptr<osg::Viewport> rttViewport = new osg::Viewport(0, 0, mTextureResolution, mTextureResolution);
-        mRTTCamera->setViewport(rttViewport);
+        // ====================================================================
+        // VIEWPORT SETUP - Following OpenMW's RTTNode pattern
+        // ====================================================================
+        // Based on components/sceneutil/rtt.cpp line 190
+        // OpenMW's working RTT code does NOT add viewport to StateSet!
+        // Just set it directly on the camera - that's all that's needed.
+        // Adding it to StateSet with PROTECTED actually CAUSES viewport override issues!
+        // ====================================================================
+        mRTTCamera->setViewport(0, 0, mTextureResolution, mTextureResolution);
 
         // ====================================================================
-        // FIX 1: OVERRIDE INHERITED STATE + PROTECT VIEWPORT
+        // RENDER STATE OVERRIDES
         // ====================================================================
-        // The camera might be inheriting render state from the parent scene
-        // that's preventing rendering. Explicitly override all state with
-        // PROTECTED flags to ensure our settings take precedence.
-        //
-        // CRITICAL: Also add the viewport to the state set with PROTECTED flag
-        // to prevent it from being changed during rendering!
+        // Override inherited state from parent scene to ensure clean render
+        // NOTE: We do NOT add viewport here - that was causing the problem!
         // ====================================================================
         osg::ref_ptr<osg::StateSet> cameraState = new osg::StateSet;
-        cameraState->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
-        cameraState->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
-        cameraState->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
-        cameraState->setMode(GL_BLEND, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
-
-        // CRITICAL FIX: Protect the viewport from being changed!
-        // This prevents OSG or other code from changing the viewport during rendering
-        cameraState->setAttributeAndModes(rttViewport, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
+        cameraState->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        cameraState->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        cameraState->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        cameraState->setMode(GL_BLEND, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
 
         mRTTCamera->setStateSet(cameraState);
 
-        Log(Debug::Warning) << "[SNOW RTT TEST] Viewport PROTECTED in camera state set to prevent changes during render";
+        Log(Debug::Warning) << "[SNOW RTT FIX] Using OpenMW's RTTNode pattern - viewport set on camera only";
+        Log(Debug::Warning) << "[SNOW RTT FIX] Removed viewport from StateSet (was causing override issue)";
 
         // ====================================================================
         // FIX 2: ADD DIAGNOSTIC CALLBACKS WITH ENHANCED LOGGING
@@ -254,7 +252,6 @@ namespace Terrain
                                            << " " << glViewport[2] << "x" << glViewport[3];
 
                         // Check what OSG thinks the viewport should be
-                        // The camera should have been told to use 1024x1024
                         osg::Camera* cam = dynamic_cast<osg::Camera*>(renderInfo.getCurrentCamera());
                         if (cam && cam->getViewport())
                         {
@@ -263,34 +260,17 @@ namespace Terrain
                                                << vp->x() << "," << vp->y() << " "
                                                << vp->width() << "x" << vp->height();
 
-                            // CRITICAL FIX: Force the viewport to match camera's setting
+                            // Verify viewport matches (should be correct now with the fix)
                             if (glViewport[2] != (GLint)vp->width() || glViewport[3] != (GLint)vp->height())
                             {
                                 Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** VIEWPORT MISMATCH! ***";
-                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] GL viewport doesn't match camera viewport!";
                                 Log(Debug::Error) << "[SNOW DIAGNOSTIC] Expected: " << vp->width() << "x" << vp->height();
                                 Log(Debug::Error) << "[SNOW DIAGNOSTIC] Got: " << glViewport[2] << "x" << glViewport[3];
-                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] Forcing viewport via OSG State...";
-
-                                // Use OSG's state mechanism to apply viewport
-                                // This is the portable way to set viewport in OSG
-                                state->applyAttribute(vp);
-
-                                // Verify it stuck
-                                GLint newViewport[4];
-                                glGetIntegerv(GL_VIEWPORT, newViewport);
-                                Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Viewport after force: "
-                                                   << newViewport[0] << "," << newViewport[1]
-                                                   << " " << newViewport[2] << "x" << newViewport[3];
-
-                                if (newViewport[2] == (GLint)vp->width() && newViewport[3] == (GLint)vp->height())
-                                {
-                                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ✓ Viewport correction SUCCEEDED!";
-                                }
-                                else
-                                {
-                                    Log(Debug::Error) << "[SNOW DIAGNOSTIC] ✗ Viewport correction FAILED - still wrong!";
-                                }
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] This should NOT happen with the RTTNode pattern fix!";
+                            }
+                            else
+                            {
+                                Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ✓ Viewport is CORRECT! (matches camera setting)";
                             }
                         }
                         else
