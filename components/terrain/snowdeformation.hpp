@@ -19,8 +19,29 @@ namespace Terrain
 {
     class Storage;
 
-    /// Manages the snow deformation system
-    /// Handles RTT, footprint stamping, and deformation texture management
+    /// ========================================================================
+    /// SNOW TRAIL SYSTEM - Manager Class
+    /// ========================================================================
+    /// Manages the complete snow deformation and trail system
+    ///
+    /// FEATURES:
+    /// - Non-additive trails: Multiple passes don't deepen snow
+    /// - Time-based decay: Trails fade out over configurable time (default 3 min)
+    /// - Age preservation: Walking on trails doesn't refresh decay timer
+    /// - RTT-based rendering: Uses ping-pong buffers for accumulation
+    /// - Dynamic following: Texture follows player with blit system
+    ///
+    /// TEXTURE CHANNELS:
+    /// - R (Red):   Deformation depth (0.0 = no deformation, 1.0 = full depth)
+    /// - G (Green): Age timestamp (game time when first deformed)
+    /// - B (Blue):  Unused (reserved for future features)
+    /// - A (Alpha): Always 1.0
+    ///
+    /// COORDINATES:
+    /// - OpenMW uses Z-up coordinate system
+    /// - Ground plane is XY, altitude is Z
+    /// - Texture follows player on XY plane
+    /// ========================================================================
     class SnowDeformationManager
     {
     public:
@@ -62,6 +83,11 @@ namespace Terrain
 
         /// Get current deformation parameters (may vary by terrain texture)
         void getDeformationParams(float& outRadius, float& outDepth, float& outInterval) const;
+
+        /// DIAGNOSTIC: Save current deformation texture to file for inspection
+        /// filename: Output filename (e.g., "snow_deformation.png")
+        /// debugInfo: If true, adds camera info overlay to saved image
+        void saveDeformationTexture(const std::string& filename, bool debugInfo = true);
 
     private:
         /// Initialize RTT camera and deformation textures
@@ -134,13 +160,13 @@ namespace Terrain
         osg::Vec2f mLastBlitCenter;      // Last center position when blit was performed
         float mBlitThreshold;            // Distance player must move before blit (units)
 
-        // Decay system
+        // Decay system (trail restoration)
         osg::ref_ptr<osg::Group> mDecayGroup;
         osg::ref_ptr<osg::Geometry> mDecayQuad;
         osg::ref_ptr<osg::StateSet> mDecayStateSet;
-        float mDecayTime;                // Time for full restoration (seconds)
+        float mDecayTime;                // TRAIL DECAY TIME: Seconds for full restoration (default 180s = 3 minutes)
         float mTimeSinceLastDecay;       // Accumulator for decay updates
-        float mDecayUpdateInterval;      // How often to apply decay (seconds)
+        float mDecayUpdateInterval;      // How often to apply decay (default 0.1s for smooth restoration)
 
         // Texture-based parameters
         struct TerrainParams {
