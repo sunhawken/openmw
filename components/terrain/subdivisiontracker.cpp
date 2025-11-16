@@ -47,9 +47,6 @@ namespace Terrain
             // Check if chunk should be removed from tracking
             if (!shouldMaintainSubdivision(data, distance))
             {
-                Log(Debug::Verbose) << "[SNOW TRAIL] Releasing chunk subdivision at ("
-                                   << it->second.chunkCenter.x() << ", " << it->second.chunkCenter.y()
-                                   << ") after " << (int)data.timeSincePlayerLeft << "s";
                 it = mTrackedChunks.erase(it);
             }
             else
@@ -128,15 +125,6 @@ namespace Terrain
 
             if (finalLevel > 0)
             {
-                if (trackedLevel > 0 && trackedLevel >= distanceBasedLevel)
-                {
-                    Log(Debug::Info) << "[SNOW TRAIL] Maintaining chunk subdivision at ("
-                                       << chunkCenter.x() << ", " << chunkCenter.y()
-                                       << ") tracked=" << trackedLevel
-                                       << " distance=" << distanceBasedLevel
-                                       << " using=" << finalLevel
-                                       << " timeSinceLeft=" << (int)data.timeSincePlayerLeft << "s";
-                }
                 return finalLevel;
             }
         }
@@ -162,7 +150,6 @@ namespace Terrain
             if (level > data.subdivisionLevel)
             {
                 data.subdivisionLevel = level;
-                Log(Debug::Info) << "[SNOW TRAIL] Upgraded chunk subdivision to level " << level;
             }
 
             // Reset timers since player is here
@@ -178,17 +165,11 @@ namespace Terrain
             data.chunkCenter = worldCenter;  // Store WORLD coordinates for distance calculations
 
             mTrackedChunks[key] = data;
-
-            Log(Debug::Info) << "[SNOW TRAIL] Started tracking chunk at cell("
-                            << chunkCenter.x() << ", " << chunkCenter.y()
-                            << ") world(" << (int)worldCenter.x() << ", " << (int)worldCenter.y() << ")"
-                            << " level=" << level;
         }
     }
 
     void SubdivisionTracker::clear()
     {
-        Log(Debug::Info) << "[SNOW TRAIL] Clearing all tracked chunks (" << mTrackedChunks.size() << " total)";
         mTrackedChunks.clear();
     }
 }

@@ -25,12 +25,7 @@ namespace Terrain
         , mCurrentTerrainType("snow")
         , mCurrentTime(0.0f)
     {
-        Log(Debug::Info) << "[SNOW] Snow deformation system initialized (vertex shader array approach)";
-        Log(Debug::Info) << "[SNOW] Settings: maxFootprints=" << Settings::terrain().mSnowMaxFootprints.get()
-                        << ", radius=" << mFootprintRadius
-                        << ", depth=" << mDeformationDepth
-                        << ", decay=" << mDecayTime << "s";
-        Log(Debug::Info) << "[SNOW] System " << (mEnabled ? "enabled" : "disabled") << " by config";
+        Log(Debug::Info) << "Multi-terrain deformation system initialized (snow/ash/mud)";
 
         // Load snow detection patterns
         SnowDetection::loadSnowPatterns();
@@ -67,13 +62,10 @@ namespace Terrain
         mMudDeformationDepthUniform = new osg::Uniform("mudDeformationDepth", Settings::terrain().mMudDeformationDepth.get());
         mCurrentTimeUniform = new osg::Uniform("snowCurrentTime", 0.0f);
         mDecayTimeUniform = new osg::Uniform("snowDecayTime", mDecayTime);
-
-        Log(Debug::Info) << "[SNOW] Shader uniforms created (snow, ash, mud)";
     }
 
     SnowDeformationManager::~SnowDeformationManager()
     {
-        Log(Debug::Info) << "[SNOW] Snow deformation system destroyed";
     }
 
     void SnowDeformationManager::update(float dt, const osg::Vec3f& playerPos)
@@ -89,7 +81,6 @@ namespace Terrain
         if (shouldActivate != mActive)
         {
             mActive = shouldActivate;
-            Log(Debug::Info) << "[SNOW] Deformation system " << (mActive ? "activated" : "deactivated");
         }
 
         if (!mActive)
@@ -141,7 +132,6 @@ namespace Terrain
     {
         if (mEnabled != enabled)
         {
-            Log(Debug::Info) << "[SNOW] Snow deformation " << (enabled ? "enabled" : "disabled");
             mEnabled = enabled;
 
             if (!enabled)
@@ -172,15 +162,6 @@ namespace Terrain
 
         // Update shader uniforms
         updateShaderUniforms();
-
-        static int stampCount = 0;
-        stampCount++;
-        if (stampCount <= 5 || stampCount % 10 == 0)
-        {
-            Log(Debug::Info) << "[SNOW] Footprint #" << stampCount << " at ("
-                            << (int)position.x() << ", " << (int)position.y() << ")"
-                            << " | Total: " << mFootprints.size() << "/" << maxFootprints;
-        }
     }
 
     void SnowDeformationManager::updateShaderUniforms()
@@ -217,17 +198,10 @@ namespace Terrain
                 mDeformationDepth = params.depth;
                 mFootprintInterval = params.interval;
 
-                Log(Debug::Info) << "[SNOW] Terrain changed to '" << terrainType
-                                << "' - radius=" << params.radius
-                                << ", depth=" << params.depth
-                                << ", interval=" << params.interval;
-
                 updateShaderUniforms();
                 return;
             }
         }
-
-        Log(Debug::Info) << "[SNOW] Unknown terrain '" << terrainType << "', using snow defaults";
     }
 
     std::string SnowDeformationManager::detectTerrainTexture(const osg::Vec3f& worldPos)

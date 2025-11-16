@@ -62,11 +62,6 @@ namespace Terrain
             for (size_t i = 0; i < vertices->size(); ++i)
                 weights->push_back(chunkWeight);
 
-            Log(Debug::Verbose) << "[TERRAIN WEIGHTS] LOD_SIMPLIFIED: chunk at (" << chunkCenter.x() << ", "
-                               << chunkCenter.y() << ") using uniform weight: snow=" << chunkWeight.x()
-                               << " ash=" << chunkWeight.y() << " mud=" << chunkWeight.z()
-                               << " rock=" << chunkWeight.w();
-
             return weights;
         }
 
@@ -78,10 +73,6 @@ namespace Terrain
                 vertexPos, chunkCenter, chunkSize, layerList, blendmaps, cellWorldSize);
             weights->push_back(weight);
         }
-
-        Log(Debug::Verbose) << "[TERRAIN WEIGHTS] LOD_FULL: computed " << weights->size()
-                           << " per-vertex weights for chunk at (" << chunkCenter.x() << ", " << chunkCenter.y()
-                           << ")";
 
         return weights;
     }

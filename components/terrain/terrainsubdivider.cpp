@@ -121,9 +121,6 @@ namespace Terrain
         if (source->getStateSet())
             result->setStateSet(osg::clone(source->getStateSet(), osg::CopyOp::DEEP_COPY_ALL));
 
-        OSG_WARN << "[SNOW DEBUG] TerrainSubdivider::subdivide: subdivided " << srcVerts->size()
-                 << " verts to " << dstVerts->size() << " verts (level " << levels << ")" << std::endl;
-
         return result;
     }
 
@@ -278,7 +275,7 @@ namespace Terrain
 
         if (!srcVerts || !srcNormals || !srcUVs)
         {
-            OSG_WARN << "TerrainSubdivider::subdivideWithWeights: missing required arrays" << std::endl;
+            Log(Debug::Warning) << "[TERRAIN] Missing required vertex arrays for subdivision";
             return nullptr;
         }
 
@@ -290,9 +287,6 @@ namespace Terrain
         // Determine LOD level for weight computation
         TerrainWeights::WeightLOD weightLOD = TerrainWeights::determineLOD(distanceToPlayer);
 
-        OSG_WARN << "[TERRAIN WEIGHTS] Chunk at (" << chunkCenter.x() << ", " << chunkCenter.y()
-                 << ") distance=" << (int)distanceToPlayer << "m, LOD=" << weightLOD << std::endl;
-
         // Compute initial terrain weights for source vertices
         osg::ref_ptr<osg::Vec4Array> srcWeights = TerrainWeights::computeWeights(
             srcVerts, chunkCenter, chunkSize, layerList, blendmaps,
@@ -300,7 +294,7 @@ namespace Terrain
 
         if (!srcWeights || srcWeights->empty())
         {
-            OSG_WARN << "TerrainSubdivider::subdivideWithWeights: failed to compute weights" << std::endl;
+            Log(Debug::Warning) << "[TERRAIN] Failed to compute weights for chunk at (" << chunkCenter.x() << ", " << chunkCenter.y() << ")";
             return nullptr;
         }
 
@@ -314,7 +308,7 @@ namespace Terrain
 
         if (levels < 0 || levels > 4)
         {
-            OSG_WARN << "TerrainSubdivider::subdivideWithWeights: invalid subdivision level " << levels << std::endl;
+            Log(Debug::Warning) << "[TERRAIN] Invalid subdivision level " << levels;
             return nullptr;
         }
 
@@ -393,9 +387,6 @@ namespace Terrain
         // Copy state set from source
         if (source->getStateSet())
             result->setStateSet(osg::clone(source->getStateSet(), osg::CopyOp::DEEP_COPY_ALL));
-
-        OSG_WARN << "[TERRAIN WEIGHTS] Subdivided " << srcVerts->size() << " verts to "
-                 << dstVerts->size() << " verts (level " << levels << ") with terrain weights" << std::endl;
 
         return result;
     }

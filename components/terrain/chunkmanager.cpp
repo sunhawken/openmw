@@ -72,18 +72,6 @@ namespace Terrain
         const ChunkKey key{ .mCenter = center, .mLod = lod, .mLodFlags = lodFlags };
         if (osg::ref_ptr<osg::Object> obj = mCache->getRefFromObjectCache(key))
         {
-            // DEBUG: Log when we return cached chunk (subdivision was decided earlier!)
-            float cellSize = mStorage->getCellWorldSize(mWorldspace);
-            osg::Vec2f worldChunkCenter2D(center.x() * cellSize, center.y() * cellSize);
-            float distance = (osg::Vec2f(mPlayerPosition.x(), mPlayerPosition.y()) - worldChunkCenter2D).length();
-
-            if (distance < 2048.0f)
-            {
-                Log(Debug::Warning) << "[SNOW DEBUG] CACHED chunk (subdivided earlier!):"
-                                   << " size=" << size
-                                   << " dist=" << (int)distance
-                                   << " center=(" << center.x() << "," << center.y() << ")";
-            }
             return static_cast<osg::Node*>(obj.get());
         }
 
@@ -117,9 +105,6 @@ namespace Terrain
 
         if (movementDistance > CACHE_CLEAR_THRESHOLD)
         {
-            Log(Debug::Info) << "[SNOW] Player moved " << (int)movementDistance
-                            << " units, clearing chunk cache to update subdivisions";
-
             // Clear the cache to force chunk recreation with new subdivisions
             clearCache();
 
@@ -434,34 +419,41 @@ namespace Terrain
             subdivisionLevel = mSubdivisionTracker->getSubdivisionLevel(chunkCenter, distance);
         }
 
-        // DEBUG: Log chunk creation with distance info for debugging subdivision
-        if (distanceToCenter < 2048.0f)  // Only log nearby chunks to reduce spam
+        // Removed excessive debug logging
+
+        // OPTIMIZATION: Only compute terrain weights for chunks that might deform
+        // Distant chunks (>256m) will get LOD_NONE weights (pure rock), so we can skip expensive blendmap fetching
+        const float MAX_DEFORMATION_DISTANCE = 256.0f;
+        bool needsWeightComputation = (distanceToCenter < MAX_DEFORMATION_DISTANCE * 1.5f); // 1.5x buffer for safety
+
+        // Get terrain layer info for weight computation (only if chunk is close enough to deform)
+        std::vector<LayerInfo> layerList;
+        std::vector<osg::ref_ptr<osg::Image>> blendmaps;
+        if (needsWeightComputation)
         {
-            Log(Debug::Warning) << "[SNOW DEBUG] NEW chunk:"
-                               << " size=" << chunkSize
-                               << " lod=" << (int)lod
-                               << " distEdge=" << (int)distanceToEdge
-                               << " distCenter=" << (int)distanceToCenter
-                               << " subdivLvl=" << subdivisionLevel
-                               << (playerInChunk ? " INSIDE" : "")
-                               << " player=(" << (int)mPlayerPosition.x() << "," << (int)mPlayerPosition.y() << ")"
-                               << " chunk=(" << chunkCenter.x() << "," << chunkCenter.y() << ")";
+            mStorage->getBlendmaps(chunkSize, chunkCenter, blendmaps, layerList, mWorldspace);
         }
 
         if (subdivisionLevel > 0)
         {
-            // Get terrain layer info for weight computation
-            std::vector<LayerInfo> layerList;
-            std::vector<osg::ref_ptr<osg::Image>> blendmaps;
-            mStorage->getBlendmaps(chunkSize, chunkCenter, blendmaps, layerList, mWorldspace);
+            // Subdivide geometry
+            osg::ref_ptr<osg::Geometry> subdivided;
 
-            // Subdivide with terrain weight computation for deformable terrain
-            osg::ref_ptr<osg::Geometry> subdivided = TerrainSubdivider::subdivideWithWeights(
-                geometry.get(), subdivisionLevel,
-                chunkCenter, chunkSize,
-                layerList, blendmaps,
-                mStorage, mWorldspace,
-                mPlayerPosition, cellSize);
+            if (needsWeightComputation)
+            {
+                // Close chunks: subdivide WITH terrain weight computation
+                subdivided = TerrainSubdivider::subdivideWithWeights(
+                    geometry.get(), subdivisionLevel,
+                    chunkCenter, chunkSize,
+                    layerList, blendmaps,
+                    mStorage, mWorldspace,
+                    mPlayerPosition, cellSize);
+            }
+            else
+            {
+                // Distant chunks: subdivide WITHOUT weight computation (faster)
+                subdivided = TerrainSubdivider::subdivide(geometry.get(), subdivisionLevel);
+            }
 
             if (subdivided)
             {
@@ -504,18 +496,36 @@ namespace Terrain
                     mSubdivisionTracker->markChunkSubdivided(chunkCenter, subdivisionLevel, worldChunkCenter2D);
                 }
 
-                Log(Debug::Warning) << "[SNOW] Subdivided chunk at distance " << (int)distance
-                                   << " (level " << subdivisionLevel << ")"
-                                   << (playerInChunk ? " PLAYER_INSIDE_THIS_CHUNK!" : "")
-                                   << " bounds=[" << (int)minX << "," << (int)minY << " to " << (int)maxX << "," << (int)maxY << "]";
+                // Removed excessive subdivision logging
 
                 return subdividedDrawable;
             }
             else
             {
-                Log(Debug::Warning) << "[SNOW] Failed to subdivide terrain chunk, using original";
+                Log(Debug::Warning) << "[TERRAIN] Failed to subdivide chunk at (" << chunkCenter.x() << ", " << chunkCenter.y() << ")";
             }
         }
+        else if (needsWeightComputation)
+        {
+            // Non-subdivided chunk that's close enough to need terrain weights
+            // Otherwise the shader will read undefined data and default to rock (no deformation)
+            osg::ref_ptr<osg::Geometry> weightedGeometry = TerrainSubdivider::subdivideWithWeights(
+                geometry.get(), 0,  // subdivisionLevel = 0 (no subdivision, just add weights)
+                chunkCenter, chunkSize,
+                layerList, blendmaps,
+                mStorage, mWorldspace,
+                mPlayerPosition, cellSize);
+
+            if (weightedGeometry && weightedGeometry->getVertexAttribArray(6))
+            {
+                // Attach the computed weights to the original geometry
+                geometry->setVertexAttribArray(6, weightedGeometry->getVertexAttribArray(6), osg::Array::BIND_PER_VERTEX);
+
+                Log(Debug::Verbose) << "[TERRAIN WEIGHTS] Added weights to non-subdivided chunk at ("
+                                   << chunkCenter.x() << ", " << chunkCenter.y() << ")";
+            }
+        }
+        // else: Distant non-subdivided chunk - no weights needed (shader will default to rock, no deformation)
 
         return geometry;
     }
