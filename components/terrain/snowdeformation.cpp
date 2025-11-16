@@ -32,6 +32,7 @@ namespace Terrain
         , mFootprintInterval(2.0f)  // Default, will be updated per-terrain
         , mDeformationDepth(100.0f)  // Default for snow (waist-deep), updated per-terrain - MUST match snowRaiseAmount in shader!
         , mLastFootprintPos(0.0f, 0.0f, 0.0f)
+        , mCurrentPlayerPos(0.0f, 0.0f, 0.0f)  // Will be updated in first update() call
         , mTimeSinceLastFootprint(999.0f)  // Start high to stamp immediately
         , mLastBlitCenter(0.0f, 0.0f)
         , mBlitThreshold(50.0f)  // Blit when player moves 50+ units
@@ -89,13 +90,16 @@ namespace Terrain
 
         // CRITICAL: Set reference frame to ABSOLUTE_RF so camera uses its own view/projection
         // matrices and ignores the parent's transforms
+        // This is standard for RTT cameras
         mRTTCamera->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
 
         // Orthographic projection (top-down view)
+        // CRITICAL FIX: Expanded near/far planes to cover all terrain heights
+        // Previous -100/+100 was too narrow and clipped terrain
         mRTTCamera->setProjectionMatrixAsOrtho(
             -mWorldTextureRadius, mWorldTextureRadius,
             -mWorldTextureRadius, mWorldTextureRadius,
-            -100.0f, 100.0f
+            -10000.0f, 10000.0f  // Wide range to capture all terrain
         );
 
         // View from above, looking down
@@ -310,6 +314,7 @@ namespace Terrain
             return;
 
         mCurrentTime += dt;
+        mCurrentPlayerPos = playerPos;  // Track current player position for quad updates
 
         // Check if we should be active (player on snow)
         bool shouldActivate = shouldBeActive(playerPos);
@@ -484,13 +489,35 @@ namespace Terrain
 
     void SnowDeformationManager::stampFootprint(const osg::Vec3f& position)
     {
-        if (!mFootprintStateSet || !mRTTCamera)
+        if (!mFootprintStateSet || !mRTTCamera || !mFootprintQuad)
             return;
 
         Log(Debug::Info) << "[SNOW] Stamping footprint at "
                         << (int)position.x() << ", " << (int)position.y()
                         << " with depth=" << mDeformationDepth
                         << ", radius=" << mFootprintRadius;
+
+        // CRITICAL FIX: Update quad Z position to match current terrain/player altitude
+        // The quad must be within the camera's view frustum to render
+        // With camera looking down from playerZ+100, quad should be near playerZ
+        osg::Vec3Array* vertices = static_cast<osg::Vec3Array*>(mFootprintQuad->getVertexArray());
+        if (vertices && vertices->size() == 4)
+        {
+            // Set all vertices to player's current altitude (Z position)
+            // Keep XY extents the same (covering the deformation radius)
+            for (unsigned int i = 0; i < 4; ++i)
+            {
+                (*vertices)[i].z() = position.z();  // Match player altitude
+            }
+            vertices->dirty();  // Mark as modified
+
+            static int logCount = 0;
+            if (logCount++ < 3)
+            {
+                Log(Debug::Info) << "[SNOW FIX] Updated footprint quad Z to " << position.z()
+                                << " (player altitude)";
+            }
+        }
 
         // Swap ping-pong buffers
         int prevIndex = mCurrentTextureIndex;
@@ -813,11 +840,23 @@ namespace Terrain
 
     void SnowDeformationManager::blitTexture(const osg::Vec2f& oldCenter, const osg::Vec2f& newCenter)
     {
-        if (!mBlitStateSet || !mRTTCamera)
+        if (!mBlitStateSet || !mRTTCamera || !mBlitQuad)
             return;
 
         Log(Debug::Info) << "[SNOW] Blitting texture from (" << (int)oldCenter.x() << ", " << (int)oldCenter.y()
                         << ") to (" << (int)newCenter.x() << ", " << (int)newCenter.y() << ")";
+
+        // Update blit quad Z position to match current altitude
+        // (Same as footprint quad fix)
+        osg::Vec3Array* vertices = static_cast<osg::Vec3Array*>(mBlitQuad->getVertexArray());
+        if (vertices && vertices->size() == 4)
+        {
+            for (unsigned int i = 0; i < 4; ++i)
+            {
+                (*vertices)[i].z() = mCurrentPlayerPos.z();  // Match current player altitude
+            }
+            vertices->dirty();
+        }
 
         // Swap ping-pong buffers
         int sourceIndex = mCurrentTextureIndex;
@@ -851,8 +890,19 @@ namespace Terrain
 
     void SnowDeformationManager::applyDecay(float dt)
     {
-        if (!mDecayStateSet || !mRTTCamera)
+        if (!mDecayStateSet || !mRTTCamera || !mDecayQuad)
             return;
+
+        // Update decay quad Z position to match current altitude
+        osg::Vec3Array* vertices = static_cast<osg::Vec3Array*>(mDecayQuad->getVertexArray());
+        if (vertices && vertices->size() == 4)
+        {
+            for (unsigned int i = 0; i < 4; ++i)
+            {
+                (*vertices)[i].z() = mCurrentPlayerPos.z();  // Match current player altitude
+            }
+            vertices->dirty();
+        }
 
         // Swap ping-pong buffers
         int sourceIndex = mCurrentTextureIndex;

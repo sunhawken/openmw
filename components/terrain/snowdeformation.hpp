@@ -119,6 +119,7 @@ namespace Terrain
         float mFootprintInterval;      // Distance between footprints
         float mDeformationDepth;       // Maximum deformation depth
         osg::Vec3f mLastFootprintPos;  // Last position where footprint was stamped
+        osg::Vec3f mCurrentPlayerPos;  // Current player position (updated each frame)
         float mTimeSinceLastFootprint; // Time accumulator
 
         // Footprint rendering
