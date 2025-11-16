@@ -159,8 +159,9 @@ void main(void)
     }
     */
 
-    // HYBRID IMPLEMENTATION: Texture-weighted terrain raising with smooth falloff
-    // This prevents character floating while being more subtle than raising all terrain
+    // UNIFORM TERRAIN RAISING: All snow terrain raised to create "plowing through snow" effect
+    // The terrain is raised uniformly across ALL snow areas (not a bubble following player)
+    // Where the player walks, deformation creates depressions (trails) in the raised snow
 
     if (snowDeformationEnabled)
     {
@@ -168,39 +169,27 @@ void main(void)
         vec2 relativePos = worldPos.xy - snowDeformationCenter;
         vec2 deformUV = (relativePos / snowDeformationRadius) * 0.5 + 0.5;
 
-        // Sample deformation depth
+        // Sample deformation depth from trail texture
         float deformationDepth = texture2D(snowDeformationMap, deformUV).r;
 
-        // Calculate distance from deformation center (player)
-        float distFromCenter = length(relativePos);
+        // Raise amount for snow terrain (waist-high snow)
+        // TODO: Make this a uniform passed from C++, and weight by snow texture coverage
+        // For now, raise all terrain uniformly
+        const float snowRaiseAmount = 100.0;  // ~waist height (adjust as needed)
 
-        // Smooth falloff: full effect near player, fades to zero at edge of radius
-        // This creates a "bubble" of raised terrain that follows the player
-        float falloff = smoothstep(snowDeformationRadius, snowDeformationRadius * 0.3, distFromCenter);
-
-        // Max raise amount - should match max deformation depth from C++
-        // In snow: 12 units, in ash: 8 units, in mud: 4 units (controlled by mDeformationDepth)
-        const float maxRaiseAmount = 12.0;  // TODO: Make this a uniform passed from C++
-
-        // Raise terrain proportional to distance from player
-        // Near player: full raise amount
-        // Far from player: no raise (smooth transition)
-        float raiseAmount = falloff * maxRaiseAmount;
-
-        // Apply: raise terrain, then subtract deformation
-        vertex.z += raiseAmount - (deformationDepth * falloff);
+        // Apply: raise ALL terrain, then subtract deformation where player has walked
+        vertex.z += snowRaiseAmount - deformationDepth;
 
         // This means:
-        // - Near player, no footprints: vertex.z += 12.0 (raised surface)
-        // - Near player, with footprints: vertex.z += 12.0 - 12.0 = 0 (original height = depression)
-        // - Far from player: vertex.z += 0 (no change, smooth transition)
-        // - Character walks on raised surface, creates visible depressions
+        // - Untouched snow: vertex.z += 100.0 (raised to waist height)
+        // - Where player walked: vertex.z += 100.0 - 100.0 = 0 (depression at original terrain height)
+        // - Creates visible trails as if plowing through deep snow
+        // - Character walks on top of raised snow, trails show where they've been
 
-        // NOTE: For true texture-weighted raising (snow vs grass blending), we would need:
-        // 1. CPU-side texture sampling to determine snow coverage per vertex
-        // 2. Per-vertex attribute for snow weight
-        // 3. raiseAmount *= snowWeight (0.0 for grass, 1.0 for pure snow, 0.5 for mix)
-        // This is a future enhancement - current implementation works for homogeneous snow areas
+        // FUTURE ENHANCEMENT: Weight by snow texture coverage
+        // float snowWeight = getSnowCoverage(worldPos);  // 0.0 to 1.0
+        // vertex.z += (snowRaiseAmount * snowWeight) - (deformationDepth * snowWeight);
+        // This would allow gradual transitions between snow and non-snow areas
     }
     
 
