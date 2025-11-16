@@ -27,9 +27,9 @@ namespace Terrain
         , mTextureResolution(1024)  // Increased from 512 for better quality
         , mWorldTextureRadius(300.0f)  // Increased from 150 for larger coverage
         , mTextureCenter(0.0f, 0.0f)
-        , mFootprintRadius(24.0f)  // Default for snow, will be updated per-terrain
+        , mFootprintRadius(60.0f)  // Default for snow (wide, body-sized), updated per-terrain
         , mFootprintInterval(2.0f)  // Default, will be updated per-terrain
-        , mDeformationDepth(8.0f)  // Default, will be updated per-terrain
+        , mDeformationDepth(100.0f)  // Default for snow (waist-deep), updated per-terrain
         , mLastFootprintPos(0.0f, 0.0f, 0.0f)
         , mTimeSinceLastFootprint(999.0f)  // Start high to stamp immediately
         , mLastBlitCenter(0.0f, 0.0f)
@@ -46,12 +46,14 @@ namespace Terrain
         SnowDetection::loadSnowPatterns();
 
         // Initialize terrain-based parameters
+        // IMPORTANT: Depth must match the raise amount in terrain.vert shader!
+        // Snow raised 100 units -> need 100 unit deformation to reach ground level
         mTerrainParams = {
-            {60.0f, 12.0f, 2.0f, "snow"},   // Snow: wide radius (body), deep, frequent
-            {30.0f, 8.0f, 3.0f, "ash"},     // Ash: medium radius (feet+), medium depth
-            {15.0f, 4.0f, 5.0f, "mud"},     // Mud: narrow radius (feet only), shallow
-            {20.0f, 6.0f, 4.0f, "dirt"},    // Dirt: similar to mud
-            {25.0f, 7.0f, 3.5f, "sand"}     // Sand: between ash and mud
+            {60.0f, 100.0f, 2.0f, "snow"},   // Snow: wide radius (body), waist-deep (100 units), frequent
+            {30.0f, 60.0f, 3.0f, "ash"},     // Ash: medium radius, knee-deep (60 units)
+            {15.0f, 30.0f, 5.0f, "mud"},     // Mud: narrow radius (feet only), ankle-deep (30 units)
+            {20.0f, 40.0f, 4.0f, "dirt"},    // Dirt: similar to mud
+            {25.0f, 50.0f, 3.5f, "sand"}     // Sand: between ash and mud
         };
 
         // TODO: Load settings
@@ -307,8 +309,20 @@ namespace Terrain
         if (!mActive)
             return;
 
+        // Disable all RTT groups from previous frame (cleanup)
+        // Each frame, we'll enable only the one operation we need
+        if (mBlitGroup)
+            mBlitGroup->setNodeMask(0);
+        if (mFootprintGroup)
+            mFootprintGroup->setNodeMask(0);
+        if (mDecayGroup)
+            mDecayGroup->setNodeMask(0);
+
         // Update terrain-specific parameters based on current terrain texture
         updateTerrainParameters(playerPos);
+
+        // IMPORTANT: We can only do ONE RTT operation per frame to avoid conflicts
+        // Priority: blit > footprint > decay
 
         // Check if we need to blit (texture recenter)
         osg::Vec2f currentCenter(playerPos.x(), playerPos.y());
@@ -319,9 +333,15 @@ namespace Terrain
             // Blit old texture to new position before recentering
             blitTexture(mTextureCenter, currentCenter);
             mLastBlitCenter = currentCenter;
+
+            // Update camera position after blit
+            updateCameraPosition(playerPos);
+
+            // Skip footprint and decay this frame - blit has priority
+            return;
         }
 
-        // Update deformation texture center to follow player
+        // Update deformation texture center to follow player (smooth following)
         updateCameraPosition(playerPos);
 
         // Check if player has moved enough for a new footprint
@@ -333,9 +353,12 @@ namespace Terrain
             stampFootprint(playerPos);
             mLastFootprintPos = playerPos;
             mTimeSinceLastFootprint = 0.0f;
+
+            // Skip decay this frame - footprint has priority
+            return;
         }
 
-        // Apply decay periodically
+        // Apply decay periodically (lowest priority)
         mTimeSinceLastDecay += dt;
         if (mTimeSinceLastDecay > mDecayUpdateInterval)
         {
@@ -683,17 +706,11 @@ namespace Terrain
         if (newCenterUniform)
             newCenterUniform->set(newCenter);
 
-        // Enable blit rendering
+        // Enable blit rendering for this frame
         mBlitGroup->setNodeMask(~0u);
         mRTTCamera->setNodeMask(~0u);
 
-        // Disable footprint group temporarily so only blit renders
-        mFootprintGroup->setNodeMask(0);
-        mDecayGroup->setNodeMask(0);
-
-        // OSG will render on the next frame
-        // We need to disable the blit after rendering - this happens automatically
-        // since we re-enable footprint group in stampFootprint()
+        // Other groups already disabled at start of update()
     }
 
     void SnowDeformationManager::applyDecay(float dt)
@@ -720,13 +737,11 @@ namespace Terrain
         if (currentTimeUniform)
             currentTimeUniform->set(mCurrentTime);
 
-        // Enable decay rendering
+        // Enable decay rendering for this frame
         mDecayGroup->setNodeMask(~0u);
         mRTTCamera->setNodeMask(~0u);
 
-        // Disable other groups
-        mFootprintGroup->setNodeMask(0);
-        mBlitGroup->setNodeMask(0);
+        // Other groups already disabled at start of update()
 
         static int logCount = 0;
         if (logCount++ < 5)
