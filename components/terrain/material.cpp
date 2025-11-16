@@ -321,78 +321,7 @@ namespace Terrain
                     program->addBindAttribLocation("terrainWeights", 6);
                 }
 
-                // DIAGNOSTIC: Log shader compilation info for ALL programs (not just first)
-                static int programCount = 0;
-                if (program && programCount < 10)  // Log first 10 programs
-                {
-                    programCount++;
-                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] Program created successfully";
-                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] Snow deformation define: " << defineMap["snowDeformation"];
-                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] normalMap: " << defineMap["normalMap"]
-                                       << " blendMap: " << defineMap["blendMap"]
-                                       << " specularMap: " << defineMap["specularMap"];
-
-                    // Get the vertex shader and log its source
-                    auto numShaders = program->getNumShaders();
-                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] Program has " << numShaders << " shaders";
-                    for (unsigned int i = 0; i < numShaders; ++i)
-                    {
-                        auto shader = program->getShader(i);
-                        if (shader)
-                        {
-                            const char* typeStr = (shader->getType() == osg::Shader::VERTEX) ? "VERTEX" :
-                                                 (shader->getType() == osg::Shader::FRAGMENT) ? "FRAGMENT" : "OTHER";
-                            Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] Shader " << i << " type: " << typeStr;
-
-                            if (shader->getType() == osg::Shader::VERTEX)
-                            {
-                                std::string source = shader->getShaderSource();
-                                Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] Vertex shader " << i << " length: " << source.length();
-
-                                // Check if hardcoded deformation is present
-                                bool hasDeformationUp = source.find("vertex.y += 100.0") != std::string::npos;
-                                bool hasDeformationDown = source.find("vertex.y -= 100.0") != std::string::npos;
-                                bool hasUniforms = source.find("snowDeformationMap") != std::string::npos;
-
-                                if (hasDeformationUp)
-                                {
-                                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] ✓ Hardcoded 100-unit RISE FOUND in shader " << i;
-                                }
-                                else if (hasDeformationDown)
-                                {
-                                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] ✓ Hardcoded 100-unit DROP FOUND in shader " << i;
-                                }
-                                else
-                                {
-                                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] ✗ No hardcoded deformation FOUND in shader " << i;
-                                }
-
-                                if (hasUniforms)
-                                {
-                                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] ✓ Snow deformation uniforms FOUND in shader " << i;
-                                }
-                                else
-                                {
-                                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] ✗ Snow deformation uniforms NOT FOUND in shader " << i;
-                                }
-
-                                // Write full shader source to a debug file
-                                std::string filename = "/tmp/openmw_terrain_prog" + std::to_string(programCount) + "_shader" + std::to_string(i) + "_VERTEX.glsl";
-                                std::ofstream debugFile(filename);
-                                if (debugFile.is_open())
-                                {
-                                    debugFile << source;
-                                    debugFile.close();
-                                    Log(Debug::Warning) << "[TERRAIN SHADER #" << programCount << "] Vertex shader " << i << " written to " << filename;
-                                }
-                            }
-                        }
-                    }
-                }
-                else if (!program)
-                {
-                    Log(Debug::Error) << "[TERRAIN SHADER] FAILED to create terrain shader program!";
-                }
+            
 
                 stateset->setAttributeAndModes(program);
                 stateset->addUniform(UniformCollection::value().mColorMode);
