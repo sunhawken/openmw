@@ -12,6 +12,7 @@
 #include <osg/Uniform>
 #include <osg/FrameBufferObject>
 #include <osg/GLExtensions>
+#include <osg/Viewport>
 #include <osgDB/WriteFile>
 
 namespace Terrain
@@ -234,11 +235,42 @@ namespace Terrain
                             Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO extensions not available";
                         }
 
-                        // Get current viewport
-                        GLint viewport[4];
-                        glGetIntegerv(GL_VIEWPORT, viewport);
-                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Viewport: " << viewport[0] << "," << viewport[1]
-                                           << " " << viewport[2] << "x" << viewport[3];
+                        // Get current viewport from GL state
+                        GLint glViewport[4];
+                        glGetIntegerv(GL_VIEWPORT, glViewport);
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] GL Viewport: " << glViewport[0] << "," << glViewport[1]
+                                           << " " << glViewport[2] << "x" << glViewport[3];
+
+                        // Check what OSG thinks the viewport should be
+                        // The camera should have been told to use 1024x1024
+                        osg::Camera* cam = dynamic_cast<osg::Camera*>(renderInfo.getCurrentCamera());
+                        if (cam && cam->getViewport())
+                        {
+                            const osg::Viewport* vp = cam->getViewport();
+                            Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Camera's Viewport Setting: "
+                                               << vp->x() << "," << vp->y() << " "
+                                               << vp->width() << "x" << vp->height();
+
+                            // CRITICAL FIX: Force the viewport to match camera's setting
+                            if (glViewport[2] != (GLint)vp->width() || glViewport[3] != (GLint)vp->height())
+                            {
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** VIEWPORT MISMATCH! ***";
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] GL viewport doesn't match camera viewport!";
+                                Log(Debug::Error) << "[SNOW DIAGNOSTIC] Forcing viewport to camera settings...";
+                                glViewport(vp->x(), vp->y(), vp->width(), vp->height());
+
+                                // Verify it stuck
+                                GLint newViewport[4];
+                                glGetIntegerv(GL_VIEWPORT, newViewport);
+                                Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Viewport after force: "
+                                                   << newViewport[0] << "," << newViewport[1]
+                                                   << " " << newViewport[2] << "x" << newViewport[3];
+                            }
+                        }
+                        else
+                        {
+                            Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** Camera has NO viewport set! ***";
+                        }
                     }
                     else
                     {
@@ -261,6 +293,12 @@ namespace Terrain
                     Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FINAL Draw Callback #" << callCount << " - AFTER RENDER";
                     Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
                     Log(Debug::Warning) << "[SNOW DIAGNOSTIC] If you see this, the camera DID execute rendering";
+
+                    // Verify viewport stayed correct during rendering
+                    GLint viewport[4];
+                    glGetIntegerv(GL_VIEWPORT, viewport);
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Final viewport: " << viewport[0] << "," << viewport[1]
+                                       << " " << viewport[2] << "x" << viewport[3];
                 }
             }
         };
