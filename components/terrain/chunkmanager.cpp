@@ -337,9 +337,10 @@ namespace Terrain
         // Set chunk world offset uniform for snow deformation coordinate conversion
         // Vertices in the chunk are relative to chunkCenter, so this converts local->world
         // OpenMW terrain uses X=East, Y=North, Z=Up
-        // chunkCenter is Vec2(X, Y) where X=East, Y=North in terrain 2D space
-        // Vertex positions are also (X=East, Y=North, Z=Up) in chunk-local space
-        osg::Vec3f chunkWorldOffset(chunkCenter.x(), chunkCenter.y(), 0.0f);
+        // chunkCenter is in cell coordinates (e.g., 0.5, 1.5), must convert to world units
+        // Multiply by cellSize (typically 8192) to get world coordinates
+        float cellSize = mStorage->getCellWorldSize(mWorldspace);
+        osg::Vec3f chunkWorldOffset(chunkCenter.x() * cellSize, chunkCenter.y() * cellSize, 0.0f);
         chunkStateSet->addUniform(new osg::Uniform("chunkWorldOffset", chunkWorldOffset));
 
         geometry->setStateSet(chunkStateSet);
