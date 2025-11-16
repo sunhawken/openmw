@@ -85,11 +85,12 @@ void main(void)
     // Expected: Terrain creates a "staircase" pattern based on chunk positions
     // If all flat: chunkWorldOffset is zero (PROBLEM!)
     // If staircase/waves: chunkWorldOffset is being set correctly
-    
+
     if (snowDeformationEnabled)
     {
         // Create visible pattern from chunk offset
-        // NOTE: chunkWorldOffset is Vec3(X, Y, 0) where X=East, Y=North, Z=unused
+        // NOTE: chunkWorldOffset is Vec3(X, Y, 0) where X=East, Y=North, Z=Up (always 0 for terrain)
+        // chunkWorldOffset is in WORLD coordinates (e.g., 4096, 8192, etc.)
         float pattern = mod(abs(chunkWorldOffset.x) + abs(chunkWorldOffset.y), 1000.0);
         vertex.z += pattern * 0.5;  // Creates steps/waves
     }
