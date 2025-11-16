@@ -24,6 +24,7 @@ namespace Terrain
         , mEnabled(true)
         , mActive(false)
         , mCurrentTextureIndex(0)
+        , mTexturesInitialized(false)
         , mTextureResolution(1024)  // Increased from 512 for better quality
         , mWorldTextureRadius(300.0f)  // Increased from 150 for larger coverage
         , mTextureCenter(0.0f, 0.0f)
@@ -86,6 +87,10 @@ namespace Terrain
         mRTTCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
         mRTTCamera->setRenderOrder(osg::Camera::PRE_RENDER);
 
+        // CRITICAL: Set reference frame to ABSOLUTE_RF so camera uses its own view/projection
+        // matrices and ignores the parent's transforms
+        mRTTCamera->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
+
         // Orthographic projection (top-down view)
         mRTTCamera->setProjectionMatrixAsOrtho(
             -mWorldTextureRadius, mWorldTextureRadius,
@@ -94,15 +99,20 @@ namespace Terrain
         );
 
         // View from above, looking down
+        // CRITICAL: In OpenMW Z is up, so camera at Z=100 looks down at Z=0
+        // The "up" vector must be in the ground plane (XY plane) - using negative Y (South)
+        // This ensures the rendered texture has North at top, South at bottom
         mRTTCamera->setViewMatrixAsLookAt(
-            osg::Vec3(0.0f, 100.0f, 0.0f),  // Eye position (above)
-            osg::Vec3(0.0f, 0.0f, 0.0f),    // Look at origin
-            osg::Vec3(0.0f, 0.0f, 1.0f)     // Up = North (Z axis)
+            osg::Vec3(0.0f, 0.0f, 100.0f),  // Eye position (100 units ABOVE in Z)
+            osg::Vec3(0.0f, 0.0f, 0.0f),    // Look at origin (down Z-axis)
+            osg::Vec3(0.0f, -1.0f, 0.0f)    // Up = -Y (South), so +Y (North) is at top of texture
         );
 
-        // DON'T CLEAR - we're accumulating deformation via ping-pong
-        // The footprint shader reads from previous texture and writes to current
-        mRTTCamera->setClearMask(0);  // No clearing!
+        // ENABLE clearing - the ping-pong shader handles accumulation
+        // by reading from previous texture and writing to current
+        // Clearing ensures we start fresh each frame with the shader's output
+        mRTTCamera->setClearMask(GL_COLOR_BUFFER_BIT);
+        mRTTCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f));
         mRTTCamera->setViewport(0, 0, mTextureResolution, mTextureResolution);
 
         // Start disabled
@@ -111,7 +121,12 @@ namespace Terrain
         // Add to scene
         rootNode->addChild(mRTTCamera);
 
-        Log(Debug::Info) << "[SNOW] RTT camera created: " << mTextureResolution << "x" << mTextureResolution;
+        Log(Debug::Info) << "[SNOW] RTT camera created: " << mTextureResolution << "x" << mTextureResolution
+                        << " FBO implementation=" << (mRTTCamera->getRenderTargetImplementation() == osg::Camera::FRAME_BUFFER_OBJECT)
+                        << " Render order=" << mRTTCamera->getRenderOrder()
+                        << " Clear mask=" << mRTTCamera->getClearMask()
+                        << " Initial node mask=" << mRTTCamera->getNodeMask()
+                        << " Parent=" << (rootNode != nullptr);
     }
 
     void SnowDeformationManager::createDeformationTextures()
@@ -129,25 +144,16 @@ namespace Terrain
             mDeformationTexture[i]->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
             mDeformationTexture[i]->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 
-            // Allocate texture memory - initialize to zero (no deformation)
-            osg::ref_ptr<osg::Image> image = new osg::Image;
-            image->allocateImage(mTextureResolution, mTextureResolution, 1, GL_RGBA, GL_FLOAT);
-            float* data = reinterpret_cast<float*>(image->data());
-
-            // Initialize all pixels to zero
-            for (int y = 0; y < mTextureResolution; y++)
-            {
-                for (int x = 0; x < mTextureResolution; x++)
-                {
-                    int idx = (y * mTextureResolution + x) * 4; // RGBA
-                    data[idx + 0] = 0.0f;  // R = depth (no deformation)
-                    data[idx + 1] = 0.0f;  // G = age
-                    data[idx + 2] = 0.0f;  // B = unused
-                    data[idx + 3] = 1.0f;  // A = 1.0
-                }
-            }
-
-            mDeformationTexture[i]->setImage(image);
+            // CRITICAL FIX: Do NOT set an Image on RTT textures!
+            // RTT textures are GPU-only. Setting an Image prevents RTT from working.
+            // The texture will be initialized by the first clear operation from the RTT camera.
+            //
+            // Previously we were doing:
+            //   mDeformationTexture[i]->setImage(image);
+            // This caused the texture to have a CPU-side image that OSG would never update
+            // from the GPU render target, resulting in 0-byte saves.
+            //
+            // Instead, rely on the RTT camera's clear to initialize to zero.
 
             Log(Debug::Info) << "[SNOW] Created deformation texture " << i
                             << " (" << mTextureResolution << "x" << mTextureResolution << ")";
@@ -173,11 +179,14 @@ namespace Terrain
         mFootprintQuad->setUseVertexBufferObjects(true);
 
         // Create vertices for a quad covering the texture
+        // CRITICAL: In OpenMW, Z is up, so the ground plane is X-Y
+        // The quad must be in the X-Y plane (at Z=0 in local camera space)
+        // The camera will be positioned at player's altitude, so Z=0 here is correct
         osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
-        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
-        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
-        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
-        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius, -mWorldTextureRadius, 0.0f));  // Bottom-left
+        vertices->push_back(osg::Vec3( mWorldTextureRadius, -mWorldTextureRadius, 0.0f));  // Bottom-right
+        vertices->push_back(osg::Vec3( mWorldTextureRadius,  mWorldTextureRadius, 0.0f));  // Top-right
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius,  mWorldTextureRadius, 0.0f));  // Top-left
         mFootprintQuad->setVertexArray(vertices);
 
         // UV coordinates
@@ -287,7 +296,12 @@ namespace Terrain
         // Disable by default
         mFootprintGroup->setNodeMask(0);
 
-        Log(Debug::Info) << "[SNOW] Footprint stamping setup complete with inline shaders";
+        Log(Debug::Info) << "[SNOW] Footprint stamping setup complete with inline shaders"
+                        << " Quad vertices=" << vertices->size()
+                        << " Quad UVs=" << uvs->size()
+                        << " State set valid=" << (mFootprintStateSet.valid())
+                        << " Footprint group children=" << mFootprintGroup->getNumChildren()
+                        << " RTT camera children=" << mRTTCamera->getNumChildren();
     }
 
     void SnowDeformationManager::update(float dt, const osg::Vec3f& playerPos)
@@ -308,6 +322,15 @@ namespace Terrain
 
         if (!mActive)
             return;
+
+        // CRITICAL: Initialize textures on first activation
+        // Since we don't use setImage(), both textures need to be cleared via RTT
+        // This will happen naturally during the first few render frames
+        if (!mTexturesInitialized)
+        {
+            Log(Debug::Info) << "[SNOW] First activation - textures will be initialized by RTT clear";
+            mTexturesInitialized = true;
+        }
 
         // Disable all RTT groups from previous frame (cleanup)
         // Each frame, we'll enable only the one operation we need
@@ -454,7 +477,7 @@ namespace Terrain
             mRTTCamera->setViewMatrixAsLookAt(
                 osg::Vec3(playerPos.x(), playerPos.y(), playerPos.z() + 100.0f),  // Eye 100 units above player (Z+ is up)
                 osg::Vec3(playerPos.x(), playerPos.y(), playerPos.z()),            // Look at player position
-                osg::Vec3(0.0f, 1.0f, 0.0f)                                        // Up = North (Y axis)
+                osg::Vec3(0.0f, -1.0f, 0.0f)                                       // Up = -Y (South), matching setupRTT
             );
         }
     }
@@ -512,14 +535,94 @@ namespace Terrain
         // DIAGNOSTIC: Save texture after first few footprints to verify RTT is working
         static int stampCount = 0;
         stampCount++;
-        if (stampCount == 5 || stampCount == 10 || stampCount == 20)
-        {
-            // Give OSG time to render, then save on next frame
-            // This is a hack but works for diagnostics
-            Log(Debug::Info) << "[SNOW DIAGNOSTIC] Will save deformation texture after stamp " << stampCount;
-        }
 
-        Log(Debug::Info) << "[SNOW] Footprint stamped successfully (RTT enabled), count=" << stampCount;
+        Log(Debug::Info) << "[SNOW] Footprint stamped, count=" << stampCount
+                        << " RTT camera enabled=" << (mRTTCamera->getNodeMask() != 0)
+                        << " Footprint group enabled=" << (mFootprintGroup->getNodeMask() != 0)
+                        << " Current texture index=" << mCurrentTextureIndex;
+
+        if (stampCount == 3 || stampCount == 10 || stampCount == 50)
+        {
+            Log(Debug::Info) << "[SNOW DIAGNOSTIC] *** Attempting to save deformation texture " << stampCount << " ***";
+
+            // Try to get the image from the render target
+            osg::Camera::BufferAttachmentMap& bufferAttachments = mRTTCamera->getBufferAttachmentMap();
+            if (!bufferAttachments.empty())
+            {
+                osg::Camera::Attachment& attachment = bufferAttachments[osg::Camera::COLOR_BUFFER];
+                osg::Texture2D* tex = dynamic_cast<osg::Texture2D*>(attachment._texture.get());
+                if (tex)
+                {
+                    // Try to get the image directly from the texture
+                    osg::Image* img = tex->getImage();
+                    if (img && img->data())
+                    {
+                        std::string filename = "snow_deform_stamp_" + std::to_string(stampCount) + ".png";
+                        bool success = osgDB::writeImageFile(*img, filename);
+                        Log(Debug::Info) << "[SNOW DIAGNOSTIC] Saved texture from attachment image: " << filename
+                                       << " (" << img->s() << "x" << img->t() << ") success=" << success
+                                       << " data size=" << img->getTotalSizeInBytes();
+                    }
+                    else
+                    {
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Texture has no image data! This is expected for RTT.";
+                        Log(Debug::Info) << "[SNOW DIAGNOSTIC] Creating readback to save texture...";
+
+                        // Create a new image for readback
+                        osg::ref_ptr<osg::Image> readbackImg = new osg::Image;
+                        readbackImg->allocateImage(mTextureResolution, mTextureResolution, 1, GL_RGBA, GL_FLOAT);
+
+                        // Attach a final draw callback to read pixels after RTT completes
+                        // This is a HACK but necessary for diagnostics
+                        struct SaveCallback : public osg::Camera::DrawCallback
+                        {
+                            osg::ref_ptr<osg::Image> image;
+                            int stamp;
+                            int resolution;
+
+                            SaveCallback(osg::Image* img, int s, int res) : image(img), stamp(s), resolution(res) {}
+
+                            void operator()(osg::RenderInfo& renderInfo) const override
+                            {
+                                osg::State* state = renderInfo.getState();
+                                if (state)
+                                {
+                                    // Read pixels from current framebuffer
+                                    image->readPixels(0, 0, resolution, resolution, GL_RGBA, GL_FLOAT);
+
+                                    std::string filename = "snow_deform_readback_" + std::to_string(stamp) + ".png";
+                                    bool success = osgDB::writeImageFile(*image, filename);
+
+                                    Log(Debug::Info) << "[SNOW DIAGNOSTIC CALLBACK] Readback saved: " << filename
+                                                   << " success=" << success
+                                                   << " size=" << image->getTotalSizeInBytes();
+
+                                    // Check first few pixels
+                                    float* data = reinterpret_cast<float*>(image->data());
+                                    float maxDepth = 0.0f;
+                                    for (int i = 0; i < resolution * resolution; ++i)
+                                    {
+                                        maxDepth = std::max(maxDepth, data[i * 4]); // R channel = depth
+                                    }
+                                    Log(Debug::Info) << "[SNOW DIAGNOSTIC CALLBACK] Max depth in texture: " << maxDepth;
+                                }
+                            }
+                        };
+
+                        mRTTCamera->setFinalDrawCallback(new SaveCallback(readbackImg.get(), stampCount, mTextureResolution));
+                        Log(Debug::Info) << "[SNOW DIAGNOSTIC] Readback callback installed";
+                    }
+                }
+                else
+                {
+                    Log(Debug::Error) << "[SNOW DIAGNOSTIC] RTT attachment is not a Texture2D!";
+                }
+            }
+            else
+            {
+                Log(Debug::Error) << "[SNOW DIAGNOSTIC] RTT camera has NO buffer attachments!";
+            }
+        }
     }
 
     void SnowDeformationManager::setupBlitSystem()
@@ -532,12 +635,12 @@ namespace Terrain
         mBlitQuad->setUseDisplayList(false);
         mBlitQuad->setUseVertexBufferObjects(true);
 
-        // Full-screen quad
+        // Full-screen quad in X-Y plane (Z is up in OpenMW)
         osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
-        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
-        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
-        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
-        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius, -mWorldTextureRadius, 0.0f));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius, -mWorldTextureRadius, 0.0f));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius,  mWorldTextureRadius, 0.0f));
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius,  mWorldTextureRadius, 0.0f));
         mBlitQuad->setVertexArray(vertices);
 
         osg::ref_ptr<osg::Vec2Array> uvs = new osg::Vec2Array;
@@ -624,12 +727,12 @@ namespace Terrain
         mDecayQuad->setUseDisplayList(false);
         mDecayQuad->setUseVertexBufferObjects(true);
 
-        // Full-screen quad
+        // Full-screen quad in X-Y plane (Z is up in OpenMW)
         osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
-        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
-        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f, -mWorldTextureRadius));
-        vertices->push_back(osg::Vec3( mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
-        vertices->push_back(osg::Vec3(-mWorldTextureRadius, 0.0f,  mWorldTextureRadius));
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius, -mWorldTextureRadius, 0.0f));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius, -mWorldTextureRadius, 0.0f));
+        vertices->push_back(osg::Vec3( mWorldTextureRadius,  mWorldTextureRadius, 0.0f));
+        vertices->push_back(osg::Vec3(-mWorldTextureRadius,  mWorldTextureRadius, 0.0f));
         mDecayQuad->setVertexArray(vertices);
 
         osg::ref_ptr<osg::Vec2Array> uvs = new osg::Vec2Array;
