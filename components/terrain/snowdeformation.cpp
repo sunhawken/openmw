@@ -139,10 +139,22 @@ namespace Terrain
             osg::Vec3(0.0f, -1.0f, 0.0f)    // Up = -Y (South), so North at top
         );
 
-        // Enable clearing to black (no deformation)
-        // The ping-pong shader reads previous texture and accumulates
-        mRTTCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // ====================================================================
+        // CRITICAL TEST: DISABLE CLEAR TO SEE IF QUAD IS RENDERING
+        // ====================================================================
+        // If clear is overwriting geometry, disabling it should show accumulation
+        // Temporarily set clear mask to 0 to test if anything renders at all
+        // ====================================================================
+        // ORIGINAL (disabled for testing):
+        // mRTTCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // mRTTCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+        // TEST: Disable clear completely
+        mRTTCamera->setClearMask(0);  // No clearing - should accumulate if rendering
         mRTTCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+        Log(Debug::Warning) << "[SNOW RTT TEST] *** CLEAR DISABLED FOR TESTING ***";
+        Log(Debug::Warning) << "[SNOW RTT TEST] If quad renders, red should accumulate over frames";
 
         // Set viewport to match texture resolution
         mRTTCamera->setViewport(0, 0, mTextureResolution, mTextureResolution);
@@ -162,35 +174,71 @@ namespace Terrain
         mRTTCamera->setStateSet(cameraState);
 
         // ====================================================================
-        // FIX 2: ADD DIAGNOSTIC CALLBACKS
+        // FIX 2: ADD DIAGNOSTIC CALLBACKS WITH ENHANCED LOGGING
         // ====================================================================
         // Add callbacks to verify the camera is actually executing
+        // These will tell us WHEN and IF the camera is rendering
         // ====================================================================
-        struct DiagnosticDrawCallback : public osg::Camera::DrawCallback
+        struct DiagnosticInitialDrawCallback : public osg::Camera::DrawCallback
         {
             mutable int callCount = 0;
 
             virtual void operator()(osg::RenderInfo& renderInfo) const override
             {
                 callCount++;
-                if (callCount <= 5)
+                if (callCount <= 10)
                 {
-                    Log(Debug::Info) << "[SNOW DIAGNOSTIC] *** Camera draw callback executed #" << callCount << " ***";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] INITIAL Draw Callback #" << callCount << " - BEFORE RENDER";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
 
                     // Check FBO completeness
                     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
                     const char* statusStr = "UNKNOWN";
-                    if (status == GL_FRAMEBUFFER_COMPLETE) statusStr = "COMPLETE";
-                    else if (status == GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT) statusStr = "INCOMPLETE_ATTACHMENT";
-                    else if (status == GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT) statusStr = "INCOMPLETE_MISSING_ATTACHMENT";
-                    else if (status == GL_FRAMEBUFFER_UNSUPPORTED) statusStr = "UNSUPPORTED";
+                    switch (status)
+                    {
+                        case GL_FRAMEBUFFER_COMPLETE: statusStr = "COMPLETE"; break;
+                        case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: statusStr = "INCOMPLETE_ATTACHMENT"; break;
+                        case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: statusStr = "MISSING_ATTACHMENT"; break;
+                        case GL_FRAMEBUFFER_UNSUPPORTED: statusStr = "UNSUPPORTED"; break;
+                        case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER: statusStr = "INCOMPLETE_DRAW_BUFFER"; break;
+                        case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER: statusStr = "INCOMPLETE_READ_BUFFER"; break;
+                    }
 
-                    Log(Debug::Info) << "[SNOW DIAGNOSTIC] FBO status: " << status << " (" << statusStr << ")";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO status: " << status << " (" << statusStr << ")";
 
                     if (status != GL_FRAMEBUFFER_COMPLETE)
                     {
-                        Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** FBO NOT COMPLETE! This is the problem! ***";
+                        Log(Debug::Error) << "[SNOW DIAGNOSTIC] *** FBO NOT COMPLETE! ***";
+                        Log(Debug::Error) << "[SNOW DIAGNOSTIC] This means the framebuffer is not ready to render!";
                     }
+                    else
+                    {
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FBO is COMPLETE - ready to render";
+                    }
+
+                    // Get current viewport
+                    GLint viewport[4];
+                    glGetIntegerv(GL_VIEWPORT, viewport);
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Viewport: " << viewport[0] << "," << viewport[1]
+                                       << " " << viewport[2] << "x" << viewport[3];
+                }
+            }
+        };
+
+        struct DiagnosticFinalDrawCallback : public osg::Camera::DrawCallback
+        {
+            mutable int callCount = 0;
+
+            virtual void operator()(osg::RenderInfo& renderInfo) const override
+            {
+                callCount++;
+                if (callCount <= 10)
+                {
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] FINAL Draw Callback #" << callCount << " - AFTER RENDER";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] If you see this, the camera DID execute rendering";
                 }
             }
         };
@@ -202,15 +250,26 @@ namespace Terrain
             virtual void operator()(osg::Node* node, osg::NodeVisitor* nv) override
             {
                 callCount++;
-                if (callCount <= 5)
+                if (callCount <= 10)
                 {
-                    Log(Debug::Info) << "[SNOW DIAGNOSTIC] Camera cull callback executed #" << callCount;
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Cull Callback #" << callCount;
+                    Log(Debug::Warning) << "[SNOW DIAGNOSTIC] ========================================";
+                    osg::Camera* cam = dynamic_cast<osg::Camera*>(node);
+                    if (cam)
+                    {
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Camera node mask: " << cam->getNodeMask();
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Camera children: " << cam->getNumChildren();
+                        auto attachments = cam->getBufferAttachmentMap();
+                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Buffer attachments: " << attachments.size();
+                    }
                 }
                 traverse(node, nv);
             }
         };
 
-        mRTTCamera->setInitialDrawCallback(new DiagnosticDrawCallback);
+        mRTTCamera->setInitialDrawCallback(new DiagnosticInitialDrawCallback);
+        mRTTCamera->setFinalDrawCallback(new DiagnosticFinalDrawCallback);
         mRTTCamera->setCullCallback(new DiagnosticCullCallback);
 
         // Start disabled (enabled when stamping footprints)
@@ -219,26 +278,41 @@ namespace Terrain
         // Add to scene graph
         rootNode->addChild(mRTTCamera);
 
-        Log(Debug::Info) << "[SNOW RTT REWRITE] Camera created: "
-                        << mTextureResolution << "x" << mTextureResolution
-                        << " | Projection: Ortho(" << -mWorldTextureRadius << " to " << mWorldTextureRadius << ")"
-                        << " | Near/Far: -10 to +10 (camera-local)"
-                        << " | Clear: ENABLED"
-                        << " | Reference frame: ABSOLUTE_RF"
-                        << " | State overrides: LIGHTING/DEPTH/CULL all OFF+PROTECTED"
-                        << " | Diagnostic callbacks: ATTACHED";
+        Log(Debug::Warning) << "[SNOW RTT TEST] ========================================";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Camera created with TEST CONFIGURATION:";
+        Log(Debug::Warning) << "[SNOW RTT TEST] ========================================";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Resolution: " << mTextureResolution << "x" << mTextureResolution;
+        Log(Debug::Warning) << "[SNOW RTT TEST] Projection: Ortho(" << -mWorldTextureRadius << " to " << mWorldTextureRadius << ")";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Near/Far: -10 to +10 (camera-local)";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Clear: *** DISABLED FOR TESTING ***";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Texture format: GL_RGBA8 (was GL_RGBA16F)";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Reference frame: ABSOLUTE_RF";
+        Log(Debug::Warning) << "[SNOW RTT TEST] State overrides: LIGHTING/DEPTH/CULL all OFF+PROTECTED";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Diagnostic callbacks: INITIAL + FINAL + CULL";
+        Log(Debug::Warning) << "[SNOW RTT TEST] ========================================";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Expected: If quad renders, callbacks will show FBO COMPLETE";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Expected: Red pixels should accumulate (clear disabled)";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Expected: Max depth byte should be 255 (from vec4(1.0,0,0,1))";
+        Log(Debug::Warning) << "[SNOW RTT TEST] ========================================";
     }
 
     void SnowDeformationManager::createDeformationTextures()
     {
         // Create ping-pong textures for accumulation
+        // ====================================================================
+        // TEST: Using GL_RGBA8 instead of GL_RGBA16F
+        // ====================================================================
+        // Float formats might have driver issues. Test with unsigned byte first.
+        // ====================================================================
         for (int i = 0; i < 2; ++i)
         {
             mDeformationTexture[i] = new osg::Texture2D;
             mDeformationTexture[i]->setTextureSize(mTextureResolution, mTextureResolution);
-            mDeformationTexture[i]->setInternalFormat(GL_RGBA16F_ARB);
+            // TEST: Changed from GL_RGBA16F_ARB to GL_RGBA8
+            mDeformationTexture[i]->setInternalFormat(GL_RGBA8);
             mDeformationTexture[i]->setSourceFormat(GL_RGBA);
-            mDeformationTexture[i]->setSourceType(GL_FLOAT);
+            // TEST: Changed from GL_FLOAT to GL_UNSIGNED_BYTE
+            mDeformationTexture[i]->setSourceType(GL_UNSIGNED_BYTE);
             mDeformationTexture[i]->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
             mDeformationTexture[i]->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
             mDeformationTexture[i]->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
@@ -255,8 +329,9 @@ namespace Terrain
             //
             // Instead, rely on the RTT camera's clear to initialize to zero.
 
-            Log(Debug::Info) << "[SNOW] Created deformation texture " << i
-                            << " (" << mTextureResolution << "x" << mTextureResolution << ")";
+            Log(Debug::Warning) << "[SNOW RTT TEST] Created deformation texture " << i
+                            << " (" << mTextureResolution << "x" << mTextureResolution << ")"
+                            << " Format: GL_RGBA8 (TESTING)";
         }
 
         mCurrentTextureIndex = 0;
@@ -277,7 +352,8 @@ namespace Terrain
         depthTexture->setSourceType(GL_FLOAT);
         mRTTCamera->attach(osg::Camera::DEPTH_BUFFER, depthTexture.get());
 
-        Log(Debug::Info) << "[SNOW] Deformation textures created (ping-pong) with depth buffer";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Deformation textures created (ping-pong) with depth buffer";
+        Log(Debug::Warning) << "[SNOW RTT TEST] Depth buffer: GL_DEPTH_COMPONENT, " << mTextureResolution << "x" << mTextureResolution;
     }
 
     void SnowDeformationManager::setupFootprintStamping()
@@ -1224,8 +1300,9 @@ namespace Terrain
 
                 // Create a temporary image and bind the texture to read from it
                 // This reads the GPU texture data to CPU memory
+                // UPDATED: Now using GL_UNSIGNED_BYTE to match new texture format
                 osg::ref_ptr<osg::Image> readImage = new osg::Image;
-                readImage->allocateImage(resolution, resolution, 1, GL_RGBA, GL_FLOAT);
+                readImage->allocateImage(resolution, resolution, 1, GL_RGBA, GL_UNSIGNED_BYTE);
 
                 // Bind the texture and read its contents
                 osg::State* state = renderInfo.getState();
@@ -1234,33 +1311,49 @@ namespace Terrain
                     // Apply the texture (binds it to GL context)
                     textureToRead->apply(*state);
 
-                    // Read the texture data from GPU
-                    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, readImage->data());
+                    // Read the texture data from GPU (using GL_UNSIGNED_BYTE now)
+                    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, readImage->data());
 
                     Log(Debug::Info) << "[SNOW DIAGNOSTIC] Texture data read from GPU";
 
-                    // Convert RGBA16F (float) to RGBA8 (unsigned byte) for PNG saving
-                    osg::ref_ptr<osg::Image> saveImage = new osg::Image;
-                    saveImage->allocateImage(resolution, resolution, 1, GL_RGBA, GL_UNSIGNED_BYTE);
-
-                    const float* srcData = reinterpret_cast<const float*>(readImage->data());
-                    unsigned char* dstData = saveImage->data();
+                    // Already in RGBA8 format, can save directly
+                    // But let's analyze the data first
+                    const unsigned char* srcData = readImage->data();
 
                     int pixelCount = resolution * resolution;
-                    float maxDepth = 0.0f;
+                    int maxDepthByte = 0;
+                    int nonZeroPixels = 0;
 
                     for (int i = 0; i < pixelCount; ++i)
                     {
-                        float depth = srcData[i * 4 + 0];  // R channel = depth
-                        float age = srcData[i * 4 + 1];    // G channel = age
+                        int depth = srcData[i * 4 + 0];  // R channel = depth
+                        int age = srcData[i * 4 + 1];    // G channel = age
 
-                        maxDepth = std::max(maxDepth, depth);
+                        if (depth > maxDepthByte)
+                            maxDepthByte = depth;
+                        if (depth > 0)
+                            nonZeroPixels++;
+                    }
 
-                        // Visualize depth as red, deformed areas as green
-                        dstData[i * 4 + 0] = static_cast<unsigned char>(std::min(depth * 255.0f, 255.0f));
-                        dstData[i * 4 + 1] = (depth > 0.01f) ? 255 : 0;
-                        dstData[i * 4 + 2] = 0;
-                        dstData[i * 4 + 3] = 255;
+                    float maxDepth = maxDepthByte / 255.0f;
+
+                    Log(Debug::Info) << "[SNOW DIAGNOSTIC] Max depth byte: " << maxDepthByte << " (" << maxDepth << " normalized)";
+                    Log(Debug::Info) << "[SNOW DIAGNOSTIC] Non-zero pixels: " << nonZeroPixels << " / " << pixelCount;
+
+                    // Create visualization image (make depth more visible)
+                    osg::ref_ptr<osg::Image> saveImage = new osg::Image;
+                    saveImage->allocateImage(resolution, resolution, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+                    unsigned char* dstData = saveImage->data();
+
+                    for (int i = 0; i < pixelCount; ++i)
+                    {
+                        unsigned char depth = srcData[i * 4 + 0];
+
+                        // Visualize: Red = depth value, Green = 255 if any depth present
+                        dstData[i * 4 + 0] = depth;               // Red = actual depth
+                        dstData[i * 4 + 1] = (depth > 0) ? 255 : 0;  // Green = has deformation
+                        dstData[i * 4 + 2] = 0;                   // Blue = unused
+                        dstData[i * 4 + 3] = 255;                 // Alpha = opaque
                     }
 
                     // Save to file
