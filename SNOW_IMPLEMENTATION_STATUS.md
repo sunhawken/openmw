@@ -168,17 +168,50 @@ vertex.z += snowDeformationDepth - totalDeformation;
 
 ## Terrain-Specific Parameters
 
-Different terrain types use different footprint parameters:
+Different terrain types use different footprint parameters configured in settings:
 
-| Terrain | Radius | Depth | Interval | Description |
-|---------|--------|-------|----------|-------------|
-| Snow    | 60     | 100   | 2.0      | Wide body-sized, waist-deep |
-| Ash     | 30     | 60    | 3.0      | Medium, knee-deep |
-| Mud     | 15     | 30    | 5.0      | Narrow feet-only, ankle-deep |
-| Dirt    | 20     | 40    | 4.0      | Similar to mud |
-| Sand    | 25     | 50    | 3.5      | Between ash and mud |
+| Terrain | Radius | Depth | Interval | Decay Time | Description |
+|---------|--------|-------|----------|------------|-------------|
+| Snow    | 60     | 100   | 2.0      | 180s       | Wide body-sized, waist-deep |
+| Ash     | 30     | 20    | 3.0      | 120s       | Medium, knee-deep |
+| Mud     | 15     | 10    | 5.0      | 90s        | Narrow feet-only, ankle-deep |
 
-Parameters update automatically when terrain type changes.
+Parameters loaded from [settings-default.cfg](files/settings-default.cfg) and can be customized per-terrain type.
+Each terrain type can be individually enabled/disabled via settings.
+
+---
+
+## Configuration Settings
+
+All deformation parameters are configurable in [settings-default.cfg](files/settings-default.cfg):
+
+### Snow Settings
+```ini
+[Terrain]
+snow deformation enabled = true
+snow max footprints = 500
+snow footprint radius = 60.0
+snow deformation depth = 100.0
+snow decay time = 180.0
+```
+
+### Ash Settings
+```ini
+ash deformation enabled = true
+ash footprint radius = 30.0
+ash deformation depth = 20.0
+ash decay time = 120.0
+```
+
+### Mud Settings
+```ini
+mud deformation enabled = true
+mud footprint radius = 15.0
+mud deformation depth = 10.0
+mud decay time = 90.0
+```
+
+Users can override these in their personal `settings.cfg` file for custom gameplay.
 
 ---
 
@@ -200,10 +233,15 @@ Parameters update automatically when terrain type changes.
 - Test movement across different terrain types
 
 ### 📝 Future Enhancements
-- Trail persistence (save/load footprint arrays)
-- Snow texture detection (currently always enabled)
-- Performance optimization (spatial culling for large footprint counts)
-- Visual improvements (anisotropic falloff for directional footprints)
+- **Texture-weighted deformation**: Sample terrain textures in vertex shader to weight deformation
+  - Rock vertices don't lift (weight = 0.0)
+  - Snow vertices lift fully (weight = 1.0)
+  - Mixed vertices lift partially (weight = 0.5)
+  - Enables smooth transitions with mipmaps
+- **Trail persistence**: Save/load footprint arrays across sessions
+- **Actual terrain texture detection**: Query terrain storage for texture types (currently defaults to snow)
+- **Performance optimization**: Spatial culling for large footprint counts
+- **Visual improvements**: Anisotropic falloff for directional footprints
 
 ---
 
@@ -211,9 +249,15 @@ Parameters update automatically when terrain type changes.
 
 ### Core Implementation
 - `components/terrain/snowdeformation.hpp` - Manager class definition
-- `components/terrain/snowdeformation.cpp` - Manager implementation (~200 lines)
+- `components/terrain/snowdeformation.cpp` - Manager implementation with terrain-specific parameters
 - `components/terrain/snowdeformationupdater.hpp` - Uniform binding header
 - `components/terrain/snowdeformationupdater.cpp` - Uniform binding implementation
+- `components/terrain/snowdetection.hpp` - Terrain type detection (snow, ash, mud)
+- `components/terrain/snowdetection.cpp` - Texture pattern matching for terrain types
+
+### Settings
+- `components/settings/categories/terrain.hpp` - Added ash and mud deformation settings
+- `files/settings-default.cfg` - Configuration for all terrain types
 
 ### Shader
 - `files/shaders/compatibility/terrain.vert` - Vertex shader with footprint array loop

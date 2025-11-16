@@ -11,6 +11,8 @@
 namespace Terrain
 {
     std::vector<std::string> SnowDetection::sSnowPatterns;
+    std::vector<std::string> SnowDetection::sAshPatterns;
+    std::vector<std::string> SnowDetection::sMudPatterns;
     bool SnowDetection::sPatternsLoaded = false;
 
     void SnowDetection::loadSnowPatterns()
@@ -31,13 +33,29 @@ namespace Terrain
             "bm_ice"        // Bloodmoon ice
         };
 
-        // TODO: Load additional patterns from settings if needed
-        // std::string customPatterns = Settings::terrain().mSnowTexturePatterns;
-        // Parse and add to sSnowPatterns
+        // Ash texture patterns (Morrowind ash wastes)
+        sAshPatterns = {
+            "ash",
+            "tx_ash",
+            "tx_bc_ash",
+            "tx_r_ash"
+        };
+
+        // Mud texture patterns
+        sMudPatterns = {
+            "mud",
+            "swamp",
+            "tx_mud",
+            "tx_swamp",
+            "tx_bc_mud"
+        };
 
         sPatternsLoaded = true;
 
-        Log(Debug::Info) << "[SNOW] Loaded " << sSnowPatterns.size() << " snow texture patterns";
+        Log(Debug::Info) << "[SNOW] Loaded texture patterns: "
+                        << sSnowPatterns.size() << " snow, "
+                        << sAshPatterns.size() << " ash, "
+                        << sMudPatterns.size() << " mud";
     }
 
     bool SnowDetection::isSnowTexture(const std::string& texturePath)
@@ -62,6 +80,65 @@ namespace Terrain
         }
 
         return false;
+    }
+
+    bool SnowDetection::isAshTexture(const std::string& texturePath)
+    {
+        loadSnowPatterns();
+
+        if (texturePath.empty())
+            return false;
+
+        std::string lowerPath = texturePath;
+        std::transform(lowerPath.begin(), lowerPath.end(),
+                      lowerPath.begin(), ::tolower);
+
+        for (const auto& pattern : sAshPatterns)
+        {
+            if (lowerPath.find(pattern) != std::string::npos)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool SnowDetection::isMudTexture(const std::string& texturePath)
+    {
+        loadSnowPatterns();
+
+        if (texturePath.empty())
+            return false;
+
+        std::string lowerPath = texturePath;
+        std::transform(lowerPath.begin(), lowerPath.end(),
+                      lowerPath.begin(), ::tolower);
+
+        for (const auto& pattern : sMudPatterns)
+        {
+            if (lowerPath.find(pattern) != std::string::npos)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    SnowDetection::TerrainType SnowDetection::detectTerrainType(
+        const osg::Vec3f& worldPos,
+        Storage* terrainStorage,
+        ESM::RefId worldspace)
+    {
+        // TESTING MODE: Always return Snow to enable deformation on all terrain
+        // This allows testing the system without texture detection
+        // TODO: Implement actual terrain texture querying when ready
+
+        // Priority order: Snow > Ash > Mud
+        // In the future, this will query the terrain storage for actual textures
+
+        return TerrainType::Snow;  // Default for testing
     }
 
     bool SnowDetection::hasSnowAtPosition(
@@ -123,5 +200,17 @@ namespace Terrain
     {
         loadSnowPatterns();
         return sSnowPatterns;
+    }
+
+    const std::vector<std::string>& SnowDetection::getAshPatterns()
+    {
+        loadSnowPatterns();
+        return sAshPatterns;
+    }
+
+    const std::vector<std::string>& SnowDetection::getMudPatterns()
+    {
+        loadSnowPatterns();
+        return sMudPatterns;
     }
 }
