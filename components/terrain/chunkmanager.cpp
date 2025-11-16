@@ -450,7 +450,19 @@ namespace Terrain
 
         if (subdivisionLevel > 0)
         {
-            osg::ref_ptr<osg::Geometry> subdivided = TerrainSubdivider::subdivide(geometry.get(), subdivisionLevel);
+            // Get terrain layer info for weight computation
+            std::vector<LayerInfo> layerList;
+            std::vector<osg::ref_ptr<osg::Image>> blendmaps;
+            mStorage->getBlendmaps(chunkSize, chunkCenter, blendmaps, layerList, mWorldspace);
+
+            // Subdivide with terrain weight computation for deformable terrain
+            osg::ref_ptr<osg::Geometry> subdivided = TerrainSubdivider::subdivideWithWeights(
+                geometry.get(), subdivisionLevel,
+                chunkCenter, chunkSize,
+                layerList, blendmaps,
+                mStorage, mWorldspace,
+                mPlayerPosition, cellSize);
+
             if (subdivided)
             {
                 // Copy TerrainDrawable-specific data to the subdivided geometry
@@ -461,6 +473,10 @@ namespace Terrain
                 subdividedDrawable->setNormalArray(subdivided->getNormalArray(), osg::Array::BIND_PER_VERTEX);
                 subdividedDrawable->setColorArray(subdivided->getColorArray(), osg::Array::BIND_PER_VERTEX);
                 subdividedDrawable->setTexCoordArrayList(subdivided->getTexCoordArrayList());
+
+                // Copy terrain weight vertex attribute (attribute 6)
+                if (subdivided->getVertexAttribArray(6))
+                    subdividedDrawable->setVertexAttribArray(6, subdivided->getVertexAttribArray(6), osg::Array::BIND_PER_VERTEX);
 
                 // Copy primitive sets
                 for (unsigned int i = 0; i < subdivided->getNumPrimitiveSets(); ++i)
