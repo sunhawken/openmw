@@ -568,88 +568,9 @@ namespace Terrain
                         << " Footprint group enabled=" << (mFootprintGroup->getNodeMask() != 0)
                         << " Current texture index=" << mCurrentTextureIndex;
 
-        if (stampCount == 3 || stampCount == 10 || stampCount == 50)
-        {
-            Log(Debug::Info) << "[SNOW DIAGNOSTIC] *** Attempting to save deformation texture " << stampCount << " ***";
-
-            // Try to get the image from the render target
-            osg::Camera::BufferAttachmentMap& bufferAttachments = mRTTCamera->getBufferAttachmentMap();
-            if (!bufferAttachments.empty())
-            {
-                osg::Camera::Attachment& attachment = bufferAttachments[osg::Camera::COLOR_BUFFER];
-                osg::Texture2D* tex = dynamic_cast<osg::Texture2D*>(attachment._texture.get());
-                if (tex)
-                {
-                    // Try to get the image directly from the texture
-                    osg::Image* img = tex->getImage();
-                    if (img && img->data())
-                    {
-                        std::string filename = "snow_deform_stamp_" + std::to_string(stampCount) + ".png";
-                        bool success = osgDB::writeImageFile(*img, filename);
-                        Log(Debug::Info) << "[SNOW DIAGNOSTIC] Saved texture from attachment image: " << filename
-                                       << " (" << img->s() << "x" << img->t() << ") success=" << success
-                                       << " data size=" << img->getTotalSizeInBytes();
-                    }
-                    else
-                    {
-                        Log(Debug::Warning) << "[SNOW DIAGNOSTIC] Texture has no image data! This is expected for RTT.";
-                        Log(Debug::Info) << "[SNOW DIAGNOSTIC] Creating readback to save texture...";
-
-                        // Create a new image for readback
-                        osg::ref_ptr<osg::Image> readbackImg = new osg::Image;
-                        readbackImg->allocateImage(mTextureResolution, mTextureResolution, 1, GL_RGBA, GL_FLOAT);
-
-                        // Attach a final draw callback to read pixels after RTT completes
-                        // This is a HACK but necessary for diagnostics
-                        struct SaveCallback : public osg::Camera::DrawCallback
-                        {
-                            osg::ref_ptr<osg::Image> image;
-                            int stamp;
-                            int resolution;
-
-                            SaveCallback(osg::Image* img, int s, int res) : image(img), stamp(s), resolution(res) {}
-
-                            void operator()(osg::RenderInfo& renderInfo) const override
-                            {
-                                osg::State* state = renderInfo.getState();
-                                if (state)
-                                {
-                                    // Read pixels from current framebuffer
-                                    image->readPixels(0, 0, resolution, resolution, GL_RGBA, GL_FLOAT);
-
-                                    std::string filename = "snow_deform_readback_" + std::to_string(stamp) + ".png";
-                                    bool success = osgDB::writeImageFile(*image, filename);
-
-                                    Log(Debug::Info) << "[SNOW DIAGNOSTIC CALLBACK] Readback saved: " << filename
-                                                   << " success=" << success
-                                                   << " size=" << image->getTotalSizeInBytes();
-
-                                    // Check first few pixels
-                                    float* data = reinterpret_cast<float*>(image->data());
-                                    float maxDepth = 0.0f;
-                                    for (int i = 0; i < resolution * resolution; ++i)
-                                    {
-                                        maxDepth = std::max(maxDepth, data[i * 4]); // R channel = depth
-                                    }
-                                    Log(Debug::Info) << "[SNOW DIAGNOSTIC CALLBACK] Max depth in texture: " << maxDepth;
-                                }
-                            }
-                        };
-
-                        mRTTCamera->setFinalDrawCallback(new SaveCallback(readbackImg.get(), stampCount, mTextureResolution));
-                        Log(Debug::Info) << "[SNOW DIAGNOSTIC] Readback callback installed";
-                    }
-                }
-                else
-                {
-                    Log(Debug::Error) << "[SNOW DIAGNOSTIC] RTT attachment is not a Texture2D!";
-                }
-            }
-            else
-            {
-                Log(Debug::Error) << "[SNOW DIAGNOSTIC] RTT camera has NO buffer attachments!";
-            }
-        }
+        // DIAGNOSTIC CALLBACK DISABLED: Was causing crashes when reading GPU framebuffer
+        // The RTT camera is working correctly (footprints are being stamped)
+        // To verify RTT output, use shader diagnostic tests in terrain.vert instead
     }
 
     void SnowDeformationManager::setupBlitSystem()
