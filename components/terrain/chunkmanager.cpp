@@ -331,7 +331,15 @@ namespace Terrain
 
         geometry->createClusterCullingCallback();
 
-        geometry->setStateSet(mMultiPassRoot);
+        // Create a chunk-specific stateset that inherits from mMultiPassRoot
+        osg::ref_ptr<osg::StateSet> chunkStateSet = new osg::StateSet(*mMultiPassRoot, osg::CopyOp::SHALLOW_COPY);
+
+        // Set chunk world offset uniform for snow deformation coordinate conversion
+        // Vertices in the chunk are relative to chunkCenter, so this converts local->world
+        osg::Vec3f chunkWorldOffset(chunkCenter.x(), 0.0f, chunkCenter.y());
+        chunkStateSet->addUniform(new osg::Uniform("chunkWorldOffset", chunkWorldOffset));
+
+        geometry->setStateSet(chunkStateSet);
 
         if (templateGeometry)
         {
