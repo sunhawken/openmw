@@ -421,18 +421,18 @@ namespace Terrain
 
         // Removed excessive debug logging
 
-        // OPTIMIZATION: Only compute terrain weights for chunks that might deform
-        // Distant chunks (>256m) will get LOD_NONE weights (pure rock), so we can skip expensive blendmap fetching
-        const float MAX_DEFORMATION_DISTANCE = 256.0f;
-        bool needsWeightComputation = (distanceToCenter < MAX_DEFORMATION_DISTANCE * 1.5f); // 1.5x buffer for safety
-
-        // Get terrain layer info for weight computation (only if chunk is close enough to deform)
+        // Always fetch terrain layer info for weight computation
+        // The weight computation itself uses LOD to optimize distant chunks (LOD_NONE),
+        // but we need the layer info to classify textures correctly.
+        // This ensures chunks are created with correct weights even if player is far away,
+        // preventing issues when cached chunks are reused as player approaches.
         std::vector<LayerInfo> layerList;
         std::vector<osg::ref_ptr<osg::Image>> blendmaps;
-        if (needsWeightComputation)
-        {
-            mStorage->getBlendmaps(chunkSize, chunkCenter, blendmaps, layerList, mWorldspace);
-        }
+        mStorage->getBlendmaps(chunkSize, chunkCenter, blendmaps, layerList, mWorldspace);
+
+        // Determine if this chunk needs full weight computation based on distance
+        const float MAX_DEFORMATION_DISTANCE = 256.0f;
+        bool needsWeightComputation = (distanceToCenter < MAX_DEFORMATION_DISTANCE * 1.5f); // 1.5x buffer for safety
 
         if (subdivisionLevel > 0)
         {
@@ -505,10 +505,12 @@ namespace Terrain
                 Log(Debug::Warning) << "[TERRAIN] Failed to subdivide chunk at (" << chunkCenter.x() << ", " << chunkCenter.y() << ")";
             }
         }
-        else if (needsWeightComputation)
+        else
         {
-            // Non-subdivided chunk that's close enough to need terrain weights
-            // Otherwise the shader will read undefined data and default to rock (no deformation)
+            // Non-subdivided chunk - ALWAYS add terrain weights
+            // Even distant chunks need weights to correctly identify rock vs snow textures.
+            // The weight computation uses LOD to optimize: distant chunks get LOD_NONE
+            // which returns all-rock weights without expensive per-vertex sampling.
             osg::ref_ptr<osg::Geometry> weightedGeometry = TerrainSubdivider::subdivideWithWeights(
                 geometry.get(), 0,  // subdivisionLevel = 0 (no subdivision, just add weights)
                 chunkCenter, chunkSize,
@@ -522,10 +524,10 @@ namespace Terrain
                 geometry->setVertexAttribArray(6, weightedGeometry->getVertexAttribArray(6), osg::Array::BIND_PER_VERTEX);
 
                 Log(Debug::Verbose) << "[TERRAIN WEIGHTS] Added weights to non-subdivided chunk at ("
-                                   << chunkCenter.x() << ", " << chunkCenter.y() << ")";
+                                   << chunkCenter.x() << ", " << chunkCenter.y() << "), distance: "
+                                   << distanceToCenter << "m";
             }
         }
-        // else: Distant non-subdivided chunk - no weights needed (shader will default to rock, no deformation)
 
         return geometry;
     }

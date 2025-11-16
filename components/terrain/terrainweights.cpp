@@ -132,6 +132,17 @@ namespace Terrain
         else
             totalWeight = DEFAULT_ROCK_WEIGHT;
 
+        // Debug logging (only log occasionally to avoid spam)
+        static int logCounter = 0;
+        if (logCounter++ % 1000 == 0)
+        {
+            Log(Debug::Verbose) << "[TERRAIN WEIGHTS] Sample vertex weight: ("
+                               << totalWeight.x() << " snow, "
+                               << totalWeight.y() << " ash, "
+                               << totalWeight.z() << " mud, "
+                               << totalWeight.w() << " rock)";
+        }
+
         return totalWeight;
     }
 
@@ -139,15 +150,25 @@ namespace Terrain
     {
         // Use existing SnowDetection pattern matching
         if (SnowDetection::isSnowTexture(texturePath))
+        {
+            Log(Debug::Verbose) << "[TERRAIN WEIGHTS] Classified texture as SNOW: " << texturePath;
             return osg::Vec4f(1.0f, 0.0f, 0.0f, 0.0f); // Pure snow
+        }
 
         if (SnowDetection::isAshTexture(texturePath))
+        {
+            Log(Debug::Verbose) << "[TERRAIN WEIGHTS] Classified texture as ASH: " << texturePath;
             return osg::Vec4f(0.0f, 1.0f, 0.0f, 0.0f); // Pure ash
+        }
 
         if (SnowDetection::isMudTexture(texturePath))
+        {
+            Log(Debug::Verbose) << "[TERRAIN WEIGHTS] Classified texture as MUD: " << texturePath;
             return osg::Vec4f(0.0f, 0.0f, 1.0f, 0.0f); // Pure mud
+        }
 
         // Default: rock (no deformation)
+        Log(Debug::Verbose) << "[TERRAIN WEIGHTS] Classified texture as ROCK (no deformation): " << texturePath;
         return osg::Vec4f(0.0f, 0.0f, 0.0f, 1.0f); // Pure rock
     }
 
