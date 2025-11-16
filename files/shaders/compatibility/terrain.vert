@@ -54,6 +54,12 @@ void main(void)
     // SNOW DEFORMATION - Vertex Shader Array Approach
     // ========================================================================
     // Loop through footprint positions, apply deformation where close
+    //
+    // TODO: Add texture-weighted deformation
+    // Currently all vertices deform equally. Future enhancement:
+    // - Sample terrain textures at vertex position
+    // - Weight deformation by texture type (snow=1.0, rock=0.0, mixed=0.5)
+    // - This allows gradual transitions between terrain types
     // ========================================================================
     if (snowDeformationEnabled && snowFootprintCount > 0)
     {
@@ -62,6 +68,10 @@ void main(void)
 
         // Accumulate total deformation from all nearby footprints
         float totalDeformation = 0.0;
+
+        // TODO: Sample texture weight here for texture-based deformation
+        // float terrainWeight = sampleTerrainTexture(worldPos.xy);
+        // For now, assume uniform deformation (weight = 1.0)
 
         // Loop through all active footprints
         for (int i = 0; i < snowFootprintCount; i++)

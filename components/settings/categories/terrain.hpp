@@ -49,6 +49,24 @@ namespace Settings
             makeMaxStrictSanitizerFloat(1.0f) };
         SettingValue<float> mSnowDecayTime{ mIndex, "Terrain", "snow decay time",
             makeMaxStrictSanitizerFloat(1.0f) };
+
+        // Ash deformation settings
+        SettingValue<bool> mAshDeformationEnabled{ mIndex, "Terrain", "ash deformation enabled" };
+        SettingValue<float> mAshFootprintRadius{ mIndex, "Terrain", "ash footprint radius",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mAshDeformationDepth{ mIndex, "Terrain", "ash deformation depth",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mAshDecayTime{ mIndex, "Terrain", "ash decay time",
+            makeMaxStrictSanitizerFloat(1.0f) };
+
+        // Mud deformation settings
+        SettingValue<bool> mMudDeformationEnabled{ mIndex, "Terrain", "mud deformation enabled" };
+        SettingValue<float> mMudFootprintRadius{ mIndex, "Terrain", "mud footprint radius",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mMudDeformationDepth{ mIndex, "Terrain", "mud deformation depth",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mMudDecayTime{ mIndex, "Terrain", "mud decay time",
+            makeMaxStrictSanitizerFloat(1.0f) };
     };
 }
 

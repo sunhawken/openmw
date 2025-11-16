@@ -35,13 +35,26 @@ namespace Terrain
         // Load snow detection patterns
         SnowDetection::loadSnowPatterns();
 
-        // Initialize terrain-based parameters
+        // Initialize terrain-based parameters from settings
         mTerrainParams = {
-            {60.0f, 100.0f, 2.0f, "snow"},
-            {30.0f, 60.0f, 3.0f, "ash"},
-            {15.0f, 30.0f, 5.0f, "mud"},
-            {20.0f, 40.0f, 4.0f, "dirt"},
-            {25.0f, 50.0f, 3.5f, "sand"}
+            {
+                Settings::terrain().mSnowFootprintRadius.get(),
+                Settings::terrain().mSnowDeformationDepth.get(),
+                2.0f,  // interval
+                "snow"
+            },
+            {
+                Settings::terrain().mAshFootprintRadius.get(),
+                Settings::terrain().mAshDeformationDepth.get(),
+                3.0f,  // interval
+                "ash"
+            },
+            {
+                Settings::terrain().mMudFootprintRadius.get(),
+                Settings::terrain().mMudDeformationDepth.get(),
+                5.0f,  // interval
+                "mud"
+            }
         };
 
         // Create shader uniforms (use configured max footprints)
@@ -104,9 +117,22 @@ namespace Terrain
         if (!mEnabled)
             return false;
 
-        // TODO: Implement actual snow detection
-        // For now, enable everywhere for testing
-        return true;
+        // Detect terrain type at current position
+        SnowDetection::TerrainType terrainType = SnowDetection::detectTerrainType(
+            worldPos, mTerrainStorage, mWorldspace);
+
+        // Check if the detected terrain type is enabled in settings
+        switch (terrainType)
+        {
+            case SnowDetection::TerrainType::Snow:
+                return Settings::terrain().mSnowDeformationEnabled.get();
+            case SnowDetection::TerrainType::Ash:
+                return Settings::terrain().mAshDeformationEnabled.get();
+            case SnowDetection::TerrainType::Mud:
+                return Settings::terrain().mMudDeformationEnabled.get();
+            default:
+                return false;
+        }
     }
 
     void SnowDeformationManager::setEnabled(bool enabled)
@@ -204,7 +230,20 @@ namespace Terrain
 
     std::string SnowDeformationManager::detectTerrainTexture(const osg::Vec3f& worldPos)
     {
-        // TODO: Implement actual terrain texture detection
-        return "snow";
+        // Use the SnowDetection system to detect terrain type
+        SnowDetection::TerrainType terrainType = SnowDetection::detectTerrainType(
+            worldPos, mTerrainStorage, mWorldspace);
+
+        switch (terrainType)
+        {
+            case SnowDetection::TerrainType::Snow:
+                return "snow";
+            case SnowDetection::TerrainType::Ash:
+                return "ash";
+            case SnowDetection::TerrainType::Mud:
+                return "mud";
+            default:
+                return "snow";  // Default fallback
+        }
     }
 }
