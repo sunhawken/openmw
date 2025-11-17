@@ -1,3 +1,8 @@
+# TODO
+
+Check the disappearance of chunks when being subdivided
+
+
 # Chunk Subdivision System
 
 **Purpose:** Dynamic terrain mesh subdivision for high-quality snow/ash/mud deformation that follows the player smoothly.
