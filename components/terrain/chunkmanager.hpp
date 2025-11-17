@@ -56,11 +56,12 @@ namespace Terrain
         osg::Vec2f mCenter;
         unsigned char mLod;
         unsigned mLodFlags;
+        unsigned char mSubdivisionLevel;  // Terrain subdivision level for snow deformation
     };
 
     inline auto tie(const ChunkKey& v)
     {
-        return std::tie(v.mCenter, v.mLod, v.mLodFlags);
+        return std::tie(v.mCenter, v.mLod, v.mLodFlags, v.mSubdivisionLevel);
     }
 
     inline bool operator<(const ChunkKey& l, const ChunkKey& r)
@@ -107,7 +108,8 @@ namespace Terrain
 
     private:
         osg::ref_ptr<osg::Node> createChunk(float size, const osg::Vec2f& center, unsigned char lod,
-            unsigned int lodFlags, bool compile, const TerrainDrawable* templateGeometry, const osg::Vec3f& viewPoint);
+            unsigned int lodFlags, bool compile, const TerrainDrawable* templateGeometry, const osg::Vec3f& viewPoint,
+            int subdivisionLevel);
 
         osg::ref_ptr<osg::Texture2D> createCompositeMapRTT();
 
@@ -133,10 +135,6 @@ namespace Terrain
 
         // Player position for snow deformation subdivision (defaults to origin)
         osg::Vec3f mPlayerPosition;
-
-        // Track last position where we cleared cache for subdivision updates
-        // When player moves beyond threshold, we need to clear cache to force chunk recreation
-        osg::Vec3f mLastCacheClearPosition;
 
         // Tracks which chunks should stay subdivided for snow trail effect
         std::unique_ptr<SubdivisionTracker> mSubdivisionTracker;

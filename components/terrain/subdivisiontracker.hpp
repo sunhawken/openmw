@@ -33,11 +33,18 @@ namespace Terrain
         /// @param playerPos Current player position in world space
         void update(float dt, const osg::Vec2f& playerPos);
 
-        /// Get the subdivision level for a chunk at given position
+        /// Get the subdivision level for a chunk at given position (legacy distance-based)
         /// @param chunkCenter Chunk center in cell coordinates
         /// @param distance Distance from player to chunk center in world units
-        /// @return Subdivision level (0-2), or -1 if chunk should not be subdivided
+        /// @return Subdivision level (0, 2, or 3)
         int getSubdivisionLevel(const osg::Vec2f& chunkCenter, float distance) const;
+
+        /// Get the subdivision level using TRUE grid-based logic (preferred)
+        /// @param chunkCenter Chunk center in cell coordinates
+        /// @param playerWorldPos Player position in world coordinates
+        /// @param cellSize Cell world size (typically 256 for size=1.0 chunks)
+        /// @return Subdivision level (0, 2, or 3) based on grid pattern
+        int getSubdivisionLevelFromPlayerGrid(const osg::Vec2f& chunkCenter, const osg::Vec2f& playerWorldPos, float cellSize) const;
 
         /// Mark a chunk as subdivided (called when chunk is created with subdivision)
         /// @param chunkCenter Chunk center in cell coordinates (for key generation)
