@@ -65,6 +65,28 @@ namespace Terrain
         std::transform(lowerPath.begin(), lowerPath.end(),
                       lowerPath.begin(), ::tolower);
 
+        // EXCLUSIONS FIRST: Check for textures that contain "snow" but aren't actually snow terrain
+        // These are mixed textures (snow_grass, snow_rock, etc.) that should be classified
+        // as their base terrain type, not as snow
+        const std::vector<std::string> snowExclusions = {
+            "snow_grass", "snowgrass",
+            "snow_rock", "snowrock",
+            "snow_dirt", "snowdirt",
+            "snow_sand", "snowsand",
+            "grass_snow", "grasssnow",
+            "rock_snow", "rocksnow",
+            "dirt_snow", "dirtsnow",
+            "sand_snow", "sandsnow"
+        };
+
+        for (const auto& exclusion : snowExclusions)
+        {
+            if (lowerPath.find(exclusion) != std::string::npos)
+            {
+                return false; // This is a mixed texture, not pure snow
+            }
+        }
+
         // Check if any pattern matches
         for (const auto& pattern : sSnowPatterns)
         {
@@ -88,6 +110,22 @@ namespace Terrain
         std::transform(lowerPath.begin(), lowerPath.end(),
                       lowerPath.begin(), ::tolower);
 
+        // EXCLUSIONS: Mixed ash textures should not be classified as pure ash
+        const std::vector<std::string> ashExclusions = {
+            "ash_grass", "ashgrass",
+            "ash_rock", "ashrock",
+            "grass_ash", "grassash",
+            "rock_ash", "rockash"
+        };
+
+        for (const auto& exclusion : ashExclusions)
+        {
+            if (lowerPath.find(exclusion) != std::string::npos)
+            {
+                return false;
+            }
+        }
+
         for (const auto& pattern : sAshPatterns)
         {
             if (lowerPath.find(pattern) != std::string::npos)
@@ -109,6 +147,22 @@ namespace Terrain
         std::string lowerPath = texturePath;
         std::transform(lowerPath.begin(), lowerPath.end(),
                       lowerPath.begin(), ::tolower);
+
+        // EXCLUSIONS: Mixed mud textures should not be classified as pure mud
+        const std::vector<std::string> mudExclusions = {
+            "mud_grass", "mudgrass",
+            "mud_rock", "mudrock",
+            "grass_mud", "grassmud",
+            "rock_mud", "rockmud"
+        };
+
+        for (const auto& exclusion : mudExclusions)
+        {
+            if (lowerPath.find(exclusion) != std::string::npos)
+            {
+                return false;
+            }
+        }
 
         for (const auto& pattern : sMudPatterns)
         {

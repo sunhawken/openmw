@@ -24,23 +24,30 @@ Terrain chunks are dynamically subdivided based on **distance from player**, cre
 
 ## Grid Pattern (Top-Down View)
 
+**UPDATED 2025-11-17:** Expanded zones to reduce seams at LOD transitions
+
 ```
-┌───┬───┬───┬───┬───┐
-│ 0 │ 2 │ 2 │ 2 │ 0 │  Legend:
-├───┼───┼───┼───┼───┤  0 = No subdivision (default terrain)
-│ 2 │ 3 │ 3 │ 3 │ 2 │  2 = Medium (16x triangles)
-├───┼───┼───┼───┼───┤  3 = Max (64x triangles)
-│ 2 │ 3 │ P │ 3 │ 2 │  P = Player position
-├───┼───┼───┼───┼───┤
-│ 2 │ 3 │ 3 │ 3 │ 2 │  Grid ALWAYS centered on player
-├───┼───┼───┼───┼───┤
-│ 0 │ 2 │ 2 │ 2 │ 0 │
-└───┴───┴───┴───┴───┘
+┌───┬───┬───┬───┬───┬───┬───┐
+│ 0 │ 0 │ 2 │ 2 │ 2 │ 0 │ 0 │  Legend:
+├───┼───┼───┼───┼───┼───┼───┤  0 = No subdivision (default terrain)
+│ 0 │ 2 │ 3 │ 3 │ 3 │ 2 │ 0 │  2 = Medium (16x triangles)
+├───┼───┼───┼───┼───┼───┼───┤  3 = Max (64x triangles)
+│ 2 │ 3 │ 3 │ 3 │ 3 │ 3 │ 2 │  P = Player position
+├───┼───┼───┼───┼───┼───┼───┤
+│ 2 │ 3 │ 3 │ P │ 3 │ 3 │ 2 │  Grid ALWAYS centered on player
+├───┼───┼───┼───┼───┼───┼───┤
+│ 2 │ 3 │ 3 │ 3 │ 3 │ 3 │ 2 │
+├───┼───┼───┼───┼───┼───┼───┤
+│ 0 │ 2 │ 3 │ 3 │ 3 │ 2 │ 0 │
+├───┼───┼───┼───┼───┼───┼───┤
+│ 0 │ 0 │ 2 │ 2 │ 2 │ 0 │ 0 │
+└───┴───┴───┴───┴───┴───┴───┘
 ```
 
-- **3x3 inner grid:** 9 chunks at level 3 (player + 8 adjacent chunks)
-- **5x5 total grid:** 25 chunks total, outer 16 at level 2
+- **5x5 inner grid:** 25 chunks at level 3 (expanded from 3x3 to reduce seams)
+- **7x7 total grid:** 49 chunks total, outer 24 at level 2
 - **Pattern moves with player** - always centered
+- **Benefit:** LOD transitions happen further from player, making seams less visible
 
 ---
 
@@ -85,10 +92,10 @@ else if (gridDistance <= 2) level = 2;  // 5x5 outer ring
 else                        level = 0;  // No subdivision
 ```
 
-**Grid distance thresholds:**
-- **gridDistance ≤ 1:** Level 3 (3x3 grid = 9 chunks)
-- **gridDistance ≤ 2:** Level 2 (5x5 grid = 25 chunks total, 16 outer)
-- **gridDistance > 2:** Level 0 (no subdivision)
+**Grid distance thresholds (UPDATED 2025-11-17):**
+- **gridDistance ≤ 2:** Level 3 (5x5 grid = 25 chunks)
+- **gridDistance ≤ 3:** Level 2 (7x7 grid = 49 chunks total, 24 outer)
+- **gridDistance > 3:** Level 0 (no subdivision)
 
 ---
 
@@ -202,11 +209,11 @@ This ensures smooth terrain transitions across all boundaries.
 
 ## Performance Characteristics
 
-### Memory
+### Memory (UPDATED 2025-11-17)
 
 - **Per chunk:** ~16 bytes/vertex for weights
 - **Level 3 chunk:** ~4096 vertices → ~64 KB weights
-- **Total (25 chunks):** 9×64KB + 16×16KB = 832 KB (manageable)
+- **Total (25 level 3 + 24 level 2 chunks):** 25×64KB + 24×16KB = 1984 KB (~2 MB, acceptable for modern systems)
 
 ### CPU Cost
 
