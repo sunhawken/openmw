@@ -203,16 +203,20 @@ namespace Terrain
         int gridDistance = std::max(gridDeltaX, gridDeltaY);
 
         // Grid-based subdivision levels:
-        // gridDistance <= 1: 3x3 grid (player's chunk + 1 in each direction) = Level 3
-        // gridDistance <= 2: 5x5 grid (player's chunk + 2 in each direction) = Level 2
-        // gridDistance > 2:  Outside grid = Level 0
+        // EXPANDED ZONES to reduce visible seams at LOD transitions
+        // gridDistance <= 2: 5x5 grid (player's chunk + 2 in each direction) = Level 3
+        // gridDistance <= 3: 7x7 grid (player's chunk + 3 in each direction) = Level 2
+        // gridDistance > 3:  Outside grid = Level 0
+        //
+        // This ensures smoother transitions by pushing LOD changes further away
+        // and giving more consistent detail in the player's immediate vicinity
 
         int gridBasedLevel = 0;
 
-        if (gridDistance <= 1)
-            gridBasedLevel = 3;  // 3x3 inner grid: 9 chunks at max detail
-        else if (gridDistance <= 2)
-            gridBasedLevel = 2;  // 5x5 outer ring: 16 chunks at medium detail
+        if (gridDistance <= 2)
+            gridBasedLevel = 3;  // 5x5 inner grid: 25 chunks at max detail (expanded from 3x3)
+        else if (gridDistance <= 3)
+            gridBasedLevel = 2;  // 7x7 outer ring: additional chunks at medium detail
 
         // Check if chunk is being tracked (for trail system)
         auto key = chunkToKey(chunkCenter);

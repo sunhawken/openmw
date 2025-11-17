@@ -92,9 +92,19 @@ namespace Terrain
         // Calculate UV coordinates for vertex within chunk
         // vertexPos is in chunk-local coordinates (relative to chunk center)
         // Convert to UV [0,1] for blendmap sampling
+        //
+        // IMPORTANT: We clamp UV to slightly inside [0,1] to ensure consistent
+        // sampling at chunk boundaries. Adjacent chunks will sample the same
+        // blendmap values at their shared edges, preventing seams.
         float halfSize = (chunkSize * cellWorldSize) * 0.5f;
         float u = (vertexPos.x() + halfSize) / (chunkSize * cellWorldSize);
         float v = (vertexPos.y() + halfSize) / (chunkSize * cellWorldSize);
+
+        // Clamp to [0, 1] to ensure we don't sample outside the blendmap
+        // This is especially important at chunk boundaries
+        u = std::max(0.0f, std::min(1.0f, u));
+        v = std::max(0.0f, std::min(1.0f, v));
+
         osg::Vec2f uv(u, v);
 
         // Accumulate weights from all layers
