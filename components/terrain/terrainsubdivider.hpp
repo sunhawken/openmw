@@ -9,6 +9,8 @@
 
 #include <components/esm/refid.hpp>
 
+#include "terrainweights.hpp"
+
 #include <vector>
 
 namespace Terrain
@@ -38,6 +40,7 @@ namespace Terrain
         /// @param worldspace Current worldspace
         /// @param playerPosition Player world position (for LOD calculation)
         /// @param cellWorldSize Size of one cell in world units
+        /// @param forcedLOD Optional LOD override to force specific quality level (default: LOD_FULL)
         /// @return New subdivided geometry with terrain weights, or nullptr on failure
         static osg::ref_ptr<osg::Geometry> subdivideWithWeights(
             const osg::Geometry* source,
@@ -49,7 +52,8 @@ namespace Terrain
             Storage* terrainStorage,
             ESM::RefId worldspace,
             const osg::Vec3f& playerPosition,
-            float cellWorldSize);
+            float cellWorldSize,
+            TerrainWeights::WeightLOD forcedLOD = TerrainWeights::LOD_FULL);
 
     private:
         /// Process triangles from a DrawElements primitive set
