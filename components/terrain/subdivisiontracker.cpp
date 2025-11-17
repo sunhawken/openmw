@@ -231,6 +231,18 @@ namespace Terrain
             gridBasedLevel = std::max(trackedLevel, gridBasedLevel);
         }
 
+        // Debug logging (verbose, can be removed after testing)
+        static int logCounter = 0;
+        if (logCounter++ % 100 == 0)  // Log every 100th call to avoid spam
+        {
+            Log(Debug::Verbose) << "[SUBDIVISION DEBUG] Chunk (" << chunkCenter.x() << ", " << chunkCenter.y()
+                               << ") | Player world (" << playerWorldPos.x() << ", " << playerWorldPos.y()
+                               << ") | Player grid (" << playerChunkX << ", " << playerChunkY
+                               << ") | Chunk grid (" << chunkGridX << ", " << chunkGridY
+                               << ") | Grid distance: " << gridDistance
+                               << " | Level: " << gridBasedLevel;
+        }
+
         return gridBasedLevel;
     }
 

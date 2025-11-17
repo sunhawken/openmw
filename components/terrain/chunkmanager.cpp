@@ -72,14 +72,32 @@ namespace Terrain
         // Calculate subdivision level BEFORE cache lookup
         // This ensures cache key includes current subdivision level based on player position
         int subdivisionLevel = 0;
-        if (size <= 1.0f && mSubdivisionTracker)
+
+        // Per CHUNK_SUBDIVISION_SYSTEM.md, subdivision should only apply to leaf-level terrain chunks
+        // The document specifies chunks of 256 world units, but in OpenMW's terrain system,
+        // the actual minimum chunk size depends on the LOD configuration
+        // For now, we apply subdivision to small chunks (size <= 0.125 cells)
+        // This ensures we only subdivide the finest detail level, not large parent chunks
+        float cellSize = mStorage->getCellWorldSize(mWorldspace);
+        const float MAX_SUBDIVISION_CHUNK_SIZE = 0.125f;  // Maximum chunk size to subdivide (in cell units)
+
+        if (size <= MAX_SUBDIVISION_CHUNK_SIZE && mSubdivisionTracker)
         {
             // Use GRID-BASED subdivision (not distance-based circles)
             // This creates predictable 3x3 and 5x5 rectangular patterns as per requirements
-            float cellSize = mStorage->getCellWorldSize(mWorldspace);
             osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
 
             subdivisionLevel = mSubdivisionTracker->getSubdivisionLevelFromPlayerGrid(center, playerPos2D, cellSize);
+
+            // Debug: Log chunk size and subdivision decision (remove after testing)
+            static int sizeLogCounter = 0;
+            if (sizeLogCounter++ % 50 == 0)
+            {
+                float chunkWorldSize = size * cellSize;
+                Log(Debug::Verbose) << "[CHUNK SIZE DEBUG] Chunk at (" << center.x() << ", " << center.y()
+                                   << ") size=" << size << " (" << chunkWorldSize << " world units)"
+                                   << " subdivLevel=" << subdivisionLevel;
+            }
         }
 
         const ChunkKey key{ .mCenter = center, .mLod = lod, .mLodFlags = lodFlags,
@@ -453,13 +471,18 @@ namespace Terrain
 
             if (needsWeightComputation)
             {
-                // Close chunks: subdivide WITH terrain weight computation
+                // CRITICAL FIX: Force LOD_FULL for subdivided chunks to ensure consistent weights
+                // across subdivision levels. This prevents "jumping" when chunks change subdivision level.
+                // Per-vertex weight computation ensures smooth interpolation during subdivision.
+                // We override the distance-based LOD to use FULL detail for all subdivided chunks,
+                // because if weights change when subdivision level changes, the terrain will "pop".
                 subdivided = TerrainSubdivider::subdivideWithWeights(
                     geometry.get(), subdivisionLevel,
                     chunkCenter, chunkSize,
                     layerList, blendmaps,
                     mStorage, mWorldspace,
-                    mPlayerPosition, cellSize);
+                    mPlayerPosition, cellSize,
+                    TerrainWeights::LOD_FULL);  // Force full LOD for consistency
             }
             else
             {
@@ -522,12 +545,14 @@ namespace Terrain
             // Non-subdivided chunk close enough to need terrain weights
             // This prevents chunks from being cached without weights, then reused
             // when player gets closer (which was causing the delayed detection bug).
+            // Use LOD_FULL for consistency with subdivided chunks
             osg::ref_ptr<osg::Geometry> weightedGeometry = TerrainSubdivider::subdivideWithWeights(
                 geometry.get(), 0,  // subdivisionLevel = 0 (no subdivision, just add weights)
                 chunkCenter, chunkSize,
                 layerList, blendmaps,
                 mStorage, mWorldspace,
-                mPlayerPosition, cellSize);
+                mPlayerPosition, cellSize,
+                TerrainWeights::LOD_FULL);  // Force full LOD for consistency
 
             if (weightedGeometry && weightedGeometry->getVertexAttribArray(6))
             {

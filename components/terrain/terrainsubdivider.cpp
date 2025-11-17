@@ -259,7 +259,8 @@ namespace Terrain
         Storage* terrainStorage,
         ESM::RefId worldspace,
         const osg::Vec3f& playerPosition,
-        float cellWorldSize)
+        float cellWorldSize,
+        TerrainWeights::WeightLOD forcedLOD)
     {
         if (!source)
         {
@@ -279,13 +280,10 @@ namespace Terrain
             return nullptr;
         }
 
-        // Calculate distance from player to chunk center for LOD determination
-        osg::Vec2f chunkWorldCenter = chunkCenter * cellWorldSize;
-        osg::Vec2f playerPos2D(playerPosition.x(), playerPosition.y());
-        float distanceToPlayer = (chunkWorldCenter - playerPos2D).length();
-
-        // Determine LOD level for weight computation
-        TerrainWeights::WeightLOD weightLOD = TerrainWeights::determineLOD(distanceToPlayer);
+        // Use the forced LOD level instead of distance-based calculation
+        // This ensures consistent weights across all subdivision levels, preventing terrain "jumping"
+        // when chunks transition between subdivision levels
+        TerrainWeights::WeightLOD weightLOD = forcedLOD;
 
         // Compute initial terrain weights for source vertices
         osg::ref_ptr<osg::Vec4Array> srcWeights = TerrainWeights::computeWeights(
