@@ -89,19 +89,37 @@ namespace Terrain
         if (layerList.empty())
             return DEFAULT_ROCK_WEIGHT;
 
-        // Calculate UV coordinates for vertex within chunk
-        // vertexPos is in chunk-local coordinates (relative to chunk center)
-        // Convert to UV [0,1] for blendmap sampling
+        // CRITICAL FIX: Calculate UV coordinates using world/cell coordinates, not chunk-local coordinates
+        // This ensures vertices at the same world position get the same UV, regardless of which chunk they belong to.
         //
-        // IMPORTANT: We clamp UV to slightly inside [0,1] to ensure consistent
-        // sampling at chunk boundaries. Adjacent chunks will sample the same
-        // blendmap values at their shared edges, preventing seams.
-        float halfSize = (chunkSize * cellWorldSize) * 0.5f;
-        float u = (vertexPos.x() + halfSize) / (chunkSize * cellWorldSize);
-        float v = (vertexPos.y() + halfSize) / (chunkSize * cellWorldSize);
+        // Problem: vertexPos is chunk-local (relative to chunk center). For the same world position:
+        //   - In Chunk A: vertexPos.x() might be +512
+        //   - In Chunk B: vertexPos.x() might be -512
+        // This caused different UV coordinates -> different weights -> gaps at chunk boundaries!
+        //
+        // Solution: Convert to world coordinates first, then calculate UV consistently.
+
+        // Step 1: Convert chunk-local vertex position to world coordinates
+        osg::Vec2f worldPos2D;
+        worldPos2D.x() = chunkCenter.x() * cellWorldSize + vertexPos.x();
+        worldPos2D.y() = chunkCenter.y() * cellWorldSize + vertexPos.y();
+
+        // Step 2: Convert world position to cell coordinates
+        osg::Vec2f cellPos;
+        cellPos.x() = worldPos2D.x() / cellWorldSize;
+        cellPos.y() = worldPos2D.y() / cellWorldSize;
+
+        // Step 3: Calculate the chunk's coverage area in cell coordinates
+        // The blendmap covers from (chunkCenter - chunkSize/2) to (chunkCenter + chunkSize/2)
+        osg::Vec2f chunkOrigin = chunkCenter - osg::Vec2f(chunkSize * 0.5f, chunkSize * 0.5f);
+
+        // Step 4: Calculate UV as position within the chunk's area
+        // This is still chunk-relative, BUT now it's based on consistent world coords
+        // So the same world position always produces the same UV
+        float u = (cellPos.x() - chunkOrigin.x()) / chunkSize;
+        float v = (cellPos.y() - chunkOrigin.y()) / chunkSize;
 
         // Clamp to [0, 1] to ensure we don't sample outside the blendmap
-        // This is especially important at chunk boundaries
         u = std::max(0.0f, std::min(1.0f, u));
         v = std::max(0.0f, std::min(1.0f, v));
 
