@@ -17,6 +17,7 @@
 #include "storage.hpp"
 #include "terraindrawable.hpp"
 #include "terrainsubdivider.hpp"
+#include "terrainweights.hpp"
 #include "texturemanager.hpp"
 
 namespace Terrain
@@ -52,7 +53,6 @@ namespace Terrain
         , mCompositeMapLevel(1.f)
         , mMaxCompGeometrySize(1.f)
         , mPlayerPosition(0.f, 0.f, 0.f)
-        , mLastCacheClearPosition(0.f, 0.f, 0.f)
         , mSubdivisionTracker(std::make_unique<SubdivisionTracker>())
     {
         mMultiPassRoot = new osg::StateSet;
@@ -69,9 +69,68 @@ namespace Terrain
         // TODO: maybe we can refactor this code by moving all vertexLodMod code into this class.
         lod = static_cast<unsigned char>(lodFlags >> (4 * 4));
 
-        const ChunkKey key{ .mCenter = center, .mLod = lod, .mLodFlags = lodFlags };
+        // Calculate subdivision level BEFORE cache lookup
+        // This ensures cache key includes current subdivision level based on player position
+        int subdivisionLevel = 0;
+        if (size <= 1.0f && mSubdivisionTracker)
+        {
+            // Use GRID-BASED subdivision (not distance-based circles)
+            // This creates predictable 3x3 and 5x5 rectangular patterns as per requirements
+            float cellSize = mStorage->getCellWorldSize(mWorldspace);
+            osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
+
+            subdivisionLevel = mSubdivisionTracker->getSubdivisionLevelFromPlayerGrid(center, playerPos2D, cellSize);
+        }
+
+        const ChunkKey key{ .mCenter = center, .mLod = lod, .mLodFlags = lodFlags,
+                           .mSubdivisionLevel = static_cast<unsigned char>(subdivisionLevel) };
         if (osg::ref_ptr<osg::Object> obj = mCache->getRefFromObjectCache(key))
         {
+            // CRITICAL FIX: Cached chunks may not have terrain weights computed
+            // This happens when chunks are created far from player, cached, then reused when player approaches
+            // We must ensure weights are computed for all cached chunks within deformation range
+
+            TerrainDrawable* drawable = static_cast<TerrainDrawable*>(obj.get());
+
+            // Check if chunk needs terrain weights but doesn't have them yet
+            if (!drawable->getVertexAttribArray(6))  // Attribute 6 = terrain weights
+            {
+                // Calculate distance from player to chunk center
+                float cellSize = mStorage->getCellWorldSize(mWorldspace);
+                osg::Vec2f chunkWorldCenter2D(center.x() * cellSize, center.y() * cellSize);
+                osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
+                float distanceToCenter = (chunkWorldCenter2D - playerPos2D).length();
+
+                // Compute weights if within deformation range
+                const float WEIGHT_COMPUTATION_DISTANCE = 10000.0f;
+                if (distanceToCenter < WEIGHT_COMPUTATION_DISTANCE)
+                {
+                    // Fetch terrain layer info
+                    std::vector<LayerInfo> layerList;
+                    std::vector<osg::ref_ptr<osg::Image>> blendmaps;
+                    mStorage->getBlendmaps(size, center, blendmaps, layerList, mWorldspace);
+
+                    // Determine LOD based on distance
+                    TerrainWeights::WeightLOD weightLOD = TerrainWeights::determineLOD(distanceToCenter);
+
+                    // Compute weights for existing vertices
+                    const osg::Vec3Array* vertices = dynamic_cast<const osg::Vec3Array*>(drawable->getVertexArray());
+                    if (vertices)
+                    {
+                        auto weights = TerrainWeights::computeWeights(
+                            vertices, center, size, layerList, blendmaps,
+                            mStorage, mWorldspace, mPlayerPosition, cellSize, weightLOD);
+
+                        if (weights)
+                        {
+                            drawable->setVertexAttribArray(6, weights, osg::Array::BIND_PER_VERTEX);
+                            Log(Debug::Info) << "[CHUNK CACHE FIX] Added terrain weights to cached chunk at ("
+                                           << center.x() << ", " << center.y() << "), distance: " << distanceToCenter << "m";
+                        }
+                    }
+                }
+            }
+
             return static_cast<osg::Node*>(obj.get());
         }
 
@@ -81,7 +140,7 @@ namespace Terrain
         if (pair.has_value() && templateKey == TemplateKey{ .mCenter = pair->first.mCenter, .mLod = pair->first.mLod })
             templateGeometry = static_cast<const TerrainDrawable*>(pair->second.get());
 
-        osg::ref_ptr<osg::Node> node = createChunk(size, center, lod, lodFlags, compile, templateGeometry, viewPoint);
+        osg::ref_ptr<osg::Node> node = createChunk(size, center, lod, lodFlags, compile, templateGeometry, viewPoint, subdivisionLevel);
         mCache->addEntryToObjectCache(key, node.get());
         return node;
     }
@@ -94,25 +153,11 @@ namespace Terrain
 
     void ChunkManager::setPlayerPosition(const osg::Vec3f& pos)
     {
-        // Calculate how far player has moved since last cache clear (horizontal distance only)
-        osg::Vec2f currentPos2D(pos.x(), pos.y());
-        osg::Vec2f lastClearPos2D(mLastCacheClearPosition.x(), mLastCacheClearPosition.y());
-        float movementDistance = (currentPos2D - lastClearPos2D).length();
-
-        // NEW: More frequent cache clearing (every 128 units instead of 256)
-        // This ensures chunks update subdivision levels as player moves through them
-        const float CACHE_CLEAR_THRESHOLD = 128.0f;
-
-        if (movementDistance > CACHE_CLEAR_THRESHOLD)
-        {
-            // Clear the cache to force chunk recreation with new subdivisions
-            clearCache();
-
-            // Update the last clear position
-            mLastCacheClearPosition = pos;
-        }
-
-        // Always update the current player position for new chunk creation
+        // Update player position for subdivision level calculations
+        // NOTE: We no longer clear the cache on player movement because chunks are now
+        // cached per subdivision level (in ChunkKey). As the player moves, getChunk()
+        // will automatically request chunks with the appropriate subdivision level based
+        // on current player position, and the cache will return the correct version.
         mPlayerPosition = pos;
     }
 
@@ -133,12 +178,7 @@ namespace Terrain
     void ChunkManager::clearCache()
     {
         GenericResourceManager<ChunkKey>::clearCache();
-
         mBufferCache.clearCache();
-
-        // Update last cache clear position to current player position
-        // This prevents immediate re-clearing after manual cache clear
-        mLastCacheClearPosition = mPlayerPosition;
     }
 
     void ChunkManager::releaseGLObjects(osg::State* state)
@@ -257,7 +297,8 @@ namespace Terrain
     }
 
     osg::ref_ptr<osg::Node> ChunkManager::createChunk(float chunkSize, const osg::Vec2f& chunkCenter, unsigned char lod,
-        unsigned int lodFlags, bool compile, const TerrainDrawable* templateGeometry, const osg::Vec3f& viewPoint)
+        unsigned int lodFlags, bool compile, const TerrainDrawable* templateGeometry, const osg::Vec3f& viewPoint,
+        int subdivisionLevel)
     {
         osg::ref_ptr<TerrainDrawable> geometry(new TerrainDrawable);
 
@@ -375,51 +416,17 @@ namespace Terrain
         }
         geometry->setNodeMask(mNodeMask);
 
-        // SNOW DEFORMATION: Subdivide terrain near player for better deformation quality
-        // Calculate distance from player to CHUNK EDGE (not center) for pre-subdivision
+        // NOTE: subdivisionLevel is now passed as a parameter from getChunk()
+        // It's calculated using TRUE GRID-BASED logic (not distance circles) to create
+        // the predictable 3x3 and 5x5 rectangular patterns specified in requirements.
+        // The subdivision level is part of the cache key, ensuring chunks are cached
+        // per subdivision level. This allows subdivision to update smoothly as player moves
+        // without needing to clear the entire cache.
 
-        // Convert chunk center from cell units to world units
-        // chunkCenter is in cell coordinates (e.g., 0.5, 0.5 = center of cell 0,0)
+        // Convert chunk center from cell units to world units for distance calculations
         osg::Vec2f worldChunkCenter2D(chunkCenter.x() * cellSize, chunkCenter.y() * cellSize);
-
-        // Get player's horizontal position (x=east-west, y=north-south in world units)
-        // Note: OSG uses (x,y,z) = (east-west, north-south, height)
         osg::Vec2f playerPos2D(mPlayerPosition.x(), mPlayerPosition.y());
-
-        // Calculate chunk half-size for edge distance calculation
-        float halfChunkSize = chunkSize * cellSize * 0.5f;
-
-        // Calculate distance to nearest chunk edge (not center!)
-        // This allows pre-subdivision before player actually enters the chunk
-        float distanceToEdgeX = std::max(0.0f, std::abs(playerPos2D.x() - worldChunkCenter2D.x()) - halfChunkSize);
-        float distanceToEdgeY = std::max(0.0f, std::abs(playerPos2D.y() - worldChunkCenter2D.y()) - halfChunkSize);
-        float distanceToEdge = std::sqrt(distanceToEdgeX * distanceToEdgeX + distanceToEdgeY * distanceToEdgeY);
-
-        // Also calculate distance to center for reference/logging
         float distanceToCenter = (playerPos2D - worldChunkCenter2D).length();
-
-        // Use distance to edge for subdivision decisions (allows pre-subdivision)
-        float distance = distanceToEdge;
-
-        // Calculate chunk bounding box for debugging (halfChunkSize already calculated above)
-        float minX = worldChunkCenter2D.x() - halfChunkSize;
-        float maxX = worldChunkCenter2D.x() + halfChunkSize;
-        float minY = worldChunkCenter2D.y() - halfChunkSize;
-        float maxY = worldChunkCenter2D.y() + halfChunkSize;
-
-        // Check if player is inside this chunk
-        bool playerInChunk = (mPlayerPosition.x() >= minX && mPlayerPosition.x() <= maxX &&
-                             mPlayerPosition.y() >= minY && mPlayerPosition.y() <= maxY);
-
-        // NEW: Use subdivision tracker to determine level (creates trail effect)
-        // This consults both current distance AND historical subdivision state
-        int subdivisionLevel = 0;
-        if (chunkSize <= 1.0f && mSubdivisionTracker)
-        {
-            subdivisionLevel = mSubdivisionTracker->getSubdivisionLevel(chunkCenter, distance);
-        }
-
-        // Removed excessive debug logging
 
         // Determine if this chunk needs weight computation based on distance
         // We need to compute weights for all chunks that might be visible and approached.
