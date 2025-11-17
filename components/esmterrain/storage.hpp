@@ -142,6 +142,12 @@ namespace ESMTerrain
             return data->getHeights()[y * landSize + x];
         }
 
+        /// Get texture name at a specific position in cell coordinates
+        /// @param cellPos Position in cell coordinates (e.g., 0.5, 0.5 is center of cell 0,0)
+        /// @param worldspace Current worldspace
+        /// @return Texture path at that position, or empty string if no texture
+        std::string getTextureAtPosition(const osg::Vec2f& cellPos, ESM::RefId worldspace);
+
     private:
         const VFS::Manager* mVFS;
 

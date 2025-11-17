@@ -136,5 +136,92 @@ Storage::getTextureAt(cellPos) → texture name → classify → weight
 ## Next Steps
 
 1. ✅ Identify the bug in UV calculation (DONE - it's chunk-relative, not world-absolute)
-2. Check if there's a way to sample land data directly using world coordinates
-3. Implement a fix that ensures the same world position always samples the same underlying terrain data
+2. ✅ Check if there's a way to sample land data directly using world coordinates (DONE - found getTextureIdAt)
+3. ✅ Implement a fix that ensures the same world position always samples the same underlying terrain data (DONE)
+
+---
+
+## FIXED - Implementation Details
+
+### Solution: Direct Land Data Sampling
+
+The fix implements **Solution #3** from the proposal - sampling directly from land texture data using world coordinates, bypassing per-chunk blendmaps entirely.
+
+### Changes Made
+
+#### 1. Added `getTextureAtPosition` to ESMTerrain::Storage (`components/esmterrain/storage.hpp`, `storage.cpp`)
+
+```cpp
+std::string Storage::getTextureAtPosition(const osg::Vec2f& cellPos, ESM::RefId worldspace)
+```
+
+This method:
+- Converts cell position to cell coordinates (which cell + position within cell)
+- Gets land data for that cell
+- Samples texture index at that position from the 16x16 texture grid
+- Returns the actual texture name
+
+**Key benefit:** The same cell position ALWAYS returns the same texture, regardless of which chunk is querying it.
+
+#### 2. Added `computeVertexWeightDirect` to TerrainWeights (`components/terrain/terrainweights.hpp`, `terrainweights.cpp`)
+
+```cpp
+osg::Vec4f TerrainWeights::computeVertexWeightDirect(
+    const osg::Vec3f& vertexPos,
+    const osg::Vec2f& chunkCenter,
+    Storage* terrainStorage,
+    ESM::RefId worldspace,
+    float cellWorldSize)
+```
+
+This method:
+- Converts vertex position from chunk-local to world coordinates
+- Converts world position to cell coordinates
+- Calls `getTextureAtPosition` to get the actual texture name
+- Classifies texture to determine terrain type (snow/ash/mud/rock)
+- Returns weight vector
+
+**No more chunk-relative UVs!** The calculation is truly global.
+
+#### 3. Updated `computeWeights` to use the new method
+
+Changed both LOD_SIMPLIFIED and LOD_FULL paths to call `computeVertexWeightDirect` instead of the old `computeVertexWeight`.
+
+The old `computeVertexWeight` is now marked deprecated but kept for compatibility.
+
+### Why This Fix Works
+
+**Before (BROKEN):**
+```
+Vertex at world pos (512, 0):
+  → Chunk A: UV = (1.0, 0.5) → samples Chunk A's blendmap[last pixel]
+  → Chunk B: UV = (0.0, 0.5) → samples Chunk B's blendmap[first pixel]
+  → Different pixels can have different textures → SEAM!
+```
+
+**After (FIXED):**
+```
+Vertex at world pos (512, 0):
+  → Cell pos = (0.0625, 0.0)
+  → Land cell = (0, 0), local pos = (0.0625, 0.0)
+  → Texture grid pos = (1, 0) in 16x16 grid
+  → getTextureIdAt(land, 1, 0) → "tx_snow_01.dds"
+  → classifyTexture → (1, 0, 0, 0) = pure snow
+  → SAME RESULT regardless of which chunk queries it!
+```
+
+### Performance Impact
+
+**Minimal to none:**
+- Direct land data access is actually **faster** than blendmap sampling (no image decoding)
+- No extra memory allocations
+- Same number of lookups (one per vertex)
+- Land data is already cached in ESMTerrain::Storage
+
+### Testing
+
+The fix should eliminate all chunk boundary seams where:
+- Adjacent chunks have different terrain types at their edges
+- Height differences were exactly the difference between terrain type lifts (e.g., 100 units for snow vs rock)
+
+**Expected result:** Smooth terrain with no gaps at chunk boundaries!

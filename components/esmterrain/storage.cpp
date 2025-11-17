@@ -772,4 +772,42 @@ namespace ESMTerrain
             return static_cast<int>(ESM::Land::LAND_TEXTURE_SIZE * chunkSize);
     }
 
+    std::string Storage::getTextureAtPosition(const osg::Vec2f& cellPos, ESM::RefId worldspace)
+    {
+        // Determine which cell this position is in
+        int cellX = static_cast<int>(std::floor(cellPos.x()));
+        int cellY = static_cast<int>(std::floor(cellPos.y()));
+
+        // Get land data for this cell
+        osg::ref_ptr<const LandObject> land = getLand(ESM::ExteriorCellLocation(cellX, cellY, worldspace));
+        if (!land)
+            return ""; // No land data = no texture
+
+        const ESM::LandData* data = land->getData(ESM::Land::DATA_VTEX);
+        if (!data)
+            return ""; // No texture data
+
+        // Calculate position within the cell [0, 1]
+        float localX = cellPos.x() - static_cast<float>(cellX);
+        float localY = cellPos.y() - static_cast<float>(cellY);
+
+        // Convert to texture grid coordinates [0, LAND_TEXTURE_SIZE)
+        // Land textures are on a 16x16 grid per cell
+        int texX = static_cast<int>(localX * ESM::Land::LAND_TEXTURE_SIZE);
+        int texY = static_cast<int>(localY * ESM::Land::LAND_TEXTURE_SIZE);
+
+        // Clamp to valid range
+        texX = std::max(0, std::min(texX, static_cast<int>(ESM::Land::LAND_TEXTURE_SIZE) - 1));
+        texY = std::max(0, std::min(texY, static_cast<int>(ESM::Land::LAND_TEXTURE_SIZE) - 1));
+
+        // Get texture ID at this position
+        UniqueTextureId texId = getTextureIdAt(land.get(), static_cast<std::size_t>(texX), static_cast<std::size_t>(texY));
+
+        // Convert to texture name
+        if (texId.first == 0)
+            return ""; // No texture
+
+        return getTextureName(texId);
+    }
+
 }

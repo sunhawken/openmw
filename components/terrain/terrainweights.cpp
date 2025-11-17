@@ -55,8 +55,8 @@ namespace Terrain
         {
             // Sample at chunk center only
             osg::Vec3f centerVertex(0.0f, 0.0f, 0.0f); // Chunk center in local coords
-            osg::Vec4f chunkWeight = computeVertexWeight(
-                centerVertex, chunkCenter, chunkSize, layerList, blendmaps, cellWorldSize);
+            osg::Vec4f chunkWeight = computeVertexWeightDirect(
+                centerVertex, chunkCenter, terrainStorage, worldspace, cellWorldSize);
 
             // Apply same weight to all vertices
             for (size_t i = 0; i < vertices->size(); ++i)
@@ -65,12 +65,14 @@ namespace Terrain
             return weights;
         }
 
-        // LOD_FULL: Compute per-vertex weights
+        // LOD_FULL: Compute per-vertex weights using direct land data sampling
+        // This ensures chunk boundary consistency - vertices at the same world position
+        // always get the same texture and weight, regardless of which chunk they belong to
         for (size_t i = 0; i < vertices->size(); ++i)
         {
             const osg::Vec3f& vertexPos = (*vertices)[i];
-            osg::Vec4f weight = computeVertexWeight(
-                vertexPos, chunkCenter, chunkSize, layerList, blendmaps, cellWorldSize);
+            osg::Vec4f weight = computeVertexWeightDirect(
+                vertexPos, chunkCenter, terrainStorage, worldspace, cellWorldSize);
             weights->push_back(weight);
         }
 
@@ -172,6 +174,52 @@ namespace Terrain
         }
 
         return totalWeight;
+    }
+
+    osg::Vec4f TerrainWeights::computeVertexWeightDirect(
+        const osg::Vec3f& vertexPos,
+        const osg::Vec2f& chunkCenter,
+        Storage* terrainStorage,
+        ESM::RefId worldspace,
+        float cellWorldSize)
+    {
+        if (!terrainStorage)
+            return DEFAULT_ROCK_WEIGHT;
+
+        // Convert vertex position from chunk-local to world coordinates
+        osg::Vec2f worldPos2D;
+        worldPos2D.x() = chunkCenter.x() * cellWorldSize + vertexPos.x();
+        worldPos2D.y() = chunkCenter.y() * cellWorldSize + vertexPos.y();
+
+        // Convert world position to cell coordinates
+        osg::Vec2f cellPos;
+        cellPos.x() = worldPos2D.x() / cellWorldSize;
+        cellPos.y() = worldPos2D.y() / cellWorldSize;
+
+        // Sample texture directly from land data using cell coordinates
+        // This is the KEY FIX: same cell position always returns same texture,
+        // regardless of which chunk is rendering the vertex
+        std::string textureName = terrainStorage->getTextureAtPosition(cellPos, worldspace);
+
+        if (textureName.empty())
+            return DEFAULT_ROCK_WEIGHT; // No texture = rock (no deformation)
+
+        // Classify the texture to get terrain type weight
+        osg::Vec4f weight = classifyTexture(textureName);
+
+        // Debug logging (only log occasionally to avoid spam)
+        static int logCounter = 0;
+        if (logCounter++ % 1000 == 0)
+        {
+            Log(Debug::Verbose) << "[TERRAIN WEIGHTS DIRECT] Cell pos: (" << cellPos.x() << ", " << cellPos.y()
+                               << ") Texture: " << textureName
+                               << " Weight: (" << weight.x() << " snow, "
+                               << weight.y() << " ash, "
+                               << weight.z() << " mud, "
+                               << weight.w() << " rock)";
+        }
+
+        return weight;
     }
 
     osg::Vec4f TerrainWeights::classifyTexture(const std::string& texturePath)
