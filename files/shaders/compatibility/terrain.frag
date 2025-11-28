@@ -151,10 +151,116 @@ void main()
 #if @reconstructNormalZ
     normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
+    // If snow deformation is active, perturb the normal map normal
+    if (vMaxDepth > 0.0)
+    {
+        vec2 deformUV = (passWorldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
+        if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
+        {
+            float texelSize = 1.0 / 2048.0;
+            float h = texture2D(snowDeformationMap, deformUV).r;
+            float h_r = texture2D(snowDeformationMap, deformUV + vec2(texelSize, 0.0)).r;
+            float h_u = texture2D(snowDeformationMap, deformUV + vec2(0.0, texelSize)).r;
+            
+            // Calculate derivatives
+            // Z = Base - h * MaxDepth
+            // dZ/dX = (Z_r - Z) / step = ((-h_r) - (-h)) * MaxDepth / step = (h - h_r) * MaxDepth / step
+            float stepWorld = snowRTTScale * texelSize;
+            float dX = (h - h_r) * vMaxDepth / stepWorld;
+            float dY = (h - h_u) * vMaxDepth / stepWorld;
+            
+            // Perturb the tangent-space normal? 
+            // No, 'normal' here is Tangent Space (from normal map).
+            // We calculated dX, dY in World Space (assuming Terrain UV aligns with World XY).
+            // We need to convert World Space perturbation to Tangent Space?
+            // Or just perturb the View Space normal later?
+            // Perturbing View Space is easier if we don't have TBN here.
+            // But we DO have TBN implicit in 'normalToView' if normalMap is on?
+            // Actually, 'normalToView' usually multiplies by TBN.
+            // Let's perturb the RESULT of normalToView.
+        }
+    }
     vec3 viewNormal = normalToView(normal);
 #else
     vec3 viewNormal = normalize(gl_NormalMatrix * passNormal);
 #endif
+
+    // Apply Snow Deformation Normal Perturbation (Post-NormalMap / Post-VertexNormal)
+    if (vMaxDepth > 0.0)
+    {
+        vec2 deformUV = (passWorldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
+        if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
+        {
+            float texelSize = 1.0 / 2048.0;
+            float h = texture2D(snowDeformationMap, deformUV).r;
+            float h_r = texture2D(snowDeformationMap, deformUV + vec2(texelSize, 0.0)).r;
+            float h_u = texture2D(snowDeformationMap, deformUV + vec2(0.0, texelSize)).r;
+            
+            float stepWorld = snowRTTScale * texelSize;
+            float dX = (h - h_r) * vMaxDepth / stepWorld;
+            float dY = (h - h_u) * vMaxDepth / stepWorld;
+            
+            // Construct perturbation vector in World Space (assuming Z-up)
+            // The slope vector is (1, 0, dX) and (0, 1, dY).
+            // The normal is cross(slopeX, slopeY) = (-dX, -dY, 1).
+            vec3 worldPerturb = normalize(vec3(-dX, -dY, 1.0));
+            
+            // We need to blend this with the existing viewNormal.
+            // viewNormal is in View Space.
+            // worldPerturb is in World Space.
+            // Convert worldPerturb to View Space.
+            // gl_NormalMatrix transforms Model->View. For terrain Model=World (rotation-wise).
+            vec3 viewPerturb = normalize(gl_NormalMatrix * worldPerturb);
+            
+            // Blend normals. 
+            // If we are in a hole (h > 0), we want the hole's normal.
+            // If we are flat (h = 0), we want the original normal.
+            // But the perturbation *is* the shape.
+            // If h=0 everywhere, dX=0, dY=0, worldPerturb=(0,0,1).
+            // If original normal was (0,0,1), it matches.
+            // If original normal was tilted (hill), we want to combine them.
+            // Reoriented Normal Mapping (RNM) is best, but simple addition/normalization works for small perturbations.
+            // Or just: viewNormal = normalize(viewNormal + vec3(viewPerturb.xy, 0.0));
+            // Better: Rotate viewNormal by the rotation defined by viewPerturb?
+            // Simple approach: Mix based on deformation factor?
+            // No, the perturbation IS the geometry.
+            // We should apply it.
+            // But we need to combine it with the underlying terrain normal (hills).
+            // 'viewNormal' contains the hill normal (and normal map).
+            // 'viewPerturb' contains the footprint shape (assuming flat ground).
+            // We want to apply the footprint shape TO the hill.
+            // Frame: T, B, N = viewNormal.
+            // We want to tilt N by the local slope of the footprint.
+            // This is exactly what Normal Mapping does.
+            // Treat 'viewPerturb' as a tangent-space normal map where the "Tangent Plane" is defined by World(0,0,1).
+            // But our base surface is 'viewNormal'.
+            // Let's just add the offsets.
+            // viewNormal.xy += viewPerturb.xy * 2.0; // Exaggerate slightly?
+            // viewNormal = normalize(viewNormal);
+            
+            // Let's try blending.
+            // Since viewPerturb is (0,0,1) when flat.
+            // We can treat it as a detail normal.
+            // UDN Blending: n = normalize(n1 + n2). (If n1, n2 are roughly Z-up).
+            // But viewNormal might not be Z-up (steep hill).
+            // However, footprints are usually on flat-ish ground.
+            // Let's try simple addition.
+            
+            // Remove the Z component from perturb to get just the "tilt"
+            vec3 tilt = viewPerturb - vec3(0,0,1); // Assuming viewPerturb is mostly Z-up in View Space? 
+            // No, View Space Z is towards camera.
+            // World Space Z is Up.
+            // gl_NormalMatrix * (0,0,1) -> View Space Up.
+            // Let's call it viewUp = gl_NormalMatrix * vec3(0,0,1).
+            // The perturbation is relative to World Up.
+            // We want to apply the *difference* between viewPerturb and viewUp to viewNormal.
+            
+            vec3 viewUp = normalize(gl_NormalMatrix * vec3(0,0,1.0));
+            vec3 diff = viewPerturb - viewUp;
+            
+            viewNormal = normalize(viewNormal + diff);
+        }
+    }
 
     float shadowing = unshadowedLightRatio(linearDepth);
     vec3 lighting, specular;
