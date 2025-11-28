@@ -17,6 +17,7 @@
 #include <osg/BlendEquation>
 #include <osg/NodeCallback>
 #include <osg/NodeVisitor>
+#include <osgUtil/CullVisitor>
 
 namespace Terrain
 {
@@ -41,24 +42,54 @@ namespace Terrain
             // 2. Manually traverse the Scene Root's children (Siblings of this camera)
             if (mRoot)
             {
+                // Get the camera's cull mask from the NodeVisitor
+                osg::NodeVisitor::TraversalMode tm = nv->getTraversalMode();
+                unsigned int cameraCullMask = 0;
+
+                // Extract cull mask from CullVisitor if possible
+                osgUtil::CullVisitor* cv = dynamic_cast<osgUtil::CullVisitor*>(nv);
+                if (cv)
+                {
+                    cameraCullMask = cv->getCullingMode(); // This isn't right, we need the traversal mask
+                }
+
+                // Since we can't easily get the camera's cull mask here, we'll hardcode it
+                // Mask_Actor (bit 3) | Mask_Player (bit 4) | Mask_Object (bit 10)
+                unsigned int depthCameraMask = (1 << 3) | (1 << 4) | (1 << 10);
+
+                int numRendered = 0;
                 for (unsigned int i = 0; i < mRoot->getNumChildren(); ++i)
                 {
                     osg::Node* child = mRoot->getChild(i);
 
                     // CRITICAL: Skip the Camera itself to avoid infinite recursion
-                    if (child == mCam) 
+                    if (child == mCam)
                         continue;
 
                     // CRITICAL: Skip the Terrain to prevent the ground from deforming itself
-                    // The terrain is usually named "Terrain Root" in World.cpp
                     if (child->getName() == "Terrain Root")
                         continue;
 
+                    // CRITICAL: Check if this node's mask matches the camera's cull mask
+                    // A node is visible if (nodeMask & cullMask) != 0
+                    unsigned int nodeMask = child->getNodeMask();
+                    if ((nodeMask & depthCameraMask) == 0)
+                    {
+                        // This node doesn't match our cull mask, skip it
+                        continue;
+                    }
+
+                    // DEBUG: Log what we're actually rendering after filtering
+                    std::string childName = child->getName().empty() ? "<unnamed>" : child->getName();
+                    Log(Debug::Verbose) << "Depth camera rendering child: " << childName
+                                       << " (node mask: " << nodeMask << " & cull mask: " << depthCameraMask << ")";
+                    numRendered++;
+
                     // Traverse the child
-                    // The NodeVisitor (CullVisitor) will check CullMasks against the child's NodeMask
-                    // So only objects matching the Camera's CullMask (Actors) will be rendered
                     child->accept(*nv);
                 }
+                if (numRendered > 0)
+                    Log(Debug::Info) << "Depth camera rendered " << numRendered << " nodes (after filtering)";
             }
         }
 
@@ -418,6 +449,7 @@ namespace Terrain
 
         // --- Create Blur Pass 1 (Horizontal) ---
         mBlurHCamera = new osg::Camera;
+        mBlurHCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f)); // Clear to BLACK (no deformation)
         mBlurHCamera->setClearMask(GL_COLOR_BUFFER_BIT);
         mBlurHCamera->setRenderOrder(osg::Camera::PRE_RENDER, 3); // Order 3 (After Footprints)
         mBlurHCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
@@ -458,6 +490,7 @@ namespace Terrain
 
         // --- Create Blur Pass 2 (Vertical) ---
         mBlurVCamera = new osg::Camera;
+        mBlurVCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f)); // Clear to BLACK (no deformation)
         mBlurVCamera->setClearMask(GL_COLOR_BUFFER_BIT);
         mBlurVCamera->setRenderOrder(osg::Camera::PRE_RENDER, 4); // Order 4
         mBlurVCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
@@ -576,10 +609,24 @@ namespace Terrain
             Log(Debug::Error) << "SnowDeformationManager: Root node is null, RTT will not update!";
         }
         
-        // Attach CullCallback to Depth Camera to render scene actors
+        // WORKAROUND: Since CullCallback doesn't work correctly, we need to find the
+        // Player Root and Cell Root nodes and add them as children of the depth camera
+        // This is hacky but necessary for the depth camera to see actors
         if (mRootNode && mDepthCamera)
         {
-            mDepthCamera->setCullCallback(new DepthCameraCullCallback(mRootNode, mDepthCamera));
+            for (unsigned int i = 0; i < mRootNode->getNumChildren(); ++i)
+            {
+                osg::Node* child = mRootNode->getChild(i);
+                std::string name = child->getName();
+
+                // Add Player Root and Cell Root as children of depth camera
+                // This allows the camera to render actors without a circular reference
+                if (name == "Player Root" || name == "Cell Root")
+                {
+                    Log(Debug::Info) << "Adding " << name << " to depth camera scene";
+                    mDepthCamera->addChild(child);
+                }
+            }
         }
         
         // 4. Create Uniforms for Terrain
@@ -692,7 +739,7 @@ namespace Terrain
         // This captures all actors/objects in the RTT XY area
         // Z-range accounts for floating characters (Morrowind physics: ~30 units = 1.36 feet above terrain)
         double depthCameraZ = playerPos.z() - 1000.0; // Below player altitude
-        double depthRange = 2000.0; // Enough to capture floating characters + tall objects
+        double depthRange = 200.0; // Enough to capture floating characters + tall objects
 
         mDepthCamera->setProjectionMatrixAsOrtho(
             playerPos.x() - halfSize, playerPos.x() + halfSize,
