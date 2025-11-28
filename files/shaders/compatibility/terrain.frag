@@ -88,7 +88,8 @@ void main()
         vec3 viewDir = normalize((gl_ModelViewMatrixInverse * vec4(passViewPos, 0.0)).xyz);
         
         // 2. Raymarch Setup
-        // We assume the "undeformed" snow surface is at flatZ
+        // Calculate the undeformed snow surface height
+        // passWorldPos.z is already deformed, so we add back the deformation to get the original flat surface
         float flatZ = passWorldPos.z + vDeformationFactor * vMaxDepth;
         
         vec3 p = passWorldPos;
