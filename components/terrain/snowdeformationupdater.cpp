@@ -24,6 +24,7 @@ namespace Terrain
         // These will be shared across all terrain chunks
         // Add RTT uniforms
         stateset->addUniform(manager->getDeformationMapUniform());
+        stateset->setTextureAttributeAndModes(7, manager->getDeformationMap(), osg::StateAttribute::ON);
         stateset->addUniform(manager->getRTTWorldOriginUniform());
         stateset->addUniform(manager->getRTTScaleUniform());
 

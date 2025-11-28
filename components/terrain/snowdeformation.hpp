@@ -82,6 +82,7 @@ namespace Terrain
 
         // RTT Uniforms
         osg::Uniform* getDeformationMapUniform() const { return mDeformationMapUniform.get(); }
+        osg::Texture2D* getDeformationMap() const { return mDeformationMap.get(); }
         osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 

@@ -21,6 +21,7 @@ namespace Terrain
         Storage* terrainStorage,
         osg::Group* rootNode)
         : mSceneManager(sceneManager)
+        , mRootNode(rootNode)
         , mTerrainStorage(terrainStorage)
         , mWorldspace(ESM::RefId())
         , mEnabled(Settings::terrain().mSnowDeformationEnabled.get())
@@ -33,7 +34,7 @@ namespace Terrain
         , mDecayTime(Settings::terrain().mSnowDecayTime.get())
         , mCurrentTerrainType("snow")
         , mCurrentTime(0.0f)
-        , mRTTSize(50.0f) // 50 meters coverage
+        , mRTTSize(3625.0f) // 50 meters coverage (approx 72.5 units/meter)
         , mRTTCenter(0.0f, 0.0f, 0.0f)
     {
         Log(Debug::Info) << "Multi-terrain deformation system initialized (snow/ash/mud)";
@@ -49,19 +50,19 @@ namespace Terrain
             {
                 Settings::terrain().mSnowFootprintRadius.get(),
                 Settings::terrain().mSnowDeformationDepth.get(),
-                2.0f,  // interval
+                45.0f,  // interval (approx 2 feet)
                 "snow"
             },
             {
                 Settings::terrain().mAshFootprintRadius.get(),
                 Settings::terrain().mAshDeformationDepth.get(),
-                3.0f,  // interval
+                45.0f,  // interval
                 "ash"
             },
             {
                 Settings::terrain().mMudFootprintRadius.get(),
                 Settings::terrain().mMudDeformationDepth.get(),
-                5.0f,  // interval
+                45.0f,  // interval
                 "mud"
             }
         };
@@ -267,8 +268,11 @@ namespace Terrain
 
         // 2. Create Camera
         mRTTCamera = new osg::Camera;
-        mRTTCamera->setClearColor(osg::Vec4(0, 0, 0, 0)); // Clear to 0 deformation
+        // DEBUG: Clear to DARK RED to verify coverage
+        mRTTCamera->setClearColor(osg::Vec4(0.2f, 0.0f, 0.0f, 1.0f)); 
+        mRTTCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         mRTTCamera->setRenderOrder(osg::Camera::PRE_RENDER);
+        mRTTCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
         mRTTCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
         mRTTCamera->setViewport(0, 0, 2048, 2048);
         mRTTCamera->attach(osg::Camera::COLOR_BUFFER, mDeformationMap);
@@ -291,7 +295,7 @@ namespace Terrain
         
         // 4. Create Uniforms
         mDeformationMapUniform = new osg::Uniform(osg::Uniform::SAMPLER_2D, "snowDeformationMap");
-        mDeformationMapUniform->set(mDeformationMap);
+        mDeformationMapUniform->set(7); // Use texture unit 7
         
         mRTTWorldOriginUniform = new osg::Uniform("snowRTTWorldOrigin", osg::Vec3f(0,0,0));
         mRTTScaleUniform = new osg::Uniform("snowRTTScale", mRTTSize);
@@ -307,9 +311,11 @@ namespace Terrain
 
         // Update Camera Projection to cover area around player
         double halfSize = mRTTSize / 2.0;
-        mRTTCamera->setProjectionMatrixAsOrtho2D(
+        // Use Ortho instead of Ortho2D to ensure we capture the geometry from high up
+        mRTTCamera->setProjectionMatrixAsOrtho(
             playerPos.x() - halfSize, playerPos.x() + halfSize,
-            playerPos.y() - halfSize, playerPos.y() + halfSize
+            playerPos.y() - halfSize, playerPos.y() + halfSize,
+            0.0, 20000.0 // Near/Far planes to cover the distance from 10000 to 0
         );
         // Look down from high up
         mRTTCamera->setViewMatrixAsLookAt(

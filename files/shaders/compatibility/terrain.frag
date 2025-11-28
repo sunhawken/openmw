@@ -70,7 +70,7 @@ void main()
         if (rttVal > 0.0)
         {
             gl_FragData[0].rgb = vec3(1.0, 0.0, 0.0) * rttVal; // Red footprints
-        }
+        } 
     }
 
     vec4 diffuseColor = getDiffuseColor();
