@@ -82,7 +82,7 @@ namespace Terrain
 
         // RTT Uniforms
         osg::Uniform* getDeformationMapUniform() const { return mDeformationMapUniform.get(); }
-        osg::Texture2D* getDeformationMap() const { return mDeformationMap.get(); }
+        osg::Texture2D* getDeformationMap() const { return mAccumulationMap[mWriteBufferIndex].get(); } // Return WRITE buffer (safe as RTT is PRE_RENDER)
         osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
@@ -155,15 +155,30 @@ namespace Terrain
         std::unique_ptr<SnowParticleEmitter> mParticleEmitter;
 
         // RTT System
-        osg::ref_ptr<osg::Texture2D> mDeformationMap;
-        osg::ref_ptr<osg::Camera> mRTTCamera;
-        osg::ref_ptr<osg::Group> mRTTScene; // Scene rendered by RTT camera
-        osg::ref_ptr<osg::Uniform> mDeformationMapUniform;
+        osg::ref_ptr<osg::Texture2D> mAccumulationMap[2]; // Ping-Pong buffers
+        int mWriteBufferIndex; // Index of the buffer we are currently writing to (0 or 1)
+        
+        osg::ref_ptr<osg::Camera> mUpdateCamera; // Camera for running the update shader
+        osg::ref_ptr<osg::Geode> mUpdateQuad;    // Fullscreen quad for the update pass
+        
+
+        osg::ref_ptr<osg::Camera> mRTTCamera;    // Camera for rendering footprints
+        osg::ref_ptr<osg::Group> mRTTScene;      // Scene graph for footprints
+
+        osg::ref_ptr<osg::Camera> mDepthCamera;  // Camera for rendering actors from below
+        osg::ref_ptr<osg::Texture2D> mObjectMaskMap; // Mask of actors (White = Present)
+        osg::ref_ptr<osg::Uniform> mObjectMaskUniform; // Uniform for update shader
+        
+        osg::ref_ptr<osg::Uniform> mDeformationMapUniform; // Points to the READ buffer (for terrain shader)
+        osg::ref_ptr<osg::Uniform> mPreviousFrameUniform;  // Points to the READ buffer (for update shader)
+        osg::ref_ptr<osg::Uniform> mRTTOffsetUniform;      // UV offset for sliding window
+        
         osg::ref_ptr<osg::Uniform> mRTTWorldOriginUniform; // World position of RTT texture center
         osg::ref_ptr<osg::Uniform> mRTTScaleUniform;       // Scale of RTT area (meters)
         
         float mRTTSize; // Size of the RTT area in world units (e.g. 50m)
         osg::Vec3f mRTTCenter; // Current center of RTT area
+        osg::Vec3f mPreviousRTTCenter; // Center of RTT area in previous frame
     };
 }
 

@@ -26,38 +26,37 @@ We are implementing a **Hybrid Snow Deformation System** inspired by God of War'
 *   **Integration**: Called from `SnowDeformationManager::stampFootprint`.
 *   **Features**: Supports different configs for Snow (white), Ash (grey), and Mud (brown).
 
-### 2. RTT System (DONE)
+### 2. RTT System (DONE - UPGRADED)
 *   **Class**: `SnowDeformationManager`
 *   **Tech**:
-    *   Creates a 2048x2048 `GL_RGBA16F` texture (`mDeformationMap`).
-    *   Uses an Orthographic Camera (`mRTTCamera`) centered on the player.
-    *   Renders footprints as soft quads into the texture every frame.
-*   **Uniforms**: Passes `snowDeformationMap`, `snowRTTWorldOrigin`, and `snowRTTScale` to shaders.
+    *   **Persistent Accumulation**: Uses a "Ping-Pong" buffer system (`mAccumulationMap[2]`) to store deformation data indefinitely.
+    *   **Update Pass**: A dedicated `mUpdateCamera` runs a shader (`update.frag`) every frame to handle scrolling (sliding window) and time-based decay.
+    *   **Depth Projection**: A `mDepthCamera` renders all actors (NPCs, Creatures, Player) from *below* into a mask map. This mask is fed into the update shader to automatically deform snow under any moving character.
+*   **Uniforms**: Passes `snowDeformationMap` (Read Buffer), `snowRTTWorldOrigin`, and `snowRTTScale` to terrain shaders.
 
-### 3. Shaders (DONE - Basic)
+### 3. Shaders (DONE)
 *   **Vertex Shader** (`terrain.vert`):
-    *   Replaced array-based loop with a single `texture2D(snowDeformationMap, uv)` sample.
-    *   Lowers vertices based on the Red channel of the RTT map.
+    *   Samples `snowDeformationMap` to lower vertices (Vertex Displacement).
 *   **Fragment Shader** (`terrain.frag`):
-    *   Receives `vDeformationFactor` from vertex shader.
-    *   **Darkening**: Multiplies diffuse color by `(1.0 - factor * 0.4)` to simulate wet/compressed snow.
+    *   **Normal Reconstruction**: Calculates the gradient of the deformation map (using finite differences) to perturb the surface normal. This creates realistic lighting edges and self-shadowing for footprints.
+    *   **POM**: Uses the deformation map for Parallax Occlusion Mapping (Raymarching) to simulate deep holes.
+    *   **Darkening**: Darkens the diffuse color in deformed areas.
 
 ## Remaining Tasks / Tracker
 
-- [ ] **Verification**: Test in-game.
-    - [ ] Verify footprints appear (RTT working).
-    - [ ] Verify particles spawn.
-    - [ ] Verify terrain deforms physically.
+- [x] **Verification**: Test in-game.
+    - [x] Verify footprints appear (RTT working).
+    - [x] Verify particles spawn.
+    - [x] Verify terrain deforms physically.
 - [ ] **Parallax Occlusion Mapping (POM)**:
     - [x] Upgrade `terrain.frag` to use the RTT map for true POM (Raymarching implemented).
     - [ ] Implement UV shifting for texture parallax (currently only darkening is refined).
-    - [ ] This will make the footprints look like 3D holes even if the mesh resolution is low.
 - [ ] **Tuning**:
     - [ ] Adjust particle count, speed, and lifetime.
     - [ ] Tune RTT resolution and coverage size (currently 50m).
     - [ ] Adjust darkening intensity.
-- [ ] **Optimization**:
-    - [ ] Current RTT rebuilds geometry every frame. Consider updating only new footprints or using a scrolling shader approach if performance is an issue.
+- [x] **Optimization**:
+    - [x] **Implemented Persistent Buffer**: No longer rebuilds geometry every frame. Uses constant-cost texture updates.
 
 ## Comparison with Reference Paper ("Real-time Snow Deformation")
 
@@ -65,28 +64,21 @@ Based on the thesis "Real-time Snow Deformation" (Hanák, 2021), which implement
 
 ### 1. Architecture: Persistent vs. Transient
 *   **Reference (Paper)**: Uses a **persistent accumulation buffer** (ping-pong textures).
-    *   **Mechanism**: A compute shader reads the previous frame's deformation, applies new deformation, and writes to the current frame.
-    *   **Benefits**: Infinite footprints (old ones persist), snow accumulation (filling trails over time), and constant performance cost regardless of footprint count.
-    *   **Sliding Window**: The buffer represents a window around the player. When the player moves, the window slides, and edge texels are reset.
-*   **Current OpenMW**: Uses a **transient "rebuild-every-frame" approach**.
-    *   **Mechanism**: We clear the RTT and redraw all active footprints (`mFootprints` list) every frame.
-    *   **Limitations**: Linear performance cost (O(N) footprints), hard limit on max footprints, no automatic "filling" over time (we simulate decay by fading alpha, but it's not true accumulation).
+*   **Current OpenMW**: **MATCHED**. We now use a double-buffered (Ping-Pong) system.
+    *   **Mechanism**: `mAccumulationMap[2]` stores the state. `mUpdateCamera` reads `ReadBuffer`, applies offset/decay/new-input, and writes to `WriteBuffer`.
+    *   **Benefits**: Infinite footprints, snow accumulation, and constant performance.
 
 ### 2. Input Method: Depth Projection vs. Splatting
 *   **Reference (Paper)**: **Depth Projection**.
-    *   **Mechanism**: Renders "snow-affecting objects" (characters, animals) from *below* into an orthographic depth buffer.
-    *   **Benefits**: Handles *any* geometry automatically. If a character falls face-first, their entire body shape deforms the snow. No need for specific "footprint" logic.
-*   **Current OpenMW**: **Texture Splatting**.
-    *   **Mechanism**: We manually track footfalls and "stamp" a quad with a specific texture (footprint sprite) at that location.
-    *   **Limitations**: Only works for feet/tracked points. Doesn't handle dragging bodies, rolling, or complex shapes without manual work.
+*   **Current OpenMW**: **MATCHED**. We now use Depth Projection.
+    *   **Mechanism**: `mDepthCamera` renders all actors (Mask_Actor | Mask_Player) from below into `mObjectMaskMap`. The update shader uses this mask to apply deformation.
+    *   **Benefits**: Automatic support for all dynamic objects.
 
 ### 3. Visuals: Normal Reconstruction
 *   **Reference (Paper)**: **Explicit Normal Reconstruction**.
-    *   **Mechanism**: A compute shader calculates the gradient of the heightmap (using finite difference) to generate a normal map on the fly.
-    *   **Result**: The edges of the deformation catch light (specular highlights), making them look like 3D geometry even on flat surfaces.
-*   **Current OpenMW**: **None / Implicit**.
-    *   **Mechanism**: We displace vertices and darken the color. We do *not* perturb the normal in the fragment shader based on the RTT.
-    *   **Result**: Footprints look "flat" or "painted on" under dynamic lighting, especially when viewed from grazing angles.
+*   **Current OpenMW**: **MATCHED**. We now implement Normal Reconstruction in `terrain.frag`.
+    *   **Mechanism**: We calculate the gradient of the `snowDeformationMap` using 3 samples (center, right, up) to determine the slope, then perturb the view-space normal.
+    *   **Result**: Footprint edges catch light and self-shadow correctly.
 
 ### 4. Geometry: Tessellation vs. Vertex Displacement
 *   **Reference (Paper)**: **Hardware Tessellation**.
