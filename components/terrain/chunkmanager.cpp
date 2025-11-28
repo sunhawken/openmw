@@ -89,15 +89,6 @@ namespace Terrain
 
             subdivisionLevel = mSubdivisionTracker->getSubdivisionLevelFromPlayerGrid(center, playerPos2D, cellSize);
 
-            // Debug: Log chunk size and subdivision decision (remove after testing)
-            static int sizeLogCounter = 0;
-            if (sizeLogCounter++ % 50 == 0)
-            {
-                float chunkWorldSize = size * cellSize;
-                Log(Debug::Verbose) << "[CHUNK SIZE DEBUG] Chunk at (" << center.x() << ", " << center.y()
-                                   << ") size=" << size << " (" << chunkWorldSize << " world units)"
-                                   << " subdivLevel=" << subdivisionLevel;
-            }
         }
 
         const ChunkKey key{ .mCenter = center, .mLod = lod, .mLodFlags = lodFlags,
@@ -145,8 +136,6 @@ namespace Terrain
                         if (weights)
                         {
                             drawable->setVertexAttribArray(6, weights, osg::Array::BIND_PER_VERTEX);
-                            Log(Debug::Info) << "[CHUNK CACHE FIX] Added terrain weights to cached chunk at ("
-                                           << center.x() << ", " << center.y() << "), distance: " << distanceToCenter << "m";
                         }
                     }
                 }

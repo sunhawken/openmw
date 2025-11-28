@@ -45,6 +45,7 @@ uniform bool snowDeformationEnabled;       // Runtime enable/disable
 uniform vec3 chunkWorldOffset;             // Chunk's world position (for local->world conversion)
 
 // Terrain-specific deformation parameters
+uniform float snowDeformationDepth;        // Snow deformation depth
 uniform float ashDeformationDepth;         // Ash deformation depth (default 20)
 uniform float mudDeformationDepth;         // Mud deformation depth (default 10)
 
@@ -52,6 +53,8 @@ uniform float mudDeformationDepth;         // Mud deformation depth (default 10)
 attribute vec4 terrainWeights;             // x=snow, y=ash, z=mud, w=rock
 
 varying float vDeformationFactor;          // Passed to fragment shader for POM/Visuals
+varying vec3 passWorldPos;                 // World position for POM
+varying float vMaxDepth;                   // Max deformation depth for this vertex
 
 void main(void)
 {
@@ -94,7 +97,20 @@ void main(void)
 
             // Apply deformation: raise terrain by baseLift, then subtract where footprints are
             vertex.z += baseLift * (1.0 - vDeformationFactor);
+            
+            vMaxDepth = baseLift;
         }
+        else
+        {
+            vMaxDepth = 0.0;
+        }
+        
+        passWorldPos = worldPos; // Pass world position to fragment shader
+    }
+    else
+    {
+        passWorldPos = vertex.xyz + chunkWorldOffset;
+        vMaxDepth = 0.0;
     }
     
 
