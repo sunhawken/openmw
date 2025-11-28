@@ -96,44 +96,8 @@ namespace Terrain
 
         const ParticleConfig& config = it->second;
 
-        // Create a temporary emitter for this burst
-        osgParticle::ModularEmitter* emitter = new osgParticle::ModularEmitter;
-        emitter->setParticleSystem(mParticleSystem);
-        
-        // Setup counter (burst)
-        osgParticle::RandomRateCounter* counter = new osgParticle::RandomRateCounter;
-        counter->setRateRange(config.count * 10, config.count * 10); // High rate for short time
-        emitter->setCounter(counter);
 
-        // Setup placer (point source)
-        osgParticle::PointPlacer* placer = new osgParticle::PointPlacer;
-        placer->setCenter(position + osg::Vec3(0, 0, 0.1f)); // Slightly above ground
-        emitter->setPlacer(placer);
-
-        // Setup shooter (radial spray)
-        osgParticle::RadialShooter* shooter = new osgParticle::RadialShooter;
-        shooter->setThetaRange(0.0f, osg::PI_4); // Upwards cone
-        shooter->setInitialSpeedRange(config.speed * 0.5f, config.speed * 1.5f);
-        emitter->setShooter(shooter);
-
-        // Configure particle template for this burst
-        // Note: Changing default template affects all new particles. 
-        // Ideally we'd have separate systems for different types if we need vastly different textures,
-        // but for color/size we can rely on the template at emission time.
-        mParticleSystem->getDefaultParticleTemplate().setColorRange(
-            osgParticle::rangev4(config.color, osg::Vec4(config.color.r(), config.color.g(), config.color.b(), 0.0f)));
-        mParticleSystem->getDefaultParticleTemplate().setSizeRange(
-            osgParticle::rangef(config.size * 0.5f, config.size * 1.5f));
-        mParticleSystem->getDefaultParticleTemplate().setLifeTime(config.lifeTime);
-
-        // Add emitter to scene
-        mParticleGroup->addChild(emitter);
-
-        // We need to remove this emitter after it's done. 
-        // For now, we'll let it emit for one frame then remove it?
-        // Or better: manually emit particles.
-        
-        // Manual emission approach is cleaner than managing temporary emitter nodes
+        // Manual emission for instant burst
         int count = config.count;
         for(int i=0; i<count; ++i)
         {
@@ -164,11 +128,7 @@ namespace Terrain
                 p->setColorRange(osgParticle::rangev4(config.color, osg::Vec4(config.color.r(), config.color.g(), config.color.b(), 0.0f)));
                 p->setAlphaRange(osgParticle::rangef(config.color.a(), 0.0f));
             }
-        }
-        
-        // Cleanup: We didn't actually add the emitter node, so nothing to remove.
-        // We just used the particle system directly.
-        delete emitter; 
+        } 
     }
 
     void SnowParticleEmitter::update(float dt)

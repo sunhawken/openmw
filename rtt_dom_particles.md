@@ -49,7 +49,8 @@ We are implementing a **Hybrid Snow Deformation System** inspired by God of War'
     - [ ] Verify particles spawn.
     - [ ] Verify terrain deforms physically.
 - [ ] **Parallax Occlusion Mapping (POM)**:
-    - [ ] Upgrade `terrain.frag` to use the RTT map for true POM.
+    - [x] Upgrade `terrain.frag` to use the RTT map for true POM (Raymarching implemented).
+    - [ ] Implement UV shifting for texture parallax (currently only darkening is refined).
     - [ ] This will make the footprints look like 3D holes even if the mesh resolution is low.
 - [ ] **Tuning**:
     - [ ] Adjust particle count, speed, and lifetime.

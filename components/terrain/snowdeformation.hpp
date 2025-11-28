@@ -51,6 +51,15 @@ namespace Terrain
     /// - OpenMW uses Z-up coordinate system
     /// - Ground plane is XY, altitude is Z
 
+    /// - Ground plane is XY, altitude is Z
+    class SnowDeformationManager
+    {
+    public:
+        SnowDeformationManager(Resource::SceneManager* sceneManager, Storage* terrainStorage, osg::Group* rootNode);
+        ~SnowDeformationManager();
+
+        void update(float dt, const osg::Vec3f& playerPos);
+
         /// Check if system should be active at this position
         bool shouldBeActive(const osg::Vec3f& worldPos);
 
@@ -70,6 +79,11 @@ namespace Terrain
         osg::Uniform* getMudDeformationDepthUniform() const { return mMudDeformationDepthUniform.get(); }
         osg::Uniform* getCurrentTimeUniform() const { return mCurrentTimeUniform.get(); }
         osg::Uniform* getDecayTimeUniform() const { return mDecayTimeUniform.get(); }
+
+        // RTT Uniforms
+        osg::Uniform* getDeformationMapUniform() const { return mDeformationMapUniform.get(); }
+        osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
+        osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
     private:
         /// Stamp a new footprint at player position

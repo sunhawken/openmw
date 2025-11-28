@@ -22,14 +22,18 @@ namespace Terrain
 
         // Add all terrain deformation uniforms to the terrain stateset
         // These will be shared across all terrain chunks
-        stateset->addUniform(manager->getFootprintPositionsUniform());
-        stateset->addUniform(manager->getFootprintCountUniform());
-        stateset->addUniform(manager->getFootprintRadiusUniform());
+        // Add RTT uniforms
+        stateset->addUniform(manager->getDeformationMapUniform());
+        stateset->addUniform(manager->getRTTWorldOriginUniform());
+        stateset->addUniform(manager->getRTTScaleUniform());
+
+        Log(Debug::Info) << "SnowDeformationUpdater::setDefaults - Added RTT uniforms to terrain stateset";
+
+        // Terrain-specific parameters
         stateset->addUniform(manager->getDeformationDepthUniform());
         stateset->addUniform(manager->getAshDeformationDepthUniform());
         stateset->addUniform(manager->getMudDeformationDepthUniform());
         stateset->addUniform(manager->getCurrentTimeUniform());
-        stateset->addUniform(manager->getDecayTimeUniform());
 
         // Create and add the enabled uniform (defaults to true for testing)
         osg::ref_ptr<osg::Uniform> enabledUniform = new osg::Uniform("snowDeformationEnabled", true);

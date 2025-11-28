@@ -1,6 +1,7 @@
 #include "snowdeformation.hpp"
 #include "snowdetection.hpp"
 #include "storage.hpp"
+#include <algorithm>
 
 #include <components/debug/debuglog.hpp>
 #include <components/settings/values.hpp>
@@ -30,7 +31,6 @@ namespace Terrain
         , mLastFootprintPos(0.0f, 0.0f, 0.0f)
         , mTimeSinceLastFootprint(999.0f)
         , mDecayTime(Settings::terrain().mSnowDecayTime.get())
-        , mCurrentTerrainType("snow")
         , mCurrentTerrainType("snow")
         , mCurrentTime(0.0f)
         , mRTTSize(50.0f) // 50 meters coverage
@@ -75,11 +75,11 @@ namespace Terrain
         mAshDeformationDepthUniform = new osg::Uniform("ashDeformationDepth", Settings::terrain().mAshDeformationDepth.get());
         mMudDeformationDepthUniform = new osg::Uniform("mudDeformationDepth", Settings::terrain().mMudDeformationDepth.get());
         mCurrentTimeUniform = new osg::Uniform("snowCurrentTime", 0.0f);
-        mCurrentTimeUniform = new osg::Uniform("snowCurrentTime", 0.0f);
         mDecayTimeUniform = new osg::Uniform("snowDecayTime", mDecayTime);
 
         // Initialize particle emitter
         mParticleEmitter = std::make_unique<SnowParticleEmitter>(rootNode, sceneManager);
+    }
 
     SnowDeformationManager::~SnowDeformationManager()
     {
@@ -113,6 +113,7 @@ namespace Terrain
 
         if (distanceMoved > mFootprintInterval || mTimeSinceLastFootprint > 0.5f)
         {
+            Log(Debug::Verbose) << "SnowDeformationManager::update - Stamping footprint at " << playerPos;
             stampFootprint(playerPos);
             mLastFootprintPos = playerPos;
             mTimeSinceLastFootprint = 0.0f;
@@ -248,7 +249,7 @@ namespace Terrain
                 return "snow";  // Default fallback
         }
     }
-    }
+
 
     void SnowDeformationManager::initRTT()
     {
@@ -316,7 +317,9 @@ namespace Terrain
             osg::Vec3d(0, 0, 0),     // Center
             osg::Vec3d(0, 1, 0)      // Up
         );
-        mRTTCamera->setViewMatrix(osg::Matrix::identity()); // Reset view matrix to identity as we use world coords in projection
+        // mRTTCamera->setViewMatrix(osg::Matrix::identity()); // REMOVED: This was overwriting the LookAt matrix!
+
+        Log(Debug::Verbose) << "SnowDeformationManager::updateRTT - Center: " << mRTTCenter << " Footprints: " << mFootprints.size();
 
         // Rebuild RTT Scene
         if (mRTTScene->getNumChildren() > 0)

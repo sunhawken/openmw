@@ -23,20 +23,19 @@
 #include "viewdata.hpp"
 #include "snowdeformation.hpp"
 
-namespace
-{
-    unsigned int Log2(unsigned int n)
-    {
-        unsigned int targetlevel = 0;
-        while (n >>= 1)
-            ++targetlevel;
-        return targetlevel;
-    }
-
-}
-
 namespace Terrain
 {
+    namespace
+    {
+        unsigned int Log2(unsigned int n)
+        {
+            unsigned int targetlevel = 0;
+            while (n >>= 1)
+                ++targetlevel;
+            return targetlevel;
+        }
+
+    }
 
     class DefaultLodCallback : public LodCallback
     {
