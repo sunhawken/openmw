@@ -5,6 +5,8 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/settings/values.hpp>
+#include <components/resource/scenemanager.hpp>
+#include <components/shader/shadermanager.hpp>
 
 #include <osg/Texture2D>
 #include <osg/FrameBufferObject>
@@ -13,7 +15,6 @@
 #include <osg/Depth>
 #include <osg/BlendFunc>
 #include <osg/BlendEquation>
-#include <osgDB/ReadFile>
 
 namespace Terrain
 {
@@ -335,10 +336,11 @@ namespace Terrain
         ss->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
         
         // Load Update Shader
+        auto& shaderManager = mSceneManager->getShaderManager();
         osg::ref_ptr<osg::Program> program = new osg::Program;
-        osg::ref_ptr<osg::Shader> vertShader = osgDB::readShaderFile(osg::Shader::VERTEX, "shaders/compatibility/snow_update.vert");
-        osg::ref_ptr<osg::Shader> fragShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/compatibility/snow_update.frag");
-        
+        osg::ref_ptr<osg::Shader> vertShader = shaderManager.getShader("snow_update.vert", {}, osg::Shader::VERTEX);
+        osg::ref_ptr<osg::Shader> fragShader = shaderManager.getShader("snow_update.frag", {}, osg::Shader::FRAGMENT);
+
         if (vertShader && fragShader)
         {
             program->addShader(vertShader);
@@ -398,8 +400,8 @@ namespace Terrain
         
         osg::ref_ptr<osg::Program> hProg = new osg::Program;
         // Reuse snow_update.vert as it's just a pass-through
-        hProg->addShader(vertShader); 
-        osg::ref_ptr<osg::Shader> hFrag = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/compatibility/blur_horizontal.frag");
+        hProg->addShader(vertShader);
+        osg::ref_ptr<osg::Shader> hFrag = shaderManager.getShader("blur_horizontal.frag", {}, osg::Shader::FRAGMENT);
         if (hFrag) hProg->addShader(hFrag);
         else Log(Debug::Error) << "Failed to load blur_horizontal.frag";
         hSS->setAttributeAndModes(hProg, osg::StateAttribute::ON);
@@ -439,7 +441,7 @@ namespace Terrain
 
         osg::ref_ptr<osg::Program> vProg = new osg::Program;
         vProg->addShader(vertShader);
-        osg::ref_ptr<osg::Shader> vFrag = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/compatibility/blur_vertical.frag");
+        osg::ref_ptr<osg::Shader> vFrag = shaderManager.getShader("blur_vertical.frag", {}, osg::Shader::FRAGMENT);
         if (vFrag) vProg->addShader(vFrag);
         else Log(Debug::Error) << "Failed to load blur_vertical.frag";
         vSS->setAttributeAndModes(vProg, osg::StateAttribute::ON);
@@ -464,10 +466,10 @@ namespace Terrain
         mDepthCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         mDepthCamera->setRenderOrder(osg::Camera::PRE_RENDER, 0); // Run FIRST
         mDepthCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-        mDepthCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
+        mDepthCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF_INHERIT_VIEWPOINT);
         mDepthCamera->setViewport(0, 0, 2048, 2048);
         mDepthCamera->attach(osg::Camera::COLOR_BUFFER, mObjectMaskMap);
-        
+
         // Cull Mask: Actor(3) | Player(4) | Object(10)
         mDepthCamera->setCullMask((1 << 3) | (1 << 4) | (1 << 10));
 
@@ -485,12 +487,6 @@ namespace Terrain
         dss->setAttributeAndModes(dProgram, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
         dss->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
         dss->setMode(GL_TEXTURE_2D, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-
-        // Attach the world scene to the depth camera so it can render actors
-        if (mRootNode)
-        {
-            mDepthCamera->addChild(mRootNode);
-        }
 
         // 4. Create Footprint Camera (Pass 2: Add legacy footprints if any)
         mRTTCamera = new osg::Camera;
