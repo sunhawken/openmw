@@ -83,6 +83,7 @@ namespace Terrain
         // RTT Uniforms
         osg::Uniform* getDeformationMapUniform() const { return mDeformationMapUniform.get(); }
         osg::Texture2D* getDeformationMap() const { return mAccumulationMap[mWriteBufferIndex].get(); } // Return WRITE buffer (safe as RTT is PRE_RENDER)
+        osg::Texture2D* getCurrentDeformationMap() const { return mAccumulationMap[mWriteBufferIndex].get(); } // Alias for clarity
         osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
@@ -97,7 +98,7 @@ namespace Terrain
         void initRTT();
 
         /// Update RTT camera position and render footprints
-        void updateRTT(const osg::Vec3f& playerPos);
+        void updateRTT(float dt, const osg::Vec3f& playerPos);
 
         /// Create a footprint marker for RTT rendering
         void addFootprintToRTT(const osg::Vec3f& position, float rotation);

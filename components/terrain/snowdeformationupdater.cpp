@@ -43,10 +43,11 @@ namespace Terrain
 
     void SnowDeformationUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
     {
-        // With the vertex shader array approach, uniforms are updated directly by
-        // SnowDeformationManager in its update() function
-        // This callback is now essentially a no-op, but kept for API compatibility
-
-        // Could add per-frame diagnostics here if needed
+        if (mTerrainWorld && mTerrainWorld->getSnowDeformationManager())
+        {
+            auto* manager = mTerrainWorld->getSnowDeformationManager();
+            // Update the texture binding on Unit 7 to point to the current Write Buffer (which contains the latest RTT result)
+            stateset->setTextureAttributeAndModes(7, manager->getCurrentDeformationMap(), osg::StateAttribute::ON);
+        }
     }
 }
