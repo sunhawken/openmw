@@ -290,7 +290,7 @@ namespace Terrain
 
         // 2. Create Update Camera (Pass 1: Scroll & Decay & Apply New Deformation)
         mUpdateCamera = new osg::Camera;
-        mUpdateCamera->setClearColor(osg::Vec4(0.2f, 0.0f, 0.0f, 1.0f)); // DEBUG: Dark Red
+        mUpdateCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f)); // Clear to no deformation
         mUpdateCamera->setClearMask(GL_COLOR_BUFFER_BIT); // Only clear color
         mUpdateCamera->setRenderOrder(osg::Camera::PRE_RENDER, 1); // Run AFTER Depth Camera
         mUpdateCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
@@ -485,6 +485,12 @@ namespace Terrain
         dss->setAttributeAndModes(dProgram, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
         dss->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
         dss->setMode(GL_TEXTURE_2D, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+
+        // Attach the world scene to the depth camera so it can render actors
+        if (mRootNode)
+        {
+            mDepthCamera->addChild(mRootNode);
+        }
 
         // 4. Create Footprint Camera (Pass 2: Add legacy footprints if any)
         mRTTCamera = new osg::Camera;
