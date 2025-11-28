@@ -63,28 +63,12 @@ void main()
     gl_FragData[0] = vec4(diffuseTex.xyz, 1.0);
 
     // DEBUG: Visualize Snow RTT
-    // DEBUG: Visualize Snow RTT
-    vec2 debugUV = (passWorldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
-    if (debugUV.x >= 0.0 && debugUV.x <= 1.0 && debugUV.y >= 0.0 && debugUV.y <= 1.0)
-    {
-        // Show Green Box for RTT Area
-        // gl_FragData[0].rgb = mix(gl_FragData[0].rgb, vec3(0.0, 1.0, 0.0), 0.2);
-
-        float rttVal = texture2D(snowDeformationMap, debugUV).r;
-        
-        // DEBUG: Overlay RTT value directly
-        // If rttVal > 0, show Red.
-        // If rttVal == 0, show nothing (or Green border)
-        if (rttVal > 0.01)
-        {
-             gl_FragData[0].rgb = vec3(rttVal, 0.0, 0.0); // Show raw red value
-        }
-        else
-        {
-             // Show faint green for "inside RTT area but empty"
-             gl_FragData[0].rgb = mix(gl_FragData[0].rgb, vec3(0.0, 1.0, 0.0), 0.1);
-        }
-    }
+    // DEBUG: Visualize Snow RTT - REMOVED
+    // vec2 debugUV = (passWorldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
+    // if (debugUV.x >= 0.0 && debugUV.x <= 1.0 && debugUV.y >= 0.0 && debugUV.y <= 1.0)
+    // {
+    //     ...
+    // }
 
     vec4 diffuseColor = getDiffuseColor();
     

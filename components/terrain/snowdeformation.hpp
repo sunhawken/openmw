@@ -82,8 +82,8 @@ namespace Terrain
 
         // RTT Uniforms
         osg::Uniform* getDeformationMapUniform() const { return mDeformationMapUniform.get(); }
-        osg::Texture2D* getDeformationMap() const { return mAccumulationMap[mWriteBufferIndex].get(); } // Return WRITE buffer (safe as RTT is PRE_RENDER)
-        osg::Texture2D* getCurrentDeformationMap() const { return mAccumulationMap[mWriteBufferIndex].get(); } // Alias for clarity
+        osg::Texture2D* getDeformationMap() const { return mBlurredDeformationMap.get(); } // Return BLURRED buffer
+        osg::Texture2D* getCurrentDeformationMap() const { return mBlurredDeformationMap.get(); } // Alias for clarity
         osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
@@ -161,6 +161,16 @@ namespace Terrain
         
         osg::ref_ptr<osg::Camera> mUpdateCamera; // Camera for running the update shader
         osg::ref_ptr<osg::Geode> mUpdateQuad;    // Fullscreen quad for the update pass
+        
+        // Blur Pass 1 (Horizontal)
+        osg::ref_ptr<osg::Camera> mBlurHCamera;
+        osg::ref_ptr<osg::Geode> mBlurHQuad;
+        osg::ref_ptr<osg::Texture2D> mBlurTempBuffer; // Intermediate buffer (R16F)
+
+        // Blur Pass 2 (Vertical)
+        osg::ref_ptr<osg::Camera> mBlurVCamera;
+        osg::ref_ptr<osg::Geode> mBlurVQuad;
+        osg::ref_ptr<osg::Texture2D> mBlurredDeformationMap; // Final blurred result (R16F)
         
 
         osg::ref_ptr<osg::Camera> mRTTCamera;    // Camera for rendering footprints
