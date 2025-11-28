@@ -34,12 +34,12 @@
     *   **Expected Result**: Should now see Dark Red square (Clear Color) and Bright Red footprints.
 
 ## Current Symptoms
-*   **No Green/Red Square**: The RTT clear color (set to Dark Red `0.2, 0, 0, 1`) is not visible on the terrain.
-*   **No Footprints**: Red footprints are not visible.
-*   **Conclusion**: The RTT texture (`mDeformationMap`) is either:
-    *   Not being rendered to (Camera not updating/culling).
-    *   Not being bound to the terrain shader correctly.
-    *   Not being sampled by the terrain shader (UVs off or debug code inactive).
+*   **Green Box Visible**: The shader correctly receives `snowRTTWorldOrigin` and `snowRTTScale`. UVs are correct.
+*   **No Footprints**: The RTT texture appears to be empty (black/transparent).
+*   **Conclusion**: The RTT pipeline is valid (Uniforms/UVs), but the **Content** of the texture is missing.
+    *   Either `mUpdateCamera` is not writing (Clear Color is transparent).
+    *   Or `mRTTCamera` is not drawing footprints (Culling/Z-depth).
+    *   Or the Ping-Pong swap is failing to propagate data.
 
 ## Next Steps / Debug Plan
 

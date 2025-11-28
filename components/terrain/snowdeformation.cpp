@@ -127,7 +127,7 @@ namespace Terrain
         mCurrentTimeUniform->set(mCurrentTime);
 
         // Update RTT
-        updateRTT(playerPos);
+        updateRTT(dt, playerPos);
     }
 
     bool SnowDeformationManager::shouldBeActive(const osg::Vec3f& worldPos)
@@ -175,6 +175,7 @@ namespace Terrain
 
     void SnowDeformationManager::stampFootprint(const osg::Vec3f& position)
     {
+        Log(Debug::Verbose) << "SnowDeformationManager::stampFootprint - Pos: " << position << ", Z: " << position.z();
         // Add new footprint (X, Y, timestamp)
         mFootprints.push_back(osg::Vec3f(position.x(), position.y(), mCurrentTime));
 
@@ -274,7 +275,7 @@ namespace Terrain
 
         // 2. Create Update Camera (Pass 1: Scroll & Decay & Apply New Deformation)
         mUpdateCamera = new osg::Camera;
-        mUpdateCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
+        mUpdateCamera->setClearColor(osg::Vec4(0.2f, 0.0f, 0.0f, 1.0f)); // DEBUG: Dark Red
         mUpdateCamera->setClearMask(GL_COLOR_BUFFER_BIT); // Only clear color
         mUpdateCamera->setRenderOrder(osg::Camera::PRE_RENDER, 1); // Run AFTER Depth Camera
         mUpdateCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
@@ -284,7 +285,7 @@ namespace Terrain
         mUpdateCamera->setViewport(0, 0, 2048, 2048);
         mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[0]); // Initial target
 
-        // Create Update Quad & Shader
+        // Create Update Quad
         mUpdateQuad = new osg::Geode;
         osg::Geometry* geom = new osg::Geometry;
         osg::Vec3Array* verts = new osg::Vec3Array;
@@ -293,6 +294,15 @@ namespace Terrain
         verts->push_back(osg::Vec3(1, 1, 0));
         verts->push_back(osg::Vec3(0, 1, 0));
         geom->setVertexArray(verts);
+        
+        // DEBUG: Blue Color Array for Fixed Function
+        // osg::Vec4Array* colors = new osg::Vec4Array;
+        // colors->push_back(osg::Vec4(0, 0, 1, 1));
+        // colors->push_back(osg::Vec4(0, 0, 1, 1));
+        // colors->push_back(osg::Vec4(0, 0, 1, 1));
+        // colors->push_back(osg::Vec4(0, 0, 1, 1));
+        // geom->setColorArray(colors, osg::Array::BIND_PER_VERTEX);
+
         geom->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
         osg::Vec2Array* texcoords = new osg::Vec2Array;
         texcoords->push_back(osg::Vec2(0, 0));
@@ -303,47 +313,42 @@ namespace Terrain
         mUpdateQuad->addDrawable(geom);
         mUpdateCamera->addChild(mUpdateQuad);
 
-        // Update Shader
+        // Update StateSet (Shader Based)
         osg::StateSet* ss = mUpdateQuad->getOrCreateStateSet();
-        osg::Program* program = new osg::Program;
-        program->addShader(new osg::Shader(osg::Shader::VERTEX,
-            "void main() {\n"
-            "  gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;\n"
-            "  gl_TexCoord[0] = gl_MultiTexCoord0;\n"
-            "}\n"));
-        program->addShader(new osg::Shader(osg::Shader::FRAGMENT,
-            "uniform sampler2D previousFrame;\n"
-            "uniform sampler2D objectMask;\n"
-            "uniform vec2 offset;\n"
-            "uniform float decayAmount;\n"
-            "void main() {\n"
-            "  vec2 uv = gl_TexCoord[0].xy;\n"
-            "  vec2 sampleUV = uv + offset;\n"
-            "  float oldVal = 0.0;\n"
-            "  if (sampleUV.x >= 0.0 && sampleUV.x <= 1.0 && sampleUV.y >= 0.0 && sampleUV.y <= 1.0) {\n"
-            "    oldVal = texture2D(previousFrame, sampleUV).r;\n"
-            "  }\n"
-            "  // Check for new deformation (Object Mask)\n"
-            "  // Mask is rendered from below, so it matches the UVs (if aligned correctly)\n"
-            "  float maskVal = texture2D(objectMask, uv).r;\n"
-            "  float newVal = (maskVal > 0.5) ? 1.0 : max(0.0, oldVal - decayAmount);\n"
-            "  gl_FragColor = vec4(newVal, 0.0, 0.0, 1.0);\n"
-            "}\n"));
-        ss->setAttributeAndModes(program, osg::StateAttribute::ON);
+        ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        ss->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        ss->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
         
+        // Load Update Shader
+        osg::ref_ptr<osg::Program> program = new osg::Program;
+        osg::ref_ptr<osg::Shader> vertShader = osgDB::readShaderFile(osg::Shader::VERTEX, "shaders/compatibility/snow_update.vert");
+        osg::ref_ptr<osg::Shader> fragShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/compatibility/snow_update.frag");
+        
+        if (vertShader && fragShader)
+        {
+            program->addShader(vertShader);
+            program->addShader(fragShader);
+            ss->setAttributeAndModes(program, osg::StateAttribute::ON);
+        }
+        else
+        {
+            Log(Debug::Error) << "SnowDeformationManager: Failed to load update shaders!";
+        }
+
+        // Keep uniforms for later restoration
         mPreviousFrameUniform = new osg::Uniform(osg::Uniform::SAMPLER_2D, "previousFrame");
-        mPreviousFrameUniform->set(0); // Texture unit 0
+        mPreviousFrameUniform->set(0); // Texture Unit 0
         ss->addUniform(mPreviousFrameUniform);
-        ss->setTextureAttributeAndModes(0, mAccumulationMap[1], osg::StateAttribute::ON); // Initial read
 
         mObjectMaskUniform = new osg::Uniform(osg::Uniform::SAMPLER_2D, "objectMask");
-        mObjectMaskUniform->set(1); // Texture unit 1
+        mObjectMaskUniform->set(1); // Texture Unit 1
         ss->addUniform(mObjectMaskUniform);
-        // Texture 1 will be bound in updateRTT or here if we create it now
 
         mRTTOffsetUniform = new osg::Uniform("offset", osg::Vec2(0, 0));
         ss->addUniform(mRTTOffsetUniform);
-        ss->addUniform(new osg::Uniform("decayAmount", 0.0f));
+        
+        osg::Uniform* decayUniform = new osg::Uniform("decayAmount", 0.0f);
+        ss->addUniform(decayUniform);
 
         // 3. Create Object Mask Map & Camera (Pass 0: Render Actors)
         mObjectMaskMap = new osg::Texture2D;
@@ -357,7 +362,7 @@ namespace Terrain
         mObjectMaskMap->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_BORDER);
         mObjectMaskMap->setBorderColor(osg::Vec4(0, 0, 0, 0));
         
-        ss->setTextureAttributeAndModes(1, mObjectMaskMap, osg::StateAttribute::ON);
+        ss->setTextureAttributeAndModes(1, mObjectMaskMap, osg::StateAttribute::ON); // Bind Object Mask to Unit 1
 
         mDepthCamera = new osg::Camera;
         mDepthCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f)); // Clear to Black (No objects)
@@ -369,7 +374,6 @@ namespace Terrain
         mDepthCamera->attach(osg::Camera::COLOR_BUFFER, mObjectMaskMap);
         
         // Cull Mask: Actor(3) | Player(4) | Object(10)
-        // 1<<3 = 8, 1<<4 = 16, 1<<10 = 1024. Total = 1048.
         mDepthCamera->setCullMask((1 << 3) | (1 << 4) | (1 << 10));
 
         // Override Shader for Depth Camera (Output White)
@@ -384,7 +388,6 @@ namespace Terrain
             "  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
             "}\n"));
         dss->setAttributeAndModes(dProgram, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-        // Disable lighting, textures, etc.
         dss->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
         dss->setMode(GL_TEXTURE_2D, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
 
@@ -397,6 +400,19 @@ namespace Terrain
         mRTTCamera->setViewport(0, 0, 2048, 2048);
         mRTTCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[0]); // Initial target
         
+        // DEBUG: Ensure footprints are visible
+        osg::StateSet* rttSS = mRTTCamera->getOrCreateStateSet();
+        rttSS->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        rttSS->setMode(GL_TEXTURE_2D, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        
+        // DEBUG: Simple shader for footprints
+        osg::Program* rttProgram = new osg::Program;
+        rttProgram->addShader(new osg::Shader(osg::Shader::VERTEX,
+            "void main() { gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex; }"));
+        rttProgram->addShader(new osg::Shader(osg::Shader::FRAGMENT,
+            "void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }")); // Bright Red
+        rttSS->setAttributeAndModes(rttProgram, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+
         mRTTScene = new osg::Group;
         mRTTCamera->addChild(mRTTScene);
 
@@ -420,7 +436,7 @@ namespace Terrain
         mRTTScaleUniform = new osg::Uniform("snowRTTScale", mRTTSize);
     }
 
-    void SnowDeformationManager::updateRTT(const osg::Vec3f& playerPos)
+    void SnowDeformationManager::updateRTT(float dt, const osg::Vec3f& playerPos)
     {
         if (!mRTTCamera || !mUpdateCamera) return;
 
@@ -443,15 +459,11 @@ namespace Terrain
         mPreviousRTTCenter = playerPos;
         mRTTCenter = playerPos;
         mRTTWorldOriginUniform->set(mRTTCenter);
+        
+        Log(Debug::Verbose) << "SnowDeformationManager::updateRTT - Center: " << mRTTCenter << ", Scale: " << mRTTSize;
 
         // 2. Calculate Decay
         // We want to decay by dt / decayTime
-        // But we don't have dt passed to updateRTT directly, we can use mCurrentTime difference?
-        // Or just assume 60fps? No.
-        // Let's use a fixed small amount for now or calculate it properly.
-        // Ideally update() should pass dt to updateRTT.
-        // For now, let's assume 1/60s.
-        float dt = 0.016f; // TODO: Pass dt
         float decayAmount = (mDecayTime > 0.0f) ? (dt / mDecayTime) : 1.0f;
         
         osg::StateSet* ss = mUpdateQuad->getStateSet();
@@ -469,6 +481,8 @@ namespace Terrain
         // 4. Update Cameras to target new Write Buffer
         mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[writeIndex]);
         mRTTCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[writeIndex]);
+        
+        Log(Debug::Verbose) << "SnowDeformationManager::updateRTT - Swapped buffers. Read: " << readIndex << ", Write: " << writeIndex;
         
         // 5. Update Shader to read from Read Buffer
         if (ss)
