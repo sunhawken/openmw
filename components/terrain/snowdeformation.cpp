@@ -40,24 +40,10 @@ namespace Terrain
             traverse(node, nv);
 
             // 2. Manually traverse the Scene Root's children (Siblings of this camera)
-            if (mRoot)
+            // The CullVisitor will automatically filter children based on the camera's cull mask
+            // We only need to skip specific nodes (Camera itself, Terrain)
+            if (mRoot && nv)
             {
-                // Get the camera's cull mask from the NodeVisitor
-                osg::NodeVisitor::TraversalMode tm = nv->getTraversalMode();
-                unsigned int cameraCullMask = 0;
-
-                // Extract cull mask from CullVisitor if possible
-                osgUtil::CullVisitor* cv = dynamic_cast<osgUtil::CullVisitor*>(nv);
-                if (cv)
-                {
-                    cameraCullMask = cv->getCullingMode(); // This isn't right, we need the traversal mask
-                }
-
-                // Since we can't easily get the camera's cull mask here, we'll hardcode it
-                // Mask_Actor (bit 3) | Mask_Player (bit 4) | Mask_Object (bit 10)
-                unsigned int depthCameraMask = (1 << 3) | (1 << 4) | (1 << 10);
-
-                int numRendered = 0;
                 for (unsigned int i = 0; i < mRoot->getNumChildren(); ++i)
                 {
                     osg::Node* child = mRoot->getChild(i);
@@ -70,26 +56,11 @@ namespace Terrain
                     if (child->getName() == "Terrain Root")
                         continue;
 
-                    // CRITICAL: Check if this node's mask matches the camera's cull mask
-                    // A node is visible if (nodeMask & cullMask) != 0
-                    unsigned int nodeMask = child->getNodeMask();
-                    if ((nodeMask & depthCameraMask) == 0)
-                    {
-                        // This node doesn't match our cull mask, skip it
-                        continue;
-                    }
-
-                    // DEBUG: Log what we're actually rendering after filtering
-                    std::string childName = child->getName().empty() ? "<unnamed>" : child->getName();
-                    Log(Debug::Verbose) << "Depth camera rendering child: " << childName
-                                       << " (node mask: " << nodeMask << " & cull mask: " << depthCameraMask << ")";
-                    numRendered++;
-
-                    // Traverse the child
+                    // Let OSG's normal culling handle node mask filtering
+                    // The CullVisitor will check (child->getNodeMask() & camera->getCullMask())
+                    // This will properly traverse into the child hierarchy and filter descendants
                     child->accept(*nv);
                 }
-                if (numRendered > 0)
-                    Log(Debug::Info) << "Depth camera rendered " << numRendered << " nodes (after filtering)";
             }
         }
 
@@ -603,30 +574,16 @@ namespace Terrain
             mRootNode->addChild(mRTTCamera);
             mRootNode->addChild(mBlurHCamera);
             mRootNode->addChild(mBlurVCamera);
+
+            // SOLUTION: Attach CullCallback to allow depth camera to see scene without circular reference
+            // The callback manually traverses mRootNode's children during the depth camera's cull pass
+            // This allows the camera to render actors while being a sibling in the scene graph
+            mDepthCamera->setCullCallback(new DepthCameraCullCallback(mRootNode, mDepthCamera));
+            Log(Debug::Info) << "SnowDeformationManager: Attached DepthCameraCullCallback to depth camera";
         }
         else
         {
             Log(Debug::Error) << "SnowDeformationManager: Root node is null, RTT will not update!";
-        }
-        
-        // WORKAROUND: Since CullCallback doesn't work correctly, we need to find the
-        // Player Root and Cell Root nodes and add them as children of the depth camera
-        // This is hacky but necessary for the depth camera to see actors
-        if (mRootNode && mDepthCamera)
-        {
-            for (unsigned int i = 0; i < mRootNode->getNumChildren(); ++i)
-            {
-                osg::Node* child = mRootNode->getChild(i);
-                std::string name = child->getName();
-
-                // Add Player Root and Cell Root as children of depth camera
-                // This allows the camera to render actors without a circular reference
-                if (name == "Player Root" || name == "Cell Root")
-                {
-                    Log(Debug::Info) << "Adding " << name << " to depth camera scene";
-                    mDepthCamera->addChild(child);
-                }
-            }
         }
         
         // 4. Create Uniforms for Terrain

@@ -144,23 +144,42 @@ Depth Camera Mask = 8 | 16 | 1024 = 1048 = 0x00000418
 
 ---
 
-## Next Steps
+## SOLUTION IMPLEMENTED (2025-11-29) ✅
+
+### Fix Applied: Attached DepthCameraCullCallback
+
+**The Problem:**
+- `DepthCameraCullCallback` class was defined but never attached to the camera
+- Workaround at lines 612-630 tried to add Player/Cell roots as children → circular reference
+- Depth camera couldn't see any actors → empty object mask → no deformation
+
+**The Solution:**
+1. **Removed circular reference workaround** (deleted lines 612-630)
+2. **Attached CullCallback properly:** `mDepthCamera->setCullCallback(new DepthCameraCullCallback(mRootNode, mDepthCamera))`
+3. **Simplified callback logic:** Removed broken manual mask filtering, let OSG's CullVisitor handle it automatically
+
+**How It Works:**
+- Depth camera is sibling to Player/Cell/Terrain roots in scene graph
+- CullCallback manually traverses `mRootNode`'s children during depth camera's cull pass
+- Skips: Camera itself (avoid recursion), Terrain Root (avoid self-deformation)
+- For each child, calls `child->accept(*nv)` → OSG's CullVisitor filters descendants by node mask
+- Only Actor (bit 3), Player (bit 4), Object (bit 10) nodes get rendered
+- Result: Small white silhouette of player/NPCs in object mask texture
 
 ### Immediate Testing Needed
-1. ✅ Build completed successfully (2025-11-28 23:56)
+1. ⬜ Build with new changes (2025-11-29)
 2. ⬜ Test in-game to verify:
-   - Full-area depression is gone
-   - Only player footprints appear
-   - NPCs also leave trails
+   - Full-area depression is GONE
+   - Only player footprints appear where you walk
+   - NPCs/creatures also leave trails
 3. ⬜ Check logs for:
-   - "Adding Player Root to depth camera scene"
-   - "Adding Cell Root to depth camera scene"
+   - "SnowDeformationManager: Attached DepthCameraCullCallback to depth camera"
+   - Should NOT see circular reference errors or crash
 
 ### If Current Fix Works
-1. Clean up debug logging (lines 59-91 in DepthCameraCullCallback)
-2. Remove unused DepthCameraCullCallback class entirely
-3. Document the direct attachment approach
-4. Test with multiple NPCs to verify they all leave trails
+1. ✅ CullCallback is now properly used (not removed!)
+2. ⬜ Test with multiple NPCs to verify they all leave trails
+3. ⬜ Test on slopes to verify depth range (200 units) is sufficient
 
 ### If Current Fix Fails
 **Alternative approaches to try:**
@@ -225,14 +244,14 @@ Depth Camera Mask = 8 | 16 | 1024 = 1048 = 0x00000418
 ## Status Summary
 
 **Issue:** Entire RTT area depressed instead of just footprints
-**Root Cause:** Depth camera rendering entire scene (Sky, Water, Cells) instead of just actors
-**Current Fix:** Direct scene graph attachment of Player/Cell roots to depth camera
-**Build Status:** ✅ Successful (2025-11-28 23:56)
+**Root Cause:** Depth camera not rendering actors (CullCallback never attached)
+**Solution:** Attach DepthCameraCullCallback + remove circular reference workaround
+**Build Status:** ⬜ Awaiting rebuild (2025-11-29)
 **Test Status:** ⬜ Awaiting user testing
-**Priority:** HIGH - Blocks core snow deformation functionality
+**Priority:** HIGH - Should fix core snow deformation functionality
 
 ---
 
-**Last Updated:** 2025-11-28 23:57
-**Session:** 2
-**Next Session Goal:** Verify direct attachment fix works, then clean up code
+**Last Updated:** 2025-11-29
+**Session:** 3 (Comprehensive Audit + Fix)
+**Next Step:** Build and test in-game to verify footprints now work correctly
