@@ -128,8 +128,11 @@ namespace Terrain
                     std::vector<osg::ref_ptr<osg::Image>> blendmaps;
                     mStorage->getBlendmaps(size, center, blendmaps, layerList, mWorldspace);
 
-                    // Determine LOD based on distance
-                    TerrainWeights::WeightLOD weightLOD = TerrainWeights::determineLOD(distanceToCenter);
+                    // CRITICAL FIX: Force LOD_FULL for cached chunks to ensure consistent weights
+                    // across chunk boundaries. Using determineLOD() here was causing seams because
+                    // cached chunks would get simplified weights (one per chunk) while new chunks
+                    // got full weights (per vertex).
+                    TerrainWeights::WeightLOD weightLOD = TerrainWeights::LOD_FULL;
 
                     // Compute weights for existing vertices
                     const osg::Vec3Array* vertices = dynamic_cast<const osg::Vec3Array*>(drawable->getVertexArray());
