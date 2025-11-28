@@ -37,5 +37,15 @@ void main()
     // If no object, we keep the decayed previous value.
     float finalValue = max(previousValue, newValue);
 
+    // 6. Cubic Remapping (Rim Effect)
+    // Create a "rim" or bulge around the footprint edges.
+    // We map intermediate values (edges) to negative values (above surface).
+    // f(x) = x - C * x * (1.0 - x)
+    // x=0 -> 0 (Flat)
+    // x=1 -> 1 (Deep)
+    // x=0.2 -> Negative (Raised Rim)
+    float rimIntensity = 2.0; 
+    finalValue = finalValue - rimIntensity * finalValue * (1.0 - finalValue);
+
     gl_FragColor = vec4(finalValue, 0.0, 0.0, 1.0);
 }

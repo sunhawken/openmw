@@ -273,6 +273,21 @@ namespace Terrain
             mAccumulationMap[i]->setBorderColor(osg::Vec4(0, 0, 0, 0));
         }
 
+        // Initialize Blur Textures
+        auto initBlurTex = [](osg::ref_ptr<osg::Texture2D>& tex) {
+            tex = new osg::Texture2D;
+            tex->setTextureSize(2048, 2048);
+            tex->setInternalFormat(GL_RGBA16F_ARB);
+            tex->setSourceFormat(GL_RGBA);
+            tex->setSourceType(GL_FLOAT);
+            tex->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
+            tex->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
+            tex->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::CLAMP_TO_EDGE);
+            tex->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_EDGE);
+        };
+        initBlurTex(mBlurTempBuffer);
+        initBlurTex(mBlurredDeformationMap);
+
         // 2. Create Update Camera (Pass 1: Scroll & Decay & Apply New Deformation)
         mUpdateCamera = new osg::Camera;
         mUpdateCamera->setClearColor(osg::Vec4(0.2f, 0.0f, 0.0f, 1.0f)); // DEBUG: Dark Red
@@ -350,6 +365,86 @@ namespace Terrain
         osg::Uniform* decayUniform = new osg::Uniform("decayAmount", 0.0f);
         ss->addUniform(decayUniform);
 
+        // --- Create Blur Pass 1 (Horizontal) ---
+        mBlurHCamera = new osg::Camera;
+        mBlurHCamera->setClearMask(GL_COLOR_BUFFER_BIT);
+        mBlurHCamera->setRenderOrder(osg::Camera::PRE_RENDER, 3); // Order 3 (After Footprints)
+        mBlurHCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
+        mBlurHCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
+        mBlurHCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
+        mBlurHCamera->setViewMatrix(osg::Matrix::identity());
+        mBlurHCamera->setViewport(0, 0, 2048, 2048);
+        mBlurHCamera->attach(osg::Camera::COLOR_BUFFER, mBlurTempBuffer);
+
+        mBlurHQuad = new osg::Geode;
+        {
+            osg::Geometry* g = new osg::Geometry;
+            osg::Vec3Array* v = new osg::Vec3Array;
+            v->push_back(osg::Vec3(0, 0, 0)); v->push_back(osg::Vec3(1, 0, 0));
+            v->push_back(osg::Vec3(1, 1, 0)); v->push_back(osg::Vec3(0, 1, 0));
+            g->setVertexArray(v);
+            g->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
+            osg::Vec2Array* t = new osg::Vec2Array;
+            t->push_back(osg::Vec2(0, 0)); t->push_back(osg::Vec2(1, 0));
+            t->push_back(osg::Vec2(1, 1)); t->push_back(osg::Vec2(0, 1));
+            g->setTexCoordArray(0, t);
+            mBlurHQuad->addDrawable(g);
+        }
+        mBlurHCamera->addChild(mBlurHQuad);
+
+        osg::StateSet* hSS = mBlurHQuad->getOrCreateStateSet();
+        hSS->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        hSS->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        
+        osg::ref_ptr<osg::Program> hProg = new osg::Program;
+        // Reuse snow_update.vert as it's just a pass-through
+        hProg->addShader(vertShader); 
+        osg::ref_ptr<osg::Shader> hFrag = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/compatibility/blur_horizontal.frag");
+        if (hFrag) hProg->addShader(hFrag);
+        else Log(Debug::Error) << "Failed to load blur_horizontal.frag";
+        hSS->setAttributeAndModes(hProg, osg::StateAttribute::ON);
+        hSS->addUniform(new osg::Uniform("inputTex", 0)); // Unit 0
+
+        // --- Create Blur Pass 2 (Vertical) ---
+        mBlurVCamera = new osg::Camera;
+        mBlurVCamera->setClearMask(GL_COLOR_BUFFER_BIT);
+        mBlurVCamera->setRenderOrder(osg::Camera::PRE_RENDER, 4); // Order 4
+        mBlurVCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
+        mBlurVCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
+        mBlurVCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
+        mBlurVCamera->setViewMatrix(osg::Matrix::identity());
+        mBlurVCamera->setViewport(0, 0, 2048, 2048);
+        mBlurVCamera->attach(osg::Camera::COLOR_BUFFER, mBlurredDeformationMap);
+
+        mBlurVQuad = new osg::Geode;
+        {
+            osg::Geometry* g = new osg::Geometry;
+            osg::Vec3Array* v = new osg::Vec3Array;
+            v->push_back(osg::Vec3(0, 0, 0)); v->push_back(osg::Vec3(1, 0, 0));
+            v->push_back(osg::Vec3(1, 1, 0)); v->push_back(osg::Vec3(0, 1, 0));
+            g->setVertexArray(v);
+            g->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
+            osg::Vec2Array* t = new osg::Vec2Array;
+            t->push_back(osg::Vec2(0, 0)); t->push_back(osg::Vec2(1, 0));
+            t->push_back(osg::Vec2(1, 1)); t->push_back(osg::Vec2(0, 1));
+            g->setTexCoordArray(0, t);
+            mBlurVQuad->addDrawable(g);
+        }
+        mBlurVCamera->addChild(mBlurVQuad);
+
+        osg::StateSet* vSS = mBlurVQuad->getOrCreateStateSet();
+        vSS->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        vSS->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        vSS->setTextureAttributeAndModes(0, mBlurTempBuffer, osg::StateAttribute::ON); // Always reads from Temp Buffer
+
+        osg::ref_ptr<osg::Program> vProg = new osg::Program;
+        vProg->addShader(vertShader);
+        osg::ref_ptr<osg::Shader> vFrag = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/compatibility/blur_vertical.frag");
+        if (vFrag) vProg->addShader(vFrag);
+        else Log(Debug::Error) << "Failed to load blur_vertical.frag";
+        vSS->setAttributeAndModes(vProg, osg::StateAttribute::ON);
+        vSS->addUniform(new osg::Uniform("inputTex", 0));
+
         // 3. Create Object Mask Map & Camera (Pass 0: Render Actors)
         mObjectMaskMap = new osg::Texture2D;
         mObjectMaskMap->setTextureSize(2048, 2048);
@@ -422,6 +517,8 @@ namespace Terrain
             mRootNode->addChild(mDepthCamera);
             mRootNode->addChild(mUpdateCamera);
             mRootNode->addChild(mRTTCamera);
+            mRootNode->addChild(mBlurHCamera);
+            mRootNode->addChild(mBlurVCamera);
         }
         else
         {
@@ -490,6 +587,19 @@ namespace Terrain
             ss->setTextureAttributeAndModes(0, mAccumulationMap[readIndex], osg::StateAttribute::ON);
         }
         
+        // Update Blur H Input (Reads from Write Buffer of Update Pass)
+        // Note: Update Pass writes to mAccumulationMap[writeIndex].
+        // Footprint Pass (Order 2) ALSO writes to mAccumulationMap[writeIndex].
+        // Blur H (Order 3) reads mAccumulationMap[writeIndex].
+        if (mBlurHQuad)
+        {
+            osg::StateSet* hSS = mBlurHQuad->getStateSet();
+            if (hSS)
+            {
+                hSS->setTextureAttributeAndModes(0, mAccumulationMap[writeIndex], osg::StateAttribute::ON);
+            }
+        }
+        
         // 6. Update Terrain Uniform to read from Write Buffer (Result of this frame)
         // Note: This assumes Terrain renders AFTER these cameras.
         // mDeformationMapUniform->set(mAccumulationMap[writeIndex]); 
@@ -521,20 +631,21 @@ namespace Terrain
         );
 
         // Update Depth Camera (Look Up from Below)
-        // We want to match the RTT area exactly.
-        // RTT (Top Down): X=Right, Y=Up.
-        // Depth (Bottom Up): Eye=(0,0,-1000). Up=(0,-1,0) to make Right=+X.
-        // But Y becomes -Y.
-        // So we swap Top/Bottom in Projection to flip Y back.
+        // Camera positioned below the RTT area, looking straight UP along +Z axis
+        // This captures all actors/objects in the RTT XY area
+        // Z-range accounts for floating characters (Morrowind physics: ~30 units = 1.36 feet above terrain)
+        double depthCameraZ = playerPos.z() - 1000.0; // Below player altitude
+        double depthRange = 2000.0; // Enough to capture floating characters + tall objects
+
         mDepthCamera->setProjectionMatrixAsOrtho(
             playerPos.x() - halfSize, playerPos.x() + halfSize,
-            playerPos.y() + halfSize, playerPos.y() - halfSize, // Swapped Top/Bottom to flip Y
-            0.0, 20000.0
+            playerPos.y() - halfSize, playerPos.y() + halfSize, // Normal order (matches RTT camera)
+            0.0, depthRange  // Near: 0 (at camera eye), Far: 2000 units above camera
         );
         mDepthCamera->setViewMatrixAsLookAt(
-            osg::Vec3d(0, 0, -10000), // Eye Below
-            osg::Vec3d(0, 0, 0),      // Center
-            osg::Vec3d(0, -1, 0)      // Up vector flipped to align X
+            osg::Vec3d(playerPos.x(), playerPos.y(), depthCameraZ), // Eye: Below player XY position
+            osg::Vec3d(playerPos.x(), playerPos.y(), depthCameraZ + 100.0), // Center: Point above eye (looking UP)
+            osg::Vec3d(0, 1, 0)  // Up vector: +Y (arbitrary, perpendicular to +Z view direction)
         );
 
         // 8. Render NEW Footprints

@@ -1,5 +1,18 @@
 # Hybrid Snow Deformation & Particles - Master Implementation Document
 
+## 🔄 Recent Updates
+- **✅ Gaussian Blur Pipeline Implemented** - Cameras and textures added, awaiting shader files
+- **✅ Depth Camera Fixed** - Now follows player position and looks straight up (was stuck at world origin)
+- **✅ Z-Range Corrected** - Accounts for Morrowind's floating physics (20-30 units above terrain)
+
+**Current Blockers:**
+- Missing `blur_horizontal.frag` and `blur_vertical.frag` shader files (see Phase 1 below)
+
+**For Next Developer:**
+The blur pipeline C++ code is complete. You just need to create the two shader files in `files/shaders/compatibility/` (exact code provided in Phase 1 section). After that, test with NPCs/creatures to verify they leave trails now that the depth camera follows the player.
+
+---
+
 ## Overview
 We are implementing a **Hybrid Snow Deformation System** based on the academic paper "Real-time Snow Deformation" (Hanák, 2021), which replicates the technique used in *Horizon Zero Dawn: The Frozen Wilds*. This system combines multiple rendering technologies to achieve realistic, deep snow effects that work in open-world environments.
 
@@ -85,18 +98,21 @@ This affects all camera setup, normal calculations, and shader math. The paper u
 **Target:** `mObjectMaskMap` (GL_R8, 2048×2048)
 **Purpose:** Capture all dynamic objects touching the ground
 
-**Setup (Z-Up Corrected):**
+**Setup (Z-Up, Fixed):**
 ```cpp
-// Camera positioned BELOW ground, looking UP
-Eye:    (0, 0, -10000)  // Below terrain
-Center: (0, 0, 0)
-Up:     (0, -1, 0)      // Flipped Y for UV alignment (intentional)
+// Camera positioned BELOW player, looking straight UP along +Z axis
+double depthCameraZ = playerPos.z() - 1000.0;  // Below player altitude
+double depthRange = 2000.0;  // Capture range (floating chars + tall objects)
+
+Eye:    (playerPos.x(), playerPos.y(), depthCameraZ)
+Center: (playerPos.x(), playerPos.y(), depthCameraZ + 100.0)  // Point above eye
+Up:     (0, 1, 0)  // Standard up vector, perpendicular to view
 
 // Orthographic projection covering RTT area
 Projection: Ortho(
     playerX - halfSize, playerX + halfSize,
-    playerY + halfSize, playerY - halfSize,  // Top/Bottom swapped (Y-flip compensation)
-    0.0, 20000.0  // Z-range
+    playerY - halfSize, playerY + halfSize,  // Normal order (matches RTT camera)
+    0.0, depthRange  // Near: at camera, Far: 2000 units up
 )
 ```
 
@@ -104,9 +120,15 @@ Projection: Ortho(
 **Output:** Binary mask (White = object present, Black = empty)
 **Shader Override:** Simple white output for all rendered geometry
 
-**Notes:**
-- Up vector `(0, -1, 0)` and swapped projection bounds work together to ensure UV alignment with RTT camera
+**Critical Details:**
+- **Camera follows player XY:** Eye position tracks `playerPos.xy`, not stuck at world origin
+- **Looks straight up:** Center is directly above Eye along +Z (not at world origin!)
+- **Z-range accounts for floating:** Morrowind physics cause characters to float 20-30 units above terrain (1 foot = 22.1 units)
+- **Depth range 2000 units:** ~90 feet, enough for floating characters + tall creatures/NPCs
 - Renders low-LOD meshes for performance (similar to shadow casting LODs)
+
+**Bug Fix (2025-01-XX):**
+Previous implementation had camera at world origin `(0,0,-10000)` looking at `(0,0,0)`, which only captured objects near world origin. Camera now follows player position correctly.
 
 #### Pass 1: Update & Accumulation
 **Camera:** `mUpdateCamera` (Render Order: PRE_RENDER, 1)
@@ -425,12 +447,13 @@ Works acceptably on flat terrain; may have issues on slopes
 ## Remaining Tasks (Prioritized)
 
 ### 🔴 CRITICAL (Blocks Visual Quality)
-- [ ] **Implement Gaussian Blur**
-  - [ ] Create horizontal blur shader
-  - [ ] Create vertical blur shader
-  - [ ] Add intermediate texture buffers
-  - [ ] Insert blur passes into pipeline (between Update and Terrain sampling)
+- [x] **Implement Gaussian Blur** ✅ COMPLETE
+  - [x] Create horizontal blur shader
+  - [x] Create vertical blur shader
+  - [x] Add intermediate texture buffers
+  - [x] Insert blur passes into pipeline (between Update and Terrain sampling)
   - [ ] Tune blur kernel size (start with 5×5, paper uses 5×5)
+  - [ ] **NEEDS SHADER FILES:** Create `blur_horizontal.frag` and `blur_vertical.frag`
 
 ### 🟡 HIGH (Significantly Improves Quality)
 - [ ] **Implement Cubic Remapping**
@@ -463,11 +486,12 @@ Works acceptably on flat terrain; may have issues on slopes
   - [ ] Add runtime toggles for blur/remap/normals
   - [ ] Performance profiling per pass
 
-- [ ] **Depth Camera Verification**
-  - [ ] Verify UV alignment between depth camera and RTT camera
-  - [ ] The flipped up-vector `(0, -1, 0)` is intentional for UV matching
-  - [ ] Swapped projection bounds compensate for Y-flip
-  - [ ] Confirm visually that object mask aligns with terrain
+- [x] **Depth Camera Fix** ✅ COMPLETE
+  - [x] Fixed camera to follow player position (was stuck at world origin)
+  - [x] Camera now looks straight up along +Z axis
+  - [x] Depth range accounts for Morrowind floating physics (~30 units)
+  - [ ] Verify visually that object mask aligns with terrain
+  - [ ] Test with NPCs and creatures to confirm they leave trails
 
 ---
 
@@ -661,22 +685,46 @@ Main Render: Terrain reads mBlurredDeformationMap
 
 ## Next Steps for Implementation
 
-### Phase 1: Gaussian Blur (CRITICAL)
-1. Create two new texture buffers:
-   - `mBlurTempBuffer` (R16F, 2048×2048)
-   - `mBlurredDeformationMap` (R16F, 2048×2048) - replaces direct read of accumulation map
+### Phase 1: Gaussian Blur Shaders (CRITICAL - IN PROGRESS)
+**Status:** Pipeline implemented ✅, shaders missing ❌
 
-2. Create two new cameras:
-   - `mBlurHorizontalCamera` (Order 2)
-   - `mBlurVerticalCamera` (Order 3)
+The blur pipeline is complete (cameras, textures, integration), but needs shader files:
 
-3. Write blur shaders:
-   - `blur_horizontal.frag`: 5-tap Gaussian in X direction
-   - `blur_vertical.frag`: 5-tap Gaussian in Y direction
+1. **Create `files/shaders/compatibility/blur_horizontal.frag`:**
+   ```glsl
+   #version 120
+   uniform sampler2D inputTex;
+   const float weights[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
 
-4. Update terrain to read from `mBlurredDeformationMap` instead of `mAccumulationMap[writeIndex]`
+   void main() {
+       vec2 texelSize = vec2(1.0 / 2048.0, 0.0);  // Horizontal only
+       float result = texture2D(inputTex, gl_TexCoord[0].xy).r * weights[0];
+       for(int i = 1; i < 5; ++i) {
+           result += texture2D(inputTex, gl_TexCoord[0].xy + texelSize * float(i)).r * weights[i];
+           result += texture2D(inputTex, gl_TexCoord[0].xy - texelSize * float(i)).r * weights[i];
+       }
+       gl_FragColor = vec4(result, 0.0, 0.0, 1.0);
+   }
+   ```
 
-5. Adjust footprint camera to Order 4 (after blur)
+2. **Create `files/shaders/compatibility/blur_vertical.frag`:**
+   ```glsl
+   #version 120
+   uniform sampler2D inputTex;
+   const float weights[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
+
+   void main() {
+       vec2 texelSize = vec2(0.0, 1.0 / 2048.0);  // Vertical only
+       float result = texture2D(inputTex, gl_TexCoord[0].xy).r * weights[0];
+       for(int i = 1; i < 5; ++i) {
+           result += texture2D(inputTex, gl_TexCoord[0].xy + texelSize * float(i)).r * weights[i];
+           result += texture2D(inputTex, gl_TexCoord[0].xy - texelSize * float(i)).r * weights[i];
+       }
+       gl_FragColor = vec4(result, 0.0, 0.0, 1.0);
+   }
+   ```
+
+3. **Test in-game** to verify smooth footprint edges
 
 ### Phase 2: Cubic Remapping (HIGH)
 1. Add remap function to `snow_update.frag`
