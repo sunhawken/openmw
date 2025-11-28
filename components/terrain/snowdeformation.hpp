@@ -4,12 +4,18 @@
 #include <osg/Vec3f>
 #include <osg/Vec2f>
 #include <osg/Uniform>
+#include <osg/Texture2D>
+#include <osg/Camera>
+#include <osg/Geode>
 
 #include <components/esm/refid.hpp>
 
 #include <deque>
 #include <vector>
 #include <string>
+#include <memory>
+
+#include "snowparticleemitter.hpp"
 
 namespace Resource
 {
@@ -44,20 +50,6 @@ namespace Terrain
     /// COORDINATES:
     /// - OpenMW uses Z-up coordinate system
     /// - Ground plane is XY, altitude is Z
-    /// - Footprints stored as Vec3(X, Y, timestamp)
-    /// ========================================================================
-    class SnowDeformationManager
-    {
-    public:
-        SnowDeformationManager(
-            Resource::SceneManager* sceneManager,
-            Storage* terrainStorage,
-            osg::Group* rootNode
-        );
-        ~SnowDeformationManager();
-
-        /// Update deformation system each frame
-        void update(float dt, const osg::Vec3f& playerPos);
 
         /// Check if system should be active at this position
         bool shouldBeActive(const osg::Vec3f& worldPos);
@@ -86,6 +78,15 @@ namespace Terrain
         /// Update shader uniforms from footprint array
         void updateShaderUniforms();
 
+        /// Initialize RTT system
+        void initRTT();
+
+        /// Update RTT camera position and render footprints
+        void updateRTT(const osg::Vec3f& playerPos);
+
+        /// Create a footprint marker for RTT rendering
+        void addFootprintToRTT(const osg::Vec3f& position, float rotation);
+
         /// Update terrain-specific parameters
         void updateTerrainParameters(const osg::Vec3f& playerPos);
 
@@ -93,6 +94,7 @@ namespace Terrain
         std::string detectTerrainTexture(const osg::Vec3f& worldPos);
 
         Resource::SceneManager* mSceneManager;
+        osg::Group* mRootNode;
         Storage* mTerrainStorage;
         ESM::RefId mWorldspace;
         bool mEnabled;
@@ -133,6 +135,20 @@ namespace Terrain
 
         // Game time
         float mCurrentTime;
+
+        // Particle Emitter
+        std::unique_ptr<SnowParticleEmitter> mParticleEmitter;
+
+        // RTT System
+        osg::ref_ptr<osg::Texture2D> mDeformationMap;
+        osg::ref_ptr<osg::Camera> mRTTCamera;
+        osg::ref_ptr<osg::Group> mRTTScene; // Scene rendered by RTT camera
+        osg::ref_ptr<osg::Uniform> mDeformationMapUniform;
+        osg::ref_ptr<osg::Uniform> mRTTWorldOriginUniform; // World position of RTT texture center
+        osg::ref_ptr<osg::Uniform> mRTTScaleUniform;       // Scale of RTT area (meters)
+        
+        float mRTTSize; // Size of the RTT area in world units (e.g. 50m)
+        osg::Vec3f mRTTCenter; // Current center of RTT area
     };
 }
 

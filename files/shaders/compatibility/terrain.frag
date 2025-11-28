@@ -9,6 +9,7 @@
 #endif
 
 varying vec2 uv;
+varying float vDeformationFactor; // From vertex shader
 
 uniform sampler2D diffuseMap;
 
@@ -56,6 +57,11 @@ void main()
     gl_FragData[0] = vec4(diffuseTex.xyz, 1.0);
 
     vec4 diffuseColor = getDiffuseColor();
+    
+    // Apply visual darkening for deformed areas (wet/compressed snow/mud)
+    // vDeformationFactor is 0..1 (1 = max deformation)
+    diffuseColor.rgb *= (1.0 - vDeformationFactor * 0.4);
+
     gl_FragData[0].a *= diffuseColor.a;
 
 #if @blendMap
