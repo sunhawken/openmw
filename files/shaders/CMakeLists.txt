@@ -39,6 +39,12 @@ set(SHADER_FILES
     compatibility/objects.frag
     compatibility/terrain.vert
     compatibility/terrain.frag
+    compatibility/snow_update.vert
+    compatibility/snow_update.frag
+    compatibility/snow_footprint.vert
+    compatibility/snow_footprint.frag
+    compatibility/blur_horizontal.frag
+    compatibility/blur_vertical.frag
     compatibility/shadows_vertex.glsl
     compatibility/shadows_fragment.glsl
     compatibility/shadowcasting.vert
