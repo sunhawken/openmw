@@ -1,9 +1,19 @@
 # Snow Deformation RTT Debug Tracker
 
 **Objective:** Fix the regression in the snow deformation system where footprints are not appearing.
-**Current Status:** RTT system is active, debug visualization is enabled (Dark Red clear color, Bright Red footprints), but **NOTHING IS VISIBLE** on the terrain. The terrain looks normal (no red tint).
+**Current Status:** RTT system is **WORKING**. Red square and footprints are visible for the player. Terrain deformation is occurring.
+**New Issue:** NPCs and creatures do not leave trails.
 
 ## Recent Fixes & Changes
+1.  **Texture Binding Fix**:
+    *   **Issue**: `snowDeformationMap` uniform was being set to the texture pointer (which is invalid for samplers) and the texture was never bound to a texture unit on the terrain StateSet.
+    *   **Fix**:
+        *   Exposed `getDeformationMap()` in `SnowDeformationManager`.
+        *   Updated `SnowDeformationManager` to set the uniform to `int(7)` (Texture Unit 7).
+        *   Updated `SnowDeformationUpdater` to bind the texture to Unit 7 using `setTextureAttributeAndModes`.
+    *   **Result**: RTT debug visualization is now visible.
+
+## Current Symptoms
 1.  **Unit Scale Correction**:
     *   `mRTTSize` increased from `50.0` to `3625.0` (approx 50 meters in Morrowind units, where 22.1 units = 1 foot).
     *   `mFootprintInterval` increased from `2.0` to `45.0` (approx 2 feet).

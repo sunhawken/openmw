@@ -58,3 +58,53 @@ We are implementing a **Hybrid Snow Deformation System** inspired by God of War'
     - [ ] Adjust darkening intensity.
 - [ ] **Optimization**:
     - [ ] Current RTT rebuilds geometry every frame. Consider updating only new footprints or using a scrolling shader approach if performance is an issue.
+
+## Comparison with Reference Paper ("Real-time Snow Deformation")
+
+Based on the thesis "Real-time Snow Deformation" (Hanák, 2021), which implements a technique similar to *Horizon Zero Dawn: The Frozen Wilds*, here is a detailed comparison with our current OpenMW implementation.
+
+### 1. Architecture: Persistent vs. Transient
+*   **Reference (Paper)**: Uses a **persistent accumulation buffer** (ping-pong textures).
+    *   **Mechanism**: A compute shader reads the previous frame's deformation, applies new deformation, and writes to the current frame.
+    *   **Benefits**: Infinite footprints (old ones persist), snow accumulation (filling trails over time), and constant performance cost regardless of footprint count.
+    *   **Sliding Window**: The buffer represents a window around the player. When the player moves, the window slides, and edge texels are reset.
+*   **Current OpenMW**: Uses a **transient "rebuild-every-frame" approach**.
+    *   **Mechanism**: We clear the RTT and redraw all active footprints (`mFootprints` list) every frame.
+    *   **Limitations**: Linear performance cost (O(N) footprints), hard limit on max footprints, no automatic "filling" over time (we simulate decay by fading alpha, but it's not true accumulation).
+
+### 2. Input Method: Depth Projection vs. Splatting
+*   **Reference (Paper)**: **Depth Projection**.
+    *   **Mechanism**: Renders "snow-affecting objects" (characters, animals) from *below* into an orthographic depth buffer.
+    *   **Benefits**: Handles *any* geometry automatically. If a character falls face-first, their entire body shape deforms the snow. No need for specific "footprint" logic.
+*   **Current OpenMW**: **Texture Splatting**.
+    *   **Mechanism**: We manually track footfalls and "stamp" a quad with a specific texture (footprint sprite) at that location.
+    *   **Limitations**: Only works for feet/tracked points. Doesn't handle dragging bodies, rolling, or complex shapes without manual work.
+
+### 3. Visuals: Normal Reconstruction
+*   **Reference (Paper)**: **Explicit Normal Reconstruction**.
+    *   **Mechanism**: A compute shader calculates the gradient of the heightmap (using finite difference) to generate a normal map on the fly.
+    *   **Result**: The edges of the deformation catch light (specular highlights), making them look like 3D geometry even on flat surfaces.
+*   **Current OpenMW**: **None / Implicit**.
+    *   **Mechanism**: We displace vertices and darken the color. We do *not* perturb the normal in the fragment shader based on the RTT.
+    *   **Result**: Footprints look "flat" or "painted on" under dynamic lighting, especially when viewed from grazing angles.
+
+### 4. Geometry: Tessellation vs. Vertex Displacement
+*   **Reference (Paper)**: **Hardware Tessellation**.
+    *   **Mechanism**: Uses Hull/Domain shaders to dynamically subdivide the terrain mesh near the camera.
+    *   **Result**: Smooth, high-res silhouettes for footprints.
+*   **Current OpenMW**: **Vertex Displacement (VS)**.
+    *   **Mechanism**: Displaces existing terrain vertices in `terrain.vert`.
+    *   **Result**: Dependent on base terrain resolution. Footprints may look jagged if the terrain grid is coarse. (Note: We are mitigating this with POM in the fragment shader).
+
+### 5. Rim/Edge Effect
+*   **Reference (Paper)**: **Cubic Remapping**.
+    *   **Mechanism**: Uses a specific cubic function (`f(x) = -3.47x^3 + ...`) to depress undeformed snow slightly, creating a raised "rim" around the deformation.
+*   **Current OpenMW**: **Texture Alpha**.
+    *   **Mechanism**: We rely on the footprint texture having a specific gradient.
+
+## Summary of Missing Features
+1.  **Persistent Accumulation**: Critical for performance and "snow filling" effects.
+2.  **Depth Projection**: Would allow all actors/objects to deform snow without manual coding per-actor.
+3.  **Normal Reconstruction**: Essential for visual quality (lighting).
+4.  **Compute Shaders**: The paper relies on them. We may need to implement this using standard Fragment Shaders (Ping-Pong RTT) if Compute Shaders are not viable in the current pipeline.
+
