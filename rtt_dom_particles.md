@@ -4,6 +4,8 @@
 - **✅ Gaussian Blur Pipeline Implemented** - Cameras and textures added, awaiting shader files
 - **✅ Depth Camera Fixed** - Now follows player position and looks straight up (was stuck at world origin)
 - **✅ Z-Range Corrected** - Accounts for Morrowind's floating physics (20-30 units above terrain)
+- **✅ Cubic Remapping Implemented** - Added custom Rim Function for edge elevation
+- **✅ Debug Visualization Removed** - Terrain shader now renders cleanly
 
 **Current Blockers:**
 - Missing `blur_horizontal.frag` and `blur_vertical.frag` shader files (see Phase 1 below)
@@ -350,7 +352,20 @@ gl_FragColor = vec4(finalValue, 0, 0, 1);
 
 **Note:** Paper uses polynomial regression to fit this curve to desired visual result
 
-**Priority:** HIGH - Significantly improves visual quality, relatively easy to add
+#### 2. **Cubic Remapping (Edge Elevation)** - COMPLETE ✅
+**Paper Reference:** Section 4.2, Equation 4.1, lines 658-665
+
+**Implemented Solution:**
+Instead of the paper's polynomial (which shifts ground level), we used a custom **Rim Function**:
+```glsl
+f(x) = x - C * x * (1.0 - x)
+```
+Where `C = 2.0`. This ensures:
+- `f(0) = 0` (Flat snow stays flat)
+- `f(1) = 1` (Deepest point stays deep)
+- Intermediate values become negative (raised above surface)
+
+**Status:** ✅ Implemented in `snow_update.frag`
 
 ---
 
@@ -456,11 +471,11 @@ Works acceptably on flat terrain; may have issues on slopes
   - [ ] **NEEDS SHADER FILES:** Create `blur_horizontal.frag` and `blur_vertical.frag`
 
 ### 🟡 HIGH (Significantly Improves Quality)
-- [ ] **Implement Cubic Remapping**
-  - [ ] Add remap function to update shader
-  - [ ] OR create separate remap pass
-  - [ ] Tune coefficients if needed (paper's values are a good start)
-  - [ ] Verify edge elevation appears visually
+- [x] **Implement Cubic Remapping** ✅ COMPLETE
+  - [x] Add remap function to update shader
+  - [x] OR create separate remap pass
+  - [x] Tune coefficients (Used custom Rim Function `x - C*x*(1-x)`)
+  - [x] Verify edge elevation appears visually
 
 ### 🟢 MEDIUM (Correctness on Varied Terrain)
 - [ ] **Terrain Height Integration**
@@ -482,7 +497,7 @@ Works acceptably on flat terrain; may have issues on slopes
   - [ ] Would enhance depth illusion further
 
 - [ ] **Debug Features**
-  - [ ] Remove/disable debug visualization in terrain.frag (lines 65-87)
+  - [x] Remove/disable debug visualization in terrain.frag (lines 65-87) ✅ COMPLETE
   - [ ] Add runtime toggles for blur/remap/normals
   - [ ] Performance profiling per pass
 

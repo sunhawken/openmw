@@ -15,9 +15,58 @@
 #include <osg/Depth>
 #include <osg/BlendFunc>
 #include <osg/BlendEquation>
+#include <osg/NodeCallback>
+#include <osg/NodeVisitor>
 
 namespace Terrain
 {
+    // Callback to allow the Depth Camera to render the scene (siblings) 
+    // without being a parent of the scene (which would cause a cycle).
+    // Also filters out the Terrain itself to prevent self-deformation.
+    class DepthCameraCullCallback : public osg::NodeCallback
+    {
+    public:
+        DepthCameraCullCallback(osg::Group* root, osg::Camera* cam) 
+            : mRoot(root)
+            , mCam(cam) 
+        {
+        }
+
+        virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
+        {
+            // 1. Traverse the camera's actual children (if any)
+            // This performs standard camera setup/traversal
+            traverse(node, nv);
+
+            // 2. Manually traverse the Scene Root's children (Siblings of this camera)
+            if (mRoot)
+            {
+                for (unsigned int i = 0; i < mRoot->getNumChildren(); ++i)
+                {
+                    osg::Node* child = mRoot->getChild(i);
+
+                    // CRITICAL: Skip the Camera itself to avoid infinite recursion
+                    if (child == mCam) 
+                        continue;
+
+                    // CRITICAL: Skip the Terrain to prevent the ground from deforming itself
+                    // The terrain is usually named "Terrain Root" in World.cpp
+                    if (child->getName() == "Terrain Root")
+                        continue;
+
+                    // Traverse the child
+                    // The NodeVisitor (CullVisitor) will check CullMasks against the child's NodeMask
+                    // So only objects matching the Camera's CullMask (Actors) will be rendered
+                    child->accept(*nv);
+                }
+            }
+        }
+
+    private:
+        osg::Group* mRoot;
+        osg::Camera* mCam;
+    };
+
     SnowDeformationManager::SnowDeformationManager(
         Resource::SceneManager* sceneManager,
         Storage* terrainStorage,
@@ -525,6 +574,12 @@ namespace Terrain
         else
         {
             Log(Debug::Error) << "SnowDeformationManager: Root node is null, RTT will not update!";
+        }
+        
+        // Attach CullCallback to Depth Camera to render scene actors
+        if (mRootNode && mDepthCamera)
+        {
+            mDepthCamera->setCullCallback(new DepthCameraCullCallback(mRootNode, mDepthCamera));
         }
         
         // 4. Create Uniforms for Terrain
