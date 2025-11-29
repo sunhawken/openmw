@@ -27,25 +27,26 @@ namespace Terrain
     class Storage;
 
     /// ========================================================================
-    /// SNOW DEFORMATION SYSTEM - Vertex Shader Array Approach
+    /// SNOW DEFORMATION SYSTEM - RTT Approach
     /// ========================================================================
-    /// Simple, efficient snow deformation using vertex shader displacement
+    /// Persistent snow deformation using Render-To-Texture (RTT) and Ping-Pong Buffers
     ///
     /// HOW IT WORKS:
-    /// - Stores recent footprint positions in a CPU array (deque)
-    /// - Passes positions to terrain vertex shader as uniform array
-    /// - Shader loops through positions, applies deformation where close
+    /// - A Depth Camera renders actors (player, NPCs) from below into an Object Mask.
+    /// - An Update Camera runs a shader (`snow_update.frag`) that:
+    ///   1. Reads the previous frame's deformation map.
+    ///   2. Applies "scrolling" based on player movement (sliding window).
+    ///   3. Decays old deformation over time.
+    ///   4. Adds new deformation where the Object Mask is white.
+    /// - The result is written to a Ping-Pong buffer (Accumulation Map).
+    /// - Two Blur Passes (Horizontal & Vertical) smooth the result.
+    /// - The final Blurred Map is passed to the Terrain Shader for vertex displacement.
     ///
     /// ADVANTAGES:
-    /// - No RTT complexity (no cameras, FBOs, textures)
-    /// - Direct integration with existing terrain shader
-    /// - Fast to implement and debug
-    /// - Works immediately without shader manager conflicts
-    ///
-    /// LIMITATIONS:
-    /// - Trail length limited by shader uniform array size (~500 positions)
-    /// - Trails don't persist across sessions (unless serialized)
-    /// - Small vertex shader performance cost (negligible on modern GPUs)
+    /// - Infinite trails (limited only by texture resolution/area).
+    /// - Persistent deformation (until it decays).
+    /// - Supports any object type (via Depth Camera).
+    /// - Smooth results via Gaussian Blur.
     ///
     /// COORDINATES:
     /// - OpenMW uses Z-up coordinate system
@@ -71,9 +72,6 @@ namespace Terrain
         void setWorldspace(ESM::RefId worldspace);
 
         /// Get shader uniforms for terrain rendering
-        osg::Uniform* getFootprintPositionsUniform() const { return mFootprintPositionsUniform.get(); }
-        osg::Uniform* getFootprintCountUniform() const { return mFootprintCountUniform.get(); }
-        osg::Uniform* getFootprintRadiusUniform() const { return mFootprintRadiusUniform.get(); }
         osg::Uniform* getDeformationDepthUniform() const { return mDeformationDepthUniform.get(); }
         osg::Uniform* getAshDeformationDepthUniform() const { return mAshDeformationDepthUniform.get(); }
         osg::Uniform* getMudDeformationDepthUniform() const { return mMudDeformationDepthUniform.get(); }
@@ -88,20 +86,14 @@ namespace Terrain
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
     private:
-        /// Stamp a new footprint at player position
-        void stampFootprint(const osg::Vec3f& position);
-
-        /// Update shader uniforms from footprint array
-        void updateShaderUniforms();
+        /// Emit particles at position (renamed from stampFootprint)
+        void emitParticles(const osg::Vec3f& position);
 
         /// Initialize RTT system
         void initRTT();
 
         /// Update RTT camera position and render footprints
         void updateRTT(float dt, const osg::Vec3f& playerPos);
-
-        /// Create a footprint marker for RTT rendering
-        void addFootprintToRTT(const osg::Vec3f& position, float rotation);
 
         /// Update terrain-specific parameters
         void updateTerrainParameters(const osg::Vec3f& playerPos);
@@ -116,13 +108,7 @@ namespace Terrain
         bool mEnabled;
         bool mActive;
 
-        // Footprint storage (size configured via settings)
-        std::deque<osg::Vec3f> mFootprints;  // Vec3(X, Y, timestamp)
-
         // Shader uniforms
-        osg::ref_ptr<osg::Uniform> mFootprintPositionsUniform;     // vec3 array
-        osg::ref_ptr<osg::Uniform> mFootprintCountUniform;         // int
-        osg::ref_ptr<osg::Uniform> mFootprintRadiusUniform;        // float
         osg::ref_ptr<osg::Uniform> mDeformationDepthUniform;       // float (snow depth)
         osg::ref_ptr<osg::Uniform> mAshDeformationDepthUniform;    // float (ash depth)
         osg::ref_ptr<osg::Uniform> mMudDeformationDepthUniform;    // float (mud depth)
@@ -172,10 +158,6 @@ namespace Terrain
         osg::ref_ptr<osg::Geode> mBlurVQuad;
         osg::ref_ptr<osg::Texture2D> mBlurredDeformationMap; // Final blurred result (R16F)
         
-
-        osg::ref_ptr<osg::Camera> mRTTCamera;    // Camera for rendering footprints
-        osg::ref_ptr<osg::Group> mRTTScene;      // Scene graph for footprints
-
         osg::ref_ptr<osg::Camera> mDepthCamera;  // Camera for rendering actors from below
         osg::ref_ptr<osg::Texture2D> mObjectMaskMap; // Mask of actors (White = Present)
         osg::ref_ptr<osg::Uniform> mObjectMaskUniform; // Uniform for update shader

@@ -34,7 +34,7 @@ varying vec3 passNormal;
 // ============================================================================
 // TERRAIN DEFORMATION SYSTEM - Multi-Terrain Support (Snow, Ash, Mud)
 // ============================================================================
-// Uses array of footprint positions passed from C++ instead of RTT texture
+// Uses RTT texture for deformation (Unified System)
 // Terrain weights computed per-vertex for smooth transitions
 // ============================================================================
 uniform sampler2D snowDeformationMap;    // RTT texture containing footprints
