@@ -18,6 +18,7 @@
 #include <osg/NodeCallback>
 #include <osg/NodeVisitor>
 #include <osgUtil/CullVisitor>
+#include <osgDB/WriteFile>
 
 namespace Terrain
 {
@@ -35,32 +36,66 @@ namespace Terrain
 
         virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
         {
-            // 1. Traverse the camera's actual children (if any)
-            // This performs standard camera setup/traversal
             traverse(node, nv);
 
-            // 2. Manually traverse the Scene Root's children (Siblings of this camera)
-            // The CullVisitor will automatically filter children based on the camera's cull mask
-            // We only need to skip specific nodes (Camera itself, Terrain)
             if (mRoot && nv)
             {
+                int childrenTraversed = 0;
+                int childrenSkipped = 0;
+                
+                // Log(Debug::Verbose) << "DepthCameraCullCallback: Visiting root " << mRoot << " (" << mRoot->getName() << ")";
+
                 for (unsigned int i = 0; i < mRoot->getNumChildren(); ++i)
                 {
                     osg::Node* child = mRoot->getChild(i);
+                    std::string childName = child->getName().empty() ? "<unnamed>" : child->getName();
 
-                    // CRITICAL: Skip the Camera itself to avoid infinite recursion
+                    // CRITICAL: Skip other Cameras (RTT cameras) to prevent recursion/feedback
+                    if (dynamic_cast<osg::Camera*>(child))
+                    {
+                        // Log(Debug::Verbose) << "  [SKIP] Camera: " << childName;
+                        childrenSkipped++;
+                        continue;
+                    }
+
                     if (child == mCam)
+                    {
+                        // Log(Debug::Verbose) << "  [SKIP] Camera itself";
+                        childrenSkipped++;
                         continue;
+                    }
 
-                    // CRITICAL: Skip the Terrain to prevent the ground from deforming itself
-                    if (child->getName() == "Terrain Root")
+                    if (childName == "Terrain Root")
+                    {
+                        // Log(Debug::Verbose) << "  [SKIP] Terrain Root";
+                        childrenSkipped++;
                         continue;
+                    }
 
-                    // Let OSG's normal culling handle node mask filtering
-                    // The CullVisitor will check (child->getNodeMask() & camera->getCullMask())
-                    // This will properly traverse into the child hierarchy and filter descendants
+                    if (childName == "Sky Root")
+                    {
+                        // Log(Debug::Verbose) << "  [SKIP] Sky Root";
+                        childrenSkipped++;
+                        continue;
+                    }
+
+                    if (childName == "Water Root")
+                    {
+                        // Log(Debug::Verbose) << "  [SKIP] Water Root";
+                        childrenSkipped++;
+                        continue;
+                    }
+
+                    // Log what we're about to traverse
+                    unsigned int nodeMask = child->getNodeMask();
+                    // Log(Debug::Verbose) << "  [TRAVERSE] " << childName
+                    //                 << " (mask: 0x" << std::hex << nodeMask << std::dec << ")";
+                    childrenTraversed++;
                     child->accept(*nv);
                 }
+                
+                // Log(Debug::Verbose) << "DepthCameraCullCallback: Traversed " << childrenTraversed
+                //                 << " nodes, skipped " << childrenSkipped;
             }
         }
 
@@ -176,6 +211,10 @@ namespace Terrain
         mCurrentTimeUniform->set(mCurrentTime);
 
         // Update RTT
+        if (mRootNode)
+        {
+            // Log(Debug::Verbose) << "SnowDeformationManager::update - RootNode Children: " << mRootNode->getNumChildren();
+        }
         updateRTT(dt, playerPos);
     }
 
@@ -471,8 +510,8 @@ namespace Terrain
         // 3. Create Object Mask Map & Camera (Pass 0: Render Actors)
         mObjectMaskMap = new osg::Texture2D;
         mObjectMaskMap->setTextureSize(2048, 2048);
-        mObjectMaskMap->setInternalFormat(GL_R8); // Single channel
-        mObjectMaskMap->setSourceFormat(GL_RED);
+        mObjectMaskMap->setInternalFormat(GL_RGBA); // Use RGBA for safety
+        mObjectMaskMap->setSourceFormat(GL_RGBA);
         mObjectMaskMap->setSourceType(GL_UNSIGNED_BYTE);
         mObjectMaskMap->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
         mObjectMaskMap->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
@@ -482,14 +521,26 @@ namespace Terrain
         
         ss->setTextureAttributeAndModes(1, mObjectMaskMap, osg::StateAttribute::ON); // Bind Object Mask to Unit 1
 
+        // Create Depth Texture for FBO completeness
+        osg::Texture2D* depthTex = new osg::Texture2D;
+        depthTex->setTextureSize(2048, 2048);
+        depthTex->setInternalFormat(GL_DEPTH_COMPONENT24);
+        depthTex->setSourceFormat(GL_DEPTH_COMPONENT);
+        depthTex->setSourceType(GL_FLOAT);
+        depthTex->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::NEAREST);
+        depthTex->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::NEAREST);
+
         mDepthCamera = new osg::Camera;
-        mDepthCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f)); // Clear to Black (No objects)
+        // Clear to BLACK (0.0) - No object
+        mDepthCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f)); 
         mDepthCamera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         mDepthCamera->setRenderOrder(osg::Camera::PRE_RENDER, 0); // Run FIRST
         mDepthCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-        mDepthCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF_INHERIT_VIEWPOINT);
+        mDepthCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF); // Absolute Frame
+        mDepthCamera->setCullingActive(false); // CRITICAL: Don't cull this camera (it has no children)
         mDepthCamera->setViewport(0, 0, 2048, 2048);
         mDepthCamera->attach(osg::Camera::COLOR_BUFFER, mObjectMaskMap);
+        mDepthCamera->attach(osg::Camera::DEPTH_BUFFER, depthTex); // Attach Depth Buffer
 
         // Cull Mask: Actor(3) | Player(4) | Object(10)
         mDepthCamera->setCullMask((1 << 3) | (1 << 4) | (1 << 10));
@@ -561,7 +612,38 @@ namespace Terrain
         mRTTCenter = playerPos;
         mRTTWorldOriginUniform->set(mRTTCenter);
         
+        mRTTCenter = playerPos;
+        mRTTWorldOriginUniform->set(mRTTCenter);
+        
         Log(Debug::Verbose) << "SnowDeformationManager::updateRTT - Center: " << mRTTCenter << ", Scale: " << mRTTSize;
+
+        // Update Depth Camera View/Projection
+        if (mDepthCamera)
+        {
+            float halfSize = mRTTSize * 0.5f;
+            // Ortho Projection centered on player
+            mDepthCamera->setProjectionMatrixAsOrtho(
+                -halfSize, halfSize, 
+                -halfSize, halfSize, 
+                1.0f, 500.0f); // Near/Far planes (adjust as needed)
+
+            // View Matrix: Top-Down looking at player
+            // Eye: PlayerPos + Up * 100
+            // Center: PlayerPos
+            // Up: Y-axis (Standard Top-Down)
+            osg::Vec3f eye = mRTTCenter + osg::Vec3f(0, 0, 200.0f);
+            osg::Vec3f center = mRTTCenter;
+            osg::Vec3f up = osg::Vec3f(0, 1, 0);
+            
+            mDepthCamera->setViewMatrixAsLookAt(eye, center, up);
+        }
+
+        // DEBUG: Dump Object Mask
+        static int dumpCounter = 0;
+        if (dumpCounter++ % 600 == 0) // Dump every 600 frames (approx 10s)
+        {
+             debugDumpTexture("object_mask_dump.png", mObjectMaskMap.get());
+        }
 
         // 2. Calculate Decay
         // We want to decay by dt / decayTime
@@ -619,5 +701,37 @@ namespace Terrain
         // So that part is handled automatically if SnowDeformationUpdater calls it every frame.
         
         // 8. Render NEW Footprints (Legacy - Removed)
+    }
+    void SnowDeformationManager::debugDumpTexture(const std::string& filename, osg::Texture2D* texture) const
+    {
+        if (!texture) return;
+
+        osg::Image* image = texture->getImage();
+        if (!image)
+        {
+            // Texture might not have an image attached (FBO target)
+            // We need to read it from GPU
+            image = new osg::Image;
+            image->allocateImage(
+                texture->getTextureWidth(),
+                texture->getTextureHeight(),
+                1,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE);
+
+            // This requires a valid OpenGL context, call during rendering
+            Log(Debug::Warning) << "Cannot dump texture without GPU readback - needs implementation";
+            return;
+        }
+
+        std::string fullPath = "d:\\Gamedev\\OpenMW\\openmw-dev-master\\" + filename;
+        if (osgDB::writeImageFile(*image, fullPath))
+        {
+            Log(Debug::Info) << "DEBUG: Dumped texture to " << fullPath;
+        }
+        else
+        {
+            Log(Debug::Error) << "DEBUG: Failed to dump texture to " << fullPath;
+        }
     }
 }

@@ -85,6 +85,11 @@ namespace Terrain
         osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
+        // DEBUG: Expose Object Mask
+        void debugDumpTexture(const std::string& filename, osg::Texture2D* texture) const;
+        osg::Uniform* getObjectMaskUniform() const { return mObjectMaskUniform.get(); }
+        osg::Texture2D* getObjectMaskMap() const { return mObjectMaskMap.get(); }
+
     private:
         /// Emit particles at position (renamed from stampFootprint)
         void emitParticles(const osg::Vec3f& position);

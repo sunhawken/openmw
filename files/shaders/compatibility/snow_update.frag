@@ -32,20 +32,13 @@ void main()
     float newValue = texture2D(objectMask, uv).r;
 
     // 5. Combine
-    // We want the maximum deformation (deepest hole).
-    // If an object is here (newValue > 0), it stamps down.
-    // If no object, we keep the decayed previous value.
+    // Accumulate: Keep the deeper deformation (max of previous and new)
     float finalValue = max(previousValue, newValue);
 
     // 6. Cubic Remapping (Rim Effect)
-    // Create a "rim" or bulge around the footprint edges.
-    // We map intermediate values (edges) to negative values (above surface).
-    // f(x) = x - C * x * (1.0 - x)
-    // x=0 -> 0 (Flat)
-    // x=1 -> 1 (Deep)
-    // x=0.2 -> Negative (Raised Rim)
-    float rimIntensity = 2.0; 
-    finalValue = finalValue - rimIntensity * finalValue * (1.0 - finalValue);
+    // DEBUG: Disable rim for now
+    // float rimIntensity = 2.0; 
+    // finalValue = finalValue - rimIntensity * finalValue * (1.0 - finalValue);
 
     gl_FragColor = vec4(finalValue, 0.0, 0.0, 1.0);
 }
