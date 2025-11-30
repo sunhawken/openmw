@@ -97,6 +97,7 @@ void main(void)
 
             // Apply deformation: raise terrain by baseLift, then subtract where footprints are
             vertex.z += baseLift * (1.0 - vDeformationFactor);
+            // vertex.z += 0.0;
             
             vMaxDepth = baseLift;
         }
