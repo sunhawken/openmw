@@ -4,6 +4,7 @@ uniform sampler2D previousFrame; // The accumulation buffer from the previous fr
 uniform sampler2D objectMask;    // The mask of objects currently touching the ground (White = Object)
 uniform vec2 offset;             // UV offset for sliding window (scrolling)
 uniform float decayAmount;       // Amount to decay per frame
+uniform bool firstFrame;         // Reset accumulation on first frame
 
 void main()
 {
@@ -17,7 +18,9 @@ void main()
 
     // 2. Sample Previous Frame (with bounds check)
     float previousValue = 0.0;
-    if (oldUV.x >= 0.0 && oldUV.x <= 1.0 && oldUV.y >= 0.0 && oldUV.y <= 1.0)
+    
+    // CRITICAL: On first frame, ignore previous frame (it contains garbage or zero)
+    if (!firstFrame && oldUV.x >= 0.0 && oldUV.x <= 1.0 && oldUV.y >= 0.0 && oldUV.y <= 1.0)
     {
         previousValue = texture2D(previousFrame, oldUV).r;
     }
@@ -39,6 +42,15 @@ void main()
     // DEBUG: Disable rim for now
     // float rimIntensity = 2.0; 
     // finalValue = finalValue - rimIntensity * finalValue * (1.0 - finalValue);
+
+    // DEBUG: Output diagnostic info
+    // Uncomment ONE of these at a time to test different stages:
+
+    // Test 1: Just pass through previous frame (no decay, no new data)
+    // gl_FragColor = vec4(previousValue, 0, 0, 1);
+
+    // Test 2: Just pass through new object mask
+    // gl_FragColor = vec4(newValue, 0, 0, 1);
 
     gl_FragColor = vec4(finalValue, 0.0, 0.0, 1.0);
 }
