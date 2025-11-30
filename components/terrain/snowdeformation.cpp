@@ -67,7 +67,7 @@ namespace Terrain
 
                     if (childName == "Terrain Root")
                     {
-                        // Log(Debug::Verbose) << "  [SKIP] Terrain Root";
+                        Log(Debug::Verbose) << "  [SKIP] Terrain Root";
                         childrenSkipped++;
                         continue;
                     }
@@ -88,14 +88,14 @@ namespace Terrain
 
                     // Log what we're about to traverse
                     unsigned int nodeMask = child->getNodeMask();
-                    // Log(Debug::Verbose) << "  [TRAVERSE] " << childName
-                    //                 << " (mask: 0x" << std::hex << nodeMask << std::dec << ")";
+                    Log(Debug::Info) << "  [TRAVERSE] " << childName
+                                    << " (mask: 0x" << std::hex << nodeMask << std::dec << ")";
                     childrenTraversed++;
                     child->accept(*nv);
                 }
                 
-                // Log(Debug::Verbose) << "DepthCameraCullCallback: Traversed " << childrenTraversed
-                //                 << " nodes, skipped " << childrenSkipped;
+                Log(Debug::Info) << "DepthCameraCullCallback: Traversed " << childrenTraversed
+                                << " nodes, skipped " << childrenSkipped;
             }
         }
 
@@ -124,8 +124,7 @@ namespace Terrain
         , mCurrentTime(0.0f)
         , mRTTSize(3625.0f) // 50 meters coverage (approx 72.5 units/meter)
         , mRTTCenter(0.0f, 0.0f, 0.0f)
-        , mPreviousRTTCenter(0.0f, 0.0f, 0.0f)
-        , mWriteBufferIndex(0)
+        , mFirstFrame(true)
     {
         Log(Debug::Info) << "Multi-terrain deformation system initialized (snow/ash/mud)";
 
@@ -317,197 +316,7 @@ namespace Terrain
 
     void SnowDeformationManager::initRTT()
     {
-        // 1. Create Ping-Pong Textures
-        for (int i = 0; i < 2; ++i)
-        {
-            mAccumulationMap[i] = new osg::Texture2D;
-            mAccumulationMap[i]->setTextureSize(2048, 2048);
-            mAccumulationMap[i]->setInternalFormat(GL_RGBA16F_ARB);
-            mAccumulationMap[i]->setSourceFormat(GL_RGBA);
-            mAccumulationMap[i]->setSourceType(GL_FLOAT);
-            mAccumulationMap[i]->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
-            mAccumulationMap[i]->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
-            mAccumulationMap[i]->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::CLAMP_TO_BORDER);
-            mAccumulationMap[i]->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_BORDER);
-            mAccumulationMap[i]->setBorderColor(osg::Vec4(0, 0, 0, 0));
-        }
-
-        // Initialize Blur Textures
-        auto initBlurTex = [](osg::ref_ptr<osg::Texture2D>& tex) {
-            tex = new osg::Texture2D;
-            tex->setTextureSize(2048, 2048);
-            tex->setInternalFormat(GL_RGBA16F_ARB);
-            tex->setSourceFormat(GL_RGBA);
-            tex->setSourceType(GL_FLOAT);
-            tex->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
-            tex->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
-            tex->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::CLAMP_TO_EDGE);
-            tex->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_EDGE);
-        };
-        initBlurTex(mBlurTempBuffer);
-        initBlurTex(mBlurredDeformationMap);
-
-        // 2. Create Update Camera (Pass 1: Scroll & Decay & Apply New Deformation)
-        mUpdateCamera = new osg::Camera;
-        mUpdateCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f)); // Clear to no deformation
-        mUpdateCamera->setClearMask(GL_COLOR_BUFFER_BIT); // Only clear color
-        mUpdateCamera->setRenderOrder(osg::Camera::PRE_RENDER, 1); // Run AFTER Depth Camera
-        mUpdateCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-        mUpdateCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-        mUpdateCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1); // Normalized coordinates
-        mUpdateCamera->setViewMatrix(osg::Matrix::identity());
-        mUpdateCamera->setViewport(0, 0, 2048, 2048);
-        mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[0]); // Initial target
-
-        // Create Update Quad
-        mUpdateQuad = new osg::Geode;
-        osg::Geometry* geom = new osg::Geometry;
-        osg::Vec3Array* verts = new osg::Vec3Array;
-        verts->push_back(osg::Vec3(0, 0, 0));
-        verts->push_back(osg::Vec3(1, 0, 0));
-        verts->push_back(osg::Vec3(1, 1, 0));
-        verts->push_back(osg::Vec3(0, 1, 0));
-        geom->setVertexArray(verts);
-        
-        // DEBUG: Blue Color Array for Fixed Function
-        // osg::Vec4Array* colors = new osg::Vec4Array;
-        // colors->push_back(osg::Vec4(0, 0, 1, 1));
-        // colors->push_back(osg::Vec4(0, 0, 1, 1));
-        // colors->push_back(osg::Vec4(0, 0, 1, 1));
-        // colors->push_back(osg::Vec4(0, 0, 1, 1));
-        // geom->setColorArray(colors, osg::Array::BIND_PER_VERTEX);
-
-        geom->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
-        osg::Vec2Array* texcoords = new osg::Vec2Array;
-        texcoords->push_back(osg::Vec2(0, 0));
-        texcoords->push_back(osg::Vec2(1, 0));
-        texcoords->push_back(osg::Vec2(1, 1));
-        texcoords->push_back(osg::Vec2(0, 1));
-        geom->setTexCoordArray(0, texcoords);
-        mUpdateQuad->addDrawable(geom);
-        mUpdateCamera->addChild(mUpdateQuad);
-
-        // Update StateSet (Shader Based)
-        osg::StateSet* ss = mUpdateQuad->getOrCreateStateSet();
-        ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        ss->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        ss->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        
-        // Load Update Shader
-        auto& shaderManager = mSceneManager->getShaderManager();
-        osg::ref_ptr<osg::Program> program = new osg::Program;
-        osg::ref_ptr<osg::Shader> vertShader = shaderManager.getShader("snow_update.vert", {}, osg::Shader::VERTEX);
-        osg::ref_ptr<osg::Shader> fragShader = shaderManager.getShader("snow_update.frag", {}, osg::Shader::FRAGMENT);
-
-        if (vertShader && fragShader)
-        {
-            program->addShader(vertShader);
-            program->addShader(fragShader);
-            ss->setAttributeAndModes(program, osg::StateAttribute::ON);
-        }
-        else
-        {
-            Log(Debug::Error) << "SnowDeformationManager: Failed to load update shaders!";
-        }
-
-        // Keep uniforms for later restoration
-        mPreviousFrameUniform = new osg::Uniform(osg::Uniform::SAMPLER_2D, "previousFrame");
-        mPreviousFrameUniform->set(0); // Texture Unit 0
-        ss->addUniform(mPreviousFrameUniform);
-
-        mObjectMaskUniform = new osg::Uniform(osg::Uniform::SAMPLER_2D, "objectMask");
-        mObjectMaskUniform->set(1); // Texture Unit 1
-        ss->addUniform(mObjectMaskUniform);
-
-        mRTTOffsetUniform = new osg::Uniform("offset", osg::Vec2(0, 0));
-        ss->addUniform(mRTTOffsetUniform);
-        
-        osg::Uniform* decayUniform = new osg::Uniform("decayAmount", 0.0f);
-        ss->addUniform(decayUniform);
-
-        // --- Create Blur Pass 1 (Horizontal) ---
-        mBlurHCamera = new osg::Camera;
-        mBlurHCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f)); // Clear to BLACK (no deformation)
-        mBlurHCamera->setClearMask(GL_COLOR_BUFFER_BIT);
-        mBlurHCamera->setRenderOrder(osg::Camera::PRE_RENDER, 3); // Order 3 (After Footprints)
-        mBlurHCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-        mBlurHCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-        mBlurHCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
-        mBlurHCamera->setViewMatrix(osg::Matrix::identity());
-        mBlurHCamera->setViewport(0, 0, 2048, 2048);
-        mBlurHCamera->attach(osg::Camera::COLOR_BUFFER, mBlurTempBuffer);
-
-        mBlurHQuad = new osg::Geode;
-        {
-            osg::Geometry* g = new osg::Geometry;
-            osg::Vec3Array* v = new osg::Vec3Array;
-            v->push_back(osg::Vec3(0, 0, 0)); v->push_back(osg::Vec3(1, 0, 0));
-            v->push_back(osg::Vec3(1, 1, 0)); v->push_back(osg::Vec3(0, 1, 0));
-            g->setVertexArray(v);
-            g->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
-            osg::Vec2Array* t = new osg::Vec2Array;
-            t->push_back(osg::Vec2(0, 0)); t->push_back(osg::Vec2(1, 0));
-            t->push_back(osg::Vec2(1, 1)); t->push_back(osg::Vec2(0, 1));
-            g->setTexCoordArray(0, t);
-            mBlurHQuad->addDrawable(g);
-        }
-        mBlurHCamera->addChild(mBlurHQuad);
-
-        osg::StateSet* hSS = mBlurHQuad->getOrCreateStateSet();
-        hSS->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        hSS->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        
-        osg::ref_ptr<osg::Program> hProg = new osg::Program;
-        // Reuse snow_update.vert as it's just a pass-through
-        hProg->addShader(vertShader);
-        osg::ref_ptr<osg::Shader> hFrag = shaderManager.getShader("blur_horizontal.frag", {}, osg::Shader::FRAGMENT);
-        if (hFrag) hProg->addShader(hFrag);
-        else Log(Debug::Error) << "Failed to load blur_horizontal.frag";
-        hSS->setAttributeAndModes(hProg, osg::StateAttribute::ON);
-        hSS->addUniform(new osg::Uniform("inputTex", 0)); // Unit 0
-
-        // --- Create Blur Pass 2 (Vertical) ---
-        mBlurVCamera = new osg::Camera;
-        mBlurVCamera->setClearColor(osg::Vec4(0.0f, 0.0f, 0.0f, 1.0f)); // Clear to BLACK (no deformation)
-        mBlurVCamera->setClearMask(GL_COLOR_BUFFER_BIT);
-        mBlurVCamera->setRenderOrder(osg::Camera::PRE_RENDER, 4); // Order 4
-        mBlurVCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-        mBlurVCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-        mBlurVCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
-        mBlurVCamera->setViewMatrix(osg::Matrix::identity());
-        mBlurVCamera->setViewport(0, 0, 2048, 2048);
-        mBlurVCamera->attach(osg::Camera::COLOR_BUFFER, mBlurredDeformationMap);
-
-        mBlurVQuad = new osg::Geode;
-        {
-            osg::Geometry* g = new osg::Geometry;
-            osg::Vec3Array* v = new osg::Vec3Array;
-            v->push_back(osg::Vec3(0, 0, 0)); v->push_back(osg::Vec3(1, 0, 0));
-            v->push_back(osg::Vec3(1, 1, 0)); v->push_back(osg::Vec3(0, 1, 0));
-            g->setVertexArray(v);
-            g->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
-            osg::Vec2Array* t = new osg::Vec2Array;
-            t->push_back(osg::Vec2(0, 0)); t->push_back(osg::Vec2(1, 0));
-            t->push_back(osg::Vec2(1, 1)); t->push_back(osg::Vec2(0, 1));
-            g->setTexCoordArray(0, t);
-            mBlurVQuad->addDrawable(g);
-        }
-        mBlurVCamera->addChild(mBlurVQuad);
-
-        osg::StateSet* vSS = mBlurVQuad->getOrCreateStateSet();
-        vSS->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        vSS->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        vSS->setTextureAttributeAndModes(0, mBlurTempBuffer, osg::StateAttribute::ON); // Always reads from Temp Buffer
-
-        osg::ref_ptr<osg::Program> vProg = new osg::Program;
-        vProg->addShader(vertShader);
-        osg::ref_ptr<osg::Shader> vFrag = shaderManager.getShader("blur_vertical.frag", {}, osg::Shader::FRAGMENT);
-        if (vFrag) vProg->addShader(vFrag);
-        else Log(Debug::Error) << "Failed to load blur_vertical.frag";
-        vSS->setAttributeAndModes(vProg, osg::StateAttribute::ON);
-        vSS->addUniform(new osg::Uniform("inputTex", 0));
-
-        // 3. Create Object Mask Map & Camera (Pass 0: Render Actors)
+        // 1. Create Object Mask Map & Camera (Pass 0: Render Actors)
         mObjectMaskMap = new osg::Texture2D;
         mObjectMaskMap->setTextureSize(2048, 2048);
         mObjectMaskMap->setInternalFormat(GL_RGBA); // Use RGBA for safety
@@ -518,8 +327,6 @@ namespace Terrain
         mObjectMaskMap->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::CLAMP_TO_BORDER);
         mObjectMaskMap->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_BORDER);
         mObjectMaskMap->setBorderColor(osg::Vec4(0, 0, 0, 0));
-        
-        ss->setTextureAttributeAndModes(1, mObjectMaskMap, osg::StateAttribute::ON); // Bind Object Mask to Unit 1
 
         // Create Depth Texture for FBO completeness
         osg::Texture2D* depthTex = new osg::Texture2D;
@@ -560,18 +367,16 @@ namespace Terrain
         dss->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
         dss->setMode(GL_TEXTURE_2D, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
 
+        // 2. Create Simulation
+        mSimulation = new SnowSimulation(mSceneManager, mObjectMaskMap);
+
         // Add cameras to scene graph
         if (mRootNode)
         {
             mRootNode->addChild(mDepthCamera);
-            mRootNode->addChild(mUpdateCamera);
-            // mRTTCamera removed (Legacy)
-            mRootNode->addChild(mBlurHCamera);
-            mRootNode->addChild(mBlurVCamera);
+            mRootNode->addChild(mSimulation);
 
             // SOLUTION: Attach CullCallback to allow depth camera to see scene without circular reference
-            // The callback manually traverses mRootNode's children during the depth camera's cull pass
-            // This allows the camera to render actors while being a sibling in the scene graph
             mDepthCamera->setCullCallback(new DepthCameraCullCallback(mRootNode, mDepthCamera));
             Log(Debug::Info) << "SnowDeformationManager: Attached DepthCameraCullCallback to depth camera";
         }
@@ -580,7 +385,7 @@ namespace Terrain
             Log(Debug::Error) << "SnowDeformationManager: Root node is null, RTT will not update!";
         }
         
-        // 4. Create Uniforms for Terrain
+        // 3. Create Uniforms for Terrain
         mDeformationMapUniform = new osg::Uniform(osg::Uniform::SAMPLER_2D, "snowDeformationMap");
         mDeformationMapUniform->set(7); // Texture unit 7
         
@@ -590,33 +395,11 @@ namespace Terrain
 
     void SnowDeformationManager::updateRTT(float dt, const osg::Vec3f& playerPos)
     {
-        if (!mUpdateCamera) return;
+        if (!mSimulation) return;
 
-        // 1. Calculate Sliding Window Offset
-        // Offset in UV space = (CurrentPos - PreviousPos) / RTTSize
-        // Note: RTT is axis aligned.
-        // If player moves +X, the window moves +X. The ground moves -X relative to window.
-        // To find the same ground point in previous frame: UV_old = UV_new + Offset
-        osg::Vec3f delta = playerPos - mPreviousRTTCenter;
-        
-        // If this is the first frame (or huge jump), reset
-        if (delta.length() > mRTTSize)
-        {
-            delta = osg::Vec3f(0, 0, 0);
-        }
-        
-        osg::Vec2 offset(delta.x() / mRTTSize, delta.y() / mRTTSize);
-        mRTTOffsetUniform->set(offset);
-        
-        mPreviousRTTCenter = playerPos;
         mRTTCenter = playerPos;
         mRTTWorldOriginUniform->set(mRTTCenter);
         
-        mRTTCenter = playerPos;
-        mRTTWorldOriginUniform->set(mRTTCenter);
-        
-        Log(Debug::Verbose) << "SnowDeformationManager::updateRTT - Center: " << mRTTCenter << ", Scale: " << mRTTSize;
-
         // Update Depth Camera View/Projection
         if (mDepthCamera)
         {
@@ -628,9 +411,6 @@ namespace Terrain
                 1.0f, 500.0f); // Near/Far planes (adjust as needed)
 
             // View Matrix: Top-Down looking at player
-            // Eye: PlayerPos + Up * 100
-            // Center: PlayerPos
-            // Up: Y-axis (Standard Top-Down)
             osg::Vec3f eye = mRTTCenter + osg::Vec3f(0, 0, 200.0f);
             osg::Vec3f center = mRTTCenter;
             osg::Vec3f up = osg::Vec3f(0, 1, 0);
@@ -645,63 +425,10 @@ namespace Terrain
              debugDumpTexture("object_mask_dump.png", mObjectMaskMap.get());
         }
 
-        // 2. Calculate Decay
-        // We want to decay by dt / decayTime
-        float decayAmount = (mDecayTime > 0.0f) ? (dt / mDecayTime) : 1.0f;
-        
-        osg::StateSet* ss = mUpdateQuad->getStateSet();
-        if (ss)
-        {
-            osg::Uniform* decayUniform = ss->getUniform("decayAmount");
-            if (decayUniform) decayUniform->set(decayAmount);
-        }
-
-        // 3. Swap Buffers
-        int readIndex = mWriteBufferIndex;
-        mWriteBufferIndex = (mWriteBufferIndex + 1) % 2;
-        int writeIndex = mWriteBufferIndex;
-
-        // 4. Update Cameras to target new Write Buffer
-        mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[writeIndex]);
-        
-        Log(Debug::Verbose) << "SnowDeformationManager::updateRTT - Swapped buffers. Read: " << readIndex << ", Write: " << writeIndex;
-        
-        // 5. Update Shader to read from Read Buffer
-        if (ss)
-        {
-            ss->setTextureAttributeAndModes(0, mAccumulationMap[readIndex], osg::StateAttribute::ON);
-        }
-        
-        // Update Blur H Input (Reads from Write Buffer of Update Pass)
-        // Blur H (Order 3) reads mAccumulationMap[writeIndex].
-        if (mBlurHQuad)
-        {
-            osg::StateSet* hSS = mBlurHQuad->getStateSet();
-            if (hSS)
-            {
-                hSS->setTextureAttributeAndModes(0, mAccumulationMap[writeIndex], osg::StateAttribute::ON);
-            }
-        }
-        
-        // 6. Update Terrain Uniform to read from Write Buffer (Result of this frame)
-        // Note: This assumes Terrain renders AFTER these cameras.
-        // mDeformationMapUniform->set(mAccumulationMap[writeIndex]); 
-        // Actually, let's stick to ReadBuffer for safety (1 frame lag) to avoid read/write race if they overlap.
-        // But wait, if we read ReadBuffer, we see OLD frame.
-        // If we read WriteBuffer, we see NEW frame.
-        // Since RTT cameras are PRE_RENDER, they finish before Main Render.
-        // So it IS safe to read WriteBuffer.
-        // However, we need to update the Uniform that the Terrain holds.
-        // The Terrain holds mDeformationMapUniform.
-        // But wait, osg::Uniform just holds an int (sampler index).
-        // The TEXTURE is bound in SnowDeformationUpdater.
-        // We need to update the texture binding in SnowDeformationUpdater!
-        // SnowDeformationUpdater calls getDeformationMap().
-        // getDeformationMap() returns mAccumulationMap[mWriteBufferIndex].
-        // So that part is handled automatically if SnowDeformationUpdater calls it every frame.
-        
-        // 8. Render NEW Footprints (Legacy - Removed)
+        // Update Simulation
+        mSimulation->update(dt, playerPos);
     }
+
     void SnowDeformationManager::debugDumpTexture(const std::string& filename, osg::Texture2D* texture) const
     {
         if (!texture) return;
