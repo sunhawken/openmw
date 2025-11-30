@@ -92,12 +92,41 @@ namespace Terrain
             mAccumulationMap[i]->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_BORDER);
             mAccumulationMap[i]->setBorderColor(osg::Vec4(0, 0, 0, 0));
             
-            // Explicitly allocate with black pixels
+            // Explicitly allocate with GREEN pixels (0, 1, 0, 1) to verify binding
+            osg::ref_ptr<osg::Image> clearImage = new osg::Image;
+            clearImage->allocateImage(2048, 2048, 1, GL_RGBA, GL_FLOAT);
+            
+            float* data = (float*)clearImage->data();
+            int numPixels = 2048 * 2048;
+            for (int p = 0; p < numPixels; ++p)
+            {
+                data[p*4+0] = 0.0f; // R
+                data[p*4+1] = 1.0f; // G
+                data[p*4+2] = 0.0f; // B
+                data[p*4+3] = 1.0f; // A
+            }
+            mAccumulationMap[i]->setImage(clearImage);
+        }
+
+        // Initialize Blur Textures with Black Images
+        auto initBlurTex = [](osg::ref_ptr<osg::Texture2D>& tex) {
+            tex = new osg::Texture2D;
+            tex->setTextureSize(2048, 2048);
+            tex->setInternalFormat(GL_RGBA16F_ARB);
+            tex->setSourceFormat(GL_RGBA);
+            tex->setSourceType(GL_FLOAT);
+            tex->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
+            tex->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
+            tex->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::CLAMP_TO_EDGE);
+            tex->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_EDGE);
+            
             osg::ref_ptr<osg::Image> clearImage = new osg::Image;
             clearImage->allocateImage(2048, 2048, 1, GL_RGBA, GL_FLOAT);
             memset(clearImage->data(), 0, clearImage->getTotalSizeInBytes());
-            mAccumulationMap[i]->setImage(clearImage);
-        }
+            tex->setImage(clearImage);
+        };
+        initBlurTex(mBlurTempBuffer);
+        initBlurTex(mBlurredDeformationMap);
 
         createUpdatePass(objectMask);
         createBlurPasses();
@@ -115,6 +144,7 @@ namespace Terrain
         mUpdateCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
         mUpdateCamera->setViewMatrix(osg::Matrix::identity());
         mUpdateCamera->setViewport(0, 0, 2048, 2048);
+        mUpdateCamera->setCullingActive(false); // CRITICAL: Disable culling
         mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[0]); // Initial target
 
         // Create Update Quad
@@ -180,20 +210,8 @@ namespace Terrain
 
     void SnowSimulation::createBlurPasses()
     {
-        // Initialize Blur Textures
-        auto initBlurTex = [](osg::ref_ptr<osg::Texture2D>& tex) {
-            tex = new osg::Texture2D;
-            tex->setTextureSize(2048, 2048);
-            tex->setInternalFormat(GL_RGBA16F_ARB);
-            tex->setSourceFormat(GL_RGBA);
-            tex->setSourceType(GL_FLOAT);
-            tex->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
-            tex->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
-            tex->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::CLAMP_TO_EDGE);
-            tex->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_EDGE);
-        };
-        initBlurTex(mBlurTempBuffer);
-        initBlurTex(mBlurredDeformationMap);
+        // Initialize Blur Textures (Already initialized in initRTT)
+        // auto initBlurTex = ... (Removed local lambda)
 
         auto& shaderManager = mSceneManager->getShaderManager();
         osg::ref_ptr<osg::Shader> vertShader = shaderManager.getShader("snow_update.vert", {}, osg::Shader::VERTEX);
@@ -208,6 +226,7 @@ namespace Terrain
         mBlurHCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
         mBlurHCamera->setViewMatrix(osg::Matrix::identity());
         mBlurHCamera->setViewport(0, 0, 2048, 2048);
+        mBlurHCamera->setCullingActive(false); // CRITICAL: Disable culling
         mBlurHCamera->attach(osg::Camera::COLOR_BUFFER, mBlurTempBuffer);
 
         mBlurHQuad = new osg::Geode;
@@ -249,6 +268,7 @@ namespace Terrain
         mBlurVCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
         mBlurVCamera->setViewMatrix(osg::Matrix::identity());
         mBlurVCamera->setViewport(0, 0, 2048, 2048);
+        mBlurVCamera->setCullingActive(false); // CRITICAL: Disable culling
         mBlurVCamera->attach(osg::Camera::COLOR_BUFFER, mBlurredDeformationMap);
 
         mBlurVQuad = new osg::Geode;

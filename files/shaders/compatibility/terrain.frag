@@ -63,34 +63,14 @@ void main()
     vec4 diffuseTex = texture2D(diffuseMap, adjustedUV);
     gl_FragData[0] = vec4(diffuseTex.xyz, 1.0);
 
-    // DEBUG: Visualize Snow RTT - ENHANCED
+    // DEBUG: Visualize Snow RTT
     vec2 debugUV = (passWorldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
     if (debugUV.x >= 0.0 && debugUV.x <= 1.0 && debugUV.y >= 0.0 && debugUV.y <= 1.0)
     {
-        float deformValue = texture2D(snowDeformationMap, debugUV).r;
-
-        // Visualize the deformation map directly
-        // Green tint = inside RTT area
-        // Red = deformation present
-        gl_FragData[0].rgb = mix(gl_FragData[0].rgb, vec3(0, 1, 0), 0.3); // Green tint
-
-        if (deformValue > 0.01)
-        {
-            // Show deformation as red, intensity = amount
-            gl_FragData[0].rgb = mix(gl_FragData[0].rgb, vec3(1, 0, 0), deformValue);
-        }
-        else if (deformValue < -0.01)
-        {
-            // Show negative values (rim) as blue
-            gl_FragData[0].rgb = mix(gl_FragData[0].rgb, vec3(0, 0, 1), -deformValue);
-        }
-
-        // Visualize Object Mask (Yellow)
-        float maskValue = texture2D(debugObjectMask, debugUV).r;
-        if (maskValue > 0.5)
-        {
-            gl_FragData[0].rgb = mix(gl_FragData[0].rgb, vec3(1, 1, 0), 0.8); // Bright Yellow
-        }
+        vec4 tex = texture2D(snowDeformationMap, debugUV);
+        // Visualize the raw RTT value: RGB
+        gl_FragData[0] = vec4(tex.rgb, 1.0); 
+        return; // Stop here
     }
 
     vec4 diffuseColor = getDiffuseColor();

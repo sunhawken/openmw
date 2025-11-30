@@ -49,8 +49,23 @@ namespace Terrain
         if (mTerrainWorld && mTerrainWorld->getSnowDeformationManager())
         {
             auto* manager = mTerrainWorld->getSnowDeformationManager();
+            
+            // DEBUG: Verify execution and texture
+            static int logCounter = 0;
+            if (logCounter++ % 300 == 0) // Log every 300 frames (approx 5s)
+            {
+                osg::Texture2D* tex = manager->getCurrentDeformationMap();
+                Log(Debug::Info) << "SnowDeformationUpdater::apply - Binding Texture Unit 7. Texture Ptr: " << tex;
+                if (tex)
+                {
+                     Log(Debug::Info) << "  Texture ID: " << tex->getTextureObject(0) 
+                                      << " (may be 0 if not compiled yet)";
+                }
+            }
+
             // Update the texture binding on Unit 7 to point to the current Write Buffer (which contains the latest RTT result)
-            stateset->setTextureAttributeAndModes(7, manager->getCurrentDeformationMap(), osg::StateAttribute::ON);
+            // DEBUG: Bind Object Mask to Unit 7 to test binding mechanism (skipping ping-pong/float issues)
+            stateset->setTextureAttributeAndModes(7, manager->getObjectMaskMap(), osg::StateAttribute::ON);
 
             // DEBUG: Bind object mask for visualization
             stateset->setTextureAttributeAndModes(8, manager->getObjectMaskMap(), osg::StateAttribute::ON);

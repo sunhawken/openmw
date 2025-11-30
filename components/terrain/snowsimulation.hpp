@@ -29,6 +29,10 @@ namespace Terrain
         /// Get the final result (Blurred Deformation Map)
         osg::Texture2D* getOutputTexture() const { return mBlurredDeformationMap.get(); }
         
+        /// Get the raw accumulation map (pre-blur) for debugging
+        osg::Texture2D* getAccumulationMap() const { return mAccumulationMap[0].get(); }
+        // osg::Texture2D* getOutputTexture() const { return mAccumulationMap[0].get(); } // DEBUG: Bypass Blur
+        
         /// Get the current center of the simulation in world space
         const osg::Vec3f& getCenter() const { return mCenter; }
         

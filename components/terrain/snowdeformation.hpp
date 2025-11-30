@@ -17,6 +17,7 @@
 
 #include "snowparticleemitter.hpp"
 #include "snowsimulation.hpp"
+#include "debugoverlay.hpp"
 
 namespace Resource
 {
@@ -81,8 +82,8 @@ namespace Terrain
 
         // RTT Uniforms
         osg::Uniform* getDeformationMapUniform() const { return mDeformationMapUniform.get(); }
-        osg::Texture2D* getDeformationMap() const { return mSimulation ? mSimulation->getOutputTexture() : nullptr; }
-        osg::Texture2D* getCurrentDeformationMap() const { return mSimulation ? mSimulation->getOutputTexture() : nullptr; }
+        osg::Texture2D* getDeformationMap() const { return mSimulation ? mSimulation->getAccumulationMap() : nullptr; }
+        osg::Texture2D* getCurrentDeformationMap() const { return mSimulation ? mSimulation->getAccumulationMap() : nullptr; }
         osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
@@ -163,6 +164,8 @@ namespace Terrain
         osg::Vec3f mRTTCenter; // Current center of RTT area
         
         bool mFirstFrame; // Flag to reset accumulation on first frame
+        
+        osg::ref_ptr<DebugOverlay> mDebugOverlay;
     };
 }
 
