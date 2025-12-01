@@ -49,10 +49,10 @@ namespace Terrain
 
             // TEST 1: Bypass simulation - bind ObjectMaskMap directly
             // This WORKS - shows deformation only where actors stand
-            stateset->setTextureAttributeAndModes(7, manager->getObjectMaskMap(), osg::StateAttribute::ON);
+            // stateset->setTextureAttributeAndModes(7, manager->getObjectMaskMap(), osg::StateAttribute::ON);
 
-            // TEST 2: Bypass blur - bind AccumulationMap directly
-            // stateset->setTextureAttributeAndModes(7, manager->getAccumulationMap(), osg::StateAttribute::ON);
+            // TEST 2: Bypass blur - bind AccumulationMap directly (now with matching format)
+            stateset->setTextureAttributeAndModes(7, manager->getAccumulationMap(), osg::StateAttribute::ON);
 
             // NORMAL: Bind the deformation map (output of the RTT pipeline) to texture unit 7
             // stateset->setTextureAttributeAndModes(7, manager->getDeformationMap(), osg::StateAttribute::ON);
