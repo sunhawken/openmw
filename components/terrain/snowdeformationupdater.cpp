@@ -39,9 +39,6 @@ namespace Terrain
         // Create and add the enabled uniform (defaults to true for testing)
         osg::ref_ptr<osg::Uniform> enabledUniform = new osg::Uniform("snowDeformationEnabled", true);
         stateset->addUniform(enabledUniform);
-
-        // DEBUG: Add object mask uniform
-        stateset->addUniform(new osg::Uniform("debugObjectMask", 8));
     }
 
     void SnowDeformationUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
@@ -49,26 +46,16 @@ namespace Terrain
         if (mTerrainWorld && mTerrainWorld->getSnowDeformationManager())
         {
             auto* manager = mTerrainWorld->getSnowDeformationManager();
-            
-            // DEBUG: Verify execution and texture
-            static int logCounter = 0;
-            if (logCounter++ % 300 == 0) // Log every 300 frames (approx 5s)
-            {
-                osg::Texture2D* tex = manager->getCurrentDeformationMap();
-                Log(Debug::Info) << "SnowDeformationUpdater::apply - Binding Texture Unit 7. Texture Ptr: " << tex;
-                if (tex)
-                {
-                     Log(Debug::Info) << "  Texture ID: " << tex->getTextureObject(0) 
-                                      << " (may be 0 if not compiled yet)";
-                }
-            }
 
-            // Update the texture binding on Unit 7 to point to the current Write Buffer (which contains the latest RTT result)
-            // DEBUG: Bind Object Mask to Unit 7 to test binding mechanism (skipping ping-pong/float issues)
+            // TEST 1: Bypass simulation - bind ObjectMaskMap directly
+            // This WORKS - shows deformation only where actors stand
             stateset->setTextureAttributeAndModes(7, manager->getObjectMaskMap(), osg::StateAttribute::ON);
 
-            // DEBUG: Bind object mask for visualization
-            stateset->setTextureAttributeAndModes(8, manager->getObjectMaskMap(), osg::StateAttribute::ON);
+            // TEST 2: Bypass blur - bind AccumulationMap directly
+            // stateset->setTextureAttributeAndModes(7, manager->getAccumulationMap(), osg::StateAttribute::ON);
+
+            // NORMAL: Bind the deformation map (output of the RTT pipeline) to texture unit 7
+            // stateset->setTextureAttributeAndModes(7, manager->getDeformationMap(), osg::StateAttribute::ON);
         }
     }
 }

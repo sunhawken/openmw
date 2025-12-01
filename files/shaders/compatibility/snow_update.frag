@@ -8,6 +8,20 @@ uniform bool firstFrame;         // Reset accumulation on first frame
 
 void main()
 {
+    // DEBUG TEST: Output SOLID 50% RED (0.5 deformation)
+    // This should make terrain uniformly pushed down by 50% everywhere in RTT area
+    // If terrain shows NO deformation or FULL deformation, pipeline is broken
+    gl_FragColor = vec4(0.5, 0.0, 0.0, 1.0);
+    return;
+
+    // TEST 3 FAILED: Pass through ONLY the object mask - bypass all accumulation logic
+    // Result: Deformation everywhere - problem is objectMask binding, not accumulation logic
+    // vec2 uv = gl_TexCoord[0].xy; // Already declared above
+    float newValue = texture2D(objectMask, uv).r;
+    gl_FragColor = vec4(newValue, 0.0, 0.0, 1.0);
+
+    // ORIGINAL CODE (commented out for TEST 3):
+    /*
     // 1. Calculate UV for reading from the previous frame
     // We are rendering a fullscreen quad [0,1].
     // If the player moved, the "ground" moved relative to our window.
@@ -18,7 +32,7 @@ void main()
 
     // 2. Sample Previous Frame (with bounds check)
     float previousValue = 0.0;
-    
+
     // CRITICAL: On first frame, ignore previous frame (it contains garbage or zero)
     if (!firstFrame && oldUV.x >= 0.0 && oldUV.x <= 1.0 && oldUV.y >= 0.0 && oldUV.y <= 1.0)
     {
@@ -40,7 +54,7 @@ void main()
 
     // 6. Cubic Remapping (Rim Effect)
     // DEBUG: Disable rim for now
-    // float rimIntensity = 2.0; 
+    // float rimIntensity = 2.0;
     // finalValue = finalValue - rimIntensity * finalValue * (1.0 - finalValue);
 
     // DEBUG: Output diagnostic info
@@ -53,4 +67,5 @@ void main()
     // gl_FragColor = vec4(newValue, 0, 0, 1);
 
     gl_FragColor = vec4(finalValue, 0.0, 0.0, 1.0);
+    */
 }

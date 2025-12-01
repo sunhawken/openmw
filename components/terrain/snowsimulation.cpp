@@ -50,30 +50,16 @@ namespace Terrain
             if (mFirstFrame) mFirstFrame = false;
         }
 
-        // 3. Swap Buffers
-        int readIndex = mWriteBufferIndex;
-        mWriteBufferIndex = (mWriteBufferIndex + 1) % 2;
-        int writeIndex = mWriteBufferIndex;
+        // DEBUG: DISABLE PING-PONG - Use single buffer to simplify debugging
+        // Always write to buffer 0, always read from buffer 0
+        // The update shader will just overwrite itself each frame
+        // This eliminates all timing issues between buffer swap and terrain sampling
 
-        // 4. Update Cameras to target new Write Buffer
-        mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[writeIndex]);
+        // Note: With single buffer, we can't accumulate (read+write same buffer in one pass)
+        // But this test verifies the terrain IS reading what the shader writes
 
-        // 5. Update Shader to read from Read Buffer
-        osg::StateSet* ss = mUpdateQuad->getStateSet();
-        if (ss)
-        {
-            ss->setTextureAttributeAndModes(0, mAccumulationMap[readIndex], osg::StateAttribute::ON);
-        }
-
-        // 6. Update Blur H Input (Reads from Write Buffer of Update Pass)
-        if (mBlurHQuad)
-        {
-            osg::StateSet* hSS = mBlurHQuad->getStateSet();
-            if (hSS)
-            {
-                hSS->setTextureAttributeAndModes(0, mAccumulationMap[writeIndex], osg::StateAttribute::ON);
-            }
-        }
+        // mUpdateCamera already attached to buffer 0 in createUpdatePass()
+        // mBlurHQuad already reads from buffer 0 (set in createBlurPasses, but we're bypassing blur anyway)
     }
 
     void SnowSimulation::initRTT(osg::Texture2D* objectMask)
@@ -92,19 +78,10 @@ namespace Terrain
             mAccumulationMap[i]->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_BORDER);
             mAccumulationMap[i]->setBorderColor(osg::Vec4(0, 0, 0, 0));
             
-            // Explicitly allocate with GREEN pixels (0, 1, 0, 1) to verify binding
+            // Initialize with black (no deformation)
             osg::ref_ptr<osg::Image> clearImage = new osg::Image;
             clearImage->allocateImage(2048, 2048, 1, GL_RGBA, GL_FLOAT);
-            
-            float* data = (float*)clearImage->data();
-            int numPixels = 2048 * 2048;
-            for (int p = 0; p < numPixels; ++p)
-            {
-                data[p*4+0] = 0.0f; // R
-                data[p*4+1] = 1.0f; // G
-                data[p*4+2] = 0.0f; // B
-                data[p*4+3] = 1.0f; // A
-            }
+            memset(clearImage->data(), 0, clearImage->getTotalSizeInBytes());
             mAccumulationMap[i]->setImage(clearImage);
         }
 

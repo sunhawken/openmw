@@ -30,6 +30,7 @@ namespace Terrain
         osg::Texture2D* getOutputTexture() const { return mBlurredDeformationMap.get(); }
         
         /// Get the raw accumulation map (pre-blur) for debugging
+        /// DEBUG: Always return buffer 0 (ping-pong disabled)
         osg::Texture2D* getAccumulationMap() const { return mAccumulationMap[0].get(); }
         // osg::Texture2D* getOutputTexture() const { return mAccumulationMap[0].get(); } // DEBUG: Bypass Blur
         

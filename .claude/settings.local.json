@@ -9,7 +9,8 @@
       "Bash(findstr:*)",
       "Bash(dir:*)",
       "Bash(if exist RTT_VIEWPORT_FIX.md del RTT_VIEWPORT_FIX.md)",
-      "Bash(if exist NEXT_CHALLENGE.md del NEXT_CHALLENGE.md)"
+      "Bash(if exist NEXT_CHALLENGE.md del NEXT_CHALLENGE.md)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
