@@ -88,16 +88,25 @@ void main(void)
             // Map world position to [0, 1] texture space based on RTT origin and scale
             vec2 deformUV = (worldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
 
-            // Sample the deformation map (Red channel contains deformation factor 0..1)
-            // Check bounds to avoid sampling outside the RTT area (though clamp to border handles this usually)
+            // Sample the deformation map (Red channel contains deformation factor)
+            // Can be negative (rim elevation), 0 (flat), or positive (depression)
+            // Check bounds to avoid sampling outside the RTT area
             if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
             {
                 vDeformationFactor = texture2D(snowDeformationMap, deformUV).r;
             }
 
-            // Apply deformation: raise terrain by baseLift, then subtract where footprints are
+            // Apply deformation:
+            // - Positive vDeformationFactor = depression (footprint center), terrain goes DOWN
+            // - Negative vDeformationFactor = elevation (rim around footprint), terrain goes UP
+            // - Zero = flat snow surface
+            // Formula: z_displaced = z_original + baseLift - vDeformationFactor * baseLift
+            //        = z_original + baseLift * (1.0 - vDeformationFactor)
+            // This works because:
+            //   - When factor=1: z += baseLift * 0 = 0 (deepest depression)
+            //   - When factor=0: z += baseLift * 1 = baseLift (flat raised snow)
+            //   - When factor=-0.5: z += baseLift * 1.5 (elevated rim above snow level)
             vertex.z += baseLift * (1.0 - vDeformationFactor);
-            // vertex.z += 0.0;
             
             vMaxDepth = baseLift;
         }

@@ -46,6 +46,7 @@ namespace Terrain
         void initRTT(osg::Texture2D* objectMask);
         void createUpdatePass(osg::Texture2D* objectMask);
         void createBlurPasses();
+        void createCopyPass();
 
         Resource::SceneManager* mSceneManager;
 
@@ -64,12 +65,16 @@ namespace Terrain
         // Cameras & Geometry
         osg::ref_ptr<osg::Camera> mUpdateCamera;
         osg::ref_ptr<osg::Geode> mUpdateQuad;
-        
+
         osg::ref_ptr<osg::Camera> mBlurHCamera;
         osg::ref_ptr<osg::Geode> mBlurHQuad;
-        
+
         osg::ref_ptr<osg::Camera> mBlurVCamera;
         osg::ref_ptr<osg::Geode> mBlurVQuad;
+
+        // Copy pass: copies buffer[0] to buffer[1] for next frame's "previousFrame"
+        osg::ref_ptr<osg::Camera> mCopyCamera;
+        osg::ref_ptr<osg::Geode> mCopyQuad;
 
         // Uniforms
         osg::ref_ptr<osg::Uniform> mRTTOffsetUniform;

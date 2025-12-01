@@ -27,6 +27,8 @@ void main()
     float newValue = texture2D(objectMask, uv).r;
 
     // 5. Combine - keep the deeper deformation (max of previous and new)
+    // Output raw 0-1 values; the rim function will be applied AFTER blur
+    // in blur_vertical.frag where we have gradient information
     float finalValue = max(previousValue, newValue);
 
     gl_FragColor = vec4(finalValue, 0.0, 0.0, 1.0);

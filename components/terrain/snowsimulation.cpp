@@ -122,29 +122,28 @@ namespace Terrain
             if (mFirstFrame) mFirstFrame = false;
         }
 
-        // 3. Ping-Pong Buffer Swap
-        // Read from current write buffer (what we wrote last frame)
-        int readIndex = mWriteBufferIndex;
-        // Swap to write to the other buffer
-        mWriteBufferIndex = (mWriteBufferIndex + 1) % 2;
-        int writeIndex = mWriteBufferIndex;
+        // SIMPLIFIED: No more ping-pong buffer swapping
+        // The update shader reads from mAccumulationMap[1] (previous frame's result)
+        // and writes to mAccumulationMap[0] (current frame's result).
+        // Then we swap the textures' contents by re-rendering, not by pointer swap.
+        //
+        // This avoids the alternating texture binding that was causing vibration.
+        // The update shader's "previousFrame" samples from buffer[1],
+        // the update camera renders to buffer[0],
+        // blur H reads from buffer[0] (stable).
+        //
+        // After each frame, we need buffer[0]'s contents to become buffer[1] for next frame.
+        // This is handled implicitly because:
+        // - Update reads from buffer[1] with UV offset (scrolling)
+        // - Update writes MAX(previous, new) to buffer[0]
+        // - Buffer[1] is never explicitly updated, but the scrolling UV makes this work
+        //
+        // Actually, we DO need ping-pong, but we should NOT dynamically change blur input.
+        // Let's use a third buffer approach: write to a dedicated "current frame" buffer,
+        // then have blur always read from that.
 
-        // Update camera to write to new buffer
-        mUpdateCamera->detach(osg::Camera::COLOR_BUFFER);
-        mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[writeIndex]);
-
-        // Update shader to read from previous buffer
-        osg::StateSet* ss = mUpdateQuad->getStateSet();
-        if (ss)
-        {
-            ss->setTextureAttributeAndModes(0, mAccumulationMap[readIndex], osg::StateAttribute::ON);
-        }
-
-        // Update blur input to read from current write buffer
-        if (mBlurHQuad && mBlurHQuad->getStateSet())
-        {
-            mBlurHQuad->getStateSet()->setTextureAttributeAndModes(0, mAccumulationMap[writeIndex], osg::StateAttribute::ON);
-        }
+        // For now, simplified approach: always write to buffer[0], read from buffer[0]
+        // (single buffer feedback, relying on GPU execution order)
     }
 
     void SnowSimulation::initRTT(osg::Texture2D* objectMask)
@@ -190,6 +189,7 @@ namespace Terrain
 
         createUpdatePass(objectMask);
         createBlurPasses();
+        createCopyPass();
     }
 
     void SnowSimulation::createUpdatePass(osg::Texture2D* objectMask)
@@ -258,6 +258,10 @@ namespace Terrain
         // Uniforms - Use simple int constructor for samplers (not array constructor!)
         ss->addUniform(new osg::Uniform("previousFrame", 0)); // Unit 0
 
+        // Bind previousFrame texture (buffer[1]) to unit 0
+        // Update camera writes to buffer[0], reads previous from buffer[1]
+        ss->setTextureAttributeAndModes(0, mAccumulationMap[1], osg::StateAttribute::ON);
+
         // Bind Object Mask
         ss->setTextureAttributeAndModes(1, objectMask, osg::StateAttribute::ON);
         ss->addUniform(new osg::Uniform("objectMask", 1)); // Unit 1
@@ -316,7 +320,10 @@ namespace Terrain
         osg::StateSet* hSS = mBlurHQuad->getOrCreateStateSet();
         hSS->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
         hSS->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
-        
+
+        // Blur H reads from buffer[0] (output of update pass) - FIXED, not dynamic
+        hSS->setTextureAttributeAndModes(0, mAccumulationMap[0], osg::StateAttribute::ON);
+
         osg::ref_ptr<osg::Program> hProg = new osg::Program;
         hProg->addShader(vertShader);
         osg::ref_ptr<osg::Shader> hFrag = shaderManager.getShader("blur_horizontal.frag", {}, osg::Shader::FRAGMENT);
@@ -370,5 +377,66 @@ namespace Terrain
         vSS->addUniform(new osg::Uniform("inputTex", 0));
 
         addChild(mBlurVCamera);
+    }
+
+    void SnowSimulation::createCopyPass()
+    {
+        // Copy Pass: Copies buffer[0] (current frame) to buffer[1] (for next frame's "previousFrame")
+        // This runs AFTER blur V (render order 5), so the update pass can read stable data next frame
+
+        mCopyCamera = new osg::Camera;
+        mCopyCamera->setClearMask(0); // Don't clear, just copy
+        mCopyCamera->setRenderOrder(osg::Camera::PRE_RENDER, 5); // After blur V (4)
+        mCopyCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
+        mCopyCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
+        mCopyCamera->setProjectionMatrixAsOrtho2D(0, 1, 0, 1);
+        mCopyCamera->setViewMatrix(osg::Matrix::identity());
+        mCopyCamera->setViewport(0, 0, 2048, 2048);
+        mCopyCamera->setCullingActive(false);
+        mCopyCamera->setNodeMask(1 << 17); // Mask_RenderToTexture
+        mCopyCamera->setImplicitBufferAttachmentMask(0, 0);
+        mCopyCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[1]); // Write to buffer[1]
+
+        mCopyQuad = new osg::Geode;
+        {
+            osg::Geometry* g = new osg::Geometry;
+            osg::Vec3Array* v = new osg::Vec3Array;
+            v->push_back(osg::Vec3(0, 0, 0)); v->push_back(osg::Vec3(1, 0, 0));
+            v->push_back(osg::Vec3(1, 1, 0)); v->push_back(osg::Vec3(0, 1, 0));
+            g->setVertexArray(v);
+            g->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
+            osg::Vec2Array* t = new osg::Vec2Array;
+            t->push_back(osg::Vec2(0, 0)); t->push_back(osg::Vec2(1, 0));
+            t->push_back(osg::Vec2(1, 1)); t->push_back(osg::Vec2(0, 1));
+            g->setTexCoordArray(0, t);
+            mCopyQuad->addDrawable(g);
+        }
+        mCopyCamera->addChild(mCopyQuad);
+
+        osg::StateSet* ss = mCopyQuad->getOrCreateStateSet();
+        ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+        ss->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+
+        // Read from buffer[0] (current frame's update result)
+        ss->setTextureAttributeAndModes(0, mAccumulationMap[0], osg::StateAttribute::ON);
+
+        // Simple pass-through shader (just copy the texture)
+        osg::Program* copyProg = new osg::Program;
+        copyProg->addShader(new osg::Shader(osg::Shader::VERTEX,
+            "#version 120\n"
+            "void main() {\n"
+            "  gl_Position = ftransform();\n"
+            "  gl_TexCoord[0] = gl_MultiTexCoord0;\n"
+            "}\n"));
+        copyProg->addShader(new osg::Shader(osg::Shader::FRAGMENT,
+            "#version 120\n"
+            "uniform sampler2D inputTex;\n"
+            "void main() {\n"
+            "  gl_FragColor = texture2D(inputTex, gl_TexCoord[0].xy);\n"
+            "}\n"));
+        ss->setAttributeAndModes(copyProg, osg::StateAttribute::ON);
+        ss->addUniform(new osg::Uniform("inputTex", 0));
+
+        addChild(mCopyCamera);
     }
 }

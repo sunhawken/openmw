@@ -124,9 +124,26 @@ void main()
         }
     }
 
-    // Apply visual darkening for deformed areas (wet/compressed snow/mud)
-    // vDeformationFactor is 0..1 (1 = max deformation)
-    diffuseColor.rgb *= (1.0 - deformationFactor * 0.4);
+    // Apply visual effects for deformed areas (wet/compressed snow/mud)
+    // deformationFactor can be:
+    //   positive (0 to 1) = depression (footprint center) - darken more
+    //   negative (-0.5 to 0) = rim elevation - slight brightening
+    //   zero = flat snow
+
+    float darkeningFactor;
+    if (deformationFactor > 0.0)
+    {
+        // Depression: darken progressively (compressed/wet snow appearance)
+        // Stronger darkening for deeper impressions using smoothstep
+        darkeningFactor = smoothstep(0.0, 1.0, deformationFactor) * 0.5;
+    }
+    else
+    {
+        // Rim: very slight brightening (snow pushed up catches more light)
+        darkeningFactor = deformationFactor * 0.15; // Negative = brightening
+    }
+
+    diffuseColor.rgb *= (1.0 - darkeningFactor);
 
     gl_FragData[0].a *= diffuseColor.a;
 
@@ -176,78 +193,46 @@ void main()
 #endif
 
     // Apply Snow Deformation Normal Perturbation (Post-NormalMap / Post-VertexNormal)
+    // This creates the lighting response that makes footprints look 3D
     if (vMaxDepth > 0.0)
     {
         vec2 deformUV = (passWorldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
         if (deformUV.x >= 0.0 && deformUV.x <= 1.0 && deformUV.y >= 0.0 && deformUV.y <= 1.0)
         {
-            float texelSize = 1.0 / 2048.0;
-            float h = texture2D(snowDeformationMap, deformUV).r;
+            // Use larger sample offset for smoother normals (matches blur spread)
+            float texelSize = 2.0 / 2048.0; // 2x texel for smoother gradients
+
+            // Central difference for more accurate normals
+            float h_l = texture2D(snowDeformationMap, deformUV + vec2(-texelSize, 0.0)).r;
             float h_r = texture2D(snowDeformationMap, deformUV + vec2(texelSize, 0.0)).r;
+            float h_d = texture2D(snowDeformationMap, deformUV + vec2(0.0, -texelSize)).r;
             float h_u = texture2D(snowDeformationMap, deformUV + vec2(0.0, texelSize)).r;
-            
-            float stepWorld = snowRTTScale * texelSize;
-            float dX = (h - h_r) * vMaxDepth / stepWorld;
-            float dY = (h - h_u) * vMaxDepth / stepWorld;
-            
-            // Construct perturbation vector in World Space (assuming Z-up)
-            // The slope vector is (1, 0, dX) and (0, 1, dY).
-            // The normal is cross(slopeX, slopeY) = (-dX, -dY, 1).
+
+            // Calculate gradients using central difference
+            float stepWorld = snowRTTScale * texelSize * 2.0; // Full span = 2 * texelSize
+            float dX = (h_l - h_r) * vMaxDepth / stepWorld;
+            float dY = (h_d - h_u) * vMaxDepth / stepWorld;
+
+            // Amplify normal strength for more dramatic lighting
+            const float normalStrength = 1.5;
+            dX *= normalStrength;
+            dY *= normalStrength;
+
+            // Construct perturbation vector in World Space (Z-up)
+            // Normal = cross(tangentX, tangentY) = (-dX, -dY, 1)
             vec3 worldPerturb = normalize(vec3(-dX, -dY, 1.0));
-            
-            // We need to blend this with the existing viewNormal.
-            // viewNormal is in View Space.
-            // worldPerturb is in World Space.
-            // Convert worldPerturb to View Space.
-            // gl_NormalMatrix transforms Model->View. For terrain Model=World (rotation-wise).
+
+            // Convert to View Space
             vec3 viewPerturb = normalize(gl_NormalMatrix * worldPerturb);
-            
-            // Blend normals. 
-            // If we are in a hole (h > 0), we want the hole's normal.
-            // If we are flat (h = 0), we want the original normal.
-            // But the perturbation *is* the shape.
-            // If h=0 everywhere, dX=0, dY=0, worldPerturb=(0,0,1).
-            // If original normal was (0,0,1), it matches.
-            // If original normal was tilted (hill), we want to combine them.
-            // Reoriented Normal Mapping (RNM) is best, but simple addition/normalization works for small perturbations.
-            // Or just: viewNormal = normalize(viewNormal + vec3(viewPerturb.xy, 0.0));
-            // Better: Rotate viewNormal by the rotation defined by viewPerturb?
-            // Simple approach: Mix based on deformation factor?
-            // No, the perturbation IS the geometry.
-            // We should apply it.
-            // But we need to combine it with the underlying terrain normal (hills).
-            // 'viewNormal' contains the hill normal (and normal map).
-            // 'viewPerturb' contains the footprint shape (assuming flat ground).
-            // We want to apply the footprint shape TO the hill.
-            // Frame: T, B, N = viewNormal.
-            // We want to tilt N by the local slope of the footprint.
-            // This is exactly what Normal Mapping does.
-            // Treat 'viewPerturb' as a tangent-space normal map where the "Tangent Plane" is defined by World(0,0,1).
-            // But our base surface is 'viewNormal'.
-            // Let's just add the offsets.
-            // viewNormal.xy += viewPerturb.xy * 2.0; // Exaggerate slightly?
-            // viewNormal = normalize(viewNormal);
-            
-            // Let's try blending.
-            // Since viewPerturb is (0,0,1) when flat.
-            // We can treat it as a detail normal.
-            // UDN Blending: n = normalize(n1 + n2). (If n1, n2 are roughly Z-up).
-            // But viewNormal might not be Z-up (steep hill).
-            // However, footprints are usually on flat-ish ground.
-            // Let's try simple addition.
-            
-            // Remove the Z component from perturb to get just the "tilt"
-            vec3 tilt = viewPerturb - vec3(0,0,1); // Assuming viewPerturb is mostly Z-up in View Space? 
-            // No, View Space Z is towards camera.
-            // World Space Z is Up.
-            // gl_NormalMatrix * (0,0,1) -> View Space Up.
-            // Let's call it viewUp = gl_NormalMatrix * vec3(0,0,1).
-            // The perturbation is relative to World Up.
-            // We want to apply the *difference* between viewPerturb and viewUp to viewNormal.
-            
-            vec3 viewUp = normalize(gl_NormalMatrix * vec3(0,0,1.0));
+
+            // Get the world-up direction in view space for blending
+            vec3 viewUp = normalize(gl_NormalMatrix * vec3(0.0, 0.0, 1.0));
+
+            // Calculate the perturbation as deviation from world-up
             vec3 diff = viewPerturb - viewUp;
-            
+
+            // Apply perturbation to existing normal
+            // This correctly combines terrain slope with footprint shape
             viewNormal = normalize(viewNormal + diff);
         }
     }
