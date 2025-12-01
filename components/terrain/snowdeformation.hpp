@@ -82,15 +82,16 @@ namespace Terrain
 
         // RTT Uniforms
         osg::Uniform* getDeformationMapUniform() const { return mDeformationMapUniform.get(); }
-        osg::Texture2D* getDeformationMap() const { return mSimulation ? mSimulation->getAccumulationMap() : nullptr; }
-        osg::Texture2D* getCurrentDeformationMap() const { return mSimulation ? mSimulation->getAccumulationMap() : nullptr; }
+        osg::Texture2D* getDeformationMap() const { return mSimulation ? mSimulation->getOutputTexture() : nullptr; }
+        osg::Texture2D* getCurrentDeformationMap() const { return mSimulation ? mSimulation->getOutputTexture() : nullptr; }
         osg::Uniform* getRTTWorldOriginUniform() const { return mRTTWorldOriginUniform.get(); }
         osg::Uniform* getRTTScaleUniform() const { return mRTTScaleUniform.get(); }
 
-        // DEBUG: Expose Object Mask
+        // DEBUG: Expose internal textures for testing
         void debugDumpTexture(const std::string& filename, osg::Texture2D* texture) const;
         osg::Uniform* getObjectMaskUniform() const { return mObjectMaskUniform.get(); }
         osg::Texture2D* getObjectMaskMap() const { return mObjectMaskMap.get(); }
+        osg::Texture2D* getAccumulationMap() const { return mSimulation ? mSimulation->getAccumulationMap() : nullptr; }
 
     private:
         /// Emit particles at position (renamed from stampFootprint)

@@ -16,7 +16,6 @@ varying float vMaxDepth;            // From vertex shader
 uniform sampler2D snowDeformationMap;
 uniform vec3 snowRTTWorldOrigin;
 uniform float snowRTTScale;
-uniform sampler2D debugObjectMask; // DEBUG
 
 uniform sampler2D diffuseMap;
 
@@ -62,16 +61,6 @@ void main()
 #endif
     vec4 diffuseTex = texture2D(diffuseMap, adjustedUV);
     gl_FragData[0] = vec4(diffuseTex.xyz, 1.0);
-
-    // DEBUG: Visualize Snow RTT
-    vec2 debugUV = (passWorldPos.xy - snowRTTWorldOrigin.xy) / snowRTTScale + 0.5;
-    if (debugUV.x >= 0.0 && debugUV.x <= 1.0 && debugUV.y >= 0.0 && debugUV.y <= 1.0)
-    {
-        vec4 tex = texture2D(snowDeformationMap, debugUV);
-        // Visualize the raw RTT value: RGB
-        gl_FragData[0] = vec4(tex.rgb, 1.0); 
-        return; // Stop here
-    }
 
     vec4 diffuseColor = getDiffuseColor();
     
