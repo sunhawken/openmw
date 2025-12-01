@@ -675,3 +675,125 @@ components/terrain/snowdeformationupdater.cpp - TEST 2 bypass
 files/shaders/compatibility/snow_update.frag - TEST 5 black output
 SNOW_RTT_DEBUG_PLAN.md - Created systematic test plan
 ```
+
+---
+
+## SESSION: NodeMask and Vertex Shader Fix Attempt (2024-12-01 night)
+
+### Hypothesis
+The update camera might not be rendering because:
+1. Missing `Mask_RenderToTexture` node mask (required by OpenMW)
+2. Vertex shader not transforming vertices correctly
+
+### Changes Made
+
+#### 1. Added Mask_RenderToTexture to All Cameras
+OpenMW filters cameras by node mask. Added `setNodeMask(1 << 17)` to:
+- mUpdateCamera
+- mBlurHCamera
+- mBlurVCamera
+
+Also added `setImplicitBufferAttachmentMask(0, 0)` to prevent automatic depth buffer creation.
+
+#### 2. Fixed Vertex Shader
+Changed `snow_update.vert` from:
+```glsl
+gl_Position = gl_Vertex;  // WRONG - doesn't apply projection
+```
+To:
+```glsl
+gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;  // Correct
+```
+
+#### 3. Fixed Sampler Uniform Constructors
+Changed from array constructor (which causes warnings):
+```cpp
+new osg::Uniform(osg::Uniform::SAMPLER_2D, "name", 0)
+```
+To simple int constructor:
+```cpp
+new osg::Uniform("name", 0)
+```
+
+#### 4. Matched Texture Format to ObjectMaskMap
+Changed AccumulationMap from `GL_RGBA16F_ARB/GL_FLOAT` to `GL_RGBA/GL_UNSIGNED_BYTE` to match ObjectMaskMap (which works).
+
+#### 5. Disabled Ping-Pong
+- Removed buffer swapping in `update()`
+- `getAccumulationMap()` always returns buffer 0
+
+### Test Results
+
+| Test | Setup | Result |
+|------|-------|--------|
+| TEST 1 | ObjectMaskMap direct to terrain | **PASS** - Deformation only where actors stand |
+| TEST 2 with fixes | AccumulationMap to terrain (50% red shader) | **FAIL** - Full deformation everywhere |
+| TEST 2 + NodeMask | Added Mask_RenderToTexture (1<<17) | **NEW RESULT: NO deformation at all** |
+
+### Analysis
+
+**Adding NodeMask BROKE the system completely** - terrain now shows NO deformation.
+
+This is actually interesting because it means:
+1. Before NodeMask: Terrain was reading SOMETHING (white/full deformation)
+2. After NodeMask: Terrain is reading BLACK (0 deformation)
+
+Possible interpretations:
+1. The camera IS now rendering (outputting 0.5 red → 50% deformation expected)
+2. But terrain shows 0 deformation → still not reading the right texture
+3. OR the NodeMask caused the camera to be skipped entirely
+4. OR the terrain is now reading from an uninitialized/black texture
+
+### Current State of Files
+
+| File | Current State |
+|------|---------------|
+| `snowsimulation.cpp` | NodeMask(1<<17), single buffer, GL_RGBA format, fixed uniforms |
+| `snowsimulation.hpp` | `getAccumulationMap()` returns buffer 0 |
+| `snowdeformationupdater.cpp` | TEST 2 - binds AccumulationMap to unit 7 |
+| `snow_update.frag` | Outputs solid `vec4(0.5, 0.0, 0.0, 1.0)` |
+| `snow_update.vert` | Uses `gl_ModelViewProjectionMatrix * gl_Vertex` |
+
+### Key Observation
+
+The transition from "full deformation" to "no deformation" after adding NodeMask suggests:
+
+**Before NodeMask:**
+- Camera might have been rendering to default framebuffer (not the texture)
+- Terrain was reading uninitialized texture data (garbage → interpreted as white)
+
+**After NodeMask:**
+- Camera might now be culled/skipped
+- OR camera renders but output goes nowhere
+- Terrain reads same uninitialized texture (now happens to be black due to removed setImage)
+
+### Next Steps to Try
+
+1. **Check if camera is being culled** - Add logging to verify camera traversal
+2. **Try without NodeMask but WITH vertex shader fix** - Isolate which change caused the behavior change
+3. **Add back texture initialization** - Ensure buffer 0 starts with known data
+4. **Check OpenMW cull visitor** - See if Mask_RenderToTexture cameras need special handling
+5. **Compare with Ripples camera setup** - Ripples uses setNodeMask AND works
+
+### Data Flow After Changes
+
+```
+[Update Camera PRE_RENDER 1]
+   - NodeMask: 1 << 17 (Mask_RenderToTexture)
+   - Viewport: 2048x2048
+   - FBO attached to mAccumulationMap[0]
+   - Shader outputs vec4(0.5, 0, 0, 1)
+   - Result: ??? (camera may be culled or output lost)
+
+[Terrain]
+   - Reads mAccumulationMap[0] on unit 7
+   - Sees: 0 (no deformation)
+   - Expected: 0.5 (50% deformation)
+```
+
+### Questions to Answer
+
+1. Is the UpdateCamera actually being traversed/rendered after adding NodeMask?
+2. Is the FBO attachment still valid after adding setImplicitBufferAttachmentMask(0,0)?
+3. Does OpenMW's cull visitor have special handling for Mask_RenderToTexture cameras?
+4. Are the vertices being rendered in the correct location (0,0 to 1,1 in ortho space)?

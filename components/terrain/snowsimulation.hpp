@@ -22,16 +22,18 @@ namespace Terrain
     {
     public:
         SnowSimulation(Resource::SceneManager* sceneManager, osg::Texture2D* objectMask);
-        
+
         /// Update the simulation (scrolling, decay, swapping buffers)
         void update(float dt, const osg::Vec3f& centerPos);
+
+        /// DEBUG: Override traverse to log when this node is visited
+        virtual void traverse(osg::NodeVisitor& nv) override;
 
         /// Get the final result (Blurred Deformation Map)
         osg::Texture2D* getOutputTexture() const { return mBlurredDeformationMap.get(); }
         
-        /// Get the raw accumulation map (pre-blur) for debugging
-        /// DEBUG: Always return buffer 0 (ping-pong disabled)
-        osg::Texture2D* getAccumulationMap() const { return mAccumulationMap[0].get(); }
+        /// Get the raw accumulation map (pre-blur) - returns current write buffer
+        osg::Texture2D* getAccumulationMap() const { return mAccumulationMap[mWriteBufferIndex].get(); }
         // osg::Texture2D* getOutputTexture() const { return mAccumulationMap[0].get(); } // DEBUG: Bypass Blur
         
         /// Get the current center of the simulation in world space

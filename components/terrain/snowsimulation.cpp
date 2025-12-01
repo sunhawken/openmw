@@ -6,9 +6,69 @@
 
 #include <osg/Geometry>
 #include <osg/Depth>
+#include <osg/GL>
 
 namespace Terrain
 {
+    // Debug callback to verify camera actually renders
+    class SnowCameraDrawCallback : public osg::Camera::DrawCallback
+    {
+    public:
+        SnowCameraDrawCallback(const std::string& name, osg::Texture2D* targetTex)
+            : mName(name), mTargetTexture(targetTex), mDrawCount(0) {}
+
+        virtual void operator()(osg::RenderInfo& renderInfo) const override
+        {
+            mDrawCount++;
+
+            // Only log every 60 frames to avoid spam
+            if (mDrawCount % 60 == 1)
+            {
+                // Get GL texture ID
+                unsigned int contextID = renderInfo.getContextID();
+                GLuint glTexID = 0;
+                if (mTargetTexture)
+                {
+                    osg::Texture::TextureObject* texObj = mTargetTexture->getTextureObject(contextID);
+                    if (texObj)
+                        glTexID = texObj->id();
+                }
+
+                Log(Debug::Info) << "[SnowSim] " << mName << " DrawCallback fired! Count: " << mDrawCount
+                                << ", GL TexID: " << glTexID;
+            }
+        }
+
+    private:
+        std::string mName;
+        osg::Texture2D* mTargetTexture;
+        mutable int mDrawCount;
+    };
+
+    // Debug callback to verify camera is being traversed (culled) by scene graph
+    class SnowCameraCullCallback : public osg::NodeCallback
+    {
+    public:
+        SnowCameraCullCallback(const std::string& name) : mName(name), mCullCount(0) {}
+
+        virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
+        {
+            mCullCount++;
+            if (mCullCount % 60 == 1)
+            {
+                Log(Debug::Info) << "[SnowSim] " << mName << " CullCallback fired! Count: " << mCullCount;
+            }
+            traverse(node, nv);
+        }
+
+    private:
+        std::string mName;
+        mutable int mCullCount;
+    };
+
+    // Static counter for traverse logging
+    static int sTraverseCount = 0;
+
     SnowSimulation::SnowSimulation(Resource::SceneManager* sceneManager, osg::Texture2D* objectMask)
         : mSceneManager(sceneManager)
         , mSize(3625.0f) // 50 meters coverage
@@ -18,6 +78,18 @@ namespace Terrain
         , mWriteBufferIndex(0)
     {
         initRTT(objectMask);
+    }
+
+    void SnowSimulation::traverse(osg::NodeVisitor& nv)
+    {
+        sTraverseCount++;
+        if (sTraverseCount % 60 == 1)
+        {
+            Log(Debug::Info) << "[SnowSim] SnowSimulation::traverse() called! Count: " << sTraverseCount
+                            << ", VisitorType: " << nv.getVisitorType()
+                            << ", NumChildren: " << getNumChildren();
+        }
+        osg::Group::traverse(nv);
     }
 
     void SnowSimulation::update(float dt, const osg::Vec3f& centerPos)
@@ -50,39 +122,50 @@ namespace Terrain
             if (mFirstFrame) mFirstFrame = false;
         }
 
-        // DEBUG: DISABLE PING-PONG - Use single buffer to simplify debugging
-        // Always write to buffer 0, always read from buffer 0
-        // The update shader will just overwrite itself each frame
-        // This eliminates all timing issues between buffer swap and terrain sampling
+        // 3. Ping-Pong Buffer Swap
+        // Read from current write buffer (what we wrote last frame)
+        int readIndex = mWriteBufferIndex;
+        // Swap to write to the other buffer
+        mWriteBufferIndex = (mWriteBufferIndex + 1) % 2;
+        int writeIndex = mWriteBufferIndex;
 
-        // Note: With single buffer, we can't accumulate (read+write same buffer in one pass)
-        // But this test verifies the terrain IS reading what the shader writes
+        // Update camera to write to new buffer
+        mUpdateCamera->detach(osg::Camera::COLOR_BUFFER);
+        mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[writeIndex]);
 
-        // mUpdateCamera already attached to buffer 0 in createUpdatePass()
-        // mBlurHQuad already reads from buffer 0 (set in createBlurPasses, but we're bypassing blur anyway)
+        // Update shader to read from previous buffer
+        osg::StateSet* ss = mUpdateQuad->getStateSet();
+        if (ss)
+        {
+            ss->setTextureAttributeAndModes(0, mAccumulationMap[readIndex], osg::StateAttribute::ON);
+        }
+
+        // Update blur input to read from current write buffer
+        if (mBlurHQuad && mBlurHQuad->getStateSet())
+        {
+            mBlurHQuad->getStateSet()->setTextureAttributeAndModes(0, mAccumulationMap[writeIndex], osg::StateAttribute::ON);
+        }
     }
 
     void SnowSimulation::initRTT(osg::Texture2D* objectMask)
     {
         // 1. Create Ping-Pong Textures
+        // Use SAME format as ObjectMaskMap (which works!) - GL_RGBA / GL_UNSIGNED_BYTE
         for (int i = 0; i < 2; ++i)
         {
             mAccumulationMap[i] = new osg::Texture2D;
             mAccumulationMap[i]->setTextureSize(2048, 2048);
-            mAccumulationMap[i]->setInternalFormat(GL_RGBA16F_ARB);
+            mAccumulationMap[i]->setInternalFormat(GL_RGBA);  // Match ObjectMaskMap
             mAccumulationMap[i]->setSourceFormat(GL_RGBA);
-            mAccumulationMap[i]->setSourceType(GL_FLOAT);
+            mAccumulationMap[i]->setSourceType(GL_UNSIGNED_BYTE);  // Match ObjectMaskMap
             mAccumulationMap[i]->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture2D::LINEAR);
             mAccumulationMap[i]->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture2D::LINEAR);
             mAccumulationMap[i]->setWrap(osg::Texture2D::WRAP_S, osg::Texture2D::CLAMP_TO_BORDER);
             mAccumulationMap[i]->setWrap(osg::Texture2D::WRAP_T, osg::Texture2D::CLAMP_TO_BORDER);
             mAccumulationMap[i]->setBorderColor(osg::Vec4(0, 0, 0, 0));
-            
-            // Initialize with black (no deformation)
-            osg::ref_ptr<osg::Image> clearImage = new osg::Image;
-            clearImage->allocateImage(2048, 2048, 1, GL_RGBA, GL_FLOAT);
-            memset(clearImage->data(), 0, clearImage->getTotalSizeInBytes());
-            mAccumulationMap[i]->setImage(clearImage);
+
+            // DON'T set an image - let FBO rendering define the contents
+            // (ObjectMaskMap doesn't have setImage either)
         }
 
         // Initialize Blur Textures with Black Images
@@ -122,7 +205,13 @@ namespace Terrain
         mUpdateCamera->setViewMatrix(osg::Matrix::identity());
         mUpdateCamera->setViewport(0, 0, 2048, 2048);
         mUpdateCamera->setCullingActive(false); // CRITICAL: Disable culling
+        mUpdateCamera->setNodeMask(1 << 17); // Mask_RenderToTexture - CRITICAL for OpenMW!
+        mUpdateCamera->setImplicitBufferAttachmentMask(0, 0); // Don't create implicit buffers
         mUpdateCamera->attach(osg::Camera::COLOR_BUFFER, mAccumulationMap[0]); // Initial target
+
+        // DEBUG: Add callbacks to verify camera is traversed and renders
+        mUpdateCamera->setCullCallback(new SnowCameraCullCallback("UpdateCamera"));
+        mUpdateCamera->setFinalDrawCallback(new SnowCameraDrawCallback("UpdateCamera", mAccumulationMap[0].get()));
 
         // Create Update Quad
         mUpdateQuad = new osg::Geode;
@@ -166,12 +255,12 @@ namespace Terrain
             Log(Debug::Error) << "SnowSimulation: Failed to load update shaders!";
         }
 
-        // Uniforms
-        ss->addUniform(new osg::Uniform(osg::Uniform::SAMPLER_2D, "previousFrame", 0)); // Unit 0
-        
+        // Uniforms - Use simple int constructor for samplers (not array constructor!)
+        ss->addUniform(new osg::Uniform("previousFrame", 0)); // Unit 0
+
         // Bind Object Mask
         ss->setTextureAttributeAndModes(1, objectMask, osg::StateAttribute::ON);
-        ss->addUniform(new osg::Uniform(osg::Uniform::SAMPLER_2D, "objectMask", 1)); // Unit 1
+        ss->addUniform(new osg::Uniform("objectMask", 1)); // Unit 1
 
         mRTTOffsetUniform = new osg::Uniform("offset", osg::Vec2(0, 0));
         ss->addUniform(mRTTOffsetUniform);
@@ -204,6 +293,8 @@ namespace Terrain
         mBlurHCamera->setViewMatrix(osg::Matrix::identity());
         mBlurHCamera->setViewport(0, 0, 2048, 2048);
         mBlurHCamera->setCullingActive(false); // CRITICAL: Disable culling
+        mBlurHCamera->setNodeMask(1 << 17); // Mask_RenderToTexture
+        mBlurHCamera->setImplicitBufferAttachmentMask(0, 0);
         mBlurHCamera->attach(osg::Camera::COLOR_BUFFER, mBlurTempBuffer);
 
         mBlurHQuad = new osg::Geode;
@@ -246,6 +337,8 @@ namespace Terrain
         mBlurVCamera->setViewMatrix(osg::Matrix::identity());
         mBlurVCamera->setViewport(0, 0, 2048, 2048);
         mBlurVCamera->setCullingActive(false); // CRITICAL: Disable culling
+        mBlurVCamera->setNodeMask(1 << 17); // Mask_RenderToTexture
+        mBlurVCamera->setImplicitBufferAttachmentMask(0, 0);
         mBlurVCamera->attach(osg::Camera::COLOR_BUFFER, mBlurredDeformationMap);
 
         mBlurVQuad = new osg::Geode;
