@@ -27,6 +27,7 @@ namespace Terrain
 
     private:
         void createParticleSystem(const std::string& textureName);
+        void loadParticleTexture(osg::StateSet* stateset);
         osg::ref_ptr<osgParticle::ModularEmitter> createEmitter(const osg::Vec3f& position, const std::string& type);
 
         osg::Group* mParentNode;
