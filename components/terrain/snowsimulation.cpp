@@ -331,6 +331,10 @@ namespace Terrain
         hSS->setAttributeAndModes(hProg, osg::StateAttribute::ON);
         hSS->addUniform(new osg::Uniform("inputTex", 0));
 
+        // Blur spread uniform (default 2.0 for snow)
+        mBlurSpreadUniformH = new osg::Uniform("blurSpread", 2.0f);
+        hSS->addUniform(mBlurSpreadUniformH);
+
         addChild(mBlurHCamera);
 
         // --- Blur Pass 2 (Vertical) ---
@@ -376,7 +380,19 @@ namespace Terrain
         vSS->setAttributeAndModes(vProg, osg::StateAttribute::ON);
         vSS->addUniform(new osg::Uniform("inputTex", 0));
 
+        // Blur spread uniform (default 2.0 for snow)
+        mBlurSpreadUniformV = new osg::Uniform("blurSpread", 2.0f);
+        vSS->addUniform(mBlurSpreadUniformV);
+
         addChild(mBlurVCamera);
+    }
+
+    void SnowSimulation::setBlurSpread(float spread)
+    {
+        if (mBlurSpreadUniformH)
+            mBlurSpreadUniformH->set(spread);
+        if (mBlurSpreadUniformV)
+            mBlurSpreadUniformV->set(spread);
     }
 
     void SnowSimulation::createCopyPass()

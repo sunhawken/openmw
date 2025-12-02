@@ -67,7 +67,6 @@ namespace Terrain
 
                     if (childName == "Terrain Root")
                     {
-                        Log(Debug::Verbose) << "  [SKIP] Terrain Root";
                         childrenSkipped++;
                         continue;
                     }
@@ -86,16 +85,10 @@ namespace Terrain
                         continue;
                     }
 
-                    // Log what we're about to traverse
-                    unsigned int nodeMask = child->getNodeMask();
-                    Log(Debug::Info) << "  [TRAVERSE] " << childName
-                                    << " (mask: 0x" << std::hex << nodeMask << std::dec << ")";
                     childrenTraversed++;
                     child->accept(*nv);
                 }
                 
-                Log(Debug::Info) << "DepthCameraCullCallback: Traversed " << childrenTraversed
-                                << " nodes, skipped " << childrenSkipped;
             }
         }
 
@@ -121,6 +114,8 @@ namespace Terrain
         , mTimeSinceLastFootprint(999.0f)
         , mDecayTime(Settings::terrain().mSnowDecayTime.get())
         , mCurrentTerrainType("snow")
+        , mCurrentCameraDepth(Settings::terrain().mSnowCameraDepth.get())
+        , mCurrentBlurSpread(Settings::terrain().mSnowBlurSpread.get())
         , mCurrentTime(0.0f)
         , mRTTSize(3625.0f) // 50 meters coverage (approx 72.5 units/meter)
         , mRTTCenter(0.0f, 0.0f, 0.0f)
@@ -140,18 +135,24 @@ namespace Terrain
                 Settings::terrain().mSnowFootprintRadius.get(),
                 Settings::terrain().mSnowDeformationDepth.get(),
                 45.0f,  // interval (approx 2 feet)
+                Settings::terrain().mSnowCameraDepth.get(),
+                Settings::terrain().mSnowBlurSpread.get(),
                 "snow"
             },
             {
                 Settings::terrain().mAshFootprintRadius.get(),
                 Settings::terrain().mAshDeformationDepth.get(),
                 45.0f,  // interval
+                Settings::terrain().mAshCameraDepth.get(),
+                Settings::terrain().mAshBlurSpread.get(),
                 "ash"
             },
             {
                 Settings::terrain().mMudFootprintRadius.get(),
                 Settings::terrain().mMudDeformationDepth.get(),
                 45.0f,  // interval
+                Settings::terrain().mMudCameraDepth.get(),
+                Settings::terrain().mMudBlurSpread.get(),
                 "mud"
             }
         };
@@ -198,10 +199,22 @@ namespace Terrain
 
         float distanceMoved = (playerPos - mLastFootprintPos).length();
 
-        if (distanceMoved > mFootprintInterval || mTimeSinceLastFootprint > 0.5f)
+        // Only emit particles when actually moving (distance check only, no time-based emission)
+        // Minimum movement threshold to avoid particles when standing still
+        const float minMovementForParticles = 5.0f; // ~3 inches of movement
+
+        if (distanceMoved > mFootprintInterval)
         {
-            Log(Debug::Verbose) << "SnowDeformationManager::update - Emitting particles at " << playerPos;
-            emitParticles(playerPos);
+            // Only emit particles if we're actually moving, not for mud, and occasionally
+            bool shouldEmitParticles = (distanceMoved > minMovementForParticles)
+                                       && (mCurrentTerrainType != "mud");
+
+            if (shouldEmitParticles)
+            {
+                Log(Debug::Verbose) << "SnowDeformationManager::update - Emitting particles at " << playerPos;
+                emitParticles(playerPos);
+            }
+
             mLastFootprintPos = playerPos;
             mTimeSinceLastFootprint = 0.0f;
         }
@@ -287,8 +300,18 @@ namespace Terrain
                 mFootprintRadius = params.radius;
                 mDeformationDepth = params.depth;
                 mFootprintInterval = params.interval;
+                mCurrentCameraDepth = params.cameraDepth;
+                mCurrentBlurSpread = params.blurSpread;
 
-                // Uniforms updated automatically via pointers or next frame
+                // Update simulation with new blur spread
+                if (mSimulation)
+                {
+                    mSimulation->setBlurSpread(mCurrentBlurSpread);
+                }
+
+                Log(Debug::Info) << "Terrain type changed to: " << terrainType
+                                << " (cameraDepth=" << mCurrentCameraDepth
+                                << ", blurSpread=" << mCurrentBlurSpread << ")";
                 return;
             }
         }
@@ -423,17 +446,25 @@ namespace Terrain
         if (mDepthCamera)
         {
             float halfSize = mRTTSize * 0.5f;
+
+            // Camera depth controls how much of the body is captured:
+            // - Small values (50-100): Only feet touch the ground (good for mud, ash)
+            // - Large values (200-500): Full body sinks into terrain (good for deep snow)
+            float nearPlane = 1.0f;
+            float farPlane = nearPlane + mCurrentCameraDepth;
+
             // Ortho Projection centered on player
             mDepthCamera->setProjectionMatrixAsOrtho(
-                -halfSize, halfSize, 
-                -halfSize, halfSize, 
-                1.0f, 500.0f); // Near/Far planes (adjust as needed)
+                -halfSize, halfSize,
+                -halfSize, halfSize,
+                nearPlane, farPlane);
 
             // View Matrix: Top-Down looking at player
-            osg::Vec3f eye = mRTTCenter + osg::Vec3f(0, 0, 200.0f);
+            // Eye position is at farPlane distance above ground
+            osg::Vec3f eye = mRTTCenter + osg::Vec3f(0, 0, farPlane);
             osg::Vec3f center = mRTTCenter;
             osg::Vec3f up = osg::Vec3f(0, 1, 0);
-            
+
             mDepthCamera->setViewMatrixAsLookAt(eye, center, up);
         }
 

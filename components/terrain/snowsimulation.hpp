@@ -42,6 +42,9 @@ namespace Terrain
         /// Get the size of the simulation area in world units
         float getSize() const { return mSize; }
 
+        /// Set blur spread (controls edge smoothness, per-terrain type)
+        void setBlurSpread(float spread);
+
     private:
         void initRTT(osg::Texture2D* objectMask);
         void createUpdatePass(osg::Texture2D* objectMask);
@@ -80,6 +83,8 @@ namespace Terrain
         osg::ref_ptr<osg::Uniform> mRTTOffsetUniform;
         osg::ref_ptr<osg::Uniform> mDecayUniform;
         osg::ref_ptr<osg::Uniform> mFirstFrameUniform;
+        osg::ref_ptr<osg::Uniform> mBlurSpreadUniformH;
+        osg::ref_ptr<osg::Uniform> mBlurSpreadUniformV;
     };
 }
 

@@ -49,6 +49,12 @@ namespace Settings
             makeMaxStrictSanitizerFloat(1.0f) };
         SettingValue<float> mSnowDecayTime{ mIndex, "Terrain", "snow decay time",
             makeMaxStrictSanitizerFloat(1.0f) };
+        // Camera depth = how much of the body is captured (smaller = only feet, larger = full body)
+        SettingValue<float> mSnowCameraDepth{ mIndex, "Terrain", "snow camera depth",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        // Blur spread = smoothness of deformation edges (higher = smoother/wider blur)
+        SettingValue<float> mSnowBlurSpread{ mIndex, "Terrain", "snow blur spread",
+            makeMaxStrictSanitizerFloat(0.1f) };
 
         // Ash deformation settings
         SettingValue<bool> mAshDeformationEnabled{ mIndex, "Terrain", "ash deformation enabled" };
@@ -58,6 +64,10 @@ namespace Settings
             makeMaxStrictSanitizerFloat(1.0f) };
         SettingValue<float> mAshDecayTime{ mIndex, "Terrain", "ash decay time",
             makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mAshCameraDepth{ mIndex, "Terrain", "ash camera depth",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mAshBlurSpread{ mIndex, "Terrain", "ash blur spread",
+            makeMaxStrictSanitizerFloat(0.1f) };
 
         // Mud deformation settings
         SettingValue<bool> mMudDeformationEnabled{ mIndex, "Terrain", "mud deformation enabled" };
@@ -67,6 +77,10 @@ namespace Settings
             makeMaxStrictSanitizerFloat(1.0f) };
         SettingValue<float> mMudDecayTime{ mIndex, "Terrain", "mud decay time",
             makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mMudCameraDepth{ mIndex, "Terrain", "mud camera depth",
+            makeMaxStrictSanitizerFloat(1.0f) };
+        SettingValue<float> mMudBlurSpread{ mIndex, "Terrain", "mud blur spread",
+            makeMaxStrictSanitizerFloat(0.1f) };
     };
 }
 
