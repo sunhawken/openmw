@@ -28,12 +28,14 @@ namespace Terrain
     private:
         void createParticleSystem(const std::string& textureName);
         void loadParticleTexture(osg::StateSet* stateset);
+        void loadParticleTextureByName(osg::StateSet* stateset, const std::string& texturePath);
         osg::ref_ptr<osgParticle::ModularEmitter> createEmitter(const osg::Vec3f& position, const std::string& type);
 
         osg::Group* mParentNode;
         Resource::SceneManager* mSceneManager;
-        
+
         osg::ref_ptr<osgParticle::ParticleSystem> mParticleSystem;
+        std::string mCurrentTexture; // Track current texture to avoid reloading
         osg::ref_ptr<osgParticle::Program> mParticleProgram;
         osg::ref_ptr<osg::Group> mParticleGroup;
 

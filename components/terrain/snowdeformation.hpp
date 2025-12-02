@@ -138,10 +138,14 @@ namespace Terrain
             float radius;
             float depth;
             float interval;
+            float cameraDepth;   // How much of body is captured (smaller = feet only)
+            float blurSpread;    // Blur multiplier for edge smoothness
             std::string pattern;
         };
         std::vector<TerrainParams> mTerrainParams;
         std::string mCurrentTerrainType;
+        float mCurrentCameraDepth;
+        float mCurrentBlurSpread;
 
         // Game time
         float mCurrentTime;

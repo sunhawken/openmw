@@ -88,63 +88,59 @@ namespace Terrain
         mParticleGroup->addChild(program);
 
         // Define terrain-specific particle configurations
-        // Snow: Light, fluffy, white/blue tint, lots of particles, floaty
+        // Snow: Light, fluffy, white/blue tint, few particles, floaty
+        // Using Bloodmoon blizzard texture for authentic snow puff look
         mConfigs["snow"] = {
-            "textures/tx_spark_white.dds", // Will try to load
-            osg::Vec4(0.95f, 0.95f, 1.0f, 0.7f), // Slightly blue-white
-            15.0f,  // size - visible particles
-            1.2f,   // lifetime
-            120.0f, // speed - good initial kick
-            25      // count - lots of spray
+            "textures/tx_bm_blizzard_01.dds",
+            osg::Vec4(0.95f, 0.95f, 1.0f, 0.6f), // Slightly blue-white
+            20.0f,  // size - visible particles
+            1.0f,   // lifetime
+            80.0f,  // speed - moderate kick
+            4       // count - just a few puffs per step
         };
 
-        // Ash: Darker, slower, gray particles, fewer, heavier feel
+        // Ash: Darker, slower, gray particles, using ash cloud texture
         mConfigs["ash"] = {
-            "textures/tx_spark_white.dds",
-            osg::Vec4(0.4f, 0.4f, 0.45f, 0.8f), // Dark gray with slight blue
-            12.0f,  // size
-            1.5f,   // longer lifetime (ash lingers)
-            80.0f,  // slower speed
-            15      // fewer particles
+            "textures/tx_ash_cloud.tga",
+            osg::Vec4(0.5f, 0.45f, 0.4f, 0.7f), // Gray-brown ash color
+            18.0f,  // size
+            1.3f,   // longer lifetime (ash lingers)
+            60.0f,  // slower speed
+            3       // few particles
         };
 
-        // Mud: Brown, heavy, splatter effect, fast fall
+        // Mud: No particles emitted (handled in SnowDeformationManager)
+        // Config kept for fallback but count set to 0
         mConfigs["mud"] = {
-            "textures/tx_spark_white.dds",
+            "textures/tx_bm_blizzard_01.dds",
             osg::Vec4(0.35f, 0.25f, 0.15f, 0.9f), // Brown
             10.0f,  // smaller particles
-            0.6f,   // short lifetime (falls fast)
-            100.0f, // good speed
-            12      // moderate count
+            0.5f,   // short lifetime
+            50.0f,  // speed
+            0       // NO particles for mud
         };
     }
 
     void SnowParticleEmitter::loadParticleTexture(osg::StateSet* stateset)
     {
-        // Try to load a soft particle texture from game assets
-        // These are common Morrowind particle textures
-        const char* textureAttempts[] = {
-            "textures/tx_spark_white.dds",
-            "textures/tx_weathersnow_01.dds",
-            "textures/tx_frost_particle.dds",
-            "textures/tx_smoke_white.dds"
-        };
+        // Load default snow texture at startup
+        loadParticleTextureByName(stateset, "textures/tx_bm_blizzard_01.dds");
+    }
 
+    void SnowParticleEmitter::loadParticleTextureByName(osg::StateSet* stateset, const std::string& texturePath)
+    {
         osg::ref_ptr<osg::Image> image;
-        for (const char* texPath : textureAttempts)
-        {
-            try {
-                VFS::Path::Normalized normalizedPath(texPath);
-                image = mSceneManager->getImageManager()->getImage(normalizedPath);
-                if (image.valid())
-                {
-                    Log(Debug::Info) << "SnowParticleEmitter: Loaded particle texture: " << texPath;
-                    break;
-                }
+
+        try {
+            VFS::Path::Normalized normalizedPath(texturePath);
+            image = mSceneManager->getImageManager()->getImage(normalizedPath);
+            if (image.valid())
+            {
+                Log(Debug::Verbose) << "SnowParticleEmitter: Loaded particle texture: " << texturePath;
             }
-            catch (...) {
-                // Texture not found, try next
-            }
+        }
+        catch (...) {
+            Log(Debug::Warning) << "SnowParticleEmitter: Failed to load texture: " << texturePath;
         }
 
         if (image.valid())
@@ -177,6 +173,19 @@ namespace Terrain
             it = mConfigs.find("snow"); // Default
 
         const ParticleConfig& config = it->second;
+
+        // Skip if no particles for this terrain type
+        if (config.count <= 0)
+            return;
+
+        // Switch texture if terrain type changed
+        if (config.texture != mCurrentTexture)
+        {
+            osg::StateSet* stateset = mParticleSystem->getOrCreateStateSet();
+            loadParticleTextureByName(stateset, config.texture);
+            mCurrentTexture = config.texture;
+            Log(Debug::Info) << "SnowParticleEmitter: Switched to texture: " << config.texture;
+        }
 
         // Emit a burst of particles in a cone pattern
         // This creates a "spray" effect when the foot hits the ground
