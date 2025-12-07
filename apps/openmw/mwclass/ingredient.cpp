@@ -21,6 +21,10 @@
 #include "../mwrender/objects.hpp"
 #include "../mwrender/renderinginterface.hpp"
 
+#include "../mwphysics/physicssystem.hpp"
+
+#include <components/vfs/pathutil.hpp>
+
 #include "classmodel.hpp"
 #include "nameorid.hpp"
 
