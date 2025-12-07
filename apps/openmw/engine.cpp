@@ -446,6 +446,14 @@ void OMW::Engine::setDataDirs(const Files::PathContainer& dataDirs)
     mDataDirs = dataDirs;
     mDataDirs.insert(mDataDirs.begin(), mResDir / "vfs");
     mFileCollections = Files::Collections(mDataDirs);
+
+    // Debug: Print file collections paths
+    Log(Debug::Info) << "[DEBUG] setDataDirs: mResDir = " << mResDir;
+    Log(Debug::Info) << "[DEBUG] setDataDirs: vfs path = " << (mResDir / "vfs");
+    for (const auto& dir : mDataDirs)
+    {
+        Log(Debug::Info) << "[DEBUG] setDataDirs: data dir = " << dir;
+    }
 }
 
 // Add BSA archive
@@ -832,17 +840,27 @@ void OMW::Engine::prepareEngine()
     mSoundManager = std::make_unique<MWSound::SoundManager>(mVFS.get(), mUseSound);
     mEnvironment.setSoundManager(*mSoundManager);
 
+    Log(Debug::Info) << "[DEBUG] About to create World...";
+
     // Create the world
     mWorld = std::make_unique<MWWorld::World>(
         mResourceSystem.get(), mActivationDistanceOverride, mCellName, mCfgMgr.getUserDataPath());
+    Log(Debug::Info) << "[DEBUG] World created, setting environment...";
     mEnvironment.setWorld(*mWorld);
     mEnvironment.setWorldModel(mWorld->getWorldModel());
     mEnvironment.setESMStore(mWorld->getStore());
+    Log(Debug::Info) << "[DEBUG] Environment set, starting data loading...";
 
-    Loading::Listener* listener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
+    Log(Debug::Info) << "[DEBUG] Getting WindowManager...";
+    auto windowManager = MWBase::Environment::get().getWindowManager();
+    Log(Debug::Info) << "[DEBUG] Getting loading screen...";
+    Loading::Listener* listener = windowManager->getLoadingScreen();
+    Log(Debug::Info) << "[DEBUG] Creating AsyncListener...";
     Loading::AsyncListener asyncListener(*listener);
+    Log(Debug::Info) << "[DEBUG] Starting async data loading task...";
     auto dataLoading = std::async(std::launch::async,
         [&] { mWorld->loadData(mFileCollections, mContentFiles, mGroundcoverFiles, mEncoder.get(), &asyncListener); });
+    Log(Debug::Info) << "[DEBUG] Async task started";
 
     if (!mSkipMenu)
     {
@@ -859,8 +877,10 @@ void OMW::Engine::prepareEngine()
         dataLoading.get();
     }
     listener->loadingOff();
+    Log(Debug::Info) << "[DEBUG] Data loading complete, calling World::init()...";
 
     mWorld->init(mMaxRecastLogLevel, mViewer, std::move(rootNode), mWorkQueue.get(), *mUnrefQueue);
+    Log(Debug::Info) << "[DEBUG] World::init() complete";
     mEnvironment.setWorldScene(mWorld->getWorldScene());
     mWorld->setupPlayer();
     mWorld->setRandomSeed(mRandomSeed);
