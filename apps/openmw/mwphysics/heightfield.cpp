@@ -56,6 +56,7 @@ namespace MWPhysics
         if (mPhysicsBody != nullptr)
         {
             mTaskScheduler->removeCollisionObject(mPhysicsBody);
+            mTaskScheduler->destroyCollisionObject(mPhysicsBody);
         }
     }
 }
