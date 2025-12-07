@@ -1533,12 +1533,12 @@ namespace MWPhysics
     void PhysicsSystem::applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
         float reach, float attackStrength)
     {
-        Log(Debug::Info) << "applyMeleeHitToDynamicObjects called: origin=" << origin.x() << "," << origin.y() << "," << origin.z()
-                         << " reach=" << reach << " strength=" << attackStrength
-                         << " dynamicObjects=" << mDynamicObjects.size();
+        Log(Debug::Verbose) << "applyMeleeHitToDynamicObjects called: origin=" << origin.x() << "," << origin.y() << "," << origin.z()
+                            << " reach=" << reach << " strength=" << attackStrength
+                            << " dynamicObjects=" << mDynamicObjects.size();
 
-        // Cone check parameters - wider cone for better hit detection
-        constexpr float coneAngleCos = 0.5f;  // ~60 degree half-angle cone
+        // Cone check parameters - realistic weapon swing arc
+        constexpr float coneAngleCos = 0.707f;  // ~45 degree half-angle cone
 
         osg::Vec3f normalizedDir = direction;
         normalizedDir.normalize();
@@ -1553,8 +1553,8 @@ namespace MWPhysics
             osg::Vec3f toObject = objPos - origin;
             float distance = toObject.length();
 
-            // Check if within reach (extended slightly for better feel)
-            if (distance > reach * 1.2f || distance < 0.1f)
+            // Check if within reach (exact reach distance)
+            if (distance > reach || distance < 0.1f)
                 continue;
 
             toObject.normalize();
@@ -1566,18 +1566,17 @@ namespace MWPhysics
 
             // Calculate impulse based on attack strength and distance
             // Closer objects get hit harder
-            float distanceFactor = 1.0f - (distance / (reach * 1.2f));
+            float distanceFactor = 1.0f - (distance / reach);
             distanceFactor = std::max(distanceFactor, 0.2f);  // Minimum 20% power
 
-            // Much stronger base impulse for visible effect
-            // Scale by mass to ensure even heavy objects move noticeably
+            // Base impulse scaled by attack strength
             float mass = dynObj->getMass();
             constexpr float baseImpulse = 500.0f;
             float impulseMagnitude = baseImpulse * attackStrength * distanceFactor * std::max(1.0f, mass * 0.5f);
 
-            // Apply impulse in the swing direction with some upward component
+            // Apply impulse in the swing direction with slight upward component
             osg::Vec3f impulse = normalizedDir * impulseMagnitude;
-            impulse.z() += impulseMagnitude * 0.5f;  // More upward kick for dramatic effect
+            impulse.z() += impulseMagnitude * 0.3f;  // Slight upward kick
 
             // IMPORTANT: Activate the body BEFORE applying impulse
             // Otherwise sleeping bodies may ignore the impulse
