@@ -9,11 +9,14 @@
 #include <osg/Stats>
 #include <osg/Timer>
 
+// IMPORTANT: Jolt/Jolt.h must be included first before any other Jolt headers
+// It defines critical macros that other headers depend on
+#include <Jolt/Jolt.h>
+
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
@@ -30,6 +33,7 @@
 #include <components/esm3/loadgmst.hpp>
 #include <components/esm3/loadmgef.hpp>
 #include <components/misc/convert.hpp>
+#include <components/misc/mathutil.hpp>
 #include <components/misc/resourcehelpers.hpp>
 #include <components/misc/strings/conversion.hpp>
 #include <components/resource/physicsshapemanager.hpp>
@@ -52,6 +56,7 @@
 #include "../mwworld/class.hpp"
 
 #include "actor.hpp"
+#include "dynamicobject.hpp"
 #include "joltlayers.hpp"
 
 #include "heightfield.hpp"
@@ -180,10 +185,7 @@ namespace MWPhysics
     }
 
     PhysicsSystem::PhysicsSystem(Resource::ResourceSystem* resourceSystem, osg::ref_ptr<osg::Group> parentNode)
-        : mShapeManager(
-            std::make_unique<Resource::PhysicsShapeManager>(resourceSystem->getVFS(), resourceSystem->getSceneManager(),
-                resourceSystem->getNifFileManager(), Settings::cells().mCacheExpiryDelay))
-        , mResourceSystem(resourceSystem)
+        : mResourceSystem(resourceSystem)
         , mDebugDrawEnabled(false)
         , mTimeAccum(0.0f)
         , mProjectileId(0)
@@ -192,18 +194,30 @@ namespace MWPhysics
         , mParentNode(std::move(parentNode))
         , mPhysicsDt(1.f / 60.f)
     {
-        mResourceSystem->addResourceManager(mShapeManager.get());
+        Log(Debug::Info) << "[JOLT DEBUG] PhysicsSystem constructor starting...";
 
-        // Register allocation hook and callbacks
-        JPH::RegisterDefaultAllocator();
+        // NOTE: Jolt initialization (RegisterDefaultAllocator, Factory, RegisterTypes) is done
+        // in main() before any other code runs, because Jolt types like JPH::Ref<> are used
+        // in headers that get included early.
+
+        // Set up trace and assert callbacks
         JPH::Trace = TraceImpl;
         JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = AssertFailedImpl;)
 
-        // Create a factory
-        JPH::Factory::sInstance = new JPH::Factory();
+        // Create Jolt filter/listener objects
+        Log(Debug::Info) << "[JOLT DEBUG] Creating Jolt listeners and filters...";
+        mContactListener = std::make_unique<JoltContactListener>();
+        mBPLayerInterface = std::make_unique<JoltBPLayerInterface>();
+        mObjectVsBPLayerFilter = std::make_unique<JoltObjectVsBroadPhaseLayerFilter>();
+        mObjectVsObjectLayerFilter = std::make_unique<JoltObjectLayerPairFilter>();
+        Log(Debug::Info) << "[JOLT DEBUG] Jolt listeners and filters created";
 
-        // Register all Jolt physics types
-        JPH::RegisterTypes();
+        // Now we can safely create the shape manager (it uses Jolt types internally)
+        Log(Debug::Info) << "[JOLT DEBUG] Creating PhysicsShapeManager...";
+        mShapeManager = std::make_unique<Resource::PhysicsShapeManager>(resourceSystem->getVFS(),
+            resourceSystem->getSceneManager(), resourceSystem->getNifFileManager(), Settings::cells().mCacheExpiryDelay);
+        mResourceSystem->addResourceManager(mShapeManager.get());
+        Log(Debug::Info) << "[JOLT DEBUG] PhysicsShapeManager created";
 
         // Mark this as main thread for profiling
         JPH_PROFILE_START("Main");
@@ -221,19 +235,29 @@ namespace MWPhysics
 
         // We need a temp allocator for temporary allocations during the physics update.
         // Pre-allocatings 25 MB to avoid having to do allocations during the physics update.
+        Log(Debug::Info) << "[JOLT DEBUG] Creating TempAllocator...";
         mMemoryAllocator = std::make_unique<JPH::TempAllocatorImpl>(25 * 1024 * 1024);
+        Log(Debug::Info) << "[JOLT DEBUG] TempAllocator created";
 
         // Now we can create the actual physics system.
-        mPhysicsSystem.Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints, mBPLayerInterface,
-            mObjectVsBPLayerFilter, mObjectVsObjectLayerFilter);
-        mPhysicsSystem.SetContactListener(&mContactListener);
-        mPhysicsSystem.SetGravity(JPH::Vec3(0, 0, Constants::GravityConst * Constants::UnitsPerMeter));
+        // NOTE: Must be created after RegisterTypes() is called, hence unique_ptr
+        Log(Debug::Info) << "[JOLT DEBUG] Creating JPH::PhysicsSystem...";
+        mPhysicsSystem = std::make_unique<JPH::PhysicsSystem>();
+        Log(Debug::Info) << "[JOLT DEBUG] JPH::PhysicsSystem created, calling Init...";
+        mPhysicsSystem->Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints, *mBPLayerInterface,
+            *mObjectVsBPLayerFilter, *mObjectVsObjectLayerFilter);
+        Log(Debug::Info) << "[JOLT DEBUG] JPH::PhysicsSystem Init done";
+        mPhysicsSystem->SetContactListener(mContactListener.get());
+        mPhysicsSystem->SetGravity(JPH::Vec3(0, 0, Constants::GravityConst * Constants::UnitsPerMeter));
 
         // Debug helper
-        mJoltDebugDrawer = std::make_unique<MWRender::JoltDebugDrawer>(mParentNode, &mPhysicsSystem, mDebugDrawEnabled);
+        Log(Debug::Info) << "[JOLT DEBUG] Creating JoltDebugDrawer...";
+        mJoltDebugDrawer = std::make_unique<MWRender::JoltDebugDrawer>(mParentNode, mPhysicsSystem.get(), mDebugDrawEnabled);
+        Log(Debug::Info) << "[JOLT DEBUG] JoltDebugDrawer created";
 
         // Detect number of wanted async threads, if 0 then use single threaded job system
         unsigned numThreads = getNumThreads(detectLockingPolicy());
+        Log(Debug::Info) << "[JOLT DEBUG] Creating JobSystem with " << numThreads << " threads...";
         if (numThreads > 0)
         {
             mPhysicsJobSystem
@@ -243,36 +267,49 @@ namespace MWPhysics
         {
             mPhysicsJobSystem = std::make_unique<JPH::JobSystemSingleThreaded>(cMaxPhysicsJobs);
         }
+        Log(Debug::Info) << "[JOLT DEBUG] JobSystem created";
 
         // Create a job scheduler responsible for simulating the game world (actors etc)
+        Log(Debug::Info) << "[JOLT DEBUG] Creating PhysicsTaskScheduler...";
         mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(
-            mPhysicsDt, &mPhysicsSystem, mJoltDebugDrawer.get(), mPhysicsJobSystem.get());
+            mPhysicsDt, mPhysicsSystem.get(), mJoltDebugDrawer.get(), mPhysicsJobSystem.get());
+        Log(Debug::Info) << "[JOLT DEBUG] PhysicsTaskScheduler created - PhysicsSystem constructor complete!";
     }
 
     PhysicsSystem::~PhysicsSystem()
     {
         Log(Debug::Info) << "Destroying physics system...";
 
+        Log(Debug::Info) << "[JOLT DEBUG] Removing shape manager from resource system...";
         mResourceSystem->removeResourceManager(mShapeManager.get());
+        Log(Debug::Info) << "[JOLT DEBUG] Resetting water instance...";
         mWaterInstance.reset();
+        Log(Debug::Info) << "[JOLT DEBUG] Releasing shared states...";
         mTaskScheduler->releaseSharedStates();
+        Log(Debug::Info) << "[JOLT DEBUG] Clearing height fields...";
         mHeightFields.clear();
+        Log(Debug::Info) << "[JOLT DEBUG] Clearing objects...";
         mObjects.clear();
+        Log(Debug::Info) << "[JOLT DEBUG] Clearing actors...";
         mActors.clear();
+        Log(Debug::Info) << "[JOLT DEBUG] Clearing projectiles...";
         mProjectiles.clear();
 
+        Log(Debug::Info) << "[JOLT DEBUG] Resetting job system...";
         // Pre-emptive end jobs system
         mPhysicsJobSystem.reset();
 
-        // Unregisters all types with the factory and cleans up the defaults
-        UnregisterTypes();
-
-        // Destroy the factory
-        delete Factory::sInstance;
-        Factory::sInstance = nullptr;
-
+        Log(Debug::Info) << "[JOLT DEBUG] Ending profiler...";
         // Signal to end profiling
         JPH_PROFILE_END();
+
+        // NOTE: We do NOT call UnregisterTypes() or delete Factory::sInstance here.
+        // The Jolt global state (allocator, factory, types) is initialized in main()
+        // and should persist for the entire application lifetime. Destroying it here
+        // would cause crashes if any Jolt-related cleanup happens after PhysicsSystem
+        // is destroyed (e.g., during exception handling or in other destructors).
+
+        Log(Debug::Info) << "[JOLT DEBUG] PhysicsSystem destructor complete";
     }
 
     Resource::PhysicsShapeManager* PhysicsSystem::getShapeManager()
@@ -368,7 +405,7 @@ namespace MWPhysics
 
         // Cast ray and return closest hit
         JPH::RayCastResult ioHit;
-        const bool didRayHit = mPhysicsSystem.GetNarrowPhaseQuery().CastRay(
+        const bool didRayHit = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(
             ray, ioHit, broadphaseLayerFilter, objectLayerFilter, bodyFilter);
 
         RayCastingResult result;
@@ -377,7 +414,7 @@ namespace MWPhysics
         {
             auto outPosition = ray.GetPointOnRay(ioHit.mFraction);
             result.mHitPos = Misc::Convert::toOsg(outPosition);
-            JPH::BodyLockRead lock(mPhysicsSystem.GetBodyLockInterface(), ioHit.mBodyID);
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), ioHit.mBodyID);
             if (lock.Succeeded())
             {
                 const JPH::Body& hitBody = lock.GetBody();
@@ -416,7 +453,7 @@ namespace MWPhysics
         MaskedObjectLayerFilter objectLayerFilter(mask);
 
         ClosestConvexResultCallback callback(transFrom.GetTranslation());
-        mPhysicsSystem.GetNarrowPhaseQuery().CastShape(
+        mPhysicsSystem->GetNarrowPhaseQuery().CastShape(
             shapeCast, settings, transFrom.GetTranslation(), callback, broadphaseLayerFilter, objectLayerFilter);
 
         RayCastingResult result;
@@ -453,7 +490,7 @@ namespace MWPhysics
     bool PhysicsSystem::canMoveToWaterSurface(const MWWorld::ConstPtr& actor, const float waterlevel)
     {
         const auto* physactor = getActor(actor);
-        return physactor && physactor->canMoveToWaterSurface(waterlevel, &mPhysicsSystem);
+        return physactor && physactor->canMoveToWaterSurface(waterlevel, mPhysicsSystem.get());
     }
 
     osg::Vec3f PhysicsSystem::getHalfExtents(const MWWorld::ConstPtr& actor) const
@@ -492,7 +529,7 @@ namespace MWPhysics
         if (bodyId.IsInvalid())
             return osg::BoundingBox();
 
-        JPH::BodyLockRead lock(mPhysicsSystem.GetBodyLockInterface(), bodyId);
+        JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), bodyId);
         if (!lock.Succeeded())
             return osg::BoundingBox();
 
@@ -537,7 +574,7 @@ namespace MWPhysics
 
         // Scoped lock so we can read then discard
         {
-            JPH::BodyLockRead lock(mPhysicsSystem.GetBodyLockInterface(), me);
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), me);
             if (!lock.Succeeded())
                 return {};
 
@@ -550,7 +587,7 @@ namespace MWPhysics
         // actors->actors etc if needed this is important to prevent Jolt comlaining that two triangle mesh shapes
         // cannot collide
         JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
-            = mPhysicsSystem.GetDefaultBroadPhaseLayerFilter(collisionGroup);
+            = mPhysicsSystem->GetDefaultBroadPhaseLayerFilter(collisionGroup);
         MaskedObjectLayerFilter objectLayerFilter(collisionMask);
 
         JPH::CollideShapeSettings settings;
@@ -561,8 +598,8 @@ namespace MWPhysics
         // WARNING: you cannot collide mesh->mesh shapes in Jolt, so this should filter to avoid that (only collide with
         // actors etc)
         auto scale = JPH::Vec3::sReplicate(1.0f);
-        ContactTestResultCallback resultCallback(&mPhysicsSystem, me, transform.GetTranslation());
-        mPhysicsSystem.GetNarrowPhaseQuery().CollideShape(shape, scale, transform, settings, JPH::RVec3::sZero(),
+        ContactTestResultCallback resultCallback(mPhysicsSystem.get(), me, transform.GetTranslation());
+        mPhysicsSystem->GetNarrowPhaseQuery().CollideShape(shape, scale, transform, settings, JPH::RVec3::sZero(),
             resultCallback, broadphaseLayerFilter, objectLayerFilter);
         return resultCallback.mResult;
     }
@@ -581,12 +618,12 @@ namespace MWPhysics
         ActorMap::iterator found = mActors.find(ptr.mRef);
         if (found == mActors.end())
             return ptr.getRefData().getPosition().asVec3();
-        return MovementSolver::traceDown(ptr, position, found->second.get(), &mPhysicsSystem, maxHeight);
+        return MovementSolver::traceDown(ptr, position, found->second.get(), mPhysicsSystem.get(), maxHeight);
     }
 
     void PhysicsSystem::optimize()
     {
-        mPhysicsSystem.OptimizeBroadPhase();
+        mPhysicsSystem->OptimizeBroadPhase();
     }
 
     void PhysicsSystem::addHeightField(
@@ -648,13 +685,37 @@ namespace MWPhysics
             mAnimatedObjects.emplace(obj.get(), false);
     }
 
+    void PhysicsSystem::addDynamicObject(
+        const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh, osg::Quat rotation, float mass)
+    {
+        if (ptr.mRef->mData.mPhysicsPostponed)
+            return;
+
+        osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance = mShapeManager->getInstance(mesh);
+        if (!shapeInstance || !shapeInstance->mCollisionShape)
+        {
+            Log(Debug::Warning) << "No collision shape for dynamic object: " << ptr.getCellRef().getRefId();
+            return;
+        }
+
+        assert(!getDynamicObject(ptr));
+
+        auto obj = std::make_shared<DynamicObject>(ptr, shapeInstance, rotation, mass, mTaskScheduler.get(), this);
+        mDynamicObjects.emplace(ptr.mRef, obj);
+
+        Log(Debug::Verbose) << "Added dynamic physics object: " << ptr.getCellRef().getRefId();
+    }
+
     void PhysicsSystem::remove(const MWWorld::Ptr& ptr)
     {
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             mAnimatedObjects.erase(foundObject->second.get());
-
             mObjects.erase(foundObject);
+        }
+        else if (auto foundDynamic = mDynamicObjects.find(ptr.mRef); foundDynamic != mDynamicObjects.end())
+        {
+            mDynamicObjects.erase(foundDynamic);
         }
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
         {
@@ -673,6 +734,8 @@ namespace MWPhysics
     {
         if (auto foundObject = mObjects.find(old.mRef); foundObject != mObjects.end())
             foundObject->second->updatePtr(updated);
+        else if (auto foundDynamic = mDynamicObjects.find(old.mRef); foundDynamic != mDynamicObjects.end())
+            foundDynamic->second->updatePtr(updated);
         else if (auto foundActor = mActors.find(old.mRef); foundActor != mActors.end())
             foundActor->second->updatePtr(updated);
 
@@ -709,6 +772,22 @@ namespace MWPhysics
     {
         ObjectMap::const_iterator found = mObjects.find(ptr.mRef);
         if (found != mObjects.end())
+            return found->second.get();
+        return nullptr;
+    }
+
+    DynamicObject* PhysicsSystem::getDynamicObject(const MWWorld::Ptr& ptr)
+    {
+        DynamicObjectMap::iterator found = mDynamicObjects.find(ptr.mRef);
+        if (found != mDynamicObjects.end())
+            return found->second.get();
+        return nullptr;
+    }
+
+    const DynamicObject* PhysicsSystem::getDynamicObject(const MWWorld::ConstPtr& ptr) const
+    {
+        DynamicObjectMap::const_iterator found = mDynamicObjects.find(ptr.mRef);
+        if (found != mDynamicObjects.end())
             return found->second.get();
         return nullptr;
     }
@@ -938,7 +1017,7 @@ namespace MWPhysics
         while (mTimeAccumJolt >= mPhysicsDt)
         {
             mTimeAccumJolt -= mPhysicsDt;
-            mPhysicsSystem.Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
+            mPhysicsSystem->Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
         }
 
 #ifdef JPH_PROFILE_ENABLED
@@ -979,6 +1058,22 @@ namespace MWPhysics
 
         if (player != nullptr)
             world->moveObject(player->getPtr(), player->getSimulationPosition(), false, false);
+    }
+
+    void PhysicsSystem::moveDynamicObjects()
+    {
+        const auto world = MWBase::Environment::get().getWorld();
+
+        for (const auto& [ptr, dynObj] : mDynamicObjects)
+        {
+            if (dynObj->isActive())
+            {
+                osg::Vec3f pos = dynObj->getSimulationPosition();
+                osg::Quat rot = dynObj->getSimulationRotation();
+                world->moveObject(dynObj->getPtr(), pos, false, false);
+                world->rotateObject(dynObj->getPtr(), Misc::toEulerAnglesZYX(rot), MWBase::RotationFlag_none);
+            }
+        }
     }
 
     void PhysicsSystem::debugDraw()
@@ -1057,47 +1152,31 @@ namespace MWPhysics
         mWaterInstance = std::make_unique<MWWater>(mTaskScheduler.get(), mWaterHeight);
     }
 
-    bool PhysicsSystem::isAreaOccupiedByOtherActor(const osg::Vec3f& position, const float radius,
-        std::span<const MWWorld::ConstPtr> ignore, std::vector<MWWorld::Ptr>* occupyingActors) const
+    bool PhysicsSystem::isAreaOccupiedByOtherActor(
+        const MWWorld::LiveCellRefBase* actor, const osg::Vec3f& position, float radius) const
     {
-        // Build list of ignored body IDs from theire actor ptrs
-        std::vector<JPH::BodyID> ignoredObjects;
-        ignoredObjects.reserve(ignore.size());
-        for (const auto& v : ignore)
-            if (const auto it = mActors.find(v.mRef); it != mActors.end())
-                ignoredObjects.push_back(it->second->getPhysicsBody());
-        std::sort(ignoredObjects.begin(), ignoredObjects.end());
-        ignoredObjects.erase(std::unique(ignoredObjects.begin(), ignoredObjects.end()), ignoredObjects.end());
+        // Build ignored body ID for the actor
+        JPH::BodyID ignoredBody;
+        if (actor != nullptr)
+        {
+            if (const auto it = mActors.find(actor); it != mActors.end())
+                ignoredBody = it->second->getPhysicsBody();
+        }
 
         // Define a tiny private class here as its not used anywhere else
         class AreaActorCollector : public JPH::CollideShapeBodyCollector
         {
         public:
-            AreaActorCollector(const JPH::PhysicsSystem* inSystem, std::vector<JPH::BodyID>* ignoredBodies,
-                std::vector<MWWorld::Ptr>* occupiedResult)
-                : mSystem(inSystem)
-                , mIgnoredBodies(ignoredBodies)
-                , mOccupiedResult(occupiedResult)
+            AreaActorCollector(JPH::BodyID ignoredBody)
+                : mIgnoredBody(ignoredBody)
             {
             }
 
             virtual void AddHit(const JPH::BodyID& inBodyID) override
             {
                 // Check if we should ignore this body
-                if (std::binary_search(mIgnoredBodies->begin(), mIgnoredBodies->end(), inBodyID))
+                if (inBodyID == mIgnoredBody)
                     return;
-
-                // If an output array is specified, get body ptrholder
-                if (mOccupiedResult)
-                {
-                    JPH::BodyLockRead lock(mSystem->GetBodyLockInterface(), inBodyID);
-                    if (lock.Succeeded())
-                    {
-                        const JPH::Body& body = lock.GetBody();
-                        if (PtrHolder* holder = Misc::Convert::toPointerFromUserData<PtrHolder>(body.GetUserData()))
-                            mOccupiedResult->push_back(holder->getPtr());
-                    }
-                }
 
                 mHasHit = true;
             }
@@ -1105,17 +1184,15 @@ namespace MWPhysics
             bool hasHit() { return mHasHit; }
 
         private:
-            const JPH::PhysicsSystem* mSystem;
-            std::vector<JPH::BodyID>* mIgnoredBodies;
-            std::vector<MWWorld::Ptr>* mOccupiedResult;
+            JPH::BodyID mIgnoredBody;
             bool mHasHit = false;
         };
 
         // Setup collector and collide body AABBs by the input sphere
-        AreaActorCollector collector(&mPhysicsSystem, &ignoredObjects, occupyingActors);
+        AreaActorCollector collector(ignoredBody);
         JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
-            = mPhysicsSystem.GetDefaultBroadPhaseLayerFilter(Layers::ACTOR);
-        mPhysicsSystem.GetBroadPhaseQuery().CollideSphere(Misc::Convert::toJolt<JPH::Vec3>(position), radius, collector,
+            = mPhysicsSystem->GetDefaultBroadPhaseLayerFilter(Layers::ACTOR);
+        mPhysicsSystem->GetBroadPhaseQuery().CollideSphere(Misc::Convert::toJolt<JPH::Vec3>(position), radius, collector,
             broadphaseLayerFilter, JPH::SpecifiedObjectLayerFilter(Layers::ACTOR));
 
         return collector.hasHit();
@@ -1137,12 +1214,12 @@ namespace MWPhysics
 
     const JPH::BodyLockInterfaceLocking& PhysicsSystem::getBodyLockInterface() const
     {
-        return mPhysicsSystem.GetBodyLockInterface();
+        return mPhysicsSystem->GetBodyLockInterface();
     }
 
     const JPH::BodyInterface& PhysicsSystem::getBodyInterface() const
     {
-        return mPhysicsSystem.GetBodyInterface();
+        return mPhysicsSystem->GetBodyInterface();
     }
 
     ActorFrameData::ActorFrameData(

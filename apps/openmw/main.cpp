@@ -1,3 +1,10 @@
+// IMPORTANT: Jolt must be initialized before any Jolt types are used anywhere
+// This includes types like JPH::Ref<> used in headers. We initialize it at the
+// very start of main() before any other code runs.
+#include <Jolt/Jolt.h>
+#include <Jolt/RegisterTypes.h>
+#include <Jolt/Core/Factory.h>
+
 #include <components/debug/debugging.hpp>
 #include <components/fallback/fallback.hpp>
 #include <components/fallback/validate.hpp>
@@ -240,7 +247,21 @@ extern "C" int SDL_main(int argc, char** argv)
 int main(int argc, char** argv)
 #endif
 {
-    return Debug::wrapApplication(&runApplication, argc, argv, "OpenMW");
+    // Initialize Jolt Physics FIRST before any Jolt types are used
+    // This must happen before any code that might use JPH::Ref<> or other Jolt types
+    JPH::RegisterDefaultAllocator();
+    JPH::Factory::sInstance = new JPH::Factory();
+    JPH::RegisterTypes();
+
+    int result = Debug::wrapApplication(&runApplication, argc, argv, "OpenMW");
+
+    // Clean up Jolt global state after all other cleanup is complete
+    // This must happen AFTER the Engine is destroyed to avoid use-after-free
+    JPH::UnregisterTypes();
+    delete JPH::Factory::sInstance;
+    JPH::Factory::sInstance = nullptr;
+
+    return result;
 }
 
 // Platform specific for Windows when there is no console built into the executable.

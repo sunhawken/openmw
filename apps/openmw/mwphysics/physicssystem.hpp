@@ -58,6 +58,7 @@ namespace MWPhysics
     class MWWater;
     class HeightField;
     class Object;
+    class DynamicObject;
     class Actor;
     class PhysicsTaskScheduler;
     class Projectile;
@@ -158,6 +159,7 @@ namespace MWPhysics
 
         void addObject(const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh, osg::Quat rotation,
             int collisionType = Layers::WORLD);
+        void addDynamicObject(const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh, osg::Quat rotation, float mass);
         void addActor(const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh);
 
         int addProjectile(
@@ -172,9 +174,12 @@ namespace MWPhysics
 
         const Object* getObject(const MWWorld::ConstPtr& ptr) const;
 
+        DynamicObject* getDynamicObject(const MWWorld::Ptr& ptr);
+        const DynamicObject* getDynamicObject(const MWWorld::ConstPtr& ptr) const;
+
         Projectile* getProjectile(int projectileId) const;
 
-        // Object or Actor
+        // Object, DynamicObject, or Actor
         void remove(const MWWorld::Ptr& ptr);
 
         void updateScale(const MWWorld::Ptr& ptr);
@@ -196,6 +201,8 @@ namespace MWPhysics
 
         /// Apply new positions to actors
         void moveActors();
+        /// Apply new positions to dynamic objects (from Jolt simulation)
+        void moveDynamicObjects();
         void debugDraw();
 
         std::vector<MWWorld::Ptr> getCollisions(const MWWorld::ConstPtr& ptr, int collisionGroup,
@@ -292,12 +299,14 @@ namespace MWPhysics
 
         void prepareSimulation(bool willSimulate, std::vector<Simulation>& simulations);
 
-        JoltContactListener mContactListener;
-        JoltBPLayerInterface mBPLayerInterface;
-        JoltObjectVsBroadPhaseLayerFilter mObjectVsBPLayerFilter;
-        JoltObjectLayerPairFilter mObjectVsObjectLayerFilter;
+        // NOTE: These are unique_ptr to ensure they are created AFTER Jolt is initialized
+        // (after RegisterDefaultAllocator, Factory creation, and RegisterTypes are called)
+        std::unique_ptr<JoltContactListener> mContactListener;
+        std::unique_ptr<JoltBPLayerInterface> mBPLayerInterface;
+        std::unique_ptr<JoltObjectVsBroadPhaseLayerFilter> mObjectVsBPLayerFilter;
+        std::unique_ptr<JoltObjectLayerPairFilter> mObjectVsObjectLayerFilter;
 
-        JPH::PhysicsSystem mPhysicsSystem;
+        std::unique_ptr<JPH::PhysicsSystem> mPhysicsSystem;
         std::unique_ptr<PhysicsTaskScheduler> mTaskScheduler;
         std::unique_ptr<JPH::TempAllocatorImpl> mMemoryAllocator;
         std::unique_ptr<JPH::JobSystem> mPhysicsJobSystem;
@@ -306,6 +315,9 @@ namespace MWPhysics
 
         using ObjectMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Object>>;
         ObjectMap mObjects;
+
+        using DynamicObjectMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<DynamicObject>>;
+        DynamicObjectMap mDynamicObjects;
 
         std::map<Object*, bool> mAnimatedObjects; // stores pointers to elements in mObjects
 

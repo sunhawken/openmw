@@ -81,6 +81,7 @@ namespace MWPhysics
                     return BroadPhaseLayers::DEBRIS;
                 case Layers::ACTOR:
                 case Layers::PROJECTILE:
+                case Layers::DYNAMIC_WORLD:
                     return BroadPhaseLayers::MOVING;
             }
             return BroadPhaseLayers::WORLD;
@@ -117,6 +118,7 @@ namespace MWPhysics
                     return broadPhaseLayer == BroadPhaseLayers::MOVING;
                 case Layers::ACTOR:
                 case Layers::PROJECTILE:
+                case Layers::DYNAMIC_WORLD:
                     return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer == BroadPhaseLayers::MOVING
                         || broadPhaseLayer == BroadPhaseLayers::SENSOR;
                 case Layers::DOOR:

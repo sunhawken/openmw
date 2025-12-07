@@ -25,6 +25,9 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
     set(JPH_PROFILE_ENABLED OFF CACHE BOOL "")
     add_definitions(-DJPH_DEBUG_RENDERER=1)
 
+    # Use dynamic MSVC runtime library (/MD) to match OpenMW
+    set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF)
+
     # Turn RTTI on for Jolt
     set(CPP_RTTI_ENABLED ON)
 

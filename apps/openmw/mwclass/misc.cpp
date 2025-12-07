@@ -20,6 +20,7 @@
 #include "../mwworld/worldmodel.hpp"
 
 #include "../mwgui/tooltips.hpp"
+#include "../mwphysics/physicssystem.hpp"
 
 #include "../mwrender/objects.hpp"
 #include "../mwrender/renderinginterface.hpp"
@@ -48,6 +49,31 @@ namespace MWClass
         {
             renderingInterface.getObjects().insertModel(ptr, model);
         }
+    }
+
+    void Miscellaneous::insertObject(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        insertObjectPhysics(ptr, model, rotation, physics);
+    }
+
+    void Miscellaneous::insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        if (model.empty())
+            return;
+
+        // Don't add physics for gold (it's handled specially)
+        if (isGold(ptr))
+            return;
+
+        // Get the weight of the item to calculate mass
+        // Using weight directly as mass (in game units)
+        float mass = getWeight(ptr);
+        if (mass <= 0.0f)
+            mass = 1.0f; // Minimum mass for very light items
+
+        physics.addDynamicObject(ptr, VFS::Path::toNormalized(model), rotation, mass);
     }
 
     std::string_view Miscellaneous::getModel(const MWWorld::ConstPtr& ptr) const

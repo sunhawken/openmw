@@ -788,7 +788,7 @@ namespace MWWorld
         return false;
     }
 
-    int ProjectileManager::countSavedGameRecords() const
+    size_t ProjectileManager::countSavedGameRecords() const
     {
         return mMagicBolts.size() + mProjectiles.size();
     }

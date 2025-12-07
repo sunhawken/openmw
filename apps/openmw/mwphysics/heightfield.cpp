@@ -45,11 +45,17 @@ namespace MWPhysics
             Layers::HEIGHTMAP);
 
         mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
-        mTaskScheduler->addCollisionObject(mPhysicsBody);
+        if (mPhysicsBody != nullptr)
+        {
+            mTaskScheduler->addCollisionObject(mPhysicsBody);
+        }
     }
 
     HeightField::~HeightField()
     {
-        mTaskScheduler->removeCollisionObject(mPhysicsBody);
+        if (mPhysicsBody != nullptr)
+        {
+            mTaskScheduler->removeCollisionObject(mPhysicsBody);
+        }
     }
 }
