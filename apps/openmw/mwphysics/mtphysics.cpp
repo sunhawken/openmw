@@ -9,8 +9,11 @@
 #include <thread>
 #include <variant>
 
-#include <Jolt/Core/JobSystem.h>
+// IMPORTANT: Jolt/Jolt.h must be included first before any other Jolt headers
 #include <Jolt/Jolt.h>
+
+#include <Jolt/Core/JobSystem.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 
@@ -311,7 +314,7 @@ namespace MWPhysics
 
     PhysicsTaskScheduler::~PhysicsTaskScheduler() {}
 
-    std::tuple<int, float> PhysicsTaskScheduler::calculateStepConfig(float timeAccum) const
+    std::tuple<unsigned int, float> PhysicsTaskScheduler::calculateStepConfig(float timeAccum) const
     {
         int maxAllowedSteps = 2;
         int numSteps = timeAccum / mDefaultPhysicsDt;
@@ -464,21 +467,41 @@ namespace MWPhysics
     {
         JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
         JPH::Body* body = bodyInterface.CreateBody(settings);
+        if (body == nullptr)
+        {
+            Log(Debug::Error) << "Failed to create physics body! Layer=" << settings.mObjectLayer
+                              << " MotionType=" << static_cast<int>(settings.mMotionType);
+        }
         return body;
     }
 
     void PhysicsTaskScheduler::removeCollisionObject(JPH::Body* joltBody)
     {
+        if (joltBody == nullptr)
+        {
+            Log(Debug::Warning) << "Attempted to remove null collision object";
+            return;
+        }
         mPhysicsSystem->GetBodyInterface().RemoveBody(joltBody->GetID());
     }
 
     void PhysicsTaskScheduler::destroyCollisionObject(JPH::Body* joltBody)
     {
+        if (joltBody == nullptr)
+        {
+            Log(Debug::Warning) << "Attempted to destroy null collision object";
+            return;
+        }
         mPhysicsSystem->GetBodyInterface().DestroyBody(joltBody->GetID());
     }
 
     void PhysicsTaskScheduler::addCollisionObject(JPH::Body* joltBody, bool activate)
     {
+        if (joltBody == nullptr)
+        {
+            Log(Debug::Warning) << "Attempted to add null collision object";
+            return;
+        }
         mPhysicsSystem->GetBodyInterface().AddBody(
             joltBody->GetID(), activate ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
     }

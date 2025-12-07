@@ -66,7 +66,7 @@ namespace MWPhysics
 
     protected:
         MWWorld::Ptr mPtr;
-        JPH::Body* mPhysicsBody; // NOTE: memory is managed by Jolt!
+        JPH::Body* mPhysicsBody = nullptr; // NOTE: memory is managed by Jolt!
         osg::Vec3f mVelocity;
         osg::Vec3d mPosition;
         osg::Vec3d mPreviousPosition;

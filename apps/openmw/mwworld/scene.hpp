@@ -74,6 +74,8 @@ namespace MWWorld
 
     class Scene
     {
+        friend class World;
+
     public:
         using CellStoreCollection = std::set<CellStore*, std::less<>>;
 

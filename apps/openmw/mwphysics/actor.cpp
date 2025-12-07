@@ -31,9 +31,17 @@ namespace MWPhysics
         , mStandingOnPtr(nullptr)
         , mCanWaterWalk(canWaterWalk)
         , mWalkingOnWater(false)
+        , mRotationallyInvariant(true)
+        , mCollisionShapeType(collisionShapeType)
+        , mPhysicsShape(nullptr)
+        , mBasePhysicsShape(nullptr)
+        , mSimulationPosition(ptr.getRefData().getPosition().asVec3())
         , mMeshTranslation(shape->mCollisionBox.mCenter)
         , mOriginalHalfExtents(shape->mCollisionBox.mExtents)
+        , mHalfExtents(shape->mCollisionBox.mExtents)
+        , mRenderingHalfExtents(shape->mCollisionBox.mExtents)
         , mScale({ 1.0f, 1.0f, 1.0f })
+        , mPositionOffset(0.f, 0.f, 0.f)
         , mStuckFrames(0)
         , mLastStuckPosition{ 0, 0, 0 }
         , mForce(0.f, 0.f, 0.f)
@@ -116,14 +124,20 @@ namespace MWPhysics
             getScaledMeshTranslation() + mPosition, mRotation, Layers::ACTOR, JPH::EMotionType::Kinematic);
 
         mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
-        mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
-        mTaskScheduler->addCollisionObject(mPhysicsBody, true);
+        if (mPhysicsBody != nullptr)
+        {
+            mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
+            mTaskScheduler->addCollisionObject(mPhysicsBody, true);
+        }
     }
 
     Actor::~Actor()
     {
-        mTaskScheduler->removeCollisionObject(mPhysicsBody);
-        mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        if (mPhysicsBody != nullptr)
+        {
+            mTaskScheduler->removeCollisionObject(mPhysicsBody);
+            mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        }
     }
 
     void Actor::enableCollisionMode(bool collision)

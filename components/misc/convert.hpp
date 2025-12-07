@@ -54,6 +54,11 @@ namespace Misc::Convert
         return JPH::Quat(quat.x(), quat.y(), quat.z(), quat.w());
     }
 
+    inline osg::Quat toOsg(const JPH::Quat& quat)
+    {
+        return osg::Quat(quat.GetX(), quat.GetY(), quat.GetZ(), quat.GetW());
+    }
+
     inline osg::Matrixd toOsgNoScale(const JPH::Mat44& joltMatrix)
     {
         osg::Matrixd mat;
