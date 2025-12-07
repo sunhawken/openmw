@@ -284,14 +284,39 @@ namespace MWPhysics
             std::for_each(mAnimatedObjects.begin(), mAnimatedObjects.end(), function);
         }
 
-        bool isAreaOccupiedByOtherActor(const osg::Vec3f& position, const float radius,
-            std::span<const MWWorld::ConstPtr> ignore, std::vector<MWWorld::Ptr>* occupyingActors) const;
+        bool isAreaOccupiedByOtherActor(
+            const MWWorld::LiveCellRefBase* actor, const osg::Vec3f& position, float radius) const;
 
         void reportStats(unsigned int frameNumber, osg::Stats& stats) const;
 
         inline const JPH::BodyLockInterfaceLocking& getBodyLockInterface() const;
 
         const JPH::BodyInterface& getBodyInterface() const;
+
+        float mPhysicsDt;
+
+        // Grab/hold functionality for dynamic objects (Oblivion/Skyrim style)
+        // Returns true if successfully started grabbing an object
+        bool grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance);
+        // Release the currently held object (with optional throw velocity)
+        void releaseGrabbedObject(const osg::Vec3f& throwVelocity = osg::Vec3f());
+        // Update the held object's target position (call every frame while holding)
+        void updateGrabbedObject(const osg::Vec3f& targetPosition);
+        // Check if we're currently holding an object
+        bool isGrabbingObject() const { return mGrabbedObject != nullptr; }
+        // Get the currently grabbed object
+        MWWorld::Ptr getGrabbedObject() const;
+        // Get grab distance from camera
+        float getGrabDistance() const { return mGrabDistance; }
+
+        // Apply melee hit impulse to dynamic objects in a cone
+        // Used when weapons swing to push nearby objects
+        void applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+            float reach, float attackStrength);
+
+        // Push dynamic objects that actors are colliding with
+        // Called each frame to make actors push items when walking into them
+        void pushDynamicObjectsFromActors();
 
     private:
         void updateWater();
@@ -345,14 +370,17 @@ namespace MWPhysics
 
         osg::ref_ptr<osg::Group> mParentNode;
 
-        float mPhysicsDt;
-
         std::size_t mSimulationsCounter = 0;
         std::array<std::vector<Simulation>, 2> mSimulations;
         std::vector<std::pair<MWWorld::Ptr, osg::Vec3f>> mActorsPositions;
 
         PhysicsSystem(const PhysicsSystem&);
         PhysicsSystem& operator=(const PhysicsSystem&);
+
+        // Grab/hold state
+        DynamicObject* mGrabbedObject = nullptr;
+        float mGrabDistance = 150.0f;  // Distance from camera to hold object
+        osg::Vec3f mGrabTargetPosition;
     };
 }
 

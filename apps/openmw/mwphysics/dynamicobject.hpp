@@ -62,6 +62,11 @@ namespace MWPhysics
         // Get mass
         float getMass() const { return mMass; }
 
+        // Buoyancy support
+        void updateBuoyancy(float waterHeight, float gravity, float dt);
+        bool isInWater() const { return mInWater; }
+        float getSubmersionDepth() const { return mSubmersionDepth; }
+
     private:
         osg::ref_ptr<Resource::PhysicsShapeInstance> mShapeInstance;
         JPH::Ref<JPH::Shape> mBasePhysicsShape;
@@ -71,6 +76,10 @@ namespace MWPhysics
         mutable std::mutex mMutex;
         PhysicsTaskScheduler* mTaskScheduler;
         PhysicsSystem* mPhysicsSystem;
+
+        // Buoyancy state
+        bool mInWater = false;
+        float mSubmersionDepth = 0.0f;
     };
 }
 

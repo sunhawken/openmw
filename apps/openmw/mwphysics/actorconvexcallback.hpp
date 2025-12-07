@@ -96,8 +96,8 @@ namespace MWPhysics
                     // why but couldn't figure it out. Possibly a stair stepping or ground ejection bug.
                     if (normal * motion > 0.0f)
                     {
-                        // Get the contact properties
-                        mHitCollisionObject = body;
+                        // Get the contact properties - store BodyID for thread safety
+                        mHitBodyID = inResult.mBodyID2;
                         mHitCollisionLayer = collisionGroup;
                         mHitPointWorld = mOrigin + inResult.mContactPointOn2;
                         mHitNormalWorld = Misc::Convert::toJolt<JPH::Vec3>(normal);
@@ -122,8 +122,8 @@ namespace MWPhysics
                 // Update early out fraction to this hit
                 UpdateEarlyOutFraction(earlyOut);
 
-                // Get the contact properties
-                mHitCollisionObject = body;
+                // Get the contact properties - store BodyID for thread safety
+                mHitBodyID = inResult.mBodyID2;
                 mHitCollisionLayer = collisionGroup;
                 mHitPointWorld = mOrigin + inResult.mContactPointOn2;
                 mHitNormalWorld = hitNormalWorld;
@@ -131,12 +131,12 @@ namespace MWPhysics
             }
         }
 
-        bool hasHit() const { return mHitCollisionObject != nullptr; }
+        bool hasHit() const { return !mHitBodyID.IsInvalid(); }
 
         float mClosestHitFraction;
         const float mMinCollisionDot;
         const JPH::BodyID mMe;
-        const JPH::Body* mHitCollisionObject = nullptr;
+        JPH::BodyID mHitBodyID;  // Safe body reference (instead of raw pointer)
 
         JPH::ObjectLayer mHitCollisionLayer;
         JPH::RVec3 mHitPointWorld;
