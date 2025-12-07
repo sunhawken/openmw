@@ -584,6 +584,9 @@ namespace MWWorld
 
         float getPhysicsFrameRateDt() const override;
 
+        void applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+            float reach, float attackStrength) override;
+
         bool findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result) override;
 
         /// Teleports \a ptr to the closest reference of \a id (e.g. DivineMarker, PrisonMarker, TempleMarker)

@@ -496,6 +496,10 @@ namespace MWBase
 
         virtual float getPhysicsFrameRateDt() const = 0;
 
+        /// Apply melee hit impulse to dynamic objects in a cone from origin in direction
+        virtual void applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+            float reach, float attackStrength) = 0;
+
         virtual bool findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result) = 0;
 
         /// Teleports \a ptr to the closest reference of \a id (e.g. DivineMarker, PrisonMarker, TempleMarker)
