@@ -375,6 +375,11 @@ namespace MWWorld
                 mPhysics->remove(ptr);
                 ptr.mRef->mData.mPhysicsPostponed = false;
             }
+            else if (mPhysics->getDynamicObject(ptr))
+            {
+                // Dynamic objects (misc items with physics) need to be removed from physics
+                mPhysics->remove(ptr);
+            }
             else if (mPhysics->getActor(ptr))
             {
                 mNavigator.removeAgent(mWorld.getPathfindingAgentBounds(ptr));

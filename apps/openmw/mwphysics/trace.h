@@ -23,7 +23,7 @@ namespace MWPhysics
         osg::Vec3f mPlaneNormal;
         osg::Vec3f mHitPoint;
         JPH::ObjectLayer mHitObjectLayer;
-        const JPH::Body* mHitObject;
+        JPH::BodyID mHitBodyID;  // Safe body reference (instead of raw pointer)
 
         float mFraction;
 
