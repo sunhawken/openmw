@@ -19,12 +19,18 @@ namespace MWPhysics
                 osg::Vec3f(0.0f, 0.0f, height), osg::Quat(1.0f, 0.0f, 0.0f, 0.0f), Layers::WATER);
 
         mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
-        mTaskScheduler->addCollisionObject(mPhysicsBody, false);
+        if (mPhysicsBody != nullptr)
+        {
+            mTaskScheduler->addCollisionObject(mPhysicsBody, false);
+        }
     }
 
     MWWater::~MWWater()
     {
-        mTaskScheduler->removeCollisionObject(mPhysicsBody);
-        mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        if (mPhysicsBody != nullptr)
+        {
+            mTaskScheduler->removeCollisionObject(mPhysicsBody);
+            mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        }
     }
 }

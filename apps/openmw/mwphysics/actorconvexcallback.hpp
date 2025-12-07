@@ -32,7 +32,8 @@ namespace MWPhysics
 
         ActorConvexCallback(const JPH::BodyID actor, const JPH::PhysicsSystem* inPhysicsSystem, JPH::RVec3 origin,
             float minCollisionDot, JPH::Vec3 motion)
-            : mMinCollisionDot(minCollisionDot)
+            : mClosestHitFraction(1.0f)
+            , mMinCollisionDot(minCollisionDot)
             , mMe(actor)
             , mHitCollisionLayer(0)
             , mHitPointWorld(JPH::RVec3(0.0, 0.0, 0.0))

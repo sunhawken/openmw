@@ -98,7 +98,9 @@ namespace MWLua
 
     void LuaManager::init()
     {
+        Log(Debug::Info) << "[LUA DEBUG] LuaManager::init() starting...";
         mLua.protectedCall([&](LuaUtil::LuaView& view) {
+            Log(Debug::Info) << "[LUA DEBUG] Creating contexts...";
             Context globalContext;
             globalContext.mType = Context::Global;
             globalContext.mLuaManager = this;
@@ -114,18 +116,33 @@ namespace MWLua
             Context menuContext = globalContext;
             menuContext.mType = Context::Menu;
 
+            Log(Debug::Info) << "[LUA DEBUG] Initializing common packages...";
             for (const auto& [name, package] : initCommonPackages(globalContext))
+            {
+                Log(Debug::Info) << "[LUA DEBUG] Adding common package: " << name;
                 mLua.addCommonPackage(name, package);
+            }
+            Log(Debug::Info) << "[LUA DEBUG] Initializing global packages...";
             for (const auto& [name, package] : initGlobalPackages(globalContext))
+            {
+                Log(Debug::Info) << "[LUA DEBUG] Adding global package: " << name;
                 mGlobalScripts.addPackage(name, package);
+            }
+            Log(Debug::Info) << "[LUA DEBUG] Initializing menu packages...";
             for (const auto& [name, package] : initMenuPackages(menuContext))
+            {
+                Log(Debug::Info) << "[LUA DEBUG] Adding menu package: " << name;
                 mMenuScripts.addPackage(name, package);
+            }
 
+            Log(Debug::Info) << "[LUA DEBUG] Initializing local packages...";
             mLocalPackages = initLocalPackages(localContext);
 
+            Log(Debug::Info) << "[LUA DEBUG] Initializing player packages...";
             mPlayerPackages = initPlayerPackages(localContext);
             mPlayerPackages.insert(mLocalPackages.begin(), mLocalPackages.end());
 
+            Log(Debug::Info) << "[LUA DEBUG] Initializing storage bindings...";
             LuaUtil::LuaStorage::initLuaBindings(view);
             mGlobalScripts.addPackage("openmw.storage", LuaUtil::LuaStorage::initGlobalPackage(view, &mGlobalStorage));
             mMenuScripts.addPackage(
@@ -137,9 +154,12 @@ namespace MWLua
             mPlayerStorage.setActive(true);
             mGlobalStorage.setActive(false);
 
+            Log(Debug::Info) << "[LUA DEBUG] Calling initConfiguration...";
             initConfiguration();
             mInitialized = true;
+            Log(Debug::Info) << "[LUA DEBUG] Calling addAutoStartedScripts...";
             mMenuScripts.addAutoStartedScripts();
+            Log(Debug::Info) << "[LUA DEBUG] LuaManager::init() complete";
         });
     }
 

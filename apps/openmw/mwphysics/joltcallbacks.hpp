@@ -11,9 +11,9 @@ namespace MWPhysics
     {
     public:
         JPH::BodyID mHitCollisionObject;
-        float mClosestHitFraction;
-        JPH::Vec3 mHitNormalWorld;
-        JPH::RVec3 mHitPointWorld;
+        float mClosestHitFraction = 1.0f;
+        JPH::Vec3 mHitNormalWorld = JPH::Vec3::sZero();
+        JPH::RVec3 mHitPointWorld = JPH::RVec3::sZero();
 
         explicit ClosestConvexResultCallback(JPH::RVec3 origin)
             : mOrigin(origin)

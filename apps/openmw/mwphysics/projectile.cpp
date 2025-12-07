@@ -19,6 +19,8 @@ namespace MWPhysics
         : PtrHolder(MWWorld::Ptr(), position)
         , mHitWater(false)
         , mActive(true)
+        , mHitPosition(0.f, 0.f, 0.f)
+        , mHitNormal(0.f, 0.f, 1.f)
         , mPhysics(physicssystem)
         , mTaskScheduler(scheduler)
     {
@@ -41,8 +43,11 @@ namespace MWPhysics
         bodyCreationSettings.mMaxLinearVelocity = 10000.0f;
 
         mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
-        mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
-        mTaskScheduler->addCollisionObject(mPhysicsBody);
+        if (mPhysicsBody != nullptr)
+        {
+            mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
+            mTaskScheduler->addCollisionObject(mPhysicsBody);
+        }
     }
 
     Projectile::~Projectile()
@@ -50,8 +55,11 @@ namespace MWPhysics
         if (!mActive)
             mPhysics->reportCollision(mHitPosition, mHitNormal);
 
-        mTaskScheduler->removeCollisionObject(mPhysicsBody);
-        mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        if (mPhysicsBody != nullptr)
+        {
+            mTaskScheduler->removeCollisionObject(mPhysicsBody);
+            mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        }
     }
 
     osg::Vec3f Projectile::getSimulationPosition() const

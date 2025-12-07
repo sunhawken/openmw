@@ -61,6 +61,7 @@ add_component_dir (lua
     luastate scriptscontainer asyncpackage utilpackage serialization configuration l10n storage utf8
     shapes/box inputactions yamlloader
     )
+copy_resource_file("lua/util.lua" "${OPENMW_RESOURCES_ROOT}" "resources/lua_libs/util.lua")
 
 add_component_dir (l10n
     messagebundles manager
@@ -112,7 +113,7 @@ add_component_dir (bgsm
     )
 
 add_component_dir (bsa
-    bsa_file compressedbsafile ba2gnrlfile ba2dx10file ba2file memorystream
+    bsafile compressedbsafile ba2gnrlfile ba2dx10file ba2file memorystream
     )
 
 add_component_dir (physicshelpers
@@ -155,9 +156,9 @@ add_component_dir (nifjolt
     joltnifloader
     )
 
-add_component_dir (to_utf8
-    tables_gen
-    to_utf8
+add_component_dir (toutf8
+    tablesgen
+    toutf8
     )
 
 add_component_dir(esm attr common defs esmcommon records util luascripts format refid esmbridge esmterrain
@@ -170,7 +171,7 @@ add_component_dir(esm attr common defs esmcommon records util luascripts format 
     esm3exteriorcellrefid
     )
 
-add_component_dir(fx pass technique lexer lexer_types parse_constants widgets stateupdater)
+add_component_dir(fx pass technique lexer lexertypes parseconstants widgets stateupdater)
 
 add_component_dir(std140 ubo)
 
@@ -386,9 +387,9 @@ copy_resource_file("lua_ui/content.lua" "${OPENMW_RESOURCES_ROOT}" "resources/lu
 
 if(WIN32)
     add_component_dir (crashcatcher
-        windows_crashcatcher
-        windows_crashmonitor
-        windows_crashshm
+        windowscrashcatcher
+        windowscrashmonitor
+        windowscrashshm
         windowscrashdumppathhelpers
     )
 elseif(NOT ANDROID)
@@ -497,15 +498,15 @@ add_component_dir(platform
 
 if (WIN32)
     add_component_dir(platform
-        file.win32
+        filewin32
         )
 elseif (UNIX)
     add_component_dir(platform
-        file.posix
+        fileposix
         )
 else ()
     add_component_dir(platform
-        file.stdio
+        filestdio
         )
 endif()
 
