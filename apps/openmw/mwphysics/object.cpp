@@ -8,6 +8,9 @@
 #include <components/resource/physicsshape.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
 
+// IMPORTANT: Jolt/Jolt.h must be included first before any other Jolt headers
+#include <Jolt/Jolt.h>
+
 #include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 
@@ -36,14 +39,20 @@ namespace MWPhysics
         JPH::BodyCreationSettings bodyCreationSettings = PhysicsSystemHelpers::makePhysicsBodySettings(
             finalShape, mPosition, rotation, static_cast<JPH::ObjectLayer>(collisionType));
         mPhysicsBody = mTaskScheduler->createPhysicsBody(bodyCreationSettings);
-        mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
-        mTaskScheduler->addCollisionObject(mPhysicsBody, false);
+        if (mPhysicsBody != nullptr)
+        {
+            mPhysicsBody->SetUserData(reinterpret_cast<uintptr_t>(this));
+            mTaskScheduler->addCollisionObject(mPhysicsBody, false);
+        }
     }
 
     Object::~Object()
     {
-        mTaskScheduler->removeCollisionObject(mPhysicsBody);
-        mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        if (mPhysicsBody != nullptr)
+        {
+            mTaskScheduler->removeCollisionObject(mPhysicsBody);
+            mTaskScheduler->destroyCollisionObject(mPhysicsBody);
+        }
     }
 
     const Resource::PhysicsShapeInstance* Object::getShapeInstance() const
