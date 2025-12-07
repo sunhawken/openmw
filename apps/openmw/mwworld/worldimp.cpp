@@ -3107,6 +3107,12 @@ namespace MWWorld
         return mPhysics->mPhysicsDt;
     }
 
+    void World::applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+        float reach, float attackStrength)
+    {
+        mPhysics->applyMeleeHitToDynamicObjects(origin, direction, reach, attackStrength);
+    }
+
     bool World::findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result)
     {
         if (cell->isExterior())
