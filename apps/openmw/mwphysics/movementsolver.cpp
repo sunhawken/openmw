@@ -19,6 +19,7 @@
 
 #include "actor.hpp"
 #include "constants.hpp"
+#include "dynamicobject.hpp"
 #include "joltfilters.hpp"
 #include "joltlayers.hpp"
 #include "object.hpp"
@@ -31,10 +32,68 @@
 
 namespace MWPhysics
 {
-    static bool isActor(const JPH::Body* obj)
+    static bool isDynamicObjectLayer(JPH::ObjectLayer layer)
     {
-        assert(obj);
-        return obj->GetObjectLayer() == Layers::ACTOR;
+        return layer == Layers::DYNAMIC_WORLD;
+    }
+
+    // Push a dynamic object when an actor collides with it
+    // Uses BodyID for thread-safe access - the body may have been removed between trace and this call
+    static void pushDynamicObject(JPH::BodyID hitBodyID, JPH::ObjectLayer hitLayer, const osg::Vec3f& velocity,
+        float actorMass, const JPH::PhysicsSystem* physicsSystem)
+    {
+        if (hitBodyID.IsInvalid() || !isDynamicObjectLayer(hitLayer))
+            return;
+
+        // Use a body lock to safely access the body and its user data
+        // This ensures the body is still valid in the physics system
+        // If the body was removed, the lock will fail safely
+        JPH::BodyLockRead lock(physicsSystem->GetBodyLockInterface(), hitBodyID);
+        if (!lock.Succeeded())
+            return;  // Body was removed, safely abort
+
+        const JPH::Body& body = lock.GetBody();
+
+        // Verify it's still a dynamic object (layer could have changed)
+        if (body.GetObjectLayer() != Layers::DYNAMIC_WORLD)
+            return;
+
+        // Safety check: ensure UserData is valid before casting
+        uintptr_t userData = body.GetUserData();
+        if (userData == 0)
+            return;
+
+        // The UserData is a DynamicObject* since we verified the layer is DYNAMIC_WORLD
+        DynamicObject* dynObj = reinterpret_cast<DynamicObject*>(userData);
+        if (!dynObj)
+            return;
+
+        // Calculate impulse based on actor velocity and mass
+        // Use a fraction of the velocity to avoid overly strong pushes
+        constexpr float pushStrength = 0.5f; // How much of the actor's momentum to transfer
+        constexpr float minImpulse = 50.0f;  // Minimum impulse to apply
+        constexpr float maxImpulse = 500.0f; // Maximum impulse to prevent extreme physics
+
+        osg::Vec3f impulse = velocity * actorMass * pushStrength;
+        float impulseMagnitude = impulse.length();
+
+        if (impulseMagnitude < minImpulse && impulseMagnitude > 0.01f)
+        {
+            // Scale up to minimum impulse
+            impulse = impulse * (minImpulse / impulseMagnitude);
+        }
+        else if (impulseMagnitude > maxImpulse)
+        {
+            // Clamp to maximum impulse
+            impulse = impulse * (maxImpulse / impulseMagnitude);
+        }
+
+        if (impulse.length2() > 0.01f)
+        {
+            // Release lock before calling applyImpulse as it will acquire its own lock
+            lock.ReleaseLock();
+            dynObj->applyImpulse(impulse);
+        }
     }
 
     namespace
@@ -285,7 +344,17 @@ namespace MWPhysics
             osg::Vec3f oldPosition = newPosition;
             bool usedStepLogic = false;
 
-            if (!isActor(tracer.mHitObject))
+            // Push dynamic objects when we collide with them
+            if (!tracer.mHitBodyID.IsInvalid() && isDynamicObjectLayer(tracer.mHitObjectLayer))
+            {
+                // Use a default actor mass for pushing (could be made configurable)
+                constexpr float defaultActorMass = 80.0f;
+                pushDynamicObject(tracer.mHitBodyID, tracer.mHitObjectLayer, velocity, defaultActorMass, physicsSystem);
+            }
+
+            // Check if we hit an actor (use layer since we only have BodyID now)
+            bool hitActor = (tracer.mHitObjectLayer == Layers::ACTOR);
+            if (!hitActor)
             {
                 if (hitHeight < Constants::sStepSizeUp)
                 {
@@ -295,13 +364,19 @@ namespace MWPhysics
                         newPosition, velocity, remainingTime, seenGround, iterations == 0, collisionMask);
                 }
 
-                if (tracer.mHitObject->GetObjectLayer() != Layers::WATER)
+                if (tracer.mHitObjectLayer != Layers::WATER && tracer.mHitObjectLayer != Layers::DYNAMIC_WORLD)
                 {
-                    Object* hitObject = Misc::Convert::toPointerFromUserData<Object>(tracer.mHitObject->GetUserData());
-                    if (hitObject != nullptr)
+                    // For static objects, we need to record script collisions
+                    JPH::BodyLockRead lock(physicsSystem->GetBodyLockInterface(), tracer.mHitBodyID);
+                    if (lock.Succeeded())
                     {
-                        hitObject->addCollision(
-                            actor.mIsPlayer ? ScriptedCollisionType_Player : ScriptedCollisionType_Actor);
+                        const JPH::Body& body = lock.GetBody();
+                        Object* hitObject = Misc::Convert::toPointerFromUserData<Object>(body.GetUserData());
+                        if (hitObject != nullptr)
+                        {
+                            hitObject->addCollision(
+                                actor.mIsPlayer ? ScriptedCollisionType_Player : ScriptedCollisionType_Actor);
+                        }
                     }
                 }
             }
@@ -430,13 +505,15 @@ namespace MWPhysics
             tracer.doTrace(actor.mPhysicsBody, newPosition, to, physicsSystem, collisionMask, actor.mIsOnGround);
             if (tracer.mFraction < 1.0f)
             {
-                if (!isActor(tracer.mHitObject))
+                // Check if we hit an actor using the layer
+                bool groundIsActor = (tracer.mHitObjectLayer == Layers::ACTOR);
+                if (!groundIsActor)
                 {
                     isOnGround = true;
                     isOnSlope = !isWalkableSlope(tracer.mPlaneNormal);
-                    actor.mStandingOn = tracer.mHitObject->GetID();
+                    actor.mStandingOn = tracer.mHitBodyID;
 
-                    if (tracer.mHitObject->GetObjectLayer() == Layers::WATER)
+                    if (tracer.mHitObjectLayer == Layers::WATER)
                         actor.mWalkingOnWater = true;
                     if (!actor.mFlying && !isOnSlope)
                     {

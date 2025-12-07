@@ -32,6 +32,7 @@
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadgmst.hpp>
 #include <components/esm3/loadmgef.hpp>
+#include <components/misc/constants.hpp>
 #include <components/misc/convert.hpp>
 #include <components/misc/mathutil.hpp>
 #include <components/misc/resourcehelpers.hpp>
@@ -248,7 +249,7 @@ namespace MWPhysics
             *mObjectVsBPLayerFilter, *mObjectVsObjectLayerFilter);
         Log(Debug::Info) << "[JOLT DEBUG] JPH::PhysicsSystem Init done";
         mPhysicsSystem->SetContactListener(mContactListener.get());
-        mPhysicsSystem->SetGravity(JPH::Vec3(0, 0, Constants::GravityConst * Constants::UnitsPerMeter));
+        mPhysicsSystem->SetGravity(JPH::Vec3(0, 0, -Constants::GravityConst * Constants::UnitsPerMeter));
 
         // Debug helper
         Log(Debug::Info) << "[JOLT DEBUG] Creating JoltDebugDrawer...";
@@ -715,6 +716,11 @@ namespace MWPhysics
         }
         else if (auto foundDynamic = mDynamicObjects.find(ptr.mRef); foundDynamic != mDynamicObjects.end())
         {
+            // Release if we're grabbing this object
+            if (mGrabbedObject == foundDynamic->second.get())
+            {
+                mGrabbedObject = nullptr;
+            }
             mDynamicObjects.erase(foundDynamic);
         }
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
@@ -1013,6 +1019,38 @@ namespace MWPhysics
         // Synchronize/commit all transform updates for actors and objects
         updatePtrHolders();
 
+        // Apply buoyancy forces to dynamic objects in water
+        // Check per-object water level based on cell, with fallback to global water
+        const float gravity = Constants::GravityConst * Constants::UnitsPerMeter;
+        for (auto& [_, dynObj] : mDynamicObjects)
+        {
+            MWWorld::Ptr ptr = dynObj->getPtr();
+            if (ptr.isEmpty())
+                continue;
+
+            const MWWorld::CellStore* cell = ptr.getCell();
+            bool hasWater = cell && cell->getCell()->hasWater();
+            float waterHeight = hasWater ? cell->getWaterLevel() : mWaterHeight;
+
+            // For exterior cells, always use global water if enabled (ocean level)
+            // Interior cells use their own water level
+            bool isExterior = cell && cell->getCell()->isExterior();
+            if (isExterior && mWaterEnabled)
+            {
+                hasWater = true;
+                waterHeight = mWaterHeight;
+            }
+
+            // Apply buoyancy if we have water (either cell water or global water)
+            if (hasWater || mWaterEnabled)
+            {
+                dynObj->updateBuoyancy(waterHeight, gravity, mPhysicsDt);
+            }
+        }
+
+        // Push dynamic objects that actors are walking into
+        pushDynamicObjectsFromActors();
+
         // Run dynamic body sim, broadphase updates etc
         while (mTimeAccumJolt >= mPhysicsDt)
         {
@@ -1286,5 +1324,268 @@ namespace MWPhysics
     bool operator==(const LOSRequest& lhs, const LOSRequest& rhs) noexcept
     {
         return lhs.mRawActors == rhs.mRawActors;
+    }
+
+    bool PhysicsSystem::grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance)
+    {
+        // Release any currently held object
+        if (mGrabbedObject)
+            releaseGrabbedObject();
+
+        // Cast ray to find a dynamic object
+        osg::Vec3f rayEnd = rayStart + rayDir * maxDistance;
+
+        JPH::RVec3 rayOrigin = Misc::Convert::toJolt<JPH::RVec3>(rayStart);
+        JPH::Vec3 rayDirection = Misc::Convert::toJolt<JPH::Vec3>(rayEnd - rayStart);
+        JPH::RRayCast ray(rayOrigin, rayDirection);
+
+        // Only collide with dynamic objects
+        JPH::SpecifiedBroadPhaseLayerFilter broadphaseLayerFilter(BroadPhaseLayers::MOVING);
+        JPH::SpecifiedObjectLayerFilter objectLayerFilter(Layers::DYNAMIC_WORLD);
+
+        JPH::RayCastResult hit;
+        bool didHit = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(
+            ray, hit, broadphaseLayerFilter, objectLayerFilter);
+
+        if (!didHit)
+            return false;
+
+        // Get the body and verify it's a dynamic object
+        JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), hit.mBodyID);
+        if (!lock.Succeeded())
+            return false;
+
+        const JPH::Body& body = lock.GetBody();
+        if (body.GetObjectLayer() != Layers::DYNAMIC_WORLD)
+            return false;
+
+        // Get the DynamicObject from user data
+        uintptr_t userData = body.GetUserData();
+        if (userData == 0)
+            return false;
+
+        DynamicObject* dynObj = reinterpret_cast<DynamicObject*>(userData);
+        if (!dynObj)
+            return false;
+
+        // Calculate grab distance (distance from ray start to hit point)
+        osg::Vec3f hitPoint = rayStart + rayDir * (hit.mFraction * maxDistance);
+        mGrabDistance = (hitPoint - rayStart).length();
+
+        // Clamp grab distance to reasonable range
+        mGrabDistance = std::clamp(mGrabDistance, 50.0f, maxDistance);
+
+        mGrabbedObject = dynObj;
+        mGrabTargetPosition = hitPoint;
+
+        // Wake up the object
+        dynObj->activate();
+
+        Log(Debug::Verbose) << "Grabbed object: " << dynObj->getPtr().getCellRef().getRefId();
+
+        return true;
+    }
+
+    void PhysicsSystem::releaseGrabbedObject(const osg::Vec3f& throwVelocity)
+    {
+        if (!mGrabbedObject)
+            return;
+
+        // Apply throw velocity if provided
+        if (throwVelocity.length2() > 0.01f)
+        {
+            mGrabbedObject->setLinearVelocity(throwVelocity);
+        }
+
+        Log(Debug::Verbose) << "Released object: " << mGrabbedObject->getPtr().getCellRef().getRefId();
+
+        mGrabbedObject = nullptr;
+    }
+
+    void PhysicsSystem::updateGrabbedObject(const osg::Vec3f& targetPosition)
+    {
+        if (!mGrabbedObject)
+            return;
+
+        mGrabTargetPosition = targetPosition;
+
+        // Get current position
+        osg::Vec3f currentPos = mGrabbedObject->getSimulationPosition();
+
+        // Calculate spring force to move object toward target
+        // Using a spring-damper system for smooth movement
+        osg::Vec3f displacement = mGrabTargetPosition - currentPos;
+        float distance = displacement.length();
+
+        if (distance < 0.1f)
+        {
+            // Close enough, just stop it
+            mGrabbedObject->setLinearVelocity(osg::Vec3f(0, 0, 0));
+            return;
+        }
+
+        // Spring constants (tuned for Oblivion/Skyrim feel)
+        constexpr float springStiffness = 20.0f;   // How strongly it pulls toward target
+        constexpr float damping = 5.0f;            // How quickly it stops oscillating
+        constexpr float maxForce = 5000.0f;        // Maximum force to prevent extreme physics
+
+        // Calculate spring force: F = k * x (Hooke's law)
+        osg::Vec3f springForce = displacement * springStiffness;
+
+        // Add damping force: F_damp = -c * v
+        osg::Vec3f velocity = mGrabbedObject->getLinearVelocity();
+        osg::Vec3f dampingForce = -velocity * damping;
+
+        // Combined force
+        osg::Vec3f totalForce = springForce + dampingForce;
+
+        // Clamp force magnitude
+        float forceMag = totalForce.length();
+        if (forceMag > maxForce)
+        {
+            totalForce = totalForce * (maxForce / forceMag);
+        }
+
+        // Apply force (accounting for mass)
+        float mass = mGrabbedObject->getMass();
+        osg::Vec3f impulse = totalForce * mPhysicsDt;
+
+        // Also counteract gravity while holding
+        float gravityCompensation = Constants::GravityConst * Constants::UnitsPerMeter * mass * mPhysicsDt;
+        impulse.z() += gravityCompensation;
+
+        mGrabbedObject->applyImpulse(impulse);
+
+        // Keep the object active
+        mGrabbedObject->activate();
+    }
+
+    MWWorld::Ptr PhysicsSystem::getGrabbedObject() const
+    {
+        if (mGrabbedObject)
+            return mGrabbedObject->getPtr();
+        return MWWorld::Ptr();
+    }
+
+    void PhysicsSystem::pushDynamicObjectsFromActors()
+    {
+        // For each actor, check if they're overlapping with dynamic objects
+        // and push those objects based on the actor's velocity
+        for (const auto& [_, actor] : mActors)
+        {
+            if (!actor->isActive())
+                continue;
+
+            osg::Vec3f actorPos = actor->getSimulationPosition();
+            osg::Vec3f actorVelocity = actor->getInertialForce();
+
+            // Also consider movement velocity
+            // The actor's velocity is stored before being consumed
+            float actorSpeed = actorVelocity.length();
+            if (actorSpeed < 10.0f)
+                continue;  // Actor not moving fast enough to push
+
+            osg::Vec3f actorHalfExtents = actor->getHalfExtents();
+            float actorRadius = std::max(actorHalfExtents.x(), actorHalfExtents.y()) + 20.0f;  // Add margin
+
+            for (auto& [_, dynObj] : mDynamicObjects)
+            {
+                // Don't push grabbed object
+                if (dynObj.get() == mGrabbedObject)
+                    continue;
+
+                osg::Vec3f objPos = dynObj->getSimulationPosition();
+                osg::Vec3f toObject = objPos - actorPos;
+
+                // Quick distance check (XY plane primarily)
+                float distXY = std::sqrt(toObject.x() * toObject.x() + toObject.y() * toObject.y());
+                float distZ = std::abs(toObject.z());
+
+                // Check if within actor's collision cylinder
+                if (distXY > actorRadius || distZ > actorHalfExtents.z() + 30.0f)
+                    continue;
+
+                // Calculate push direction (away from actor center, mostly horizontal)
+                osg::Vec3f pushDir = toObject;
+                pushDir.z() *= 0.3f;  // Reduce vertical component
+                float pushDist = pushDir.length();
+                if (pushDist < 0.1f)
+                    pushDir = osg::Vec3f(1.0f, 0.0f, 0.0f);  // Default push direction
+                else
+                    pushDir /= pushDist;
+
+                // Impulse strength based on actor speed and proximity
+                float proximityFactor = 1.0f - (distXY / actorRadius);
+                proximityFactor = std::max(proximityFactor, 0.2f);
+
+                constexpr float basePushStrength = 100.0f;
+                float impulseMagnitude = basePushStrength * proximityFactor * (actorSpeed / 100.0f);
+
+                osg::Vec3f impulse = pushDir * impulseMagnitude;
+                impulse.z() += impulseMagnitude * 0.3f;  // Add upward kick
+
+                dynObj->activate();
+                dynObj->applyImpulse(impulse);
+            }
+        }
+    }
+
+    void PhysicsSystem::applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+        float reach, float attackStrength)
+    {
+        Log(Debug::Info) << "applyMeleeHitToDynamicObjects called: origin=" << origin.x() << "," << origin.y() << "," << origin.z()
+                         << " reach=" << reach << " strength=" << attackStrength
+                         << " dynamicObjects=" << mDynamicObjects.size();
+
+        // Cone check parameters - wider cone for better hit detection
+        constexpr float coneAngleCos = 0.5f;  // ~60 degree half-angle cone
+
+        osg::Vec3f normalizedDir = direction;
+        normalizedDir.normalize();
+
+        for (auto& [_, dynObj] : mDynamicObjects)
+        {
+            // Don't hit the grabbed object
+            if (dynObj.get() == mGrabbedObject)
+                continue;
+
+            osg::Vec3f objPos = dynObj->getSimulationPosition();
+            osg::Vec3f toObject = objPos - origin;
+            float distance = toObject.length();
+
+            // Check if within reach (extended slightly for better feel)
+            if (distance > reach * 1.2f || distance < 0.1f)
+                continue;
+
+            toObject.normalize();
+
+            // Check if within cone angle
+            float dot = toObject * normalizedDir;
+            if (dot < coneAngleCos)
+                continue;
+
+            // Calculate impulse based on attack strength and distance
+            // Closer objects get hit harder
+            float distanceFactor = 1.0f - (distance / (reach * 1.2f));
+            distanceFactor = std::max(distanceFactor, 0.2f);  // Minimum 20% power
+
+            // Much stronger base impulse for visible effect
+            // Scale by mass to ensure even heavy objects move noticeably
+            float mass = dynObj->getMass();
+            constexpr float baseImpulse = 500.0f;
+            float impulseMagnitude = baseImpulse * attackStrength * distanceFactor * std::max(1.0f, mass * 0.5f);
+
+            // Apply impulse in the swing direction with some upward component
+            osg::Vec3f impulse = normalizedDir * impulseMagnitude;
+            impulse.z() += impulseMagnitude * 0.5f;  // More upward kick for dramatic effect
+
+            // IMPORTANT: Activate the body BEFORE applying impulse
+            // Otherwise sleeping bodies may ignore the impulse
+            dynObj->activate();
+            dynObj->applyImpulse(impulse);
+
+            Log(Debug::Info) << "Melee hit dynamic object: " << dynObj->getPtr().getCellRef().getRefId()
+                             << " impulse=" << impulseMagnitude << " mass=" << mass << " dist=" << distance;
+        }
     }
 }

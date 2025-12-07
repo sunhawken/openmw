@@ -114,19 +114,34 @@ namespace MWPhysics
         {
             switch (objectLayer)
             {
+                // Static geometry should collide with moving objects and debris
                 case Layers::WORLD:
+                case Layers::HEIGHTMAP:
+                    return broadPhaseLayer == BroadPhaseLayers::MOVING || broadPhaseLayer == BroadPhaseLayers::DEBRIS;
+
+                // Water should collide with moving objects (for water walking detection, etc.)
+                case Layers::WATER:
                     return broadPhaseLayer == BroadPhaseLayers::MOVING;
+
+                // Dynamic/moving layers should collide with static world, other moving objects, and sensors
                 case Layers::ACTOR:
                 case Layers::PROJECTILE:
                 case Layers::DYNAMIC_WORLD:
                     return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer == BroadPhaseLayers::MOVING
                         || broadPhaseLayer == BroadPhaseLayers::SENSOR;
+
+                // Doors should collide with moving objects and debris
                 case Layers::DOOR:
-                    return broadPhaseLayer == BroadPhaseLayers::DEBRIS || broadPhaseLayer == BroadPhaseLayers::MOVING;
+                    return broadPhaseLayer == BroadPhaseLayers::MOVING || broadPhaseLayer == BroadPhaseLayers::DEBRIS;
+
+                // Debris should only collide with static world
                 case Layers::DEBRIS:
                     return broadPhaseLayer == BroadPhaseLayers::WORLD;
+
+                // Sensors should collide with moving objects and other sensors
                 case Layers::SENSOR:
                     return broadPhaseLayer == BroadPhaseLayers::MOVING || broadPhaseLayer == BroadPhaseLayers::SENSOR;
+
                 default:
                     return false;
             }
