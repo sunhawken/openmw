@@ -608,7 +608,16 @@ namespace MWClass
 
         MWMechanics::applyFatigueLoss(ptr, weapon, attackStrength);
 
-        if (victim.isEmpty()) // Didn't hit anything
+        // Apply melee hit to dynamic objects (Oblivion/Skyrim style physics)
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const ESM::Position& posdata = ptr.getRefData().getPosition();
+        osg::Vec3f origin = posdata.asVec3();
+        origin.z() += world->getHalfExtents(ptr, true).z();  // Raise to chest level
+        osg::Vec3f direction = osg::Quat(posdata.rot[2], osg::Vec3(0, 0, -1)) * osg::Vec3f(0, 1, 0);
+        float reach = MWMechanics::getMeleeWeaponReach(ptr, weapon);
+        world->applyMeleeHitToDynamicObjects(origin, direction, reach, attackStrength);
+
+        if (victim.isEmpty()) // Didn't hit anything (actor)
             return;
 
         const MWWorld::Class& othercls = victim.getClass();
@@ -657,7 +666,6 @@ namespace MWClass
             MWMechanics::getHandToHandDamage(ptr, victim, damage, healthdmg, attackStrength);
         }
 
-        MWBase::World* world = MWBase::Environment::get().getWorld();
         const MWWorld::Store<ESM::GameSetting>& store = world->getStore().get<ESM::GameSetting>();
 
         if (ptr == MWMechanics::getPlayer())

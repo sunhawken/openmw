@@ -84,7 +84,7 @@ namespace MWPhysics
             mPlaneNormal = Misc::Convert::toOsg(traceCallback.mHitNormalWorld);
             mEndPos = (end - start) * mFraction + start;
             mHitPoint = Misc::Convert::toOsg(traceCallback.mHitPointWorld);
-            mHitObject = traceCallback.mHitCollisionObject;
+            mHitBodyID = traceCallback.mHitBodyID;
             mHitObjectLayer = traceCallback.mHitCollisionLayer;
         }
         else
@@ -94,7 +94,7 @@ namespace MWPhysics
             mPlaneNormal = osg::Vec3f(0.0f, 0.0f, 1.0f);
             mFraction = 1.0f;
             mHitPoint = end;
-            mHitObject = nullptr;
+            mHitBodyID = JPH::BodyID();
             mHitObjectLayer = 0;
         }
     }

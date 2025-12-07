@@ -153,6 +153,10 @@ namespace MWPhysics
 
         DetourNavigator::CollisionShapeType getCollisionShapeType() const { return mCollisionShapeType; }
 
+        // Contact callback to push dynamic objects when actor collides with them
+        void onContactAdded(const JPH::Body& withBody, const JPH::ContactManifold& inManifold,
+            JPH::ContactSettings& ioSettings) override;
+
     private:
         MWWorld::Ptr mStandingOnPtr;
 

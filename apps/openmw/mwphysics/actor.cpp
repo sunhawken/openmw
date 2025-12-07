@@ -162,7 +162,7 @@ namespace MWPhysics
     JPH::ObjectLayer Actor::getCollisionMask() const
     {
         std::scoped_lock lock(mMutex);
-        JPH::ObjectLayer collisionMask = Layers::WORLD | Layers::HEIGHTMAP;
+        JPH::ObjectLayer collisionMask = Layers::WORLD | Layers::HEIGHTMAP | Layers::DYNAMIC_WORLD;
         if (mExternalCollisionMode)
             collisionMask |= Layers::ACTOR | Layers::PROJECTILE | Layers::DOOR;
         if (mCanWaterWalk)
@@ -362,6 +362,60 @@ namespace MWPhysics
         MWPhysics::ActorTracer tracer;
         tracer.doTrace(getPhysicsBody(), startingPosition, destinationPosition, physicsSystem, getCollisionMask());
         return (tracer.mFraction >= 1.0f);
+    }
+
+    void Actor::onContactAdded(const JPH::Body& withBody, const JPH::ContactManifold& inManifold,
+        JPH::ContactSettings& ioSettings)
+    {
+        // Check if the other body is a dynamic object (DYNAMIC_WORLD layer)
+        if (withBody.GetObjectLayer() != Layers::DYNAMIC_WORLD)
+            return;
+
+        // Get the DynamicObject from user data
+        uintptr_t userData = withBody.GetUserData();
+        if (userData == 0)
+            return;
+
+        // Calculate push impulse based on actor velocity
+        // Kinematic bodies don't automatically push dynamic bodies, so we need to do it manually
+        osg::Vec3f actorVelocity = mVelocity;
+        float speed = actorVelocity.length();
+
+        if (speed < 1.0f)
+            return;  // Not moving fast enough to push
+
+        // Get contact normal (pointing from actor to dynamic object)
+        JPH::Vec3 contactNormal = inManifold.mWorldSpaceNormal;
+
+        // Calculate impulse magnitude based on actor speed and "mass"
+        // Actors are effectively infinite mass kinematic bodies, so we use a fixed push strength
+        constexpr float pushStrength = 50.0f;
+        float impulseMagnitude = pushStrength * speed;
+
+        // Apply impulse in the direction of actor movement projected onto contact normal
+        JPH::Vec3 impulseDir = Misc::Convert::toJolt<JPH::Vec3>(actorVelocity);
+        impulseDir = impulseDir.Normalized();
+
+        // Ensure we're pushing away from the actor, not pulling
+        float dot = impulseDir.Dot(contactNormal);
+        if (dot < 0.0f)
+            impulseDir = -impulseDir;
+
+        JPH::Vec3 impulse = impulseDir * impulseMagnitude;
+
+        // Add some upward component for a more dynamic feel
+        impulse.SetZ(impulse.GetZ() + impulseMagnitude * 0.2f);
+
+        // Apply the impulse through the body interface
+        // Note: we can't use DynamicObject::applyImpulse here as we only have the JPH::Body
+        // The contact listener is called with bodies already locked, so we need to be careful
+        // We'll use the ioSettings to modify the contact response instead
+        ioSettings.mCombinedFriction = 0.1f;  // Reduce friction so object slides away
+        ioSettings.mCombinedRestitution = 0.5f;  // Add some bounce
+
+        // Unfortunately we can't directly apply impulse here in the contact callback
+        // because the bodies are locked. The impulse needs to be applied outside the callback.
+        // For now, we modify contact settings to make the object more responsive.
     }
 
 }
