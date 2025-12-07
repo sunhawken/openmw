@@ -44,6 +44,26 @@ namespace MWClass
         }
     }
 
+    void Ingredient::insertObject(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        insertObjectPhysics(ptr, model, rotation, physics);
+    }
+
+    void Ingredient::insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        if (model.empty())
+            return;
+
+        // Get the weight of the item to calculate mass
+        float mass = getWeight(ptr);
+        if (mass <= 0.0f)
+            mass = 1.0f; // Minimum mass for very light items
+
+        physics.addDynamicObject(ptr, VFS::Path::toNormalized(model), rotation, mass);
+    }
+
     std::string_view Ingredient::getModel(const MWWorld::ConstPtr& ptr) const
     {
         return getClassModel<ESM::Ingredient>(ptr);
