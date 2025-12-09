@@ -696,8 +696,12 @@ namespace MWInput
                 action = A_CycleSpellLeft;
         }
 
+        // Detect press (value goes above threshold)
         if (previousValue <= 0.6 && currentValue > 0.6)
             manager->executeAction(action);
+        // Detect release (value goes below threshold)
+        else if (previousValue > 0.6 && currentValue <= 0.6)
+            manager->executeActionRelease(action);
     }
 
     void BindingsManager::saveBindings()

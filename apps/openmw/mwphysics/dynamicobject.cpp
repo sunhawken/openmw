@@ -161,6 +161,8 @@ namespace MWPhysics
 
     osg::Vec3f DynamicObject::getSimulationPosition() const
     {
+        if (mPhysicsBody == nullptr)
+            return mPosition;
         JPH::BodyLockRead lock(mTaskScheduler->getBodyLockInterface(), getPhysicsBody());
         if (lock.Succeeded())
         {
@@ -172,6 +174,8 @@ namespace MWPhysics
 
     osg::Quat DynamicObject::getSimulationRotation() const
     {
+        if (mPhysicsBody == nullptr)
+            return osg::Quat();
         JPH::BodyLockRead lock(mTaskScheduler->getBodyLockInterface(), getPhysicsBody());
         if (lock.Succeeded())
         {
@@ -201,12 +205,16 @@ namespace MWPhysics
 
     void DynamicObject::setLinearVelocity(const osg::Vec3f& velocity)
     {
+        if (mPhysicsBody == nullptr)
+            return;
         JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
         bodyInterface.SetLinearVelocity(getPhysicsBody(), Misc::Convert::toJolt<JPH::Vec3>(velocity));
     }
 
     osg::Vec3f DynamicObject::getLinearVelocity() const
     {
+        if (mPhysicsBody == nullptr)
+            return osg::Vec3f();
         JPH::BodyLockRead lock(mTaskScheduler->getBodyLockInterface(), getPhysicsBody());
         if (lock.Succeeded())
         {
@@ -216,8 +224,18 @@ namespace MWPhysics
         return osg::Vec3f();
     }
 
+    void DynamicObject::setAngularVelocity(const osg::Vec3f& velocity)
+    {
+        if (mPhysicsBody == nullptr)
+            return;
+        JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
+        bodyInterface.SetAngularVelocity(getPhysicsBody(), Misc::Convert::toJolt<JPH::Vec3>(velocity));
+    }
+
     bool DynamicObject::isActive() const
     {
+        if (mPhysicsBody == nullptr)
+            return false;
         JPH::BodyLockRead lock(mTaskScheduler->getBodyLockInterface(), getPhysicsBody());
         if (lock.Succeeded())
         {
@@ -228,6 +246,8 @@ namespace MWPhysics
 
     void DynamicObject::activate()
     {
+        if (mPhysicsBody == nullptr)
+            return;
         JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
         bodyInterface.ActivateBody(getPhysicsBody());
     }
@@ -358,14 +378,5 @@ namespace MWPhysics
             applyForce(dragForce);
         }
 
-        // Debug logging every ~1 second (assuming 60fps, log every 60 frames)
-        static int frameCounter = 0;
-        if (++frameCounter % 60 == 0)
-        {
-            Log(Debug::Info) << "Buoyancy: " << getPtr().getCellRef().getRefId()
-                             << " z=" << position.z() << " water=" << waterHeight
-                             << " depth=" << depthBelowSurface
-                             << " force=" << buoyancyForce << " vel.z=" << velocity.z();
-        }
     }
 }
