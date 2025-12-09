@@ -66,6 +66,18 @@ namespace MWPhysics
         void destroyCollisionObject(JPH::Body* collisionObject);
         JPH::Body* createPhysicsBody(JPH::BodyCreationSettings& settings);
 
+        // Batch operations for efficient bulk body management (per Jolt best practices)
+        // Call beginBatchAdd() before adding multiple bodies, then endBatchAdd() when done
+        void beginBatchAdd();
+        void endBatchAdd();
+
+        // Batch removal - collect bodies to remove, then flush
+        void queueBodyRemoval(JPH::Body* body);
+        void flushBodyRemovals();
+
+        // Optimize broadphase structure (call after bulk additions)
+        void optimizeBroadPhase();
+
         std::shared_mutex& getSimulationMutex() { return mSimulationMutex; }
 
         void debugDraw();
@@ -134,6 +146,12 @@ namespace MWPhysics
         osg::Timer_t mFrameStart;
 
         JPH::JobSystem::Barrier* mSimulationBarrier;
+
+        // Batch operation state
+        bool mBatchAddInProgress = false;
+        std::vector<JPH::BodyID> mPendingAddBodies;
+        std::vector<JPH::BodyID> mPendingRemoveBodies;
+        std::vector<JPH::Body*> mPendingDestroyBodies;
     };
 
 }

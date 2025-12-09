@@ -2,6 +2,7 @@
 
 #include <MyGUI_InputManager.h>
 
+#include <osg/Quat>
 #include <SDL_keyboard.h>
 
 #include <components/settings/values.hpp>
@@ -20,6 +21,9 @@
 
 #include "../mwmechanics/actorutil.hpp"
 #include "../mwmechanics/npcstats.hpp"
+
+#include "../mwrender/camera.hpp"
+#include "../mwrender/renderingmanager.hpp"
 
 #include "actions.hpp"
 #include "bindingsmanager.hpp"
@@ -48,6 +52,22 @@ namespace MWInput
         }
         else
             mTimeIdle += dt;
+
+        // Update activate hold state for grab mechanic
+        if (mActivateHeld)
+        {
+            mActivateHoldTime += dt;
+
+            // After hold threshold, try to grab if we haven't already
+            if (mActivateHoldTime >= sGrabHoldThreshold && !mGrabAttempted)
+            {
+                mGrabAttempted = true;
+                tryGrabObject();
+            }
+        }
+
+        // Update grabbed object position every frame
+        updateGrabbedObject(dt);
     }
 
     void ActionManager::resetIdleTime()
@@ -74,7 +94,7 @@ namespace MWInput
                 break;
             case A_Activate:
                 inputManager->resetIdleTime();
-                activate();
+                onActivatePressed();
                 break;
             case A_MoveLeft:
             case A_MoveRight:
@@ -304,5 +324,106 @@ namespace MWInput
         }
 
         MWBase::Environment::get().getWindowManager()->injectKeyPress(key, 0, false);
+    }
+
+    void ActionManager::onActivatePressed()
+    {
+        // If in GUI mode, handle as normal activate
+        if (MWBase::Environment::get().getWindowManager()->isGuiMode())
+        {
+            bool joystickUsed = MWBase::Environment::get().getInputManager()->joystickLastUsed();
+            if (!SDL_IsTextInputActive() && !mBindingsManager->isLeftOrRightButton(A_Activate, joystickUsed))
+                MWBase::Environment::get().getWindowManager()->injectKeyPress(MyGUI::KeyCode::Return, 0, false);
+            return;
+        }
+
+        // Start tracking the hold
+        mActivateHeld = true;
+        mActivateHoldTime = 0.0f;
+        mGrabAttempted = false;
+    }
+
+    void ActionManager::onActivateReleased()
+    {
+        if (!mActivateHeld)
+            return;
+
+        auto world = MWBase::Environment::get().getWorld();
+
+        // If we're holding an object, release it with throw velocity
+        if (world->isGrabbingObject())
+        {
+            // Calculate throw velocity based on recent object movement
+            // The physics system tracks the object velocity internally
+            world->releaseGrabbedObject(mLastGrabbedObjectVelocity);
+        }
+        // If it was a quick tap (not a hold), do normal activate
+        else if (mActivateHoldTime < sGrabHoldThreshold)
+        {
+            if (MWBase::Environment::get().getInputManager()->getControlSwitch("playercontrols"))
+            {
+                MWWorld::Player& player = world->getPlayer();
+                player.activate();
+            }
+        }
+
+        // Reset state
+        mActivateHeld = false;
+        mActivateHoldTime = 0.0f;
+        mGrabAttempted = false;
+        mLastGrabbedObjectVelocity = osg::Vec3f();
+    }
+
+    void ActionManager::tryGrabObject()
+    {
+        auto world = MWBase::Environment::get().getWorld();
+
+        if (!MWBase::Environment::get().getInputManager()->getControlSwitch("playercontrols"))
+            return;
+
+        if (MWBase::Environment::get().getWindowManager()->isGuiMode())
+            return;
+
+        // Get the camera position and direction for ray casting
+        MWRender::Camera* camera = world->getCamera();
+        if (!camera)
+            return;
+
+        osg::Vec3f camPos = osg::Vec3f(camera->getPosition());
+        // Compute look direction from camera orientation
+        osg::Quat orient = camera->getOrient();
+        osg::Vec3f camDir = orient * osg::Vec3f(0, 1, 0);  // Forward is +Y in OpenMW
+
+        // Try to grab an object with a reasonable distance (activation range + some extra)
+        float maxGrabDistance = world->getMaxActivationDistance() * 1.5f;
+
+        world->grabObject(camPos, camDir, maxGrabDistance);
+    }
+
+    void ActionManager::updateGrabbedObject(float dt)
+    {
+        auto world = MWBase::Environment::get().getWorld();
+
+        if (!world->isGrabbingObject())
+        {
+            mLastGrabbedObjectVelocity = osg::Vec3f();
+            return;
+        }
+
+        // Get camera to determine where to hold the object
+        MWRender::Camera* camera = world->getCamera();
+        if (!camera)
+            return;
+
+        osg::Vec3f camPos = osg::Vec3f(camera->getPosition());
+        // Compute look direction from camera orientation
+        osg::Quat orient = camera->getOrient();
+        osg::Vec3f camDir = orient * osg::Vec3f(0, 1, 0);  // Forward is +Y in OpenMW
+
+        // Calculate target position in front of camera at grab distance
+        float grabDist = world->getGrabDistance();
+        osg::Vec3f targetPos = camPos + camDir * grabDist;
+
+        world->updateGrabbedObject(targetPos);
     }
 }
