@@ -1800,6 +1800,16 @@ namespace MWMechanics
 
                 if (cls.isEssential(actor.getPtr()))
                     MWBase::Environment::get().getWindowManager()->messageBox("#{sKilledEssential}");
+
+                // Activate ragdoll physics for NPCs (not player)
+                const bool isPlayer = actor.getPtr() == getPlayer();
+                if (!isPlayer)
+                {
+                    // Calculate initial impulse based on last hit direction (if available)
+                    // For now, just use a small downward impulse
+                    osg::Vec3f hitImpulse(0, 0, -500);  // Gravity impulse to start falling
+                    MWBase::Environment::get().getWorld()->activateActorRagdoll(actor.getPtr(), hitImpulse);
+                }
             }
             else if (killResult == CharacterController::Result_DeathAnimJustFinished)
             {
