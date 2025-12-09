@@ -94,6 +94,7 @@ namespace MWBase
         virtual bool isIdle() const = 0;
 
         virtual void executeAction(int action) = 0;
+        virtual void executeActionRelease(int action) = 0;
 
         virtual bool controlsDisabled() = 0;
 

@@ -264,6 +264,19 @@ namespace MWInput
         mActionManager->executeAction(action);
     }
 
+    void InputManager::executeActionRelease(int action)
+    {
+        // Handle action release events
+        switch (action)
+        {
+            case A_Activate:
+                mActionManager->onActivateReleased();
+                break;
+            default:
+                break;
+        }
+    }
+
     void InputManager::saveBindings()
     {
         mBindingsManager->saveBindings();

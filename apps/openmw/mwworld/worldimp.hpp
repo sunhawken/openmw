@@ -510,6 +510,8 @@ namespace MWWorld
 
         void enableActorCollision(const MWWorld::Ptr& actor, bool enable) override;
 
+        void activateActorRagdoll(const MWWorld::Ptr& actor, const osg::Vec3f& hitImpulse = osg::Vec3f()) override;
+
         int canRest() const override;
         ///< check if the player is allowed to rest
 
@@ -586,6 +588,14 @@ namespace MWWorld
 
         void applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
             float reach, float attackStrength) override;
+
+        // Oblivion/Skyrim style object grabbing
+        bool grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance) override;
+        void releaseGrabbedObject(const osg::Vec3f& throwVelocity = osg::Vec3f()) override;
+        void updateGrabbedObject(const osg::Vec3f& targetPosition) override;
+        bool isGrabbingObject() const override;
+        MWWorld::Ptr getGrabbedObject() const override;
+        float getGrabDistance() const override;
 
         bool findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result) override;
 
