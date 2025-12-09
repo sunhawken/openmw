@@ -59,6 +59,7 @@
 #include "actor.hpp"
 #include "dynamicobject.hpp"
 #include "joltlayers.hpp"
+#include "ragdoll.hpp"
 
 #include "heightfield.hpp"
 #include "movementsolver.hpp"
@@ -624,7 +625,123 @@ namespace MWPhysics
 
     void PhysicsSystem::optimize()
     {
-        mPhysicsSystem->OptimizeBroadPhase();
+        mTaskScheduler->optimizeBroadPhase();
+    }
+
+    void PhysicsSystem::beginBatchAdd()
+    {
+        mTaskScheduler->beginBatchAdd();
+    }
+
+    void PhysicsSystem::endBatchAdd()
+    {
+        mTaskScheduler->endBatchAdd();
+        // Optimize broadphase after batch additions for better query performance
+        mTaskScheduler->optimizeBroadPhase();
+    }
+
+    void PhysicsSystem::queueBodyRemoval(const MWWorld::Ptr& ptr)
+    {
+        // Queue the object for batch removal - the actual body removal and destruction
+        // happens when flushBodyRemovals() is called
+        if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
+        {
+            mAnimatedObjects.erase(foundObject->second.get());
+            mPendingObjectRemovals.push_back(ptr.mRef);
+        }
+        else if (auto foundDynamic = mDynamicObjects.find(ptr.mRef); foundDynamic != mDynamicObjects.end())
+        {
+            if (mGrabbedObject == foundDynamic->second.get())
+                mGrabbedObject = nullptr;
+            mPendingDynamicRemovals.push_back(ptr.mRef);
+        }
+        else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
+        {
+            mPendingActorRemovals.push_back(ptr.mRef);
+        }
+    }
+
+    void PhysicsSystem::flushBodyRemovals()
+    {
+        if (mPendingObjectRemovals.empty() && mPendingDynamicRemovals.empty() && mPendingActorRemovals.empty())
+            return;
+
+        // Fully synchronize physics simulation before removing bodies (see remove() for explanation)
+        mTaskScheduler->syncSimulation();
+
+        // Collect all body IDs for batch removal
+        std::vector<JPH::BodyID> bodyIds;
+        bodyIds.reserve(mPendingObjectRemovals.size() + mPendingDynamicRemovals.size() + mPendingActorRemovals.size());
+
+        for (const auto* ref : mPendingObjectRemovals)
+        {
+            if (auto it = mObjects.find(ref); it != mObjects.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+        for (const auto* ref : mPendingDynamicRemovals)
+        {
+            if (auto it = mDynamicObjects.find(ref); it != mDynamicObjects.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+        for (const auto* ref : mPendingActorRemovals)
+        {
+            if (auto it = mActors.find(ref); it != mActors.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+
+        // Batch remove bodies from physics system
+        if (!bodyIds.empty())
+        {
+            JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+            bodyInterface.RemoveBodies(bodyIds.data(), static_cast<int>(bodyIds.size()));
+
+            // Destroy bodies after removal
+            for (const JPH::BodyID& id : bodyIds)
+                bodyInterface.DestroyBody(id);
+
+            Log(Debug::Verbose) << "Batch removed " << bodyIds.size() << " bodies from physics system";
+        }
+
+        // Mark bodies as removed so destructors don't try to remove/destroy again
+        for (const auto* ref : mPendingObjectRemovals)
+        {
+            if (auto it = mObjects.find(ref); it != mObjects.end())
+                it->second->markBodyRemoved();
+        }
+        for (const auto* ref : mPendingDynamicRemovals)
+        {
+            if (auto it = mDynamicObjects.find(ref); it != mDynamicObjects.end())
+                it->second->markBodyRemoved();
+        }
+        for (const auto* ref : mPendingActorRemovals)
+        {
+            if (auto it = mActors.find(ref); it != mActors.end())
+                it->second->markBodyRemoved();
+        }
+
+        // Now safely erase from maps (destructors won't try to remove/destroy again)
+        for (const auto* ref : mPendingObjectRemovals)
+            mObjects.erase(ref);
+        for (const auto* ref : mPendingDynamicRemovals)
+            mDynamicObjects.erase(ref);
+        for (const auto* ref : mPendingActorRemovals)
+            mActors.erase(ref);
+
+        mPendingObjectRemovals.clear();
+        mPendingDynamicRemovals.clear();
+        mPendingActorRemovals.clear();
     }
 
     void PhysicsSystem::addHeightField(
@@ -709,6 +826,14 @@ namespace MWPhysics
 
     void PhysicsSystem::remove(const MWWorld::Ptr& ptr)
     {
+        // IMPORTANT: Must fully synchronize physics simulation before removing objects.
+        // This includes both waiting for the async job AND processing the simulation results.
+        // The simulation results (in mSimulations vector) contain BodyIDs (like mStandingOn)
+        // that reference bodies being removed. If we only wait for workers but don't process
+        // the results, the next syncSimulation() call would try to access destroyed bodies
+        // via getUserPointer() when processing those stale BodyIDs.
+        mTaskScheduler->syncSimulation();
+
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             mAnimatedObjects.erase(foundObject->second.get());
@@ -1351,22 +1476,34 @@ namespace MWPhysics
             return false;
 
         // Get the body and verify it's a dynamic object
-        JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), hit.mBodyID);
-        if (!lock.Succeeded())
-            return false;
+        DynamicObject* dynObj = nullptr;
+        {
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), hit.mBodyID);
+            if (!lock.Succeeded())
+                return false;
 
-        const JPH::Body& body = lock.GetBody();
-        if (body.GetObjectLayer() != Layers::DYNAMIC_WORLD)
-            return false;
+            const JPH::Body& body = lock.GetBody();
+            if (body.GetObjectLayer() != Layers::DYNAMIC_WORLD)
+                return false;
 
-        // Get the DynamicObject from user data
-        uintptr_t userData = body.GetUserData();
-        if (userData == 0)
-            return false;
+            // Get the DynamicObject from user data
+            uintptr_t userData = body.GetUserData();
+            if (userData == 0)
+                return false;
 
-        DynamicObject* dynObj = reinterpret_cast<DynamicObject*>(userData);
-        if (!dynObj)
-            return false;
+            dynObj = reinterpret_cast<DynamicObject*>(userData);
+            if (!dynObj)
+                return false;
+
+            // Verify the dynamic object is still valid by checking its ptr is not empty
+            // The ptr becomes empty when the object is removed from the world
+            if (dynObj->getPtr().isEmpty())
+            {
+                Log(Debug::Warning) << "Attempted to grab invalid dynamic object (empty ptr)";
+                return false;
+            }
+        }
+        // Lock is now released
 
         // Calculate grab distance (distance from ray start to hit point)
         osg::Vec3f hitPoint = rayStart + rayDir * (hit.mFraction * maxDistance);
@@ -1378,7 +1515,7 @@ namespace MWPhysics
         mGrabbedObject = dynObj;
         mGrabTargetPosition = hitPoint;
 
-        // Wake up the object
+        // Wake up the object (must be outside the body lock to avoid deadlock)
         dynObj->activate();
 
         Log(Debug::Verbose) << "Grabbed object: " << dynObj->getPtr().getCellRef().getRefId();
@@ -1407,54 +1544,65 @@ namespace MWPhysics
         if (!mGrabbedObject)
             return;
 
+        // Validate grabbed object is still valid (could have been removed during cell transition)
+        JPH::BodyID bodyId = mGrabbedObject->getPhysicsBody();
+        if (bodyId.IsInvalid())
+        {
+            Log(Debug::Warning) << "Grabbed object body is invalid, releasing";
+            mGrabbedObject = nullptr;
+            return;
+        }
+
+        // Verify the body still exists in the physics system
+        // Use a separate scope for the lock to avoid holding it during physics operations
+        {
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), bodyId);
+            if (!lock.Succeeded())
+            {
+                Log(Debug::Warning) << "Grabbed object body lock failed, releasing";
+                mGrabbedObject = nullptr;
+                return;
+            }
+        }
+        // Lock is now released - safe to call physics operations
+
         mGrabTargetPosition = targetPosition;
 
         // Get current position
         osg::Vec3f currentPos = mGrabbedObject->getSimulationPosition();
 
-        // Calculate spring force to move object toward target
-        // Using a spring-damper system for smooth movement
+        // Calculate displacement to target
         osg::Vec3f displacement = mGrabTargetPosition - currentPos;
         float distance = displacement.length();
 
-        if (distance < 0.1f)
+        // Movement parameters - tuned for smooth, responsive Oblivion/Skyrim feel
+        // Higher values = snappier movement, lower = more floaty
+        constexpr float moveSpeed = 15.0f;      // How fast the object moves toward target (units per second per unit distance)
+        constexpr float maxSpeed = 1500.0f;     // Maximum velocity to prevent extreme speeds
+        constexpr float snapDistance = 1.0f;    // Distance at which we consider the object "arrived"
+
+        osg::Vec3f targetVelocity;
+
+        if (distance < snapDistance)
         {
-            // Close enough, just stop it
-            mGrabbedObject->setLinearVelocity(osg::Vec3f(0, 0, 0));
-            return;
+            // Very close - slow down proportionally to avoid overshoot
+            targetVelocity = displacement * moveSpeed * 0.5f;
+        }
+        else
+        {
+            // Move toward target at speed proportional to distance
+            // This creates smooth acceleration/deceleration
+            osg::Vec3f direction = displacement / distance;
+            float speed = std::min(distance * moveSpeed, maxSpeed);
+            targetVelocity = direction * speed;
         }
 
-        // Spring constants (tuned for Oblivion/Skyrim feel)
-        constexpr float springStiffness = 20.0f;   // How strongly it pulls toward target
-        constexpr float damping = 5.0f;            // How quickly it stops oscillating
-        constexpr float maxForce = 5000.0f;        // Maximum force to prevent extreme physics
+        // Directly set velocity for responsive, smooth movement
+        // This bypasses physics simulation lag and gives immediate response
+        mGrabbedObject->setLinearVelocity(targetVelocity);
 
-        // Calculate spring force: F = k * x (Hooke's law)
-        osg::Vec3f springForce = displacement * springStiffness;
-
-        // Add damping force: F_damp = -c * v
-        osg::Vec3f velocity = mGrabbedObject->getLinearVelocity();
-        osg::Vec3f dampingForce = -velocity * damping;
-
-        // Combined force
-        osg::Vec3f totalForce = springForce + dampingForce;
-
-        // Clamp force magnitude
-        float forceMag = totalForce.length();
-        if (forceMag > maxForce)
-        {
-            totalForce = totalForce * (maxForce / forceMag);
-        }
-
-        // Apply force (accounting for mass)
-        float mass = mGrabbedObject->getMass();
-        osg::Vec3f impulse = totalForce * mPhysicsDt;
-
-        // Also counteract gravity while holding
-        float gravityCompensation = Constants::GravityConst * Constants::UnitsPerMeter * mass * mPhysicsDt;
-        impulse.z() += gravityCompensation;
-
-        mGrabbedObject->applyImpulse(impulse);
+        // Zero out angular velocity to prevent spinning while held
+        mGrabbedObject->setAngularVelocity(osg::Vec3f(0, 0, 0));
 
         // Keep the object active
         mGrabbedObject->activate();
@@ -1586,5 +1734,119 @@ namespace MWPhysics
             Log(Debug::Info) << "Melee hit dynamic object: " << dynObj->getPtr().getCellRef().getRefId()
                              << " impulse=" << impulseMagnitude << " mass=" << mass << " dist=" << distance;
         }
+    }
+
+    void PhysicsSystem::activateRagdoll(const MWWorld::Ptr& ptr, SceneUtil::Skeleton* skeleton,
+        const osg::Vec3f& hitImpulse)
+    {
+        if (!ptr.getClass().isActor())
+            return;
+
+        const MWWorld::LiveCellRefBase* key = ptr.getBase();
+
+        // Check if ragdoll already exists
+        if (mRagdolls.find(key) != mRagdolls.end())
+            return;
+
+        // Remove the actor's kinematic physics body first
+        auto actorIt = mActors.find(key);
+        if (actorIt != mActors.end())
+        {
+            // Disable external collision so other actors don't interact with the old body
+            actorIt->second->enableCollisionBody(false);
+        }
+
+        // Enforce max ragdoll limit - remove oldest/farthest if at limit
+        if (static_cast<int>(mRagdolls.size()) >= sMaxActiveRagdolls)
+        {
+            // Find ragdoll that's been at rest the longest
+            const MWWorld::LiveCellRefBase* toRemove = nullptr;
+            for (const auto& [ragdollKey, ragdoll] : mRagdolls)
+            {
+                if (ragdoll->isAtRest())
+                {
+                    toRemove = ragdollKey;
+                    break;
+                }
+            }
+
+            // If none at rest, remove the first one
+            if (!toRemove && !mRagdolls.empty())
+            {
+                toRemove = mRagdolls.begin()->first;
+            }
+
+            if (toRemove)
+            {
+                mRagdolls.erase(toRemove);
+                Log(Debug::Verbose) << "Ragdoll limit reached, removed oldest ragdoll";
+            }
+        }
+
+        // Get actor transform
+        osg::Vec3f position = ptr.getRefData().getPosition().asVec3();
+        osg::Quat rotation = Misc::Convert::makeOsgQuat(ptr.getRefData().getPosition());
+        float scale = ptr.getCellRef().getScale();
+
+        // Create the ragdoll
+        auto ragdoll = std::make_shared<Ragdoll>(
+            ptr, skeleton, position, rotation, scale,
+            mTaskScheduler.get(), this);
+
+        if (ragdoll->getBodyIds().empty())
+        {
+            Log(Debug::Warning) << "Failed to create ragdoll for " << ptr.getCellRef().getRefId();
+            return;
+        }
+
+        // Apply initial impulse from the killing blow
+        if (hitImpulse.length2() > 0)
+        {
+            ragdoll->applyRootImpulse(hitImpulse);
+        }
+
+        mRagdolls[key] = ragdoll;
+
+        Log(Debug::Info) << "Activated ragdoll for " << ptr.getCellRef().getRefId();
+    }
+
+    void PhysicsSystem::removeRagdoll(const MWWorld::Ptr& ptr)
+    {
+        const MWWorld::LiveCellRefBase* key = ptr.getBase();
+        auto it = mRagdolls.find(key);
+        if (it != mRagdolls.end())
+        {
+            mRagdolls.erase(it);
+            Log(Debug::Verbose) << "Removed ragdoll for " << ptr.getCellRef().getRefId();
+        }
+    }
+
+    Ragdoll* PhysicsSystem::getRagdoll(const MWWorld::Ptr& ptr)
+    {
+        auto it = mRagdolls.find(ptr.getBase());
+        if (it != mRagdolls.end())
+            return it->second.get();
+        return nullptr;
+    }
+
+    const Ragdoll* PhysicsSystem::getRagdoll(const MWWorld::ConstPtr& ptr) const
+    {
+        auto it = mRagdolls.find(ptr.getBase());
+        if (it != mRagdolls.end())
+            return it->second.get();
+        return nullptr;
+    }
+
+    void PhysicsSystem::updateRagdolls()
+    {
+        for (auto& [key, ragdoll] : mRagdolls)
+        {
+            ragdoll->updateBoneTransforms();
+        }
+    }
+
+    bool PhysicsSystem::hasRagdoll(const MWWorld::ConstPtr& ptr) const
+    {
+        return mRagdolls.find(ptr.getBase()) != mRagdolls.end();
     }
 }

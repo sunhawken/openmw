@@ -502,8 +502,118 @@ namespace MWPhysics
             Log(Debug::Warning) << "Attempted to add null collision object";
             return;
         }
-        mPhysicsSystem->GetBodyInterface().AddBody(
-            joltBody->GetID(), activate ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
+
+        if (mBatchAddInProgress)
+        {
+            // Queue for batch addition
+            mPendingAddBodies.push_back(joltBody->GetID());
+            // Note: activation state is handled in endBatchAdd based on body motion type
+        }
+        else
+        {
+            // Immediate addition (legacy path)
+            mPhysicsSystem->GetBodyInterface().AddBody(
+                joltBody->GetID(), activate ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
+        }
+    }
+
+    void PhysicsTaskScheduler::beginBatchAdd()
+    {
+        if (mBatchAddInProgress)
+        {
+            Log(Debug::Warning) << "beginBatchAdd called while batch already in progress";
+            return;
+        }
+        mBatchAddInProgress = true;
+        mPendingAddBodies.clear();
+    }
+
+    void PhysicsTaskScheduler::endBatchAdd()
+    {
+        if (!mBatchAddInProgress)
+        {
+            Log(Debug::Warning) << "endBatchAdd called without matching beginBatchAdd";
+            return;
+        }
+
+        mBatchAddInProgress = false;
+
+        if (mPendingAddBodies.empty())
+            return;
+
+        // Filter out any invalid body IDs (shouldn't happen but safety check)
+        std::vector<JPH::BodyID> validBodies;
+        validBodies.reserve(mPendingAddBodies.size());
+        for (const JPH::BodyID& id : mPendingAddBodies)
+        {
+            if (!id.IsInvalid())
+                validBodies.push_back(id);
+            else
+                Log(Debug::Warning) << "Skipping invalid body ID in batch add";
+        }
+
+        if (validBodies.empty())
+        {
+            mPendingAddBodies.clear();
+            return;
+        }
+
+        JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+
+        // Use Jolt's batch addition API for efficient broadphase construction
+        // AddBodiesPrepare prepares the broadphase for bulk insertion
+        JPH::BodyInterface::AddState addState = bodyInterface.AddBodiesPrepare(
+            validBodies.data(), static_cast<int>(validBodies.size()));
+
+        // AddBodiesFinalize completes the addition with proper broadphase structure
+        bodyInterface.AddBodiesFinalize(
+            validBodies.data(), static_cast<int>(validBodies.size()),
+            addState, JPH::EActivation::DontActivate);
+
+        Log(Debug::Verbose) << "Batch added " << validBodies.size() << " bodies to physics system";
+
+        mPendingAddBodies.clear();
+    }
+
+    void PhysicsTaskScheduler::queueBodyRemoval(JPH::Body* body)
+    {
+        if (body == nullptr)
+        {
+            Log(Debug::Warning) << "Attempted to queue null body for removal";
+            return;
+        }
+        mPendingRemoveBodies.push_back(body->GetID());
+        mPendingDestroyBodies.push_back(body);
+    }
+
+    void PhysicsTaskScheduler::flushBodyRemovals()
+    {
+        if (mPendingRemoveBodies.empty())
+            return;
+
+        JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+
+        // Use batch removal for efficiency
+        bodyInterface.RemoveBodies(
+            mPendingRemoveBodies.data(), static_cast<int>(mPendingRemoveBodies.size()));
+
+        // Destroy bodies after removal
+        for (JPH::Body* body : mPendingDestroyBodies)
+        {
+            if (body != nullptr)
+                bodyInterface.DestroyBody(body->GetID());
+        }
+
+        Log(Debug::Verbose) << "Batch removed " << mPendingRemoveBodies.size() << " bodies from physics system";
+
+        mPendingRemoveBodies.clear();
+        mPendingDestroyBodies.clear();
+    }
+
+    void PhysicsTaskScheduler::optimizeBroadPhase()
+    {
+        mPhysicsSystem->OptimizeBroadPhase();
+        Log(Debug::Verbose) << "Optimized physics broadphase";
     }
 
     bool PhysicsTaskScheduler::getLineOfSight(

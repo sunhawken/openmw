@@ -53,6 +53,11 @@ namespace Resource
     class ResourceSystem;
 }
 
+namespace SceneUtil
+{
+    class Skeleton;
+}
+
 namespace MWPhysics
 {
     class MWWater;
@@ -60,6 +65,7 @@ namespace MWPhysics
     class Object;
     class DynamicObject;
     class Actor;
+    class Ragdoll;
     class PhysicsTaskScheduler;
     class Projectile;
     enum ScriptedCollisionType : char;
@@ -212,6 +218,12 @@ namespace MWPhysics
         osg::Vec3f traceDown(const MWWorld::Ptr& ptr, const osg::Vec3f& position, float maxHeight);
         void optimize();
 
+        // Batch operations for efficient bulk body management during cell loading/unloading
+        void beginBatchAdd();
+        void endBatchAdd();
+        void queueBodyRemoval(const MWWorld::Ptr& ptr);
+        void flushBodyRemovals();
+
         /// @param ignore Optional, a list of Ptr to ignore in the list of results. targets are actors to filter for,
         /// ignoring all other actors.
         RayCastingResult castRay(const osg::Vec3f& from, const osg::Vec3f& to,
@@ -318,6 +330,27 @@ namespace MWPhysics
         // Called each frame to make actors push items when walking into them
         void pushDynamicObjectsFromActors();
 
+        // Ragdoll physics for dead actors
+        // Activates ragdoll physics for a dead actor, replacing their kinematic body
+        // @param ptr The dead actor
+        // @param skeleton The actor's skeleton for bone mapping
+        // @param hitImpulse Optional impulse from the killing blow
+        void activateRagdoll(const MWWorld::Ptr& ptr, SceneUtil::Skeleton* skeleton,
+            const osg::Vec3f& hitImpulse = osg::Vec3f());
+
+        // Remove a ragdoll when the actor is removed from the world
+        void removeRagdoll(const MWWorld::Ptr& ptr);
+
+        // Get the ragdoll for an actor (nullptr if not ragdolled)
+        Ragdoll* getRagdoll(const MWWorld::Ptr& ptr);
+        const Ragdoll* getRagdoll(const MWWorld::ConstPtr& ptr) const;
+
+        // Update all ragdoll bone transforms (call after physics step)
+        void updateRagdolls();
+
+        // Check if an actor has an active ragdoll
+        bool hasRagdoll(const MWWorld::ConstPtr& ptr) const;
+
     private:
         void updateWater();
         void updatePtrHolders();
@@ -381,6 +414,16 @@ namespace MWPhysics
         DynamicObject* mGrabbedObject = nullptr;
         float mGrabDistance = 150.0f;  // Distance from camera to hold object
         osg::Vec3f mGrabTargetPosition;
+
+        // Batch removal queues
+        std::vector<const MWWorld::LiveCellRefBase*> mPendingObjectRemovals;
+        std::vector<const MWWorld::LiveCellRefBase*> mPendingDynamicRemovals;
+        std::vector<const MWWorld::LiveCellRefBase*> mPendingActorRemovals;
+
+        // Ragdoll storage for dead actors
+        using RagdollMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Ragdoll>>;
+        RagdollMap mRagdolls;
+        static constexpr int sMaxActiveRagdolls = 20;  // Performance limit
     };
 }
 
