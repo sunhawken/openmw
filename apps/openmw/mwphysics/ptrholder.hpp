@@ -32,13 +32,15 @@ namespace MWPhysics
 
         const JPH::BodyID getPhysicsBody() const
         {
-            assert(mPhysicsBody != nullptr);
             if (mPhysicsBody == nullptr)
             {
                 return JPH::BodyID();
             }
             return mPhysicsBody->GetID();
         }
+
+        // Mark body as already removed (used by batch removal to prevent double-free)
+        void markBodyRemoved() { mPhysicsBody = nullptr; }
 
         virtual void setVelocity(osg::Vec3f velocity) { mVelocity = velocity; }
 

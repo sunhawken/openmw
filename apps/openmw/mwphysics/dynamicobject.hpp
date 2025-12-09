@@ -48,6 +48,9 @@ namespace MWPhysics
         // Get linear velocity
         osg::Vec3f getLinearVelocity() const;
 
+        // Set angular velocity directly
+        void setAngularVelocity(const osg::Vec3f& velocity);
+
         // Check if the object is currently active (moving)
         bool isActive() const;
 
