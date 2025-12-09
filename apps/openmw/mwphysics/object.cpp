@@ -115,9 +115,11 @@ namespace MWPhysics
         if (mTransformUpdatePending)
         {
             // SetPositionAndRotation is thread safe
+            // NOTE: Static bodies should use DontActivate - activation is only meaningful for dynamic bodies
+            // Per Jolt best practices, activating static bodies causes unnecessary broadphase updates
             JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
             bodyInterface.SetPositionAndRotation(getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(mPosition),
-                Misc::Convert::toJolt(mRotation), JPH::EActivation::Activate);
+                Misc::Convert::toJolt(mRotation), JPH::EActivation::DontActivate);
 
             mTransformUpdatePending = false;
         }

@@ -335,6 +335,9 @@ namespace MWRender
 
         osg::Group* getObjectRoot();
 
+        /// Get the skeleton for this animation, may be nullptr
+        SceneUtil::Skeleton* getSkeleton() { return mSkeleton; }
+
         /**
          * @brief Add an effect mesh attached to a bone or the insert scene node
          * @param model

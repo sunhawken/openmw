@@ -3,6 +3,7 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
@@ -91,11 +92,25 @@ namespace MWPhysics
                     mRotationallyInvariant = false;
                     break;
                 case DetourNavigator::CollisionShapeType::Cylinder:
+                {
+                    // Per Jolt best practices: "Cylinders are the least stable of all shapes"
+                    // Use capsule instead for more stable character physics
+                    // Capsule half-height is measured from center to cap center, so we subtract radius
+                    float radius = mOriginalHalfExtents.x();
+                    float halfHeight = mOriginalHalfExtents.z() - radius;
+                    if (halfHeight < 0.0f)
+                    {
+                        // If the actor is wider than tall, fall back to a sphere-like capsule
+                        halfHeight = 0.0f;
+                        radius = mOriginalHalfExtents.z();
+                    }
+                    // Capsule is created along Y axis by default, rotate 90 degrees around X to align with Z
                     JPH::Quat shapeRotation = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH::DegreesToRadians(90.0f));
                     mBasePhysicsShape = new JPH::RotatedTranslatedShape(JPH::Vec3(0.0f, 0.0f, 0.0f), shapeRotation,
-                        new JPH::CylinderShape(mOriginalHalfExtents.z(), mOriginalHalfExtents.x()));
+                        new JPH::CapsuleShape(halfHeight, radius));
                     mRotationallyInvariant = true;
                     break;
+                }
             }
             mCollisionShapeType = collisionShapeType;
         }

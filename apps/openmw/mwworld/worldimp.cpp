@@ -46,6 +46,7 @@
 
 #include <components/sceneutil/lightmanager.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
+#include <components/sceneutil/skeleton.hpp>
 #include <components/sceneutil/workqueue.hpp>
 
 #include <components/detournavigator/agentbounds.hpp>
@@ -1500,6 +1501,7 @@ namespace MWWorld
         mDiscardMovements = false;
         mPhysics->moveActors();
         mPhysics->moveDynamicObjects();
+        mPhysics->updateRagdolls();
     }
 
     void World::updateNavigator()
@@ -2673,6 +2675,23 @@ namespace MWWorld
             physicActor->enableCollisionBody(enable);
     }
 
+    void World::activateActorRagdoll(const MWWorld::Ptr& actor, const osg::Vec3f& hitImpulse)
+    {
+        // Get the actor's animation to access the skeleton
+        MWRender::Animation* anim = getAnimation(actor);
+        if (!anim)
+            return;
+
+        SceneUtil::Skeleton* skeleton = anim->getSkeleton();
+        if (!skeleton)
+        {
+            Log(Debug::Warning) << "Cannot activate ragdoll: no skeleton for " << actor.getCellRef().getRefId();
+            return;
+        }
+
+        mPhysics->activateRagdoll(actor, skeleton, hitImpulse);
+    }
+
     static std::optional<ESM::Position> searchMarkerPosition(const CellStore& cellStore, std::string_view editorId)
     {
         for (const MWWorld::LiveCellRef<ESM4::Static>& stat4 : cellStore.getReadOnlyEsm4Statics().mList)
@@ -3220,6 +3239,36 @@ namespace MWWorld
         float reach, float attackStrength)
     {
         mPhysics->applyMeleeHitToDynamicObjects(origin, direction, reach, attackStrength);
+    }
+
+    bool World::grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance)
+    {
+        return mPhysics->grabObject(rayStart, rayDir, maxDistance);
+    }
+
+    void World::releaseGrabbedObject(const osg::Vec3f& throwVelocity)
+    {
+        mPhysics->releaseGrabbedObject(throwVelocity);
+    }
+
+    void World::updateGrabbedObject(const osg::Vec3f& targetPosition)
+    {
+        mPhysics->updateGrabbedObject(targetPosition);
+    }
+
+    bool World::isGrabbingObject() const
+    {
+        return mPhysics->isGrabbingObject();
+    }
+
+    MWWorld::Ptr World::getGrabbedObject() const
+    {
+        return mPhysics->getGrabbedObject();
+    }
+
+    float World::getGrabDistance() const
+    {
+        return mPhysics->getGrabDistance();
     }
 
     bool World::findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result)
