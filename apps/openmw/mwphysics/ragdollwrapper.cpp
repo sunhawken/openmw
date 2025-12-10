@@ -6,6 +6,7 @@
 #include <components/debug/debuglog.hpp>
 #include <components/misc/convert.hpp>
 #include <components/misc/strings/lower.hpp>
+#include <components/nifosg/matrixtransform.hpp>
 #include <components/sceneutil/skeleton.hpp>
 
 #include <Jolt/Physics/Body/BodyInterface.h>
@@ -36,6 +37,11 @@ namespace MWPhysics
             Log(Debug::Error) << "RagdollWrapper: Invalid skeleton or physics system";
             return;
         }
+
+        // Note: The OSG bone transforms should already reflect the current animation frame
+        // since ragdoll activation happens during the mechanics update, after animations
+        // have been processed. We read transforms directly from OSG nodes via getWorldMatrix()
+        // which uses computeLocalToWorld(), not the skeleton's cached bone matrices.
 
         // Build ragdoll settings from OSG skeleton
         const float totalMass = 70.0f * scale;  // Roughly human weight
@@ -141,7 +147,9 @@ namespace MWPhysics
             }
         }
 
-        // STEP 3: Apply transforms - use physics transforms for parent lookup
+        // STEP 3: Apply transforms
+        // IMPORTANT: We must compute local matrix relative to OSG parent (not physics parent)
+        // because that's what setMatrix() expects. But we use physics transforms for world positions.
         for (size_t i = 0; i < mBoneMappings.size(); ++i)
         {
             if (!physicsTransforms[i].valid)
@@ -151,69 +159,107 @@ namespace MWPhysics
             const osg::Vec3f& worldPos = physicsTransforms[i].worldPos;
             const osg::Quat& worldRot = physicsTransforms[i].worldRot;
 
-            // Find the physics parent's world transform
-            // We need to use the PHYSICS parent's transform, not the OSG parent
-            osg::Vec3f parentWorldPos(0, 0, 0);
-            osg::Quat parentWorldRot;  // Identity
+            // Get the OSG parent's world transform
+            // If OSG parent is a physics bone, use its physics world transform
+            // Otherwise use the OSG computed world transform
+            osg::Vec3f osgParentWorldPos(0, 0, 0);
+            osg::Quat osgParentWorldRot;  // Identity
+            float parentScale = 1.0f;
+            bool foundParentTransform = false;
 
-            // Look up physics parent in the hierarchy
-            std::string lowerName = Misc::StringUtils::lowerCase(mapping.boneName);
-
-            // Get physics parent name from the hierarchy map
-            // (We need access to the physics hierarchy - for now, find parent by OSG structure)
             osg::Node* osgParent = mapping.osgNode->getParent(0);
             if (osgParent)
             {
-                // Check if parent is also a physics bone
+                // Check if OSG parent is a physics bone
                 auto* parentTransform = dynamic_cast<osg::MatrixTransform*>(osgParent);
                 if (parentTransform && !parentTransform->getName().empty())
                 {
-                    std::string parentLowerName = Misc::StringUtils::lowerCase(parentTransform->getName());
-                    auto parentIt = boneNameToIndex.find(parentLowerName);
+                    std::string osgParentLowerName = Misc::StringUtils::lowerCase(parentTransform->getName());
+                    auto parentIt = boneNameToIndex.find(osgParentLowerName);
                     if (parentIt != boneNameToIndex.end() && physicsTransforms[parentIt->second].valid)
                     {
-                        // Use physics parent's world transform
-                        parentWorldPos = physicsTransforms[parentIt->second].worldPos;
-                        parentWorldRot = physicsTransforms[parentIt->second].worldRot;
-                    }
-                    else
-                    {
-                        // Parent is not a physics bone, get its transform from OSG
-                        osg::NodePathList nodePaths = osgParent->getParentalNodePaths();
-                        if (!nodePaths.empty())
-                        {
-                            osg::Matrix parentWorld = osg::computeLocalToWorld(nodePaths[0]);
-                            parentWorldPos = parentWorld.getTrans();
-                            parentWorldRot = parentWorld.getRotate();
-                        }
+                        // OSG parent is a physics bone - use its physics world transform
+                        osgParentWorldPos = physicsTransforms[parentIt->second].worldPos;
+                        osgParentWorldRot = physicsTransforms[parentIt->second].worldRot;
+                        foundParentTransform = true;
+
+                        // Get parent scale from NifOsg::MatrixTransform if possible
+                        auto* nifParent = dynamic_cast<NifOsg::MatrixTransform*>(parentTransform);
+                        if (nifParent && nifParent->mScale != 0.0f)
+                            parentScale = nifParent->mScale;
                     }
                 }
-                else
+
+                // If OSG parent is not a physics bone, use OSG transform
+                if (!foundParentTransform)
                 {
-                    // Parent is not a bone, get transform from OSG
+                    // Note: getParentalNodePaths() returns paths TO the node, not INCLUDING it
+                    // So we need to also include the parent's own transform
                     osg::NodePathList nodePaths = osgParent->getParentalNodePaths();
                     if (!nodePaths.empty())
                     {
-                        osg::Matrix parentWorld = osg::computeLocalToWorld(nodePaths[0]);
-                        parentWorldPos = parentWorld.getTrans();
-                        parentWorldRot = parentWorld.getRotate();
+                        // Add the parent itself to the path to get complete world transform
+                        osg::NodePath pathWithParent = nodePaths[0];
+                        pathWithParent.push_back(osgParent);
+                        osg::Matrix parentWorld = osg::computeLocalToWorld(pathWithParent);
+                        osgParentWorldPos = parentWorld.getTrans();
+                        osgParentWorldRot = parentWorld.getRotate();
+                        foundParentTransform = true;
+
+                        // Get scale from parent if it's a NifOsg::MatrixTransform
+                        auto* nifParent = dynamic_cast<NifOsg::MatrixTransform*>(osgParent);
+                        if (nifParent && nifParent->mScale != 0.0f)
+                            parentScale = nifParent->mScale;
                     }
                 }
             }
 
-            // Compute local transform from world transform
-            // localPos = inverse(parentWorldRot) * (worldPos - parentWorldPos)
-            osg::Vec3f localPos = parentWorldRot.inverse() * (worldPos - parentWorldPos);
+            // If we still don't have a parent transform (shouldn't happen), fall back to
+            // using the bone's own node paths to get the transform of everything above it
+            if (!foundParentTransform)
+            {
+                osg::NodePathList nodePaths = mapping.osgNode->getParentalNodePaths();
+                if (!nodePaths.empty())
+                {
+                    // Don't include the bone itself - just get transform up to it
+                    osg::Matrix parentWorld = osg::computeLocalToWorld(nodePaths[0]);
+                    osgParentWorldPos = parentWorld.getTrans();
+                    osgParentWorldRot = parentWorld.getRotate();
+                }
+            }
 
-            // localRot = inverse(parentWorldRot) * worldRot
-            osg::Quat localRot = parentWorldRot.inverse() * worldRot;
+            // Compute local transform relative to OSG parent
+            // localPos = inverse(osgParentWorldRot) * (worldPos - osgParentWorldPos)
+            osg::Vec3f localPos = osgParentWorldRot.inverse() * (worldPos - osgParentWorldPos);
 
-            // Set the bone's local matrix
-            osg::Matrix localMatrix;
-            localMatrix.makeRotate(localRot);
-            localMatrix.setTrans(localPos);
+            // Account for parent's scale in position calculation
+            if (parentScale != 1.0f && parentScale != 0.0f)
+                localPos /= parentScale;
 
-            mapping.osgNode->setMatrix(localMatrix);
+            // localRot = inverse(osgParentWorldRot) * worldRot
+            osg::Quat localRot = osgParentWorldRot.inverse() * worldRot;
+
+            // CRITICAL: Use NifOsg::MatrixTransform's setRotation/setTranslation methods
+            // instead of setMatrix(). NifOsg::MatrixTransform stores mScale and mRotationScale
+            // separately from the matrix. Using setMatrix() would bypass those stored components,
+            // causing the scale to be lost and animations/other systems that read mScale to
+            // get incorrect values. setRotation() and setTranslation() properly preserve the
+            // scale component.
+            auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(mapping.osgNode);
+            if (nifTransform)
+            {
+                // Use the NifOsg-specific methods that preserve scale
+                nifTransform->setRotation(localRot);
+                nifTransform->setTranslation(localPos);
+            }
+            else
+            {
+                // Fallback for regular osg::MatrixTransform (shouldn't happen for NIF bones)
+                osg::Matrix localMatrix;
+                localMatrix.makeRotate(localRot);
+                localMatrix.setTrans(localPos);
+                mapping.osgNode->setMatrix(localMatrix);
+            }
         }
     }
 
