@@ -9,6 +9,8 @@
 namespace MWPhysics
 {
     // Note: this is called from a job so whatever you do here needs to be thread safe.
+    // IMPORTANT: UserData may be 0 (cleared) if the object is being destroyed.
+    // Always check for null/zero before dereferencing.
     class JoltContactListener : public JPH::ContactListener
     {
     public:
@@ -19,17 +21,26 @@ namespace MWPhysics
             JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult) override
         {
             bool canCollide = true;
-            PtrHolder* ptr;
 
-            ptr = Misc::Convert::toPointerFromUserData<PtrHolder>(inBody1.GetUserData());
-            if (ptr)
-                canCollide = ptr->onContactValidate(inBody2);
+            // Check UserData is non-zero before converting to pointer
+            // UserData is set to 0 when object is being destroyed
+            uint64_t userData1 = inBody1.GetUserData();
+            if (userData1 != 0)
+            {
+                PtrHolder* ptr = Misc::Convert::toPointerFromUserData<PtrHolder>(userData1);
+                if (ptr)
+                    canCollide = ptr->onContactValidate(inBody2);
+            }
 
             if (canCollide)
             {
-                ptr = Misc::Convert::toPointerFromUserData<PtrHolder>(inBody2.GetUserData());
-                if (ptr)
-                    canCollide = ptr->onContactValidate(inBody1);
+                uint64_t userData2 = inBody2.GetUserData();
+                if (userData2 != 0)
+                {
+                    PtrHolder* ptr = Misc::Convert::toPointerFromUserData<PtrHolder>(userData2);
+                    if (ptr)
+                        canCollide = ptr->onContactValidate(inBody1);
+                }
             }
 
             if (canCollide)
@@ -44,13 +55,23 @@ namespace MWPhysics
         virtual void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
             const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override
         {
-            PtrHolder* ptr1 = Misc::Convert::toPointerFromUserData<PtrHolder>(inBody1.GetUserData());
-            if (ptr1)
-                ptr1->onContactAdded(inBody2, inManifold, ioSettings);
+            // Check UserData is non-zero before converting to pointer
+            // UserData is set to 0 when object is being destroyed
+            uint64_t userData1 = inBody1.GetUserData();
+            if (userData1 != 0)
+            {
+                PtrHolder* ptr1 = Misc::Convert::toPointerFromUserData<PtrHolder>(userData1);
+                if (ptr1)
+                    ptr1->onContactAdded(inBody2, inManifold, ioSettings);
+            }
 
-            PtrHolder* ptr2 = Misc::Convert::toPointerFromUserData<PtrHolder>(inBody2.GetUserData());
-            if (ptr2)
-                ptr2->onContactAdded(inBody1, inManifold, ioSettings);
+            uint64_t userData2 = inBody2.GetUserData();
+            if (userData2 != 0)
+            {
+                PtrHolder* ptr2 = Misc::Convert::toPointerFromUserData<PtrHolder>(userData2);
+                if (ptr2)
+                    ptr2->onContactAdded(inBody1, inManifold, ioSettings);
+            }
         }
     };
 }
