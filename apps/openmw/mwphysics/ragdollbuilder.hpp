@@ -42,6 +42,7 @@ namespace MWPhysics
         osg::MatrixTransform* osgNode;
         osg::Vec3f shapeOffset;  // Offset from joint origin to shape center (in bone local space)
         std::string boneName;
+        std::string physicsParentName;  // Physics parent bone name (may differ from OSG parent)
         osg::Vec3f boneDirection;  // Direction the bone points (normalized, world space at creation)
         osg::Quat bodyRotation;    // Rotation used for physics body (aligns Z with bone direction)
         osg::Quat originalBoneWorldRot;  // Original OSG bone world rotation at ragdoll creation
