@@ -105,8 +105,6 @@ namespace MWPhysics
         bool doDebug = (debugCounter++ % 300 == 0);  // Log every ~5 seconds at 60fps
 
         // STEP 1: Collect all physics world transforms first
-        // We must do this BEFORE modifying any OSG nodes, because modifying a parent
-        // would affect the world matrix computation of its children
         struct PhysicsTransform
         {
             osg::Vec3f worldPos;
@@ -137,39 +135,11 @@ namespace MWPhysics
             physicsTransforms[i].worldPos = Misc::Convert::toOsg(physicsPos);
             physicsTransforms[i].worldRot = Misc::Convert::toOsg(physicsRot);
             physicsTransforms[i].valid = true;
-
-            if (doDebug && mapping.boneName == "bip01 pelvis")
-            {
-                Log(Debug::Info) << "RAGDOLL DEBUG [pelvis]: physicsPos=("
-                    << physicsTransforms[i].worldPos.x() << ", "
-                    << physicsTransforms[i].worldPos.y() << ", "
-                    << physicsTransforms[i].worldPos.z() << ")";
-            }
         }
 
-        // STEP 2: Build a map from bone name to physics transform for parent lookup
-        std::unordered_map<std::string, size_t> boneNameToIndex;
-        for (size_t i = 0; i < mBoneMappings.size(); ++i)
-        {
-            if (physicsTransforms[i].valid)
-            {
-                std::string lowerName = Misc::StringUtils::lowerCase(mBoneMappings[i].boneName);
-                boneNameToIndex[lowerName] = i;
-            }
-        }
-
-        // STEP 3: Apply transforms
-        // We need to compute local transforms relative to OSG parents.
-        // CRITICAL: For root physics bones (like pelvis), the OSG parent is NOT a physics bone,
-        // so it stays at the death position while the ragdoll moves. We need to track the offset
-        // between the initial physics position and the OSG parent, then apply relative movement.
-
-        // First, find the root physics bone and compute the offset from its initial OSG position
-        // We'll use this to move the entire skeleton
-        osg::Vec3f rootOffset(0, 0, 0);
-        osg::Quat rootRotOffset;
-        bool hasRootOffset = false;
-
+        // STEP 2: Find the root physics bone (pelvis) and move its OSG parent (Bip01) to follow it
+        // This is critical: the mesh is attached to the entire skeleton hierarchy including Bip01.
+        // If we don't move Bip01, the mesh stays at the death position while bones move relative to it.
         for (size_t i = 0; i < mBoneMappings.size(); ++i)
         {
             if (!physicsTransforms[i].valid)
@@ -180,186 +150,174 @@ namespace MWPhysics
             // Check if this is the root physics bone (no physics parent)
             if (mapping.physicsParentName.empty())
             {
-                // This is the root - compute offset from OSG parent's world position
+                const osg::Vec3f& rootPhysicsWorldPos = physicsTransforms[i].worldPos;
+                const osg::Quat& rootPhysicsWorldRot = physicsTransforms[i].worldRot;
+
+                // Get the OSG parent of the root physics bone (e.g., Bip01 for pelvis)
                 osg::Node* osgParent = mapping.osgNode->getParent(0);
-                if (osgParent)
+                auto* bip01 = dynamic_cast<osg::MatrixTransform*>(osgParent);
+                if (bip01)
                 {
-                    osg::NodePathList nodePaths = osgParent->getParentalNodePaths();
-                    if (!nodePaths.empty())
+                    // Get Bip01's parent world transform (the skeleton root / actor transform)
+                    osg::Matrix bip01ParentWorld;
+                    osg::Node* bip01Parent = bip01->getParent(0);
+                    if (bip01Parent)
                     {
-                        osg::NodePath pathWithParent = nodePaths[0];
-                        pathWithParent.push_back(osgParent);
-                        osg::Matrix parentWorld = osg::computeLocalToWorld(pathWithParent);
-                        osg::Vec3f osgParentWorldPos = parentWorld.getTrans();
-                        osg::Quat osgParentWorldRot = parentWorld.getRotate();
-
-                        // The root bone's world position from physics
-                        const osg::Vec3f& rootWorldPos = physicsTransforms[i].worldPos;
-                        const osg::Quat& rootWorldRot = physicsTransforms[i].worldRot;
-
-                        // Compute offset: how far the physics root has moved from the OSG parent
-                        rootOffset = osgParentWorldRot.inverse() * (rootWorldPos - osgParentWorldPos);
-                        rootRotOffset = osgParentWorldRot.inverse() * rootWorldRot;
-                        hasRootOffset = true;
-
-                        if (doDebug)
+                        osg::NodePathList nodePaths = bip01Parent->getParentalNodePaths();
+                        if (!nodePaths.empty())
                         {
-                            Log(Debug::Info) << "RAGDOLL DEBUG: rootOffset=("
-                                << rootOffset.x() << ", " << rootOffset.y() << ", " << rootOffset.z() << ")";
+                            osg::NodePath pathWithParent = nodePaths[0];
+                            pathWithParent.push_back(bip01Parent);
+                            bip01ParentWorld = osg::computeLocalToWorld(pathWithParent);
                         }
                     }
+
+                    osg::Vec3f bip01ParentWorldPos = bip01ParentWorld.getTrans();
+                    osg::Quat bip01ParentWorldRot = bip01ParentWorld.getRotate();
+
+                    // Get the original local offset from Bip01 to pelvis (from the original bone setup)
+                    // This is stored in the pelvis bone's original local transform
+                    osg::Matrix pelvisOriginalLocal = mapping.osgNode->getMatrix();
+                    osg::Vec3f pelvisLocalOffset = pelvisOriginalLocal.getTrans();
+
+                    // We want: pelvis ends up at rootPhysicsWorldPos
+                    // pelvisWorld = pelvisLocal * bip01World
+                    // pelvisWorld = pelvisLocal * (bip01Local * bip01ParentWorld)
+                    // So: bip01World = pelvisWorld * inverse(pelvisLocal)
+                    // And: bip01Local = bip01World * inverse(bip01ParentWorld)
+
+                    // For simplicity, we'll move Bip01 so that pelvis (with its original local offset)
+                    // ends up at the physics position.
+                    //
+                    // The pelvis physics body is at rootPhysicsWorldPos with rotation rootPhysicsWorldRot.
+                    // The pelvis bone has a local offset (pelvisLocalOffset) from Bip01.
+                    // We need to find where Bip01 should be so that:
+                    //   rootPhysicsWorldPos = pelvisLocalOffset * bip01WorldRot + bip01WorldPos
+                    //
+                    // Solving for bip01WorldPos:
+                    //   bip01WorldPos = rootPhysicsWorldPos - pelvisLocalOffset * bip01WorldRot
+                    //
+                    // For rotation, we use the physics rotation directly for Bip01,
+                    // and pelvis will inherit it (pelvis local rot becomes identity-ish)
+
+                    // Use physics rotation for Bip01
+                    osg::Quat bip01WorldRot = rootPhysicsWorldRot;
+
+                    // Calculate where Bip01 needs to be in world space
+                    osg::Matrix bip01RotMat;
+                    bip01RotMat.makeRotate(bip01WorldRot);
+                    osg::Vec3f rotatedOffset = pelvisLocalOffset * bip01RotMat;
+                    osg::Vec3f bip01WorldPos = rootPhysicsWorldPos - rotatedOffset;
+
+                    // Convert Bip01's desired world transform to local (relative to its parent)
+                    osg::Vec3f bip01DeltaPos = bip01WorldPos - bip01ParentWorldPos;
+                    osg::Matrix invBip01ParentRot;
+                    invBip01ParentRot.makeRotate(bip01ParentWorldRot.inverse());
+                    osg::Vec3f bip01LocalPos = bip01DeltaPos * invBip01ParentRot;
+                    osg::Quat bip01LocalRot = bip01WorldRot * bip01ParentWorldRot.inverse();
+
+                    // Apply to Bip01
+                    auto* nifBip01 = dynamic_cast<NifOsg::MatrixTransform*>(bip01);
+                    if (nifBip01)
+                    {
+                        nifBip01->setRotation(bip01LocalRot);
+                        nifBip01->setTranslation(bip01LocalPos);
+                    }
+                    else
+                    {
+                        osg::Matrix bip01LocalMatrix;
+                        bip01LocalMatrix.makeRotate(bip01LocalRot);
+                        bip01LocalMatrix.setTrans(bip01LocalPos);
+                        bip01->setMatrix(bip01LocalMatrix);
+                    }
+
+                    if (doDebug)
+                    {
+                        Log(Debug::Info) << "RAGDOLL DEBUG: Moved Bip01 to worldPos=("
+                            << bip01WorldPos.x() << ", " << bip01WorldPos.y() << ", " << bip01WorldPos.z() << ")"
+                            << " so pelvis at physicsPos=(" << rootPhysicsWorldPos.x() << ", "
+                            << rootPhysicsWorldPos.y() << ", " << rootPhysicsWorldPos.z() << ")";
+                    }
                 }
-                break;
+                break;  // Only process root once
             }
         }
 
+        // STEP 3: Build a map from bone name to physics transform for parent lookup
+        std::unordered_map<std::string, size_t> boneNameToIndex;
+        for (size_t i = 0; i < mBoneMappings.size(); ++i)
+        {
+            if (physicsTransforms[i].valid)
+            {
+                std::string lowerName = Misc::StringUtils::lowerCase(mBoneMappings[i].boneName);
+                boneNameToIndex[lowerName] = i;
+            }
+        }
+
+        // STEP 4: Apply transforms for all non-root physics bones
+        // Now that Bip01 has moved, we compute local transforms relative to physics parents
         for (size_t i = 0; i < mBoneMappings.size(); ++i)
         {
             if (!physicsTransforms[i].valid)
                 continue;
 
             const BoneMapping& mapping = mBoneMappings[i];
+
+            // Skip root - it was handled by moving Bip01
+            if (mapping.physicsParentName.empty())
+                continue;
+
             const osg::Vec3f& worldPos = physicsTransforms[i].worldPos;
             const osg::Quat& worldRot = physicsTransforms[i].worldRot;
 
-            // Get the OSG parent's world transform
-            // If OSG parent is a physics bone, use its physics world transform
-            // Otherwise use the OSG computed world transform
-            osg::Vec3f osgParentWorldPos(0, 0, 0);
-            osg::Quat osgParentWorldRot;  // Identity
-            float parentScale = 1.0f;
-            bool foundPhysicsParent = false;
+            // Find physics parent's world transform
+            osg::Vec3f parentWorldPos(0, 0, 0);
+            osg::Quat parentWorldRot;
 
-            osg::Node* osgParent = mapping.osgNode->getParent(0);
-            if (osgParent)
+            std::string parentLowerName = Misc::StringUtils::lowerCase(mapping.physicsParentName);
+            auto parentIt = boneNameToIndex.find(parentLowerName);
+            if (parentIt != boneNameToIndex.end() && physicsTransforms[parentIt->second].valid)
             {
-                // Check if OSG parent is a physics bone
-                auto* parentTransform = dynamic_cast<osg::MatrixTransform*>(osgParent);
-                if (parentTransform && !parentTransform->getName().empty())
-                {
-                    std::string osgParentLowerName = Misc::StringUtils::lowerCase(parentTransform->getName());
-                    auto parentIt = boneNameToIndex.find(osgParentLowerName);
-                    if (parentIt != boneNameToIndex.end() && physicsTransforms[parentIt->second].valid)
-                    {
-                        // OSG parent is a physics bone - use its physics world transform
-                        osgParentWorldPos = physicsTransforms[parentIt->second].worldPos;
-                        osgParentWorldRot = physicsTransforms[parentIt->second].worldRot;
-                        foundPhysicsParent = true;
-
-                        // Get parent scale from NifOsg::MatrixTransform if possible
-                        auto* nifParent = dynamic_cast<NifOsg::MatrixTransform*>(parentTransform);
-                        if (nifParent && nifParent->mScale != 0.0f)
-                            parentScale = nifParent->mScale;
-                    }
-                }
-
-                // If OSG parent is not a physics bone, we need special handling
-                if (!foundPhysicsParent)
-                {
-                    // For non-physics parents (like root bone's parent), use OSG transform
-                    // but the local position will be computed relative to the fixed OSG parent
-                    osg::NodePathList nodePaths = osgParent->getParentalNodePaths();
-                    if (!nodePaths.empty())
-                    {
-                        osg::NodePath pathWithParent = nodePaths[0];
-                        pathWithParent.push_back(osgParent);
-                        osg::Matrix parentWorld = osg::computeLocalToWorld(pathWithParent);
-                        osgParentWorldPos = parentWorld.getTrans();
-                        osgParentWorldRot = parentWorld.getRotate();
-
-                        // Get scale from parent if it's a NifOsg::MatrixTransform
-                        auto* nifParent = dynamic_cast<NifOsg::MatrixTransform*>(osgParent);
-                        if (nifParent && nifParent->mScale != 0.0f)
-                            parentScale = nifParent->mScale;
-                    }
-                }
-            }
-
-            // Compute local transform relative to OSG parent
-            // OSG uses row vectors and post-multiplication: worldPos = localPos * parentRot + parentPos
-            // So to find localPos: localPos = (worldPos - parentPos) * inverse(parentRot)
-            // With quaternions: localPos = inverse(parentRot) * (worldPos - parentPos) is WRONG
-            // We need: localPos = (worldPos - parentPos) * inverse(parentRot)
-            // Which is the same as: localPos = osgParentWorldRot.conj() applied to (worldPos - parentPos)
-            // But OSG quat * vec uses: result = q * v * q^-1 (rotation operator)
-            // Actually, osg::Quat::operator* for Vec3 does: return q.rotate(v) which is correct rotation
-            // The issue is the order: for row vectors, we need q^-1 * v, not v * q^-1
-            // Let's verify by using the matrix directly
-
-            osg::Vec3f deltaPos = worldPos - osgParentWorldPos;
-
-            // Create inverse rotation matrix to transform world delta to local
-            osg::Matrix invParentRot;
-            invParentRot.makeRotate(osgParentWorldRot.inverse());
-
-            // Transform using matrix (row vector convention)
-            osg::Vec3f localPos = deltaPos * invParentRot;
-
-            // Account for parent's scale in position calculation
-            if (parentScale != 1.0f && parentScale != 0.0f)
-                localPos /= parentScale;
-
-            // For rotation: localRot * parentRot = worldRot, so localRot = worldRot * inverse(parentRot)
-            osg::Quat localRot = worldRot * osgParentWorldRot.inverse();
-
-            if (doDebug && mapping.boneName == "bip01 pelvis")
-            {
-                osg::Node* parent = mapping.osgNode->getParent(0);
-                std::string parentName = parent ? parent->getName() : "(null)";
-                std::string parentType = parent ? parent->className() : "(null)";
-
-                // Get parent rotation as axis-angle for readability
-                osg::Vec3d axis;
-                double angle;
-                osgParentWorldRot.getRotate(angle, axis);
-
-                Log(Debug::Info) << "RAGDOLL DEBUG [pelvis]: osgParentWorldPos=("
-                    << osgParentWorldPos.x() << ", " << osgParentWorldPos.y() << ", " << osgParentWorldPos.z() << ")"
-                    << " localPos=(" << localPos.x() << ", " << localPos.y() << ", " << localPos.z() << ")"
-                    << " foundPhysicsParent=" << foundPhysicsParent
-                    << " parentScale=" << parentScale
-                    << " parentName='" << parentName << "'"
-                    << " parentType=" << parentType
-                    << " parentRotAngle=" << (angle * 180.0 / 3.14159) << "deg";
-            }
-
-            // CRITICAL: Use NifOsg::MatrixTransform's setRotation/setTranslation methods
-            // instead of setMatrix(). NifOsg::MatrixTransform stores mScale and mRotationScale
-            // separately from the matrix. Using setMatrix() would bypass those stored components,
-            // causing the scale to be lost and animations/other systems that read mScale to
-            // get incorrect values. setRotation() and setTranslation() properly preserve the
-            // scale component.
-            auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(mapping.osgNode);
-            if (nifTransform)
-            {
-                // Use the NifOsg-specific methods that preserve scale
-                nifTransform->setRotation(localRot);
-                nifTransform->setTranslation(localPos);
-
-                if (doDebug && mapping.boneName == "bip01 pelvis")
-                {
-                    // Verify where the bone ends up after transform using OSG's row-vector convention
-                    osg::Matrix boneLocal = nifTransform->getMatrix();
-                    osg::Vec3f localTrans = boneLocal.getTrans();
-
-                    // OSG: worldPos = localPos * parentRotMatrix + parentPos
-                    osg::Matrix parentRotMat;
-                    parentRotMat.makeRotate(osgParentWorldRot);
-                    osg::Vec3f resultWorldPos = (localTrans * parentScale) * parentRotMat;
-                    resultWorldPos += osgParentWorldPos;
-
-                    Log(Debug::Info) << "RAGDOLL DEBUG [pelvis]: resultWorldPos=("
-                        << resultWorldPos.x() << ", " << resultWorldPos.y() << ", " << resultWorldPos.z() << ")"
-                        << " vs physicsPos=(" << worldPos.x() << ", " << worldPos.y() << ", " << worldPos.z() << ")";
-                }
+                parentWorldPos = physicsTransforms[parentIt->second].worldPos;
+                parentWorldRot = physicsTransforms[parentIt->second].worldRot;
             }
             else
             {
-                // Fallback for regular osg::MatrixTransform (shouldn't happen for NIF bones)
+                // Fallback: shouldn't happen if physics hierarchy is correct
+                Log(Debug::Warning) << "RAGDOLL: Could not find physics parent " << mapping.physicsParentName
+                                    << " for " << mapping.boneName;
+                continue;
+            }
+
+            // Compute local transform relative to physics parent
+            osg::Vec3f deltaPos = worldPos - parentWorldPos;
+            osg::Matrix invParentRot;
+            invParentRot.makeRotate(parentWorldRot.inverse());
+            osg::Vec3f localPos = deltaPos * invParentRot;
+
+            osg::Quat localRot = worldRot * parentWorldRot.inverse();
+
+            // Apply to OSG node
+            auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(mapping.osgNode);
+            if (nifTransform)
+            {
+                nifTransform->setRotation(localRot);
+                nifTransform->setTranslation(localPos);
+            }
+            else
+            {
                 osg::Matrix localMatrix;
                 localMatrix.makeRotate(localRot);
                 localMatrix.setTrans(localPos);
                 mapping.osgNode->setMatrix(localMatrix);
+            }
+
+            if (doDebug && mapping.boneName == "bip01 spine")
+            {
+                Log(Debug::Info) << "RAGDOLL DEBUG [spine]: physicsWorldPos=("
+                    << worldPos.x() << ", " << worldPos.y() << ", " << worldPos.z() << ")"
+                    << " parentWorldPos=(" << parentWorldPos.x() << ", " << parentWorldPos.y() << ", " << parentWorldPos.z() << ")"
+                    << " localPos=(" << localPos.x() << ", " << localPos.y() << ", " << localPos.z() << ")";
             }
         }
     }
