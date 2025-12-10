@@ -60,12 +60,13 @@ namespace SceneUtil
 
 namespace MWPhysics
 {
+    class CollisionShapeConfig;
     class MWWater;
     class HeightField;
     class Object;
     class DynamicObject;
     class Actor;
-    class Ragdoll;
+    class RagdollWrapper;
     class PhysicsTaskScheduler;
     class Projectile;
     enum ScriptedCollisionType : char;
@@ -264,7 +265,12 @@ namespace MWPhysics
         void queueObjectMovement(const MWWorld::Ptr& ptr, const osg::Vec3f& velocity);
 
         /// Clear the queued movements list without applying.
+        /// Also clears all simulation buffers and standing-on references.
         void clearQueuedMovement();
+
+        /// Synchronize any pending physics simulation results.
+        /// Call this before removing objects to ensure stale body IDs are not used.
+        void syncSimulation();
 
         /// Return true if \a actor has been standing on \a object in this frame
         /// This will trigger whenever the object is directly below the actor.
@@ -315,11 +321,23 @@ namespace MWPhysics
         // Update the held object's target position (call every frame while holding)
         void updateGrabbedObject(const osg::Vec3f& targetPosition);
         // Check if we're currently holding an object
-        bool isGrabbingObject() const { return mGrabbedObject != nullptr; }
+        bool isGrabbingObject() const { return mGrabbedObject != nullptr || mGrabbedRagdoll != nullptr; }
         // Get the currently grabbed object
         MWWorld::Ptr getGrabbedObject() const;
         // Get grab distance from camera
         float getGrabDistance() const { return mGrabDistance; }
+
+        // Ragdoll grabbing - grab a specific body part of a ragdoll
+        // Returns true if successfully started grabbing a ragdoll body
+        bool grabRagdoll(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance);
+        // Release the currently grabbed ragdoll body
+        void releaseGrabbedRagdoll(const osg::Vec3f& throwVelocity = osg::Vec3f());
+        // Update the grabbed ragdoll body's target position
+        void updateGrabbedRagdoll(const osg::Vec3f& targetPosition);
+        // Check if we're currently grabbing a ragdoll
+        bool isGrabbingRagdoll() const { return mGrabbedRagdoll != nullptr; }
+        // Get the ptr of the grabbed ragdoll's actor
+        MWWorld::Ptr getGrabbedRagdollPtr() const;
 
         // Apply melee hit impulse to dynamic objects in a cone
         // Used when weapons swing to push nearby objects
@@ -342,14 +360,17 @@ namespace MWPhysics
         void removeRagdoll(const MWWorld::Ptr& ptr);
 
         // Get the ragdoll for an actor (nullptr if not ragdolled)
-        Ragdoll* getRagdoll(const MWWorld::Ptr& ptr);
-        const Ragdoll* getRagdoll(const MWWorld::ConstPtr& ptr) const;
+        RagdollWrapper* getRagdoll(const MWWorld::Ptr& ptr);
+        const RagdollWrapper* getRagdoll(const MWWorld::ConstPtr& ptr) const;
 
         // Update all ragdoll bone transforms (call after physics step)
         void updateRagdolls();
 
         // Check if an actor has an active ragdoll
         bool hasRagdoll(const MWWorld::ConstPtr& ptr) const;
+
+        // Access to Jolt physics system for constraint management
+        JPH::PhysicsSystem* getJoltSystem() { return mPhysicsSystem.get(); }
 
     private:
         void updateWater();
@@ -369,6 +390,7 @@ namespace MWPhysics
         std::unique_ptr<JPH::TempAllocatorImpl> mMemoryAllocator;
         std::unique_ptr<JPH::JobSystem> mPhysicsJobSystem;
         std::unique_ptr<Resource::PhysicsShapeManager> mShapeManager;
+        std::unique_ptr<CollisionShapeConfig> mCollisionShapeConfig;
         Resource::ResourceSystem* mResourceSystem;
 
         using ObjectMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Object>>;
@@ -410,10 +432,14 @@ namespace MWPhysics
         PhysicsSystem(const PhysicsSystem&);
         PhysicsSystem& operator=(const PhysicsSystem&);
 
-        // Grab/hold state
+        // Grab/hold state for dynamic objects
         DynamicObject* mGrabbedObject = nullptr;
         float mGrabDistance = 150.0f;  // Distance from camera to hold object
         osg::Vec3f mGrabTargetPosition;
+
+        // Grab/hold state for ragdolls
+        RagdollWrapper* mGrabbedRagdoll = nullptr;
+        int mGrabbedRagdollBodyIndex = -1;  // Which body part is being grabbed
 
         // Batch removal queues
         std::vector<const MWWorld::LiveCellRefBase*> mPendingObjectRemovals;
@@ -421,7 +447,7 @@ namespace MWPhysics
         std::vector<const MWWorld::LiveCellRefBase*> mPendingActorRemovals;
 
         // Ragdoll storage for dead actors
-        using RagdollMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Ragdoll>>;
+        using RagdollMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<RagdollWrapper>>;
         RagdollMap mRagdolls;
         static constexpr int sMaxActiveRagdolls = 20;  // Performance limit
     };

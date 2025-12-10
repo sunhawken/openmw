@@ -70,10 +70,15 @@ namespace MWPhysics
                 return;
 
             // If object or actor (PtrHolder) then store hit as a result
-            PtrHolder* holder = Misc::Convert::toPointerFromUserData<PtrHolder>(body.GetUserData());
-            if (holder)
-                mResult.emplace_back(ContactPoint{ holder->getPtr(), Misc::Convert::toOsg(inResult.mContactPointOn2),
-                    Misc::Convert::toOsg(inResult.mPenetrationAxis.Normalized()) });
+            // Check UserData is non-zero before converting (it's set to 0 when object is being destroyed)
+            uint64_t userData = body.GetUserData();
+            if (userData != 0)
+            {
+                PtrHolder* holder = Misc::Convert::toPointerFromUserData<PtrHolder>(userData);
+                if (holder)
+                    mResult.emplace_back(ContactPoint{ holder->getPtr(), Misc::Convert::toOsg(inResult.mContactPointOn2),
+                        Misc::Convert::toOsg(inResult.mPenetrationAxis.Normalized()) });
+            }
 
             // NOTE: unlike other jolt collectors, dont early out here as we want ALL HITS
         }

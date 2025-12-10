@@ -114,6 +114,10 @@ namespace SceneUtil
     void Skeleton::setActive(ActiveType active)
     {
         mActive = active;
+        // When setting to Inactive, ensure we skip updates immediately
+        // (traverse() checks mActive == Inactive && mLastFrameNumber != 0)
+        if (active == Inactive && mLastFrameNumber == 0)
+            mLastFrameNumber = 1;
     }
 
     bool Skeleton::getActive() const

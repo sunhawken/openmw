@@ -2689,7 +2689,22 @@ namespace MWWorld
             return;
         }
 
+        // Stop all animations - ragdoll will take over bone control
+        // This must be done BEFORE setting skeleton inactive to prevent
+        // any pending animation updates from conflicting with ragdoll
+        anim->disableAllAnimations();
+
+        // Disable the skeleton's animation updates so ragdoll can control the bones
+        anim->setActive(0);  // SceneUtil::Skeleton::Inactive
+
         mPhysics->activateRagdoll(actor, skeleton, hitImpulse);
+
+        Log(Debug::Info) << "Activated ragdoll for " << actor.getCellRef().getRefId();
+    }
+
+    bool World::hasRagdoll(const MWWorld::ConstPtr& actor) const
+    {
+        return mPhysics->hasRagdoll(actor);
     }
 
     static std::optional<ESM::Position> searchMarkerPosition(const CellStore& cellStore, std::string_view editorId)
@@ -3243,17 +3258,30 @@ namespace MWWorld
 
     bool World::grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance)
     {
-        return mPhysics->grabObject(rayStart, rayDir, maxDistance);
+        // Try to grab a dynamic object first
+        if (mPhysics->grabObject(rayStart, rayDir, maxDistance))
+            return true;
+
+        // If no dynamic object found, try to grab a ragdoll
+        return mPhysics->grabRagdoll(rayStart, rayDir, maxDistance);
     }
 
     void World::releaseGrabbedObject(const osg::Vec3f& throwVelocity)
     {
-        mPhysics->releaseGrabbedObject(throwVelocity);
+        // Release whichever type of object is being grabbed
+        if (mPhysics->isGrabbingRagdoll())
+            mPhysics->releaseGrabbedRagdoll(throwVelocity);
+        else
+            mPhysics->releaseGrabbedObject(throwVelocity);
     }
 
     void World::updateGrabbedObject(const osg::Vec3f& targetPosition)
     {
-        mPhysics->updateGrabbedObject(targetPosition);
+        // Update whichever type of object is being grabbed
+        if (mPhysics->isGrabbingRagdoll())
+            mPhysics->updateGrabbedRagdoll(targetPosition);
+        else
+            mPhysics->updateGrabbedObject(targetPosition);
     }
 
     bool World::isGrabbingObject() const
@@ -3263,6 +3291,9 @@ namespace MWWorld
 
     MWWorld::Ptr World::getGrabbedObject() const
     {
+        // Return whichever object is being grabbed
+        if (mPhysics->isGrabbingRagdoll())
+            return mPhysics->getGrabbedRagdollPtr();
         return mPhysics->getGrabbedObject();
     }
 

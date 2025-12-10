@@ -16,6 +16,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
 #include <osg/NodeVisitor>
@@ -23,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 namespace MWPhysics
 {
@@ -40,59 +42,60 @@ namespace MWPhysics
 
     // Standard humanoid bone definitions
     // These match the Bip01 skeleton used in Morrowind
+    // Joint limits tuned for realistic human movement
     static const BoneDef sHumanoidBones[] = {
-        // Root/Pelvis - no parent
+        // Root/Pelvis - no parent, no constraints
         { "bip01 pelvis", nullptr, 0.15f, BoneDef::Box, 0, 0, 0, 0 },
 
-        // Spine chain
+        // Spine chain - limited flexibility
         { "bip01 spine", "bip01 pelvis", 0.10f, BoneDef::Capsule,
-          -0.3f, 0.3f, 0.4f, 0.3f },  // Limited twist and bend
+          -0.2f, 0.2f, 0.3f, 0.2f },
         { "bip01 spine1", "bip01 spine", 0.10f, BoneDef::Capsule,
-          -0.2f, 0.2f, 0.3f, 0.2f },
+          -0.15f, 0.15f, 0.25f, 0.15f },
         { "bip01 spine2", "bip01 spine1", 0.10f, BoneDef::Capsule,
-          -0.2f, 0.2f, 0.3f, 0.2f },
+          -0.15f, 0.15f, 0.25f, 0.15f },
 
         // Neck and head
         { "bip01 neck", "bip01 spine2", 0.03f, BoneDef::Capsule,
-          -0.5f, 0.5f, 0.5f, 0.5f },  // Neck can rotate more
+          -0.4f, 0.4f, 0.4f, 0.4f },
         { "bip01 head", "bip01 neck", 0.08f, BoneDef::Sphere,
-          -0.3f, 0.3f, 0.4f, 0.3f },
+          -0.3f, 0.3f, 0.3f, 0.3f },
 
         // Left arm
         { "bip01 l clavicle", "bip01 spine2", 0.02f, BoneDef::Capsule,
-          -0.2f, 0.2f, 0.3f, 0.3f },
+          -0.1f, 0.1f, 0.2f, 0.2f },
         { "bip01 l upperarm", "bip01 l clavicle", 0.04f, BoneDef::Capsule,
-          -1.5f, 1.5f, 1.2f, 1.2f },  // Shoulder has wide range
+          -1.0f, 1.0f, 1.0f, 1.0f },  // Shoulder has wide range
         { "bip01 l forearm", "bip01 l upperarm", 0.03f, BoneDef::Capsule,
-          -0.1f, 2.5f, 0.1f, 0.1f },  // Elbow mainly bends one way
+          -0.05f, 2.2f, 0.05f, 0.05f },  // Elbow mainly bends one way
         { "bip01 l hand", "bip01 l forearm", 0.01f, BoneDef::Box,
-          -0.5f, 0.5f, 0.8f, 0.3f },
+          -0.4f, 0.4f, 0.6f, 0.2f },
 
         // Right arm
         { "bip01 r clavicle", "bip01 spine2", 0.02f, BoneDef::Capsule,
-          -0.2f, 0.2f, 0.3f, 0.3f },
+          -0.1f, 0.1f, 0.2f, 0.2f },
         { "bip01 r upperarm", "bip01 r clavicle", 0.04f, BoneDef::Capsule,
-          -1.5f, 1.5f, 1.2f, 1.2f },
+          -1.0f, 1.0f, 1.0f, 1.0f },
         { "bip01 r forearm", "bip01 r upperarm", 0.03f, BoneDef::Capsule,
-          -0.1f, 2.5f, 0.1f, 0.1f },
+          -0.05f, 2.2f, 0.05f, 0.05f },
         { "bip01 r hand", "bip01 r forearm", 0.01f, BoneDef::Box,
-          -0.5f, 0.5f, 0.8f, 0.3f },
+          -0.4f, 0.4f, 0.6f, 0.2f },
 
         // Left leg
         { "bip01 l thigh", "bip01 pelvis", 0.07f, BoneDef::Capsule,
-          -0.5f, 0.5f, 1.2f, 0.3f },  // Hip has good range
+          -0.3f, 0.3f, 0.9f, 0.3f },  // Hip
         { "bip01 l calf", "bip01 l thigh", 0.05f, BoneDef::Capsule,
-          -0.1f, 0.1f, 2.5f, 0.1f },  // Knee mainly bends backward
+          -0.05f, 0.05f, 2.2f, 0.05f },  // Knee mainly bends backward
         { "bip01 l foot", "bip01 l calf", 0.02f, BoneDef::Box,
-          -0.3f, 0.3f, 0.5f, 0.3f },
+          -0.2f, 0.2f, 0.4f, 0.2f },
 
         // Right leg
         { "bip01 r thigh", "bip01 pelvis", 0.07f, BoneDef::Capsule,
-          -0.5f, 0.5f, 1.2f, 0.3f },
+          -0.3f, 0.3f, 0.9f, 0.3f },
         { "bip01 r calf", "bip01 r thigh", 0.05f, BoneDef::Capsule,
-          -0.1f, 0.1f, 2.5f, 0.1f },
+          -0.05f, 0.05f, 2.2f, 0.05f },
         { "bip01 r foot", "bip01 r calf", 0.02f, BoneDef::Box,
-          -0.3f, 0.3f, 0.5f, 0.3f },
+          -0.2f, 0.2f, 0.4f, 0.2f },
     };
     static const int sNumHumanoidBones = sizeof(sHumanoidBones) / sizeof(sHumanoidBones[0]);
 
@@ -181,40 +184,52 @@ namespace MWPhysics
             osg::Vec3f boneWorldPos = boneWorldMatrix.getTrans();
             osg::Quat boneWorldRot = boneWorldMatrix.getRotate();
 
-            // Estimate bone dimensions
-            osg::Vec3f boneSize(10.0f * scale, 10.0f * scale, 20.0f * scale);  // Default size
+            // Estimate bone dimensions by finding any child bone
+            osg::Vec3f boneSize(8.0f * scale, 8.0f * scale, 15.0f * scale);  // Default size
 
-            // Try to find child bone for better size estimation
-            if (i + 1 < sNumHumanoidBones && sHumanoidBones[i + 1].parentName &&
-                std::string(sHumanoidBones[i + 1].parentName) == boneDef.name)
+            // Search through all bones to find children of this bone
+            for (int j = 0; j < sNumHumanoidBones; ++j)
             {
-                osg::MatrixTransform* childBone = findBone(skeleton, sHumanoidBones[i + 1].name);
-                if (childBone)
+                if (sHumanoidBones[j].parentName &&
+                    std::string(sHumanoidBones[j].parentName) == boneDef.name)
                 {
-                    boneSize = estimateBoneSize(boneNode, childBone);
+                    osg::MatrixTransform* childBone = findBone(skeleton, sHumanoidBones[j].name);
+                    if (childBone)
+                    {
+                        osg::Vec3f estimatedSize = estimateBoneSize(boneNode, childBone);
+                        // Take the largest child distance for better coverage
+                        if (estimatedSize.z() > boneSize.z())
+                            boneSize = estimatedSize;
+                    }
                 }
             }
 
-            // Ensure minimum size
-            boneSize.x() = std::max(boneSize.x(), 5.0f * scale);
-            boneSize.y() = std::max(boneSize.y(), 5.0f * scale);
-            boneSize.z() = std::max(boneSize.z(), 10.0f * scale);
+            // Ensure minimum size but keep shapes smaller to avoid overlap
+            boneSize.x() = std::max(boneSize.x(), 4.0f * scale);
+            boneSize.y() = std::max(boneSize.y(), 4.0f * scale);
+            boneSize.z() = std::max(boneSize.z(), 8.0f * scale);
 
-            // Create appropriate shape
+            // Create appropriate shape - use smaller shapes to avoid initial overlap
             JPH::Ref<JPH::Shape> shape;
             osg::Vec3f shapeOffset(0, 0, 0);
+
+            // Scale down shapes to 70% to prevent initial overlaps
+            const float shapeScale = 0.7f;
 
             switch (boneDef.shapeType)
             {
                 case BoneDef::Sphere:
                 {
-                    float radius = std::max({boneSize.x(), boneSize.y(), boneSize.z()}) * 0.5f;
+                    float radius = std::max({boneSize.x(), boneSize.y(), boneSize.z()}) * 0.4f * shapeScale;
                     shape = new JPH::SphereShape(radius);
                     break;
                 }
                 case BoneDef::Box:
                 {
-                    shape = new JPH::BoxShape(JPH::Vec3(boneSize.x() * 0.5f, boneSize.y() * 0.5f, boneSize.z() * 0.5f));
+                    float halfX = boneSize.x() * 0.4f * shapeScale;
+                    float halfY = boneSize.y() * 0.4f * shapeScale;
+                    float halfZ = boneSize.z() * 0.4f * shapeScale;
+                    shape = new JPH::BoxShape(JPH::Vec3(halfX, halfY, halfZ));
                     shapeOffset = osg::Vec3f(0, 0, boneSize.z() * 0.5f);
                     break;
                 }
@@ -222,12 +237,12 @@ namespace MWPhysics
                 default:
                 {
                     // Capsule along bone direction (Z axis)
-                    float radius = std::min(boneSize.x(), boneSize.y()) * 0.4f;
-                    float halfHeight = boneSize.z() * 0.5f - radius;
+                    float radius = std::min(boneSize.x(), boneSize.y()) * 0.3f * shapeScale;
+                    float halfHeight = (boneSize.z() * 0.5f - radius) * shapeScale;
                     if (halfHeight < 0.0f)
                     {
                         halfHeight = 0.0f;
-                        radius = boneSize.z() * 0.5f;
+                        radius = boneSize.z() * 0.4f * shapeScale;
                     }
                     // Jolt capsules are along Y by default, rotate to Z
                     JPH::Quat capsuleRot = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH::JPH_PI * 0.5f);
@@ -255,10 +270,11 @@ namespace MWPhysics
 
             settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
             settings.mMassPropertiesOverride.mMass = partMass;
-            settings.mLinearDamping = 0.1f;
-            settings.mAngularDamping = 0.3f;
-            settings.mFriction = 0.5f;
-            settings.mRestitution = 0.1f;
+            // Higher damping for stable ragdoll simulation
+            settings.mLinearDamping = 0.5f;
+            settings.mAngularDamping = 0.8f;
+            settings.mFriction = 0.8f;
+            settings.mRestitution = 0.0f;  // No bouncing for corpses
             settings.mMotionQuality = JPH::EMotionQuality::LinearCast;
             settings.mAllowSleeping = true;
             settings.mGravityFactor = 1.0f;
@@ -287,21 +303,135 @@ namespace MWPhysics
             return;
         }
 
-        // Create all bodies
+        // Create all bodies but DO NOT activate them yet
+        // We need to add constraints first to prevent explosion
         for (auto& settings : bodySettings)
         {
             JPH::Body* body = mTaskScheduler->createPhysicsBody(settings);
             if (body)
             {
                 body->SetUserData(0);  // Don't associate with PtrHolder
-                mTaskScheduler->addCollisionObject(body, true);
+                mTaskScheduler->addCollisionObject(body, false);  // false = don't activate yet
                 mBodyIds.push_back(body->GetID());
             }
         }
 
-        // TODO: Add constraints between bodies for proper ragdoll behavior
-        // For now, bodies are independent - this creates a "loose" ragdoll
-        // To add constraints, we need access to JPH::PhysicsSystem::AddConstraint()
+        // Create constraints between parent-child bone pairs BEFORE activating bodies
+        JPH::PhysicsSystem* joltSystem = mPhysicsSystem->getJoltSystem();
+        if (joltSystem && mBodyIds.size() > 1)
+        {
+            // Map bone names to body indices
+            std::map<std::string, int> boneToBodyIndex;
+            for (size_t i = 0; i < mBones.size(); ++i)
+            {
+                boneToBodyIndex[mBones[i].name] = static_cast<int>(i);
+            }
+
+            // Create constraints for each bone with a parent
+            for (int i = 0; i < sNumHumanoidBones; ++i)
+            {
+                const BoneDef& boneDef = sHumanoidBones[i];
+                if (!boneDef.parentName)
+                    continue;  // Root bone has no parent
+
+                // Find body indices for child and parent
+                auto childIt = boneToBodyIndex.find(boneDef.name);
+                auto parentIt = boneToBodyIndex.find(boneDef.parentName);
+
+                if (childIt == boneToBodyIndex.end() || parentIt == boneToBodyIndex.end())
+                    continue;  // One of the bones wasn't created
+
+                int childIdx = childIt->second;
+                int parentIdx = parentIt->second;
+
+                if (childIdx >= static_cast<int>(mBodyIds.size()) || parentIdx >= static_cast<int>(mBodyIds.size()))
+                    continue;
+
+                JPH::BodyID childBodyId = mBodyIds[childIdx];
+                JPH::BodyID parentBodyId = mBodyIds[parentIdx];
+
+                // Get bone nodes for calculating proper joint axes
+                osg::MatrixTransform* childNode = mBones[childIdx].node;
+                osg::MatrixTransform* parentNode = mBones[parentIdx].node;
+
+                // Calculate constraint position (at the child bone's origin, which is the joint)
+                osg::Matrix childWorld = getWorldMatrix(childNode);
+                osg::Matrix parentWorld = getWorldMatrix(parentNode);
+                osg::Vec3f childWorldPos = childWorld.getTrans();
+                osg::Vec3f parentWorldPos = parentWorld.getTrans();
+
+                // Calculate the bone direction from parent to child - this is the twist axis
+                osg::Vec3f boneDirection = childWorldPos - parentWorldPos;
+                float boneLength = boneDirection.length();
+                if (boneLength > 0.001f)
+                    boneDirection /= boneLength;
+                else
+                    boneDirection = osg::Vec3f(0, 0, 1);  // Default to Z if bones are at same position
+
+                // Create an orthonormal basis for the constraint
+                osg::Vec3f twistAxis = boneDirection;
+                osg::Vec3f planeAxis;
+
+                // Find a perpendicular axis
+                if (std::abs(twistAxis.z()) < 0.9f)
+                    planeAxis = twistAxis ^ osg::Vec3f(0, 0, 1);
+                else
+                    planeAxis = twistAxis ^ osg::Vec3f(1, 0, 0);
+                planeAxis.normalize();
+
+                // Get body positions for constraint setup
+                JPH::BodyLockRead childLock(mTaskScheduler->getBodyLockInterface(), childBodyId);
+                JPH::BodyLockRead parentLock(mTaskScheduler->getBodyLockInterface(), parentBodyId);
+
+                if (!childLock.Succeeded() || !parentLock.Succeeded())
+                    continue;
+
+                const JPH::Body& childBody = childLock.GetBody();
+                const JPH::Body& parentBody = parentLock.GetBody();
+
+                JPH::RVec3 constraintWorldPos = Misc::Convert::toJolt<JPH::RVec3>(childWorldPos);
+
+                // Create SwingTwist constraint for realistic joint limits
+                JPH::SwingTwistConstraintSettings constraintSettings;
+
+                // Set up constraint in body local space
+                // Position relative to each body's center of mass
+                constraintSettings.mPosition1 = parentBody.GetInverseCenterOfMassTransform() * constraintWorldPos;
+                constraintSettings.mPosition2 = childBody.GetInverseCenterOfMassTransform() * constraintWorldPos;
+
+                // Use the calculated bone direction for twist axis
+                JPH::Vec3 joltTwistAxis = Misc::Convert::toJolt<JPH::Vec3>(twistAxis);
+                JPH::Vec3 joltPlaneAxis = Misc::Convert::toJolt<JPH::Vec3>(planeAxis);
+
+                constraintSettings.mTwistAxis1 = joltTwistAxis;
+                constraintSettings.mTwistAxis2 = joltTwistAxis;
+                constraintSettings.mPlaneAxis1 = joltPlaneAxis;
+                constraintSettings.mPlaneAxis2 = joltPlaneAxis;
+
+                // Apply joint limits from bone definition
+                constraintSettings.mNormalHalfConeAngle = boneDef.swingY;
+                constraintSettings.mPlaneHalfConeAngle = boneDef.swingZ;
+                constraintSettings.mTwistMinAngle = boneDef.twistMin;
+                constraintSettings.mTwistMaxAngle = boneDef.twistMax;
+
+                // Create and add the constraint
+                JPH::Ref<JPH::Constraint> constraint = constraintSettings.Create(
+                    const_cast<JPH::Body&>(parentBody),
+                    const_cast<JPH::Body&>(childBody));
+
+                joltSystem->AddConstraint(constraint);
+                mConstraints.push_back(constraint);
+            }
+
+            Log(Debug::Info) << "Ragdoll: Created " << mConstraints.size() << " constraints";
+        }
+
+        // NOW activate all bodies after constraints are in place
+        JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
+        for (const JPH::BodyID& bodyId : mBodyIds)
+        {
+            bodyInterface.ActivateBody(bodyId);
+        }
 
         Log(Debug::Info) << "Ragdoll: Created ragdoll with " << mBodyIds.size()
                          << " bodies for " << ptr.getCellRef().getRefId();
@@ -309,6 +439,17 @@ namespace MWPhysics
 
     Ragdoll::~Ragdoll()
     {
+        // Remove all constraints first
+        JPH::PhysicsSystem* joltSystem = mPhysicsSystem->getJoltSystem();
+        if (joltSystem)
+        {
+            for (auto& constraint : mConstraints)
+            {
+                joltSystem->RemoveConstraint(constraint);
+            }
+        }
+        mConstraints.clear();
+
         // Remove all bodies
         for (const JPH::BodyID& bodyId : mBodyIds)
         {
@@ -352,8 +493,20 @@ namespace MWPhysics
         if (!mSkeleton || mBones.empty())
             return;
 
-        for (const RagdollBone& bone : mBones)
+        // First pass: collect all body transforms
+        // We need to do this before modifying any bones to avoid hierarchy issues
+        struct BoneTransform {
+            osg::Vec3f worldPos;
+            osg::Quat worldRot;
+            bool valid;
+        };
+        std::vector<BoneTransform> transforms(mBones.size());
+
+        for (size_t i = 0; i < mBones.size(); ++i)
         {
+            const RagdollBone& bone = mBones[i];
+            transforms[i].valid = false;
+
             if (bone.partIndex >= static_cast<int>(mBodyIds.size()) || !bone.node)
                 continue;
 
@@ -369,33 +522,58 @@ namespace MWPhysics
             JPH::RVec3 bodyPos = body.GetCenterOfMassPosition();
             JPH::Quat bodyRot = body.GetRotation();
 
-            // Convert to OSG
-            osg::Vec3f worldPos = Misc::Convert::toOsg(bodyPos);
+            // Convert to OSG - this is the position of the shape center
+            osg::Vec3f shapeWorldPos = Misc::Convert::toOsg(bodyPos);
             osg::Quat worldRot = Misc::Convert::toOsg(bodyRot);
+
+            // The body was placed at: bonePos + boneRot * offset
+            // So the bone position is: bodyPos - bodyRot * offset
+            // (We use bodyRot since the body rotates with the bone)
+            osg::Vec3f boneWorldPos = shapeWorldPos - worldRot * bone.localOffset;
+
+            transforms[i].worldPos = boneWorldPos;
+            transforms[i].worldRot = worldRot;
+            transforms[i].valid = true;
+        }
+
+        // Second pass: apply transforms
+        // Process from root to leaves to ensure parent transforms are set first
+        for (size_t i = 0; i < mBones.size(); ++i)
+        {
+            const RagdollBone& bone = mBones[i];
+            if (!transforms[i].valid || !bone.node)
+                continue;
+
+            osg::Vec3f boneWorldPos = transforms[i].worldPos;
+            osg::Quat worldRot = transforms[i].worldRot;
 
             // Calculate local transform relative to parent
             osg::Node* parent = bone.node->getParent(0);
             if (parent)
             {
+                // Get the parent's world matrix (this should be stable since we process root-to-leaf)
                 osg::Matrix parentWorldInv = osg::Matrix::inverse(getWorldMatrix(parent));
 
-                // Transform world position to parent space
-                osg::Vec3f localPos = worldPos * parentWorldInv;
+                // Transform bone world position to parent's local space
+                osg::Vec3f localPos = boneWorldPos * parentWorldInv;
 
-                // Account for shape offset
-                localPos -= worldRot * bone.localOffset;
+                // Calculate the local rotation by removing parent's rotation
+                osg::Quat parentWorldRot = getWorldMatrix(parent).getRotate();
+                osg::Quat localRot = parentWorldRot.inverse() * worldRot;
 
-                // Set the bone's matrix
+                // Set the bone's local matrix
                 osg::Matrix localMatrix;
-                localMatrix.makeRotate(worldRot);
+                localMatrix.makeRotate(localRot);
                 localMatrix.setTrans(localPos);
 
                 bone.node->setMatrix(localMatrix);
             }
         }
 
-        // Mark skeleton as needing update
-        mSkeleton->markDirty();
+        // Note: We do NOT call mSkeleton->markDirty() here!
+        // markDirty() clears the bone cache and forces full re-initialization,
+        // which is wrong - we've already updated the bone transforms via setMatrix().
+        // The skeleton will pick up our changes on the next traversal.
     }
 
     void Ragdoll::applyImpulse(const osg::Vec3f& impulse, const osg::Vec3f& worldPoint)

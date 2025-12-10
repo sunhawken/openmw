@@ -57,6 +57,8 @@ namespace MWPhysics
 
         if (mPhysicsBody != nullptr)
         {
+            // Clear UserData before destroying to prevent dangling pointer access
+            mPhysicsBody->SetUserData(0);
             mTaskScheduler->removeCollisionObject(mPhysicsBody);
             mTaskScheduler->destroyCollisionObject(mPhysicsBody);
         }
@@ -93,13 +95,18 @@ namespace MWPhysics
         {
             case Layers::PROJECTILE:
             {
-                Projectile* projectileHolder = Misc::Convert::toPointerFromUserData<Projectile>(withBody.GetUserData());
-                if (projectileHolder)
+                // Check UserData is non-zero before converting (it's set to 0 when object is being destroyed)
+                uintptr_t userData = withBody.GetUserData();
+                if (userData != 0)
                 {
-                    if (!projectileHolder->isActive())
-                        return false;
-                    if (!isValidTarget(projectileHolder->getCasterCollisionObject()))
-                        return false;
+                    Projectile* projectileHolder = Misc::Convert::toPointerFromUserData<Projectile>(userData);
+                    if (projectileHolder)
+                    {
+                        if (!projectileHolder->isActive())
+                            return false;
+                        if (!isValidTarget(projectileHolder->getCasterCollisionObject()))
+                            return false;
+                    }
                 }
                 break;
             }
@@ -131,9 +138,14 @@ namespace MWPhysics
         {
             case Layers::PROJECTILE:
             {
-                Projectile* target = Misc::Convert::toPointerFromUserData<Projectile>(withBody.GetUserData());
-                if (target)
-                    target->hit(getPhysicsBody(), mHitPointWorld, mHitNormalWorld);
+                // Check UserData is non-zero before converting (it's set to 0 when object is being destroyed)
+                uintptr_t userData = withBody.GetUserData();
+                if (userData != 0)
+                {
+                    Projectile* target = Misc::Convert::toPointerFromUserData<Projectile>(userData);
+                    if (target)
+                        target->hit(getPhysicsBody(), mHitPointWorld, mHitNormalWorld);
+                }
                 break;
             }
             case Layers::WATER:

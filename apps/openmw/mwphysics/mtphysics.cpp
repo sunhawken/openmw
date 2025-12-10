@@ -242,6 +242,7 @@ namespace
                 auto locked = sim.lock();
                 if (!locked.has_value())
                     return;
+
                 auto& [actor, frameDataRef] = *locked;
                 auto& frameData = frameDataRef.get();
                 auto ptr = actor->getPtr();
@@ -265,6 +266,7 @@ namespace
                         = static_cast<MWPhysics::PtrHolder*>(scheduler->getUserPointer(frameData.mStandingOn));
                     if (ptrHolder != nullptr)
                         standingOn = ptrHolder->getPtr();
+
                     actor->setStandingOnPtr(standingOn);
                     // the "on ground" state of an actor might have been updated by a traceDown, don't overwrite the
                     // change
@@ -482,7 +484,13 @@ namespace MWPhysics
             Log(Debug::Warning) << "Attempted to remove null collision object";
             return;
         }
-        mPhysicsSystem->GetBodyInterface().RemoveBody(joltBody->GetID());
+        JPH::BodyID bodyId = joltBody->GetID();
+        if (bodyId.IsInvalid())
+        {
+            Log(Debug::Warning) << "Attempted to remove body with invalid ID";
+            return;
+        }
+        mPhysicsSystem->GetBodyInterface().RemoveBody(bodyId);
     }
 
     void PhysicsTaskScheduler::destroyCollisionObject(JPH::Body* joltBody)
@@ -492,7 +500,13 @@ namespace MWPhysics
             Log(Debug::Warning) << "Attempted to destroy null collision object";
             return;
         }
-        mPhysicsSystem->GetBodyInterface().DestroyBody(joltBody->GetID());
+        JPH::BodyID bodyId = joltBody->GetID();
+        if (bodyId.IsInvalid())
+        {
+            Log(Debug::Warning) << "Attempted to destroy body with invalid ID";
+            return;
+        }
+        mPhysicsSystem->GetBodyInterface().DestroyBody(bodyId);
     }
 
     void PhysicsTaskScheduler::addCollisionObject(JPH::Body* joltBody, bool activate)
@@ -519,6 +533,9 @@ namespace MWPhysics
 
     void PhysicsTaskScheduler::beginBatchAdd()
     {
+        // Ensure any pending simulation jobs complete before batch adding bodies
+        waitForSimulationBarrier();
+
         if (mBatchAddInProgress)
         {
             Log(Debug::Warning) << "beginBatchAdd called while batch already in progress";
@@ -612,6 +629,9 @@ namespace MWPhysics
 
     void PhysicsTaskScheduler::optimizeBroadPhase()
     {
+        // Ensure any pending simulation jobs complete before modifying broadphase
+        waitForSimulationBarrier();
+
         mPhysicsSystem->OptimizeBroadPhase();
         Log(Debug::Verbose) << "Optimized physics broadphase";
     }
@@ -768,15 +788,18 @@ namespace MWPhysics
     void* PhysicsTaskScheduler::getUserPointer(const JPH::BodyID bodyId) const
     {
         if (bodyId.IsInvalid())
-        {
             return nullptr;
-        }
 
         JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), bodyId);
         if (lock.Succeeded())
         {
             const JPH::Body& body = lock.GetBody();
-            return reinterpret_cast<void*>(static_cast<uintptr_t>(body.GetUserData()));
+            // UserData is set to 0 when object is being destroyed - check for this
+            uint64_t userData = body.GetUserData();
+            if (userData == 0)
+                return nullptr;
+
+            return reinterpret_cast<void*>(static_cast<uintptr_t>(userData));
         }
         return nullptr;
     }

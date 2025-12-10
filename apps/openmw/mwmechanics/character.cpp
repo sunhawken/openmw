@@ -2437,8 +2437,14 @@ namespace MWMechanics
             }
         }
 
-        osg::Vec3f movementFromAnimation
-            = mAnimation->runAnimation(mSkipAnim && !isScriptedAnimPlaying() ? 0.f : duration);
+        // Skip animation updates if ragdoll is active - ragdoll controls the bones now
+        const bool hasRagdoll = cls.isActor() && world->hasRagdoll(mPtr);
+
+        osg::Vec3f movementFromAnimation = osg::Vec3f();
+        if (!hasRagdoll)
+        {
+            movementFromAnimation = mAnimation->runAnimation(mSkipAnim && !isScriptedAnimPlaying() ? 0.f : duration);
+        }
 
         if (mPtr.getClass().isActor() && !isScriptedAnimPlaying())
         {

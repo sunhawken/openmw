@@ -371,11 +371,16 @@ namespace MWPhysics
                     if (lock.Succeeded())
                     {
                         const JPH::Body& body = lock.GetBody();
-                        Object* hitObject = Misc::Convert::toPointerFromUserData<Object>(body.GetUserData());
-                        if (hitObject != nullptr)
+                        // Check UserData is non-zero before converting (it's set to 0 when object is being destroyed)
+                        uintptr_t userData = body.GetUserData();
+                        if (userData != 0)
                         {
-                            hitObject->addCollision(
-                                actor.mIsPlayer ? ScriptedCollisionType_Player : ScriptedCollisionType_Actor);
+                            Object* hitObject = Misc::Convert::toPointerFromUserData<Object>(userData);
+                            if (hitObject != nullptr)
+                            {
+                                hitObject->addCollision(
+                                    actor.mIsPlayer ? ScriptedCollisionType_Player : ScriptedCollisionType_Actor);
+                            }
                         }
                     }
                 }

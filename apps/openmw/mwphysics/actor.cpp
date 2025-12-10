@@ -150,6 +150,8 @@ namespace MWPhysics
     {
         if (mPhysicsBody != nullptr)
         {
+            // Clear UserData before destroying to prevent dangling pointer access
+            mPhysicsBody->SetUserData(0);
             mTaskScheduler->removeCollisionObject(mPhysicsBody);
             mTaskScheduler->destroyCollisionObject(mPhysicsBody);
         }
