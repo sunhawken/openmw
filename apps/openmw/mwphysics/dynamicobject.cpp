@@ -1,4 +1,5 @@
 #include "dynamicobject.hpp"
+#include "collisionshapeconfig.hpp"
 #include "mtphysics.hpp"
 #include "physicssystem.hpp"
 #include "joltlayers.hpp"
@@ -15,44 +16,85 @@
 
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/CylinderShape.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
 
 namespace MWPhysics
 {
     // Helper function to create a convex shape from a mesh shape for dynamic objects
     // Jolt's MeshShape cannot collide with other MeshShapes or HeightfieldShapes,
     // so we need to use a convex shape for dynamic objects.
-    static JPH::Ref<JPH::Shape> createConvexShapeFromMesh(const JPH::Shape* meshShape)
+    // The shapeType parameter determines what kind of convex shape to create.
+    static JPH::Ref<JPH::Shape> createConvexShapeFromMesh(const JPH::Shape* meshShape, DynamicShapeType shapeType)
     {
         // Get the local bounds of the mesh shape
         JPH::AABox bounds = meshShape->GetLocalBounds();
         JPH::Vec3 halfExtents = bounds.GetExtent();
-        JPH::Vec3 center = bounds.GetCenter();
 
         // Ensure minimum size to avoid degenerate shapes
         const float minSize = 1.0f;
         halfExtents = JPH::Vec3::sMax(halfExtents, JPH::Vec3::sReplicate(minSize));
 
-        // Create a box shape with the same bounds
-        // Using a small convex radius for better collision detection
-        JPH::BoxShapeSettings boxSettings(halfExtents, 0.05f);
-        auto result = boxSettings.Create();
+        JPH::ShapeSettings::ShapeResult result;
+        const float convexRadius = 0.05f;
+
+        switch (shapeType)
+        {
+            case DynamicShapeType::Sphere:
+            {
+                // Use the maximum extent as radius for a sphere that contains the object
+                float radius = std::max({ halfExtents.GetX(), halfExtents.GetY(), halfExtents.GetZ() });
+                JPH::SphereShapeSettings sphereSettings(radius);
+                result = sphereSettings.Create();
+                break;
+            }
+            case DynamicShapeType::Capsule:
+            {
+                // Capsule: use average of X/Y as radius, Z as half-height
+                float radius = (halfExtents.GetX() + halfExtents.GetY()) * 0.5f;
+                float halfHeight = halfExtents.GetZ();
+                // Capsule half-height is the cylinder part only, not including the caps
+                float cylinderHalfHeight = std::max(halfHeight - radius, 0.0f);
+                JPH::CapsuleShape* capsule = new JPH::CapsuleShape(cylinderHalfHeight, radius);
+                // Jolt creates capsules along Y-axis by default, rotate 90 degrees around X to align with Z (vertical in OpenMW)
+                JPH::Quat shapeRotation = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH::DegreesToRadians(90.0f));
+                return new JPH::RotatedTranslatedShape(JPH::Vec3::sZero(), shapeRotation, capsule);
+            }
+            case DynamicShapeType::Cylinder:
+            {
+                // Cylinder: use average of X/Y as radius, Z as half-height
+                float radius = (halfExtents.GetX() + halfExtents.GetY()) * 0.5f;
+                float halfHeight = halfExtents.GetZ();
+                JPH::CylinderShape* cylinder = new JPH::CylinderShape(halfHeight, radius, convexRadius);
+                // Jolt creates cylinders along Y-axis by default, rotate 90 degrees around X to align with Z (vertical in OpenMW)
+                JPH::Quat shapeRotation = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH::DegreesToRadians(90.0f));
+                return new JPH::RotatedTranslatedShape(JPH::Vec3::sZero(), shapeRotation, cylinder);
+            }
+            case DynamicShapeType::Box:
+            default:
+            {
+                JPH::BoxShapeSettings boxSettings(halfExtents, convexRadius);
+                result = boxSettings.Create();
+                break;
+            }
+        }
 
         if (result.HasError())
         {
-            Log(Debug::Warning) << "Failed to create box shape for dynamic object: " << result.GetError();
+            Log(Debug::Warning) << "Failed to create shape for dynamic object: " << result.GetError();
             return nullptr;
         }
 
-        // If the mesh center is not at origin, we need to offset the shape
-        // For now, we assume the shape is centered (most items are)
-        // A more robust solution would use OffsetCenterOfMassShape
         return result.Get();
     }
 
     DynamicObject::DynamicObject(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance,
-        osg::Quat rotation, float mass, PhysicsTaskScheduler* scheduler, PhysicsSystem* physicsSystem)
+        osg::Quat rotation, float mass, PhysicsTaskScheduler* scheduler, PhysicsSystem* physicsSystem,
+        DynamicShapeType shapeType)
         : PtrHolder(ptr, ptr.getRefData().getPosition().asVec3())
         , mShapeInstance(std::move(shapeInstance))
         , mMass(mass)
@@ -63,7 +105,7 @@ namespace MWPhysics
         // For dynamic objects, we need to use a convex shape instead of a mesh shape.
         // Jolt's MeshShape cannot collide with other MeshShapes or HeightfieldShapes,
         // which means dynamic objects using mesh shapes would pass through terrain and walls.
-        JPH::Ref<JPH::Shape> convexShape = createConvexShapeFromMesh(mShapeInstance->mCollisionShape.GetPtr());
+        JPH::Ref<JPH::Shape> convexShape = createConvexShapeFromMesh(mShapeInstance->mCollisionShape.GetPtr(), shapeType);
         if (!convexShape)
         {
             Log(Debug::Error) << "Failed to create convex shape for dynamic object: " << ptr.getCellRef().getRefId();
@@ -120,6 +162,8 @@ namespace MWPhysics
     {
         if (mPhysicsBody != nullptr)
         {
+            // Clear UserData before destroying to prevent dangling pointer access
+            mPhysicsBody->SetUserData(0);
             mTaskScheduler->removeCollisionObject(mPhysicsBody);
             mTaskScheduler->destroyCollisionObject(mPhysicsBody);
         }

@@ -181,7 +181,7 @@ namespace MWPhysics
 
                 // Debris layer should only collide with static world for performance
                 case Layers::DEBRIS:
-                    return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP;
+                    return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP || inObject2 == Layers::DOOR;
 
                 default:
                     return false;
