@@ -423,6 +423,9 @@ namespace MWBase
         /// @param hitImpulse Optional impulse from the killing blow
         virtual void activateActorRagdoll(const MWWorld::Ptr& actor, const osg::Vec3f& hitImpulse = osg::Vec3f()) = 0;
 
+        /// Check if an actor has an active ragdoll
+        virtual bool hasRagdoll(const MWWorld::ConstPtr& actor) const = 0;
+
         enum RestFlags
         {
             Rest_PlayerIsUnderwater = 1,

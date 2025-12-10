@@ -434,6 +434,11 @@ namespace MWRender
          */
         void disable(std::string_view groupname);
 
+        /** Disables all currently playing animations.
+         * Used when ragdoll takes over bone control.
+         */
+        void disableAllAnimations();
+
         /** Retrieves the velocity (in units per second) that the animation will move. */
         float getVelocity(std::string_view groupname) const;
 

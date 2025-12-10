@@ -1281,6 +1281,12 @@ namespace MWRender
         resetActiveGroups();
     }
 
+    void Animation::disableAllAnimations()
+    {
+        mStates.clear();
+        resetActiveGroups();
+    }
+
     float Animation::getVelocity(std::string_view groupname) const
     {
         if (!mAccumRoot)

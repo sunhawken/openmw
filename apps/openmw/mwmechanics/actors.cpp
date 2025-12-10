@@ -1809,6 +1809,14 @@ namespace MWMechanics
                     // For now, just use a small downward impulse
                     osg::Vec3f hitImpulse(0, 0, -500);  // Gravity impulse to start falling
                     MWBase::Environment::get().getWorld()->activateActorRagdoll(actor.getPtr(), hitImpulse);
+
+                    // Mark death animation as finished since ragdoll is taking over
+                    // This ensures the game logic continues (loot becomes available, etc.)
+                    stats.setDeathAnimationFinished(true);
+                    notifyDied(actor.getPtr());
+
+                    // Disable actor collision now that ragdoll is active
+                    MWBase::Environment::get().getWorld()->enableActorCollision(actor.getPtr(), false);
                 }
             }
             else if (killResult == CharacterController::Result_DeathAnimJustFinished)
