@@ -508,6 +508,8 @@ namespace MWWorld
 
         void activateActorRagdoll(const MWWorld::Ptr& actor, const osg::Vec3f& hitImpulse = osg::Vec3f()) override;
 
+        bool hasRagdoll(const MWWorld::ConstPtr& actor) const override;
+
         int canRest() const override;
         ///< check if the player is allowed to rest
 
