@@ -9,6 +9,7 @@
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyID.h>
+#include <Jolt/Physics/Constraints/Constraint.h>
 
 #include <memory>
 #include <vector>
@@ -94,6 +95,7 @@ namespace MWPhysics
         MWWorld::Ptr mPtr;
         std::vector<RagdollBone> mBones;
         std::vector<JPH::BodyID> mBodyIds;
+        std::vector<JPH::Ref<JPH::Constraint>> mConstraints;  // Joint constraints between bones
         PhysicsTaskScheduler* mTaskScheduler;
         PhysicsSystem* mPhysicsSystem;
         SceneUtil::Skeleton* mSkeleton;
