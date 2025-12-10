@@ -890,6 +890,13 @@ namespace MWPhysics
             part.mMotionType = JPH::EMotionType::Dynamic;
             part.mObjectLayer = Layers::DEBRIS;
 
+            if (boneName == "bip01 pelvis")
+            {
+                Log(Debug::Info) << "RAGDOLL BUILD [pelvis]: worldPos=("
+                    << worldPos.x() << ", " << worldPos.y() << ", " << worldPos.z() << ")"
+                    << " from getWorldMatrix";
+            }
+
             part.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
             part.mMassPropertiesOverride.mMass = config.mass;
             massSum += config.mass;
