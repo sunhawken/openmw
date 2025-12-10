@@ -54,6 +54,9 @@ set(BUILTIN_DATA_FILES
     # Default animation blending config
     animations/animation-config.yaml
 
+    # Physics collision shape mappings for dynamic objects
+    collision-shapes.yaml
+
     # Month names and date formatting
     l10n/Calendar/de.yaml
     l10n/Calendar/en.yaml

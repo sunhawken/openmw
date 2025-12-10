@@ -57,9 +57,10 @@
 #include "../mwworld/class.hpp"
 
 #include "actor.hpp"
+#include "collisionshapeconfig.hpp"
 #include "dynamicobject.hpp"
 #include "joltlayers.hpp"
-#include "ragdoll.hpp"
+#include "ragdollwrapper.hpp"
 
 #include "heightfield.hpp"
 #include "movementsolver.hpp"
@@ -275,7 +276,13 @@ namespace MWPhysics
         Log(Debug::Info) << "[JOLT DEBUG] Creating PhysicsTaskScheduler...";
         mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(
             mPhysicsDt, mPhysicsSystem.get(), mJoltDebugDrawer.get(), mPhysicsJobSystem.get());
-        Log(Debug::Info) << "[JOLT DEBUG] PhysicsTaskScheduler created - PhysicsSystem constructor complete!";
+        Log(Debug::Info) << "[JOLT DEBUG] PhysicsTaskScheduler created";
+
+        // Load collision shape configuration for dynamic objects
+        Log(Debug::Info) << "[JOLT DEBUG] Loading collision shape config...";
+        mCollisionShapeConfig = std::make_unique<CollisionShapeConfig>();
+        mCollisionShapeConfig->load(resourceSystem->getVFS(), "collision-shapes.yaml");
+        Log(Debug::Info) << "[JOLT DEBUG] PhysicsSystem constructor complete!";
     }
 
     PhysicsSystem::~PhysicsSystem()
@@ -288,6 +295,10 @@ namespace MWPhysics
         mWaterInstance.reset();
         Log(Debug::Info) << "[JOLT DEBUG] Releasing shared states...";
         mTaskScheduler->releaseSharedStates();
+        Log(Debug::Info) << "[JOLT DEBUG] Clearing ragdolls...";
+        mRagdolls.clear();
+        Log(Debug::Info) << "[JOLT DEBUG] Clearing dynamic objects...";
+        mDynamicObjects.clear();
         Log(Debug::Info) << "[JOLT DEBUG] Clearing height fields...";
         mHeightFields.clear();
         Log(Debug::Info) << "[JOLT DEBUG] Clearing objects...";
@@ -423,9 +434,14 @@ namespace MWPhysics
                 result.mHitNormal
                     = Misc::Convert::toOsg(hitBody.GetWorldSpaceSurfaceNormal(ioHit.mSubShapeID2, outPosition));
 
-                PtrHolder* ptrHolder = Misc::Convert::toPointerFromUserData<PtrHolder>(hitBody.GetUserData());
-                if (ptrHolder)
-                    result.mHitObject = ptrHolder->getPtr();
+                // Check UserData is non-zero before converting (it's set to 0 when object is being destroyed)
+                uintptr_t userData = hitBody.GetUserData();
+                if (userData != 0)
+                {
+                    PtrHolder* ptrHolder = Misc::Convert::toPointerFromUserData<PtrHolder>(userData);
+                    if (ptrHolder)
+                        result.mHitObject = ptrHolder->getPtr();
+                }
             }
         }
         return result;
@@ -669,6 +685,25 @@ namespace MWPhysics
         // Fully synchronize physics simulation before removing bodies (see remove() for explanation)
         mTaskScheduler->syncSimulation();
 
+        // Clear any actor's mStandingOnPtr that references objects being removed.
+        // After syncSimulation(), actors may have mStandingOnPtr set to these objects.
+        // We must clear these references before destroying the objects to avoid dangling pointers.
+        for (auto& [_, actor] : mActors)
+        {
+            MWWorld::Ptr standingOn = actor->getStandingOnPtr();
+            if (standingOn.isEmpty())
+                continue;
+            const auto* ref = standingOn.mRef;
+            bool isBeingRemoved = std::find(mPendingObjectRemovals.begin(), mPendingObjectRemovals.end(), ref)
+                    != mPendingObjectRemovals.end()
+                || std::find(mPendingDynamicRemovals.begin(), mPendingDynamicRemovals.end(), ref)
+                    != mPendingDynamicRemovals.end()
+                || std::find(mPendingActorRemovals.begin(), mPendingActorRemovals.end(), ref)
+                    != mPendingActorRemovals.end();
+            if (isBeingRemoved)
+                actor->setStandingOnPtr(MWWorld::Ptr());
+        }
+
         // Collect all body IDs for batch removal
         std::vector<JPH::BodyID> bodyIds;
         bodyIds.reserve(mPendingObjectRemovals.size() + mPendingDynamicRemovals.size() + mPendingActorRemovals.size());
@@ -818,10 +853,19 @@ namespace MWPhysics
 
         assert(!getDynamicObject(ptr));
 
-        auto obj = std::make_shared<DynamicObject>(ptr, shapeInstance, rotation, mass, mTaskScheduler.get(), this);
+        // Determine collision shape type from configuration
+        DynamicShapeType shapeType = DynamicShapeType::Box;
+        if (mCollisionShapeConfig && mCollisionShapeConfig->isLoaded())
+        {
+            std::string refId = ptr.getCellRef().getRefId().getRefIdString();
+            shapeType = mCollisionShapeConfig->getShapeType(refId);
+        }
+
+        auto obj = std::make_shared<DynamicObject>(ptr, shapeInstance, rotation, mass, mTaskScheduler.get(), this, shapeType);
         mDynamicObjects.emplace(ptr.mRef, obj);
 
-        Log(Debug::Verbose) << "Added dynamic physics object: " << ptr.getCellRef().getRefId();
+        Log(Debug::Verbose) << "Added dynamic physics object: " << ptr.getCellRef().getRefId()
+                           << " with shape type: " << static_cast<int>(shapeType);
     }
 
     void PhysicsSystem::remove(const MWWorld::Ptr& ptr)
@@ -834,6 +878,15 @@ namespace MWPhysics
         // via getUserPointer() when processing those stale BodyIDs.
         mTaskScheduler->syncSimulation();
 
+        // Clear any actor's mStandingOnPtr that references the object being removed.
+        // After syncSimulation(), actors may have mStandingOnPtr set to this object.
+        // We must clear these references before destroying the object to avoid dangling pointers.
+        for (auto& [_, actor] : mActors)
+        {
+            if (actor->getStandingOnPtr() == ptr)
+                actor->setStandingOnPtr(MWWorld::Ptr());
+        }
+
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             mAnimatedObjects.erase(foundObject->second.get());
@@ -843,9 +896,8 @@ namespace MWPhysics
         {
             // Release if we're grabbing this object
             if (mGrabbedObject == foundDynamic->second.get())
-            {
                 mGrabbedObject = nullptr;
-            }
+
             mDynamicObjects.erase(foundDynamic);
         }
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
@@ -1046,11 +1098,32 @@ namespace MWPhysics
 
     void PhysicsSystem::clearQueuedMovement()
     {
+        // First, sync any pending simulation to process remaining results
+        syncSimulation();
+
         for (const auto& [_, actor] : mActors)
         {
             actor->setVelocity(osg::Vec3f());
             actor->setInertialForce(osg::Vec3f());
         }
+
+        // Clear all simulation buffers to prevent stale body IDs from being used
+        // This is critical during cell transitions when bodies are destroyed and IDs may be recycled
+        for (auto& simBuffer : mSimulations)
+        {
+            simBuffer.clear();
+        }
+
+        // Also clear any standing-on references that may point to destroyed bodies
+        for (const auto& [_, actor] : mActors)
+        {
+            actor->setStandingOnPtr(MWWorld::Ptr());
+        }
+    }
+
+    void PhysicsSystem::syncSimulation()
+    {
+        mTaskScheduler->syncSimulation();
     }
 
     void PhysicsSystem::prepareSimulation(bool willSimulate, std::vector<Simulation>& simulations)
@@ -1788,12 +1861,12 @@ namespace MWPhysics
         osg::Quat rotation = Misc::Convert::makeOsgQuat(ptr.getRefData().getPosition());
         float scale = ptr.getCellRef().getScale();
 
-        // Create the ragdoll
-        auto ragdoll = std::make_shared<Ragdoll>(
+        // Create the ragdoll using the new wrapper
+        auto ragdoll = std::make_shared<RagdollWrapper>(
             ptr, skeleton, position, rotation, scale,
-            mTaskScheduler.get(), this);
+            mPhysicsSystem.get(), mTaskScheduler.get());
 
-        if (ragdoll->getBodyIds().empty())
+        if (!ragdoll->isValid())
         {
             Log(Debug::Warning) << "Failed to create ragdoll for " << ptr.getCellRef().getRefId();
             return;
@@ -1821,7 +1894,7 @@ namespace MWPhysics
         }
     }
 
-    Ragdoll* PhysicsSystem::getRagdoll(const MWWorld::Ptr& ptr)
+    RagdollWrapper* PhysicsSystem::getRagdoll(const MWWorld::Ptr& ptr)
     {
         auto it = mRagdolls.find(ptr.getBase());
         if (it != mRagdolls.end())
@@ -1829,7 +1902,7 @@ namespace MWPhysics
         return nullptr;
     }
 
-    const Ragdoll* PhysicsSystem::getRagdoll(const MWWorld::ConstPtr& ptr) const
+    const RagdollWrapper* PhysicsSystem::getRagdoll(const MWWorld::ConstPtr& ptr) const
     {
         auto it = mRagdolls.find(ptr.getBase());
         if (it != mRagdolls.end())
@@ -1848,5 +1921,158 @@ namespace MWPhysics
     bool PhysicsSystem::hasRagdoll(const MWWorld::ConstPtr& ptr) const
     {
         return mRagdolls.find(ptr.getBase()) != mRagdolls.end();
+    }
+
+    bool PhysicsSystem::grabRagdoll(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance)
+    {
+        // Release any currently held object/ragdoll
+        if (mGrabbedObject)
+            releaseGrabbedObject();
+        if (mGrabbedRagdoll)
+            releaseGrabbedRagdoll();
+
+        // Calculate ray endpoint
+        osg::Vec3f rayEnd = rayStart + rayDir * maxDistance;
+
+        // Find the closest ragdoll body to the ray
+        RagdollWrapper* closestRagdoll = nullptr;
+        int closestBodyIndex = -1;
+        float closestDistance = maxDistance;
+        osg::Vec3f closestHitPoint;
+
+        // For each ragdoll, check each body's distance to the ray
+        for (auto& [key, ragdoll] : mRagdolls)
+        {
+            if (!ragdoll || !ragdoll->isValid())
+                continue;
+
+            int bodyCount = ragdoll->getBodyCount();
+            for (int i = 0; i < bodyCount; ++i)
+            {
+                osg::Vec3f bodyPos = ragdoll->getBodyPosition(i);
+
+                // Calculate closest point on ray to body center
+                osg::Vec3f rayVec = rayEnd - rayStart;
+                float rayLength = rayVec.length();
+                if (rayLength < 0.001f)
+                    continue;
+
+                osg::Vec3f rayNorm = rayVec / rayLength;
+                osg::Vec3f toBody = bodyPos - rayStart;
+                float t = toBody * rayNorm;
+
+                // Clamp t to ray segment
+                t = std::clamp(t, 0.0f, rayLength);
+
+                // Closest point on ray
+                osg::Vec3f closestPointOnRay = rayStart + rayNorm * t;
+                float distToRay = (bodyPos - closestPointOnRay).length();
+
+                // Check if this body is close enough to the ray (within ~30 units)
+                constexpr float grabRadius = 30.0f;
+                if (distToRay < grabRadius && t < closestDistance)
+                {
+                    closestDistance = t;
+                    closestRagdoll = ragdoll.get();
+                    closestBodyIndex = i;
+                    closestHitPoint = closestPointOnRay;
+                }
+            }
+        }
+
+        if (!closestRagdoll || closestBodyIndex < 0)
+            return false;
+
+        // Set up the grab
+        mGrabbedRagdoll = closestRagdoll;
+        mGrabbedRagdollBodyIndex = closestBodyIndex;
+        mGrabDistance = closestDistance;
+        mGrabTargetPosition = closestHitPoint;
+
+        // Activate the ragdoll
+        closestRagdoll->activate();
+
+        Log(Debug::Verbose) << "Grabbed ragdoll body " << closestBodyIndex
+                            << " of " << closestRagdoll->getPtr().getCellRef().getRefId()
+                            << " at distance " << closestDistance;
+
+        return true;
+    }
+
+    void PhysicsSystem::releaseGrabbedRagdoll(const osg::Vec3f& throwVelocity)
+    {
+        if (!mGrabbedRagdoll)
+            return;
+
+        // Apply throw velocity if provided
+        if (throwVelocity.length2() > 0.01f && mGrabbedRagdollBodyIndex >= 0)
+        {
+            mGrabbedRagdoll->setBodyVelocity(mGrabbedRagdollBodyIndex, throwVelocity);
+        }
+
+        Log(Debug::Verbose) << "Released ragdoll: " << mGrabbedRagdoll->getPtr().getCellRef().getRefId();
+
+        mGrabbedRagdoll = nullptr;
+        mGrabbedRagdollBodyIndex = -1;
+    }
+
+    void PhysicsSystem::updateGrabbedRagdoll(const osg::Vec3f& targetPosition)
+    {
+        if (!mGrabbedRagdoll || mGrabbedRagdollBodyIndex < 0)
+            return;
+
+        // Verify ragdoll is still valid
+        if (!mGrabbedRagdoll->isValid())
+        {
+            Log(Debug::Warning) << "Grabbed ragdoll is invalid, releasing";
+            mGrabbedRagdoll = nullptr;
+            mGrabbedRagdollBodyIndex = -1;
+            return;
+        }
+
+        mGrabTargetPosition = targetPosition;
+
+        // Get current position of the grabbed body
+        osg::Vec3f currentPos = mGrabbedRagdoll->getBodyPosition(mGrabbedRagdollBodyIndex);
+
+        // Calculate displacement to target
+        osg::Vec3f displacement = mGrabTargetPosition - currentPos;
+        float distance = displacement.length();
+
+        // Movement parameters - slightly softer than dynamic objects for ragdoll feel
+        constexpr float moveSpeed = 12.0f;      // How fast the body moves toward target
+        constexpr float maxSpeed = 1200.0f;     // Maximum velocity
+        constexpr float snapDistance = 1.0f;    // Distance at which we consider arrived
+
+        osg::Vec3f targetVelocity;
+
+        if (distance < snapDistance)
+        {
+            // Very close - slow down
+            targetVelocity = displacement * moveSpeed * 0.5f;
+        }
+        else
+        {
+            // Move toward target
+            osg::Vec3f direction = displacement / distance;
+            float speed = std::min(distance * moveSpeed, maxSpeed);
+            targetVelocity = direction * speed;
+        }
+
+        // Set velocity on the grabbed body
+        mGrabbedRagdoll->setBodyVelocity(mGrabbedRagdollBodyIndex, targetVelocity);
+
+        // Reduce angular velocity to prevent spinning
+        mGrabbedRagdoll->setBodyAngularVelocity(mGrabbedRagdollBodyIndex, osg::Vec3f(0, 0, 0));
+
+        // Keep the ragdoll active
+        mGrabbedRagdoll->activate();
+    }
+
+    MWWorld::Ptr PhysicsSystem::getGrabbedRagdollPtr() const
+    {
+        if (mGrabbedRagdoll)
+            return mGrabbedRagdoll->getPtr();
+        return MWWorld::Ptr();
     }
 }
