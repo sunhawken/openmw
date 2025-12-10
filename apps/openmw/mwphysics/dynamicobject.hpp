@@ -1,6 +1,7 @@
 #ifndef OPENMW_MWPHYSICS_DYNAMICOBJECT_H
 #define OPENMW_MWPHYSICS_DYNAMICOBJECT_H
 
+#include "collisionshapeconfig.hpp"
 #include "ptrholder.hpp"
 
 #include <osg/Node>
@@ -23,7 +24,8 @@ namespace MWPhysics
     {
     public:
         DynamicObject(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance,
-            osg::Quat rotation, float mass, PhysicsTaskScheduler* scheduler, PhysicsSystem* physicsSystem);
+            osg::Quat rotation, float mass, PhysicsTaskScheduler* scheduler, PhysicsSystem* physicsSystem,
+            DynamicShapeType shapeType = DynamicShapeType::Box);
         ~DynamicObject() override;
 
         const Resource::PhysicsShapeInstance* getShapeInstance() const;
