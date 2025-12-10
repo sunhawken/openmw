@@ -931,6 +931,7 @@ namespace MWPhysics
             mapping.osgNode = boneNode;
             mapping.shapeOffset = shapeOffset;
             mapping.boneName = boneName;
+            mapping.physicsParentName = parentName;  // Store physics parent for transform sync
             mapping.boneDirection = boneDirection;
             mapping.bodyRotation = bodyRotation;
             mapping.originalBoneWorldRot = worldMatrix.getRotate();  // Store original bone rotation
