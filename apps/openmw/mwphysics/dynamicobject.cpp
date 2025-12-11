@@ -177,6 +177,11 @@ namespace MWPhysics
     void DynamicObject::setScale(float scale)
     {
         std::unique_lock<std::mutex> lock(mMutex);
+
+        // Body may have been removed during cell unload
+        if (mPhysicsBody == nullptr)
+            return;
+
         osg::Vec3f newScale = { scale, scale, scale };
         if (mScale != newScale)
         {
