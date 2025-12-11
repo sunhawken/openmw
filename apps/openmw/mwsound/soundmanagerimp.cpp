@@ -699,25 +699,44 @@ namespace MWSound
 
     void SoundManager::stopSound(const MWWorld::CellStore* cell)
     {
-        for (auto& [ref, sound] : mActiveSounds)
+        // We must immediately remove entries from the maps, not just finish the sounds.
+        // The deferred cleanup in updateSounds() would try to access ptr.getRefData() on
+        // objects that have been destroyed when the cell was unloaded, causing a crash.
+        for (auto it = mActiveSounds.begin(); it != mActiveSounds.end(); )
         {
-            if (ref != nullptr && ref != MWMechanics::getPlayer().mRef && sound.mCell == cell)
+            if (it->first != nullptr && it->first != MWMechanics::getPlayer().mRef && it->second.mCell == cell)
             {
-                for (SoundBufferRefPair& sndbuf : sound.mList)
+                for (SoundBufferRefPair& sndbuf : it->second.mList)
+                {
                     mOutput->finishSound(sndbuf.first.get());
+                    mSoundBuffers.release(*sndbuf.second);
+                }
+                it = mActiveSounds.erase(it);
             }
+            else
+                ++it;
         }
 
-        for (const auto& [ref, sound] : mSaySoundsQueue)
+        for (auto it = mSaySoundsQueue.begin(); it != mSaySoundsQueue.end(); )
         {
-            if (ref != nullptr && ref != MWMechanics::getPlayer().mRef && sound.mCell == cell)
-                mOutput->finishStream(sound.mStream.get());
+            if (it->first != nullptr && it->first != MWMechanics::getPlayer().mRef && it->second.mCell == cell)
+            {
+                mOutput->finishStream(it->second.mStream.get());
+                it = mSaySoundsQueue.erase(it);
+            }
+            else
+                ++it;
         }
 
-        for (const auto& [ref, sound] : mActiveSaySounds)
+        for (auto it = mActiveSaySounds.begin(); it != mActiveSaySounds.end(); )
         {
-            if (ref != nullptr && ref != MWMechanics::getPlayer().mRef && sound.mCell == cell)
-                mOutput->finishStream(sound.mStream.get());
+            if (it->first != nullptr && it->first != MWMechanics::getPlayer().mRef && it->second.mCell == cell)
+            {
+                mOutput->finishStream(it->second.mStream.get());
+                it = mActiveSaySounds.erase(it);
+            }
+            else
+                ++it;
         }
     }
 

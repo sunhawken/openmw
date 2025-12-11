@@ -1207,6 +1207,8 @@ namespace MWPhysics
                 continue;
             float waterlevel = -std::numeric_limits<float>::max();
             const MWWorld::CellStore* cell = ptr.getCell();
+            if (!cell || !cell->getCell())
+                continue;
             if (cell->getCell()->hasWater())
                 waterlevel = cell->getWaterLevel();
 
@@ -1243,8 +1245,11 @@ namespace MWPhysics
     void PhysicsSystem::stepSimulation(
         float dt, bool skipSimulation, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
     {
+        Log(Debug::Info) << "[STEP] stepSimulation called, dt=" << dt << ", skipSimulation=" << skipSimulation;
+
         // We cannot modify shapes at runtime while there is a body query going on (such as actor collision)
         // so we must update all animated objects first when we are guaranteed to not be having any physics queries
+        Log(Debug::Info) << "[STEP] Updating animated objects...";
         {
             std::scoped_lock lock(mTaskScheduler->getSimulationMutex());
             for (auto& [animatedObject, changed] : mAnimatedObjects)
@@ -1260,38 +1265,52 @@ namespace MWPhysics
                 }
             }
         }
+        Log(Debug::Info) << "[STEP] Animated objects updated";
 
         // FIXME: looping every object each frame to do this is a smell
         // most objects wont even need resetting
+        Log(Debug::Info) << "[STEP] Resetting collisions for " << mObjects.size() << " objects...";
         for (auto& [_, object] : mObjects)
             object->resetCollisions();
+        Log(Debug::Info) << "[STEP] Collisions reset";
 
         mTimeAccum += dt;
         mTimeAccumJolt += dt;
 
         if (skipSimulation)
+        {
+            Log(Debug::Info) << "[STEP] Skipping simulation, resetting...";
             mTaskScheduler->resetSimulation(mActors);
+        }
         else
         {
+            Log(Debug::Info) << "[STEP] Preparing simulation for " << mActors.size() << " actors...";
             std::vector<Simulation>& simulations = mSimulations[mSimulationsCounter++ % mSimulations.size()];
             prepareSimulation(mTimeAccum >= mPhysicsDt, simulations);
+            Log(Debug::Info) << "[STEP] Simulation prepared, applying queued movements...";
 
             // Runs world simulation for required steps, modifies mTimeAccum
             mTaskScheduler->applyQueuedMovements(mTimeAccum, simulations, frameStart, frameNumber, stats);
+            Log(Debug::Info) << "[STEP] Queued movements applied";
         }
 
         // Synchronize/commit all transform updates for actors and objects
+        Log(Debug::Info) << "[STEP] Updating ptr holders...";
         updatePtrHolders();
+        Log(Debug::Info) << "[STEP] Ptr holders updated";
 
         // Gravity constant for buoyancy calculations (used inside physics loop below)
         const float gravity = Constants::GravityConst * Constants::UnitsPerMeter;
 
         // Push dynamic objects that actors are walking into
+        Log(Debug::Info) << "[STEP] Pushing dynamic objects from actors...";
         pushDynamicObjectsFromActors();
+        Log(Debug::Info) << "[STEP] Dynamic objects pushed";
 
         // Run dynamic body sim, broadphase updates etc
         // IMPORTANT: Buoyancy must be applied INSIDE this loop, once per physics substep,
         // to ensure buoyancy and gravity are balanced correctly regardless of frame rate.
+        Log(Debug::Info) << "[STEP] Starting Jolt physics loop with " << mDynamicObjects.size() << " dynamic objects...";
         while (mTimeAccumJolt >= mPhysicsDt)
         {
             mTimeAccumJolt -= mPhysicsDt;
@@ -1305,7 +1324,7 @@ namespace MWPhysics
                     continue;
 
                 const MWWorld::CellStore* cell = ptr.getCell();
-                if (!cell)
+                if (!cell || !cell->getCell())
                     continue;
 
                 float waterHeight = 0.0f;
@@ -1336,10 +1355,12 @@ namespace MWPhysics
 
             mPhysicsSystem->Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
         }
+        Log(Debug::Info) << "[STEP] Jolt physics loop complete";
 
 #ifdef JPH_PROFILE_ENABLED
         JPH_PROFILE_NEXTFRAME();
 #endif
+        Log(Debug::Info) << "[STEP] stepSimulation complete";
     }
 
     void PhysicsSystem::updatePtrHolders()
