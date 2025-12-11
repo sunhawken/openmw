@@ -372,9 +372,19 @@ namespace MWWorld
         // Use batch removal for physics bodies to prevent crashes during cell transitions.
         // Individual remove() calls each trigger syncSimulation(), which can access bodies
         // being destroyed in subsequent iterations. Batch removal is atomic and safe.
+        // IMPORTANT: We must NOT remove the player's physics body - the player persists across cell transitions.
+        const MWWorld::Ptr playerPtr = mWorld.getPlayerPtr();
+        Log(Debug::Info) << "[CELL UNLOAD] Player ptr mRef=" << (void*)playerPtr.mRef;
         int objectCount = 0, dynamicCount = 0, actorCount = 0;
         for (const auto& ptr : visitor.mObjects)
         {
+            // Skip the player - their physics body persists across cell transitions
+            if (ptr == playerPtr)
+            {
+                Log(Debug::Info) << "[CELL UNLOAD] Skipping player object";
+                continue;
+            }
+
             if (const auto object = mPhysics->getObject(ptr))
             {
                 if (object->getShapeInstance()->mVisualCollisionType == Resource::VisualCollisionType::None)
@@ -871,6 +881,7 @@ namespace MWWorld
 
     void Scene::changePlayerCell(CellStore& cell, const ESM::Position& pos, bool adjustPlayerPos)
     {
+        Log(Debug::Info) << "[SCENE] changePlayerCell starting";
         mHalfGridSize = cell.getCell()->isEsm4() ? Constants::ESM4CellGridRadius : Constants::CellGridRadius;
         mCurrentCell = &cell;
 
@@ -882,9 +893,11 @@ namespace MWWorld
 
         MWWorld::Ptr player = mWorld.getPlayerPtr();
         mRendering.updatePlayerPtr(player);
+        Log(Debug::Info) << "[SCENE] Player ptr updated";
 
         if (old.mCell == &cell)
         {
+            Log(Debug::Info) << "[SCENE] Same cell path - optimizing and tracing down";
             // We can optimize physics collisions when rapidly changing dataset (such as interior load)
             // NOTE: for exteriors we call optimize in changeToExteriorCell
             if (!isExterior)
@@ -899,20 +912,27 @@ namespace MWWorld
 
         if (adjustPlayerPos)
         {
+            Log(Debug::Info) << "[SCENE] Adjusting player position...";
             mWorld.moveObject(player, pos.asVec3());
             mWorld.rotateObject(player, pos.asRotationVec3());
 
             player.getClass().adjustPosition(player, true);
+            Log(Debug::Info) << "[SCENE] Player position adjusted";
         }
 
+        Log(Debug::Info) << "[SCENE] Updating cell in mechanics manager...";
         MWBase::Environment::get().getMechanicsManager()->updateCell(old, player);
+        Log(Debug::Info) << "[SCENE] Watching actor in window manager...";
         MWBase::Environment::get().getWindowManager()->watchActor(player);
 
+        Log(Debug::Info) << "[SCENE] Updating physics ptr...";
         mPhysics->updatePtr(old, player);
 
+        Log(Debug::Info) << "[SCENE] Adjusting sky...";
         mWorld.adjustSky();
 
         mLastPlayerPos = player.getRefData().getPosition().asVec3();
+        Log(Debug::Info) << "[SCENE] changePlayerCell complete";
     }
 
     Scene::Scene(MWWorld::World& world, MWRender::RenderingManager& rendering, MWPhysics::PhysicsSystem* physics,
@@ -1047,7 +1067,9 @@ namespace MWWorld
 
         MWBase::Environment::get().getWorld()->getPostProcessor()->setExteriorFlag(true);
 
+        Log(Debug::Info) << "[SCENE] Calling physics optimize...";
         mPhysics->optimize();
+        Log(Debug::Info) << "[SCENE] changeToExteriorCell complete";
     }
 
     CellStore* Scene::getCurrentCell()
