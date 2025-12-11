@@ -210,6 +210,7 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
         // If we are not currently rendering, then RenderItems will not be reused resulting in a memory leak upon
         // changing widget textures (fixed in MyGUI 3.3.2), and destroyed widgets will not be deleted (not fixed yet,
         // https://github.com/MyGUI/mygui/issues/21)
+        Log(Debug::Info) << "[FRAME] Starting sound update...";
         {
             ScopedProfile<UserStatsType::Sound> profile(frameStart, frameNumber, *timer, *stats);
 
@@ -225,22 +226,28 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
             if (mUseSound)
                 mSoundManager->update(frametime);
         }
+        Log(Debug::Info) << "[FRAME] Sound update complete";
 
+        Log(Debug::Info) << "[FRAME] Starting Lua synchronizedUpdate...";
         {
             ScopedProfile<UserStatsType::LuaSyncUpdate> profile(frameStart, frameNumber, *timer, *stats);
             // Should be called after input manager update and before any change to the game world.
             // It applies to the game world queued changes from the previous frame.
             mLuaManager->synchronizedUpdate();
         }
+        Log(Debug::Info) << "[FRAME] Lua synchronizedUpdate complete";
 
         // update game state
+        Log(Debug::Info) << "[FRAME] Starting state update...";
         {
             ScopedProfile<UserStatsType::State> profile(frameStart, frameNumber, *timer, *stats);
             mStateManager->update(frametime);
         }
+        Log(Debug::Info) << "[FRAME] State update complete";
 
         bool paused = mWorld->getTimeManager()->isPaused();
 
+        Log(Debug::Info) << "[FRAME] Starting script update...";
         {
             ScopedProfile<UserStatsType::Script> profile(frameStart, frameNumber, *timer, *stats);
 
@@ -251,9 +258,11 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                     if (mWorld->getScriptsEnabled())
                     {
                         // local scripts
+                        Log(Debug::Info) << "[FRAME] Executing local scripts...";
                         executeLocalScripts();
 
                         // global scripts
+                        Log(Debug::Info) << "[FRAME] Executing global scripts...";
                         mScriptManager->getGlobalScripts().run();
                     }
 
@@ -268,8 +277,10 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                 }
             }
         }
+        Log(Debug::Info) << "[FRAME] Script update complete";
 
         // update mechanics
+        Log(Debug::Info) << "[FRAME] Starting mechanics update...";
         {
             ScopedProfile<UserStatsType::Mechanics> profile(frameStart, frameNumber, *timer, *stats);
 
@@ -285,8 +296,10 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                     mStateManager->endGame();
             }
         }
+        Log(Debug::Info) << "[FRAME] Mechanics update complete";
 
         // update physics
+        Log(Debug::Info) << "[FRAME] Starting physics update...";
         {
             ScopedProfile<UserStatsType::Physics> profile(frameStart, frameNumber, *timer, *stats);
 

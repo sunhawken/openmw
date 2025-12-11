@@ -348,6 +348,14 @@ namespace MWWorld
     {
         if (mChangeCellGridRequest.has_value())
         {
+            // CRITICAL: Must clear queued physics movements BEFORE changing cells.
+            // Without this, the physics simulation may have pending results containing BodyIDs
+            // (like mStandingOn) that reference objects about to be destroyed during cell unload.
+            // When flushBodyRemovals() calls syncSimulation(), it would try to resolve those
+            // stale BodyIDs via getUserPointer(), potentially accessing freed memory.
+            // This mirrors what changeToInteriorCell() and changeToCell() do.
+            mPhysics->clearQueuedMovement();
+
             changeCellGrid(mChangeCellGridRequest->mPosition, mChangeCellGridRequest->mCellIndex,
                 mChangeCellGridRequest->mChangeEvent);
             mChangeCellGridRequest.reset();
