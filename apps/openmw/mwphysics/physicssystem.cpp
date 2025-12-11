@@ -1379,8 +1379,15 @@ namespace MWPhysics
         auto* player = getActor(MWMechanics::getPlayer());
         const auto world = MWBase::Environment::get().getWorld();
 
-        // copy new ptr position in temporary vector. player is handled separately as its movement might change active
-        // cell.
+        // IMPORTANT: Move player FIRST, before collecting other actors.
+        // Player movement can trigger cell transitions which destroy actors from unloaded cells.
+        // If we collect actor Ptrs before moving the player, those Ptrs become dangling after
+        // the cell transition, causing crashes when we try to move them.
+        if (player != nullptr)
+            world->moveObject(player->getPtr(), player->getSimulationPosition(), false, false);
+
+        // Now collect and move other actors. After the player moved (and possibly triggered a
+        // cell transition), mActors contains only actors from currently active cells.
         mActorsPositions.clear();
         if (!mActors.empty())
             mActorsPositions.reserve(mActors.size() - 1);
@@ -1393,9 +1400,6 @@ namespace MWPhysics
 
         for (const auto& [ptr, pos] : mActorsPositions)
             world->moveObject(ptr, pos, false, false);
-
-        if (player != nullptr)
-            world->moveObject(player->getPtr(), player->getSimulationPosition(), false, false);
     }
 
     void PhysicsSystem::moveDynamicObjects()
