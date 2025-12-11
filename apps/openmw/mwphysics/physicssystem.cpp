@@ -674,16 +674,46 @@ namespace MWPhysics
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
         {
             mPendingActorRemovals.push_back(ptr.mRef);
+
+            // Also check for ragdoll associated with this actor and queue it for removal
+            // Ragdolls use the same key (LiveCellRefBase*) as actors
+            if (auto foundRagdoll = mRagdolls.find(ptr.mRef); foundRagdoll != mRagdolls.end())
+            {
+                // Release grabbed ragdoll if it's being removed
+                if (mGrabbedRagdoll == foundRagdoll->second.get())
+                {
+                    mGrabbedRagdoll = nullptr;
+                    mGrabbedRagdollBodyIndex = -1;
+                }
+                mPendingRagdollRemovals.push_back(ptr.mRef);
+            }
+        }
+    }
+
+    void PhysicsSystem::queueHeightFieldRemoval(int x, int y)
+    {
+        auto key = std::make_pair(x, y);
+        if (mHeightFields.find(key) != mHeightFields.end())
+        {
+            mPendingHeightFieldRemovals.push_back(key);
         }
     }
 
     void PhysicsSystem::flushBodyRemovals()
     {
-        if (mPendingObjectRemovals.empty() && mPendingDynamicRemovals.empty() && mPendingActorRemovals.empty())
+        if (mPendingObjectRemovals.empty() && mPendingDynamicRemovals.empty() && mPendingActorRemovals.empty()
+            && mPendingRagdollRemovals.empty() && mPendingHeightFieldRemovals.empty())
             return;
 
+        Log(Debug::Info) << "[PHYSICS FLUSH] Starting flush: " << mPendingObjectRemovals.size() << " objects, "
+                         << mPendingDynamicRemovals.size() << " dynamic, " << mPendingActorRemovals.size() << " actors, "
+                         << mPendingRagdollRemovals.size() << " ragdolls, " << mPendingHeightFieldRemovals.size()
+                         << " heightfields";
+
         // Fully synchronize physics simulation before removing bodies (see remove() for explanation)
+        Log(Debug::Info) << "[PHYSICS FLUSH] Syncing simulation...";
         mTaskScheduler->syncSimulation();
+        Log(Debug::Info) << "[PHYSICS FLUSH] Simulation synced";
 
         // Clear any actor's mStandingOnPtr that references objects being removed.
         // After syncSimulation(), actors may have mStandingOnPtr set to these objects.
@@ -706,7 +736,8 @@ namespace MWPhysics
 
         // Collect all body IDs for batch removal
         std::vector<JPH::BodyID> bodyIds;
-        bodyIds.reserve(mPendingObjectRemovals.size() + mPendingDynamicRemovals.size() + mPendingActorRemovals.size());
+        bodyIds.reserve(mPendingObjectRemovals.size() + mPendingDynamicRemovals.size() + mPendingActorRemovals.size()
+            + mPendingHeightFieldRemovals.size());
 
         for (const auto* ref : mPendingObjectRemovals)
         {
@@ -729,6 +760,15 @@ namespace MWPhysics
         for (const auto* ref : mPendingActorRemovals)
         {
             if (auto it = mActors.find(ref); it != mActors.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+        for (const auto& key : mPendingHeightFieldRemovals)
+        {
+            if (auto it = mHeightFields.find(key); it != mHeightFields.end())
             {
                 JPH::BodyID id = it->second->getPhysicsBody();
                 if (!id.IsInvalid())
@@ -737,19 +777,23 @@ namespace MWPhysics
         }
 
         // Batch remove bodies from physics system
+        Log(Debug::Info) << "[PHYSICS FLUSH] Collected " << bodyIds.size() << " body IDs for removal";
         if (!bodyIds.empty())
         {
             JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+            Log(Debug::Info) << "[PHYSICS FLUSH] Calling RemoveBodies...";
             bodyInterface.RemoveBodies(bodyIds.data(), static_cast<int>(bodyIds.size()));
+            Log(Debug::Info) << "[PHYSICS FLUSH] RemoveBodies done, destroying bodies...";
 
             // Destroy bodies after removal
             for (const JPH::BodyID& id : bodyIds)
                 bodyInterface.DestroyBody(id);
 
-            Log(Debug::Verbose) << "Batch removed " << bodyIds.size() << " bodies from physics system";
+            Log(Debug::Info) << "[PHYSICS FLUSH] Batch removed " << bodyIds.size() << " bodies from physics system";
         }
 
         // Mark bodies as removed so destructors don't try to remove/destroy again
+        Log(Debug::Info) << "[PHYSICS FLUSH] Marking bodies as removed...";
         for (const auto* ref : mPendingObjectRemovals)
         {
             if (auto it = mObjects.find(ref); it != mObjects.end())
@@ -765,8 +809,14 @@ namespace MWPhysics
             if (auto it = mActors.find(ref); it != mActors.end())
                 it->second->markBodyRemoved();
         }
+        for (const auto& key : mPendingHeightFieldRemovals)
+        {
+            if (auto it = mHeightFields.find(key); it != mHeightFields.end())
+                it->second->markBodyRemoved();
+        }
 
         // Now safely erase from maps (destructors won't try to remove/destroy again)
+        Log(Debug::Info) << "[PHYSICS FLUSH] Erasing from maps...";
         for (const auto* ref : mPendingObjectRemovals)
             mObjects.erase(ref);
         for (const auto* ref : mPendingDynamicRemovals)
@@ -774,9 +824,25 @@ namespace MWPhysics
         for (const auto* ref : mPendingActorRemovals)
             mActors.erase(ref);
 
+        // Remove ragdolls associated with removed actors
+        // Ragdoll bodies are managed by Jolt's Ragdoll class and removed in the destructor
+        // via RemoveFromPhysicsSystem(), so we just need to erase from the map
+        Log(Debug::Info) << "[PHYSICS FLUSH] Erasing ragdolls...";
+        for (const auto* ref : mPendingRagdollRemovals)
+            mRagdolls.erase(ref);
+
+        // Erase heightfields
+        Log(Debug::Info) << "[PHYSICS FLUSH] Erasing heightfields...";
+        for (const auto& key : mPendingHeightFieldRemovals)
+            mHeightFields.erase(key);
+
         mPendingObjectRemovals.clear();
         mPendingDynamicRemovals.clear();
         mPendingActorRemovals.clear();
+        mPendingRagdollRemovals.clear();
+        mPendingHeightFieldRemovals.clear();
+
+        Log(Debug::Info) << "[PHYSICS FLUSH] Flush complete";
     }
 
     void PhysicsSystem::addHeightField(
@@ -1217,57 +1283,57 @@ namespace MWPhysics
         // Synchronize/commit all transform updates for actors and objects
         updatePtrHolders();
 
-        // Apply buoyancy forces to dynamic objects in water
-        // Must handle both interior cells (with their own water level) and exterior cells (ocean level)
+        // Gravity constant for buoyancy calculations (used inside physics loop below)
         const float gravity = Constants::GravityConst * Constants::UnitsPerMeter;
-        for (auto& [_, dynObj] : mDynamicObjects)
-        {
-            MWWorld::Ptr ptr = dynObj->getPtr();
-            if (ptr.isEmpty())
-                continue;
-
-            const MWWorld::CellStore* cell = ptr.getCell();
-
-            // Guard against invalid/unloading cells during cell transitions
-            // This prevents crashes when dynamic objects have stale cell references
-            if (!cell)
-                continue;
-
-            float waterHeight = 0.0f;
-            bool applyBuoyancy = false;
-
-            if (cell->getCell()->isExterior())
-            {
-                // Exterior cells: use global ocean level if water is enabled
-                if (mWaterEnabled)
-                {
-                    waterHeight = mWaterHeight;
-                    applyBuoyancy = true;
-                }
-            }
-            else
-            {
-                // Interior cells: use the cell's own water level if it has water
-                if (cell->getCell()->hasWater())
-                {
-                    waterHeight = cell->getWaterLevel();
-                    applyBuoyancy = true;
-                }
-            }
-
-            if (applyBuoyancy)
-            {
-                dynObj->updateBuoyancy(waterHeight, gravity, mPhysicsDt);
-            }
-        }
 
         // Push dynamic objects that actors are walking into
         pushDynamicObjectsFromActors();
 
         // Run dynamic body sim, broadphase updates etc
+        // IMPORTANT: Buoyancy must be applied INSIDE this loop, once per physics substep,
+        // to ensure buoyancy and gravity are balanced correctly regardless of frame rate.
         while (mTimeAccumJolt >= mPhysicsDt)
         {
             mTimeAccumJolt -= mPhysicsDt;
+
+            // Apply buoyancy forces before each physics step
+            // This ensures buoyancy is applied at the same rate as gravity
+            for (auto& [_, dynObj] : mDynamicObjects)
+            {
+                MWWorld::Ptr ptr = dynObj->getPtr();
+                if (ptr.isEmpty())
+                    continue;
+
+                const MWWorld::CellStore* cell = ptr.getCell();
+                if (!cell)
+                    continue;
+
+                float waterHeight = 0.0f;
+                bool applyBuoyancy = false;
+
+                if (cell->getCell()->isExterior())
+                {
+                    if (mWaterEnabled)
+                    {
+                        waterHeight = mWaterHeight;
+                        applyBuoyancy = true;
+                    }
+                }
+                else
+                {
+                    if (cell->getCell()->hasWater())
+                    {
+                        waterHeight = cell->getWaterLevel();
+                        applyBuoyancy = true;
+                    }
+                }
+
+                if (applyBuoyancy)
+                {
+                    dynObj->updateBuoyancy(waterHeight, gravity, mPhysicsDt);
+                }
+            }
+
             mPhysicsSystem->Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
         }
 

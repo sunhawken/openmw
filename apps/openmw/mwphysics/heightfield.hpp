@@ -29,8 +29,18 @@ namespace MWPhysics
 
         const osg::Vec3f& getOrigin() const { return mWorldOrigin; }
 
+        JPH::BodyID getPhysicsBody() const
+        {
+            if (mPhysicsBody == nullptr)
+                return JPH::BodyID();
+            return mPhysicsBody->GetID();
+        }
+
+        // Mark body as already removed (used by batch removal to prevent double-free)
+        void markBodyRemoved() { mPhysicsBody = nullptr; }
+
     private:
-        JPH::Body* mPhysicsBody; // NOTE: memory is managed by Jolt!
+        JPH::Body* mPhysicsBody = nullptr; // NOTE: memory is managed by Jolt!
         JPH::ShapeRefC mShapeReference;
         osg::Vec3f mWorldOrigin;
         osg::ref_ptr<const osg::Object> mHoldObject;
