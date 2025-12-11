@@ -608,6 +608,66 @@ The Jolt integration in OpenMW is **well-implemented** and follows most Jolt bes
 
 ---
 
+## Part 8: Buoyancy Implementation (RESOLVED)
+
+### Current Status: Working
+
+Buoyancy now uses Jolt's built-in `BodyInterface::ApplyBuoyancyImpulse()` API, which correctly handles all the issues that plagued the original custom implementation.
+
+### Solution Applied
+
+**Location**: [dynamicobject.cpp:312-383](apps/openmw/mwphysics/dynamicobject.cpp#L312-L383)
+
+The custom buoyancy implementation was replaced with Jolt's native buoyancy system:
+
+```cpp
+JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
+bool wasInWater = bodyInterface.ApplyBuoyancyImpulse(
+    getPhysicsBody(),
+    surfacePosition,    // Water surface plane position
+    surfaceNormal,      // Points up (0, 0, 1)
+    buoyancy,           // 1.2 = slightly buoyant
+    linearDrag,         // 0.5 = water resistance
+    angularDrag,        // 0.05 = rotational damping
+    fluidVelocity,      // Zero for still water
+    gravityVec,         // (0, 0, -gravity)
+    dt
+);
+```
+
+### Why Jolt's Built-in System is Better
+
+1. **Correct world-space bounds**: Jolt internally calculates submerged volume using the actual world-space shape geometry, handling rotated Cylinder/Capsule shapes correctly.
+
+2. **Proper volume calculation**: Uses `GetSubmergedVolume()` which computes the actual intersection of the shape with the water plane, not an approximation based on bounding box.
+
+3. **Center of buoyancy**: Applies buoyancy force at the center of the submerged volume, creating realistic torque that makes objects orient naturally in water.
+
+4. **Integrated drag**: Linear and angular drag are applied correctly based on velocity relative to fluid.
+
+5. **Auto-waking**: `BodyInterface::ApplyBuoyancyImpulse` automatically wakes sleeping bodies when they enter water.
+
+### Parameters Used
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| buoyancy | 1.2 | Slightly buoyant (1.0 = neutral, >1 floats) |
+| linearDrag | 0.5 | Water resistance (slows linear movement) |
+| angularDrag | 0.05 | Rotational damping in water |
+| fluidVelocity | (0,0,0) | Still water (no currents) |
+
+### Previous Issues (Now Fixed)
+
+The original custom implementation had three main problems:
+
+1. **Wrong bounds calculation**: Used `GetLocalBounds()` which returned bounds in local shape space, not accounting for shape rotation. This caused objects to detect water entry 15+ units too early.
+
+2. **Excessive minimum halfHeight**: Forced a minimum of 5.0 units, which was far too large for small objects like gems and coins.
+
+3. **Overpowered force**: Used `buoyancyStrength = 5.0` (5x gravity) causing objects to shoot up and oscillate violently.
+
+---
+
 ## References
 
 - [Jolt Physics GitHub](https://github.com/jrouwe/JoltPhysics)
