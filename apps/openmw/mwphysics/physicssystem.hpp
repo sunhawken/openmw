@@ -223,6 +223,7 @@ namespace MWPhysics
         void beginBatchAdd();
         void endBatchAdd();
         void queueBodyRemoval(const MWWorld::Ptr& ptr);
+        void queueHeightFieldRemoval(int x, int y);
         void flushBodyRemovals();
 
         /// @param ignore Optional, a list of Ptr to ignore in the list of results. targets are actors to filter for,
@@ -445,6 +446,8 @@ namespace MWPhysics
         std::vector<const MWWorld::LiveCellRefBase*> mPendingObjectRemovals;
         std::vector<const MWWorld::LiveCellRefBase*> mPendingDynamicRemovals;
         std::vector<const MWWorld::LiveCellRefBase*> mPendingActorRemovals;
+        std::vector<const MWWorld::LiveCellRefBase*> mPendingRagdollRemovals;
+        std::vector<std::pair<int, int>> mPendingHeightFieldRemovals;
 
         // Ragdoll storage for dead actors
         using RagdollMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<RagdollWrapper>>;

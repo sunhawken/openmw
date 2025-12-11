@@ -361,15 +361,18 @@ namespace MWWorld
     {
         if (mActiveCells.find(cell) == mActiveCells.end())
             return;
-        Log(Debug::Info) << "Unloading cell " << cell->getCell()->getDescription();
+        Log(Debug::Info) << "[CELL UNLOAD] Starting unload of cell " << cell->getCell()->getDescription();
 
         ListAndResetObjectsVisitor visitor;
 
         cell->forEach(visitor, true); // Include objects being teleported by Lua
 
+        Log(Debug::Info) << "[CELL UNLOAD] Found " << visitor.mObjects.size() << " objects to remove";
+
         // Use batch removal for physics bodies to prevent crashes during cell transitions.
         // Individual remove() calls each trigger syncSimulation(), which can access bodies
         // being destroyed in subsequent iterations. Batch removal is atomic and safe.
+        int objectCount = 0, dynamicCount = 0, actorCount = 0;
         for (const auto& ptr : visitor.mObjects)
         {
             if (const auto object = mPhysics->getObject(ptr))
@@ -378,32 +381,43 @@ namespace MWWorld
                     mNavigator.removeObject(DetourNavigator::ObjectId(object), navigatorUpdateGuard);
                 mPhysics->queueBodyRemoval(ptr);
                 ptr.mRef->mData.mPhysicsPostponed = false;
+                objectCount++;
             }
             else if (mPhysics->getDynamicObject(ptr))
             {
                 // Dynamic objects (misc items with physics) need to be removed from physics
                 mPhysics->queueBodyRemoval(ptr);
+                dynamicCount++;
             }
             else if (mPhysics->getActor(ptr))
             {
                 mNavigator.removeAgent(mWorld.getPathfindingAgentBounds(ptr));
                 mRendering.removeActorPath(ptr);
                 mPhysics->queueBodyRemoval(ptr);
+                actorCount++;
             }
             MWBase::Environment::get().getLuaManager()->objectRemovedFromScene(ptr);
         }
 
-        // Flush all queued body removals in a single batch operation
-        mPhysics->flushBodyRemovals();
-
         const auto cellX = cell->getCell()->getGridX();
         const auto cellY = cell->getCell()->getGridY();
 
+        // Queue heightfield removal BEFORE flush (must be part of the same batch operation)
         if (cell->getCell()->isExterior())
         {
+            Log(Debug::Info) << "[CELL UNLOAD] Queuing heightfield at (" << cellX << ", " << cellY << ") for removal";
             mNavigator.removeHeightfield(osg::Vec2i(cellX, cellY), navigatorUpdateGuard);
-            mPhysics->removeHeightField(cellX, cellY);
+            mPhysics->queueHeightFieldRemoval(cellX, cellY);
         }
+
+        Log(Debug::Info) << "[CELL UNLOAD] Queued for removal: " << objectCount << " objects, "
+                         << dynamicCount << " dynamic, " << actorCount << " actors";
+
+        // Flush all queued body removals in a single batch operation
+        // This includes objects, dynamic objects, actors, ragdolls, and heightfields
+        Log(Debug::Info) << "[CELL UNLOAD] Flushing body removals...";
+        mPhysics->flushBodyRemovals();
+        Log(Debug::Info) << "[CELL UNLOAD] Body removals flushed";
 
         if (cell->getCell()->hasWater())
             mNavigator.removeWater(osg::Vec2i(cellX, cellY), navigatorUpdateGuard);
@@ -417,8 +431,10 @@ namespace MWWorld
                    },
             *cell->getCell());
 
+        Log(Debug::Info) << "[CELL UNLOAD] Dropping mechanics...";
         MWBase::Environment::get().getMechanicsManager()->drop(cell);
 
+        Log(Debug::Info) << "[CELL UNLOAD] Removing rendering...";
         mRendering.removeCell(cell);
         MWBase::Environment::get().getWindowManager()->removeCell(cell);
 
@@ -429,6 +445,8 @@ namespace MWWorld
         // Clean up any effects that may have been spawned while unloading all cells
         if (mActiveCells.empty())
             mRendering.notifyWorldSpaceChanged();
+
+        Log(Debug::Info) << "[CELL UNLOAD] Cell unload complete";
     }
 
     void Scene::loadCell(CellStore& cell, Loading::Listener* loadingListener, bool respawn, const osg::Vec3f& position,

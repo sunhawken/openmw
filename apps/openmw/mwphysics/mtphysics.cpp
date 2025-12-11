@@ -423,10 +423,13 @@ namespace MWPhysics
 
     void PhysicsTaskScheduler::syncSimulation()
     {
+        Log(Debug::Info) << "[SYNC] Waiting for simulation barrier...";
         waitForSimulationBarrier();
+        Log(Debug::Info) << "[SYNC] Barrier done";
 
         if (mSimulations != nullptr)
         {
+            Log(Debug::Info) << "[SYNC] Processing " << mSimulations->size() << " simulations";
             // For each simulation, call the Sync method
             const Visitors::Sync vis{ mAdvanceSimulation, mTimeAccum, mPhysicsDt, this };
             for (auto& sim : *mSimulations)
@@ -434,6 +437,11 @@ namespace MWPhysics
 
             mSimulations->clear();
             mSimulations = nullptr;
+            Log(Debug::Info) << "[SYNC] Simulations cleared";
+        }
+        else
+        {
+            Log(Debug::Info) << "[SYNC] No simulations to process";
         }
     }
 

@@ -90,6 +90,11 @@ namespace MWPhysics
     void Object::commitPositionChange()
     {
         std::unique_lock<std::mutex> lock(mPositionMutex);
+
+        // Body may have been removed during cell unload - check before accessing
+        if (mPhysicsBody == nullptr)
+            return;
+
         if (mScaleUpdatePending)
         {
             JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
