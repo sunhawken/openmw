@@ -162,13 +162,21 @@ namespace MWPhysics
                 // Static layers should collide with dynamic layers
                 case Layers::DOOR:
                 case Layers::WORLD:
-                case Layers::WATER:
                 case Layers::HEIGHTMAP:
                     return inObject2 == Layers::DYNAMIC_WORLD || inObject2 == Layers::ACTOR
                         || inObject2 == Layers::PROJECTILE || inObject2 == Layers::DEBRIS;
 
-                // Any dynamic/moving layers should collide with all static geometry, sensors and other dynamics
+                // Water collides with actors and projectiles, but NOT dynamic objects (they use buoyancy)
+                case Layers::WATER:
+                    return inObject2 == Layers::ACTOR || inObject2 == Layers::PROJECTILE;
+
+                // Dynamic world objects should NOT collide with water - they use buoyancy forces instead
                 case Layers::DYNAMIC_WORLD:
+                    return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP || inObject2 == Layers::DOOR
+                        || inObject2 == Layers::ACTOR || inObject2 == Layers::PROJECTILE
+                        || inObject2 == Layers::DYNAMIC_WORLD || inObject2 == Layers::SENSOR;
+
+                // Actors and projectiles collide with water (for water walking, projectile stopping)
                 case Layers::PROJECTILE:
                 case Layers::ACTOR:
                     return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP || inObject2 == Layers::DOOR

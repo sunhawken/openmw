@@ -366,28 +366,35 @@ namespace MWWorld
         ListAndResetObjectsVisitor visitor;
 
         cell->forEach(visitor, true); // Include objects being teleported by Lua
+
+        // Use batch removal for physics bodies to prevent crashes during cell transitions.
+        // Individual remove() calls each trigger syncSimulation(), which can access bodies
+        // being destroyed in subsequent iterations. Batch removal is atomic and safe.
         for (const auto& ptr : visitor.mObjects)
         {
             if (const auto object = mPhysics->getObject(ptr))
             {
                 if (object->getShapeInstance()->mVisualCollisionType == Resource::VisualCollisionType::None)
                     mNavigator.removeObject(DetourNavigator::ObjectId(object), navigatorUpdateGuard);
-                mPhysics->remove(ptr);
+                mPhysics->queueBodyRemoval(ptr);
                 ptr.mRef->mData.mPhysicsPostponed = false;
             }
             else if (mPhysics->getDynamicObject(ptr))
             {
                 // Dynamic objects (misc items with physics) need to be removed from physics
-                mPhysics->remove(ptr);
+                mPhysics->queueBodyRemoval(ptr);
             }
             else if (mPhysics->getActor(ptr))
             {
                 mNavigator.removeAgent(mWorld.getPathfindingAgentBounds(ptr));
                 mRendering.removeActorPath(ptr);
-                mPhysics->remove(ptr);
+                mPhysics->queueBodyRemoval(ptr);
             }
             MWBase::Environment::get().getLuaManager()->objectRemovedFromScene(ptr);
         }
+
+        // Flush all queued body removals in a single batch operation
+        mPhysics->flushBodyRemovals();
 
         const auto cellX = cell->getCell()->getGridX();
         const auto cellY = cell->getCell()->getGridY();
