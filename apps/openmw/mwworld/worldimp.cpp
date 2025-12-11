@@ -1494,7 +1494,10 @@ namespace MWWorld
 
     void World::doPhysics(float duration, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
     {
+        Log(Debug::Info) << "[WORLD] doPhysics starting, duration=" << duration;
+        Log(Debug::Info) << "[WORLD] Processing doors...";
         processDoors(duration);
+        Log(Debug::Info) << "[WORLD] Updating projectiles...";
         mProjectileManager->update(duration);
         mPhysics->stepSimulation(duration, mDiscardMovements, frameStart, frameNumber, stats);
         Log(Debug::Info) << "[WORLD] Processing projectile hits...";
