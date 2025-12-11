@@ -668,6 +668,157 @@ The original custom implementation had three main problems:
 
 ---
 
+## Part 9: Cell Transition Crash Investigation (IN PROGRESS)
+
+### Problem Description
+
+The crash occurred during **interior-to-exterior cell transitions**, specifically on the **second exit**:
+1. Enter house → leave successfully ✓
+2. Enter again → leave again → **CRASH**
+
+### Root Cause: Sound Manager Dangling Pointer
+
+**Location**: `apps/openmw/mwsound/soundmanagerimp.cpp:933-1032` (`updateSounds()`)
+
+The crash was caused by the Sound Manager holding dangling pointers to destroyed game objects after cell unload.
+
+#### The Bug
+
+When a cell is unloaded, `SoundManager::stopSound(cell)` was called to clean up sounds. However, this function only called `mOutput->finishSound()` to mark sounds as finished - it did **NOT** remove entries from the sound maps (`mActiveSounds`, `mSaySoundsQueue`, `mActiveSaySounds`).
+
+The actual removal was deferred to the next `updateSounds()` call, which checks `!mOutput->isSoundPlaying(sound)`. But before that cleanup could happen, `updateSounds()` would iterate over the maps and try to access the destroyed objects:
+
+```cpp
+// In updateSounds() - line 972-983
+MWWorld::ConstPtr ptr = snditer->first;  // Constructs ConstPtr from dangling mRef
+// ...
+if (!ptr.isEmpty())  // isEmpty() only checks if mRef is null, not if data is valid!
+{
+    sound->setPosition(ptr.getRefData().getPosition().asVec3());  // CRASH - accessing freed memory
+}
+```
+
+#### Why It Crashed on Second Exit
+
+1. **First exit** (interior → exterior): Interior cell sounds stopped, but entries remain in maps with dangling pointers
+2. **Re-enter house**: Game loads interior, runs frames - dangling exterior sound entries may still exist but `updateSounds()` happens to not crash (timing dependent)
+3. **Second exit**: Interior unloaded again, more dangling pointers accumulated, eventually `updateSounds()` accesses one → **CRASH**
+
+The crash manifested 2-3 frames after cell transition because:
+- Frame 1: Cell transition completes, `stopSound()` marks sounds finished but doesn't remove them
+- Frame 2: `updateSounds()` iterates, constructs `ConstPtr` from dangling `mRef`, accesses freed memory
+
+### Detailed Log Analysis
+
+The logging revealed the exact crash location:
+
+```
+[16:03:20.505 I] [FRAME] Frame complete
+[16:03:20.505 I] [MAINLOOP] Loop iteration complete
+[16:03:20.505 I] [MAINLOOP] Loop iteration start
+[16:03:20.505 I] [MAINLOOP] Calling mViewer->advance()...
+[16:03:20.505 I] [MAINLOOP] Calling frame(1917)...
+[16:03:20.505 I] [FRAME] ===== FRAME START #1917 =====
+[16:03:20.505 I] [FRAME] Updating input...
+[16:03:20.505 I] [FRAME] Input update complete
+<--- CRASH HERE - no more logs
+```
+
+The crash occurred immediately after input update, in the sound update section:
+
+```cpp
+// engine.cpp frame() - after input update
+{
+    ScopedProfile<UserStatsType::Sound> profile(...);
+    // ...
+    if (mUseSound)
+        mSoundManager->update(frametime);  // <-- CRASH inside here
+}
+```
+
+### The Fix
+
+**File**: `apps/openmw/mwsound/soundmanagerimp.cpp`
+
+Changed `stopSound(const MWWorld::CellStore* cell)` to immediately remove entries from all sound maps instead of deferring cleanup:
+
+```cpp
+void SoundManager::stopSound(const MWWorld::CellStore* cell)
+{
+    // We must immediately remove entries from the maps, not just finish the sounds.
+    // The deferred cleanup in updateSounds() would try to access ptr.getRefData() on
+    // objects that have been destroyed when the cell was unloaded, causing a crash.
+    for (auto it = mActiveSounds.begin(); it != mActiveSounds.end(); )
+    {
+        if (it->first != nullptr && it->first != MWMechanics::getPlayer().mRef && it->second.mCell == cell)
+        {
+            for (SoundBufferRefPair& sndbuf : it->second.mList)
+            {
+                mOutput->finishSound(sndbuf.first.get());
+                mSoundBuffers.release(*sndbuf.second);  // Clean up buffer reference
+            }
+            it = mActiveSounds.erase(it);  // Remove immediately
+        }
+        else
+            ++it;
+    }
+
+    // Same pattern for mSaySoundsQueue and mActiveSaySounds...
+}
+```
+
+### Key Lessons Learned
+
+1. **Deferred cleanup is dangerous** when the data being cleaned up can be accessed before cleanup completes
+2. **`MWWorld::Ptr::isEmpty()` is not a validity check** - it only checks if `mRef` is null, not if the underlying object data is valid
+3. **The crash location may be far from the bug** - the actual bug was in cell unload code, but the crash manifested in sound update code 2-3 frames later
+4. **Systematic logging is essential** - without granular logging throughout the frame, we couldn't have pinpointed the crash location
+
+### Other Fixes Applied During Investigation
+
+These fixes addressed potential issues discovered during the investigation:
+
+1. **movementsolver.cpp:180-218**: Fixed uninitialized `ioHit` variable - was using `ioHit.mFraction`, `ioHit.mBodyID`, `ioHit.mSubShapeID2` instead of `collector.mFraction`, `collector.mBodyID`, `collector.mSubShapeID2`
+
+2. **scene.cpp:376-386**: Added player skip during cell unload - player physics body should persist across cell transitions
+
+3. **physicssystem.cpp:1211-1212, 1309**: Added null checks for cell access in `prepareSimulation()` and buoyancy loop
+
+### Files Modified
+
+- `apps/openmw/mwsound/soundmanagerimp.cpp` - Immediate cleanup in `stopSound(cell)` - **partial fix, reduced frequency but didn't eliminate crash**
+- `apps/openmw/mwphysics/movementsolver.cpp` - Fixed uninitialized variable
+- `apps/openmw/mwphysics/physicssystem.cpp` - Added null checks, debug logging
+- `apps/openmw/mwworld/scene.cpp` - Player skip during unload, debug logging
+- `apps/openmw/mwworld/worldimp.cpp` - Debug logging
+- `apps/openmw/engine.cpp` - Debug logging (can be removed after verification)
+
+### Current Status
+
+The sound manager fix improved stability but did **not fully resolve** the crash. After multiple in/out cycles, the crash still occurs:
+
+```
+[16:11:09.199 I] [FRAME] ===== FRAME START #2193 =====
+[16:11:09.199 I] [FRAME] Updating input...
+[16:11:09.199 I] [FRAME] Input update complete
+<--- CRASH - same location as before
+```
+
+The crash still happens immediately after input update, in the same sound/window visibility section. This suggests:
+
+1. **There may be another source of dangling pointers** beyond what `stopSound(cell)` cleans up
+2. **The sound manager may have other maps or data structures** that hold object references
+3. **Another system entirely** might be crashing in the same code region (the sound update block also checks window visibility and does other work)
+
+### Next Steps
+
+1. Add more granular logging inside the sound update block in `engine.cpp` to narrow down exactly which call crashes
+2. Audit all `MWWorld::Ptr` / `MWWorld::ConstPtr` storage in the sound manager for other potential dangling references
+3. Check if window manager operations in that block could be accessing stale data
+4. Consider that the crash may be in a completely different system that just happens to run at the same point in the frame
+
+---
+
 ## References
 
 - [Jolt Physics GitHub](https://github.com/jrouwe/JoltPhysics)

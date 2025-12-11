@@ -1497,11 +1497,16 @@ namespace MWWorld
         processDoors(duration);
         mProjectileManager->update(duration);
         mPhysics->stepSimulation(duration, mDiscardMovements, frameStart, frameNumber, stats);
+        Log(Debug::Info) << "[WORLD] Processing projectile hits...";
         mProjectileManager->processHits();
+        Log(Debug::Info) << "[WORLD] Moving actors...";
         mDiscardMovements = false;
         mPhysics->moveActors();
+        Log(Debug::Info) << "[WORLD] Moving dynamic objects...";
         mPhysics->moveDynamicObjects();
+        Log(Debug::Info) << "[WORLD] Updating ragdolls...";
         mPhysics->updateRagdolls();
+        Log(Debug::Info) << "[WORLD] doPhysics complete";
     }
 
     void World::updateNavigator()
@@ -1677,6 +1682,7 @@ namespace MWWorld
 
     void World::update(float duration, bool paused)
     {
+        Log(Debug::Info) << "[WORLD UPDATE] Starting World::update";
         if (mGoToJail && !paused)
             goToJail();
 
@@ -1689,16 +1695,22 @@ namespace MWWorld
         if (mPlayerInJail && !mGoToJail && !MWBase::Environment::get().getWindowManager()->containsMode(MWGui::GM_Jail))
             mPlayerInJail = false;
 
+        Log(Debug::Info) << "[WORLD UPDATE] Updating weather...";
         updateWeather(duration, paused);
 
+        Log(Debug::Info) << "[WORLD UPDATE] Updating navigator...";
         updateNavigator();
 
+        Log(Debug::Info) << "[WORLD UPDATE] Updating player...";
         mPlayer->update();
 
+        Log(Debug::Info) << "[WORLD UPDATE] Updating world scene...";
         mWorldScene->update(duration);
 
+        Log(Debug::Info) << "[WORLD UPDATE] Updating rendering...";
         mRendering->update(duration, paused);
 
+        Log(Debug::Info) << "[WORLD UPDATE] Updating sound listener...";
         updateSoundListener();
 
         mSpellPreloadTimer -= duration;
@@ -1710,12 +1722,15 @@ namespace MWWorld
 
         if (mWorldScene->hasCellLoaded())
         {
+            Log(Debug::Info) << "[WORLD UPDATE] Waiting for navigator tiles...";
             mNavigator->wait(DetourNavigator::WaitConditionType::requiredTilesPresent,
                 MWBase::Environment::get().getWindowManager()->getLoadingScreen());
             mWorldScene->resetCellLoaded();
         }
 
+        Log(Debug::Info) << "[WORLD UPDATE] Physics debug draw...";
         mPhysics->debugDraw();
+        Log(Debug::Info) << "[WORLD UPDATE] World::update complete";
     }
 
     void World::updatePhysics(
@@ -1797,27 +1812,34 @@ namespace MWWorld
 
     void World::updateFocusObject()
     {
+        Log(Debug::Info) << "[FOCUS] Starting updateFocusObject";
         try
         {
             // inform the GUI about focused object
+            Log(Debug::Info) << "[FOCUS] Getting focus object...";
             MWWorld::Ptr object = getFocusObject();
 
             // retrieve the object's top point's screen position so we know where to place the floating label
             if (!object.isEmpty())
             {
+                Log(Debug::Info) << "[FOCUS] Object not empty, getting bounding box...";
                 osg::BoundingBox bb = mPhysics->getBoundingBox(object);
                 if (!bb.valid() && object.getRefData().getBaseNode())
                 {
+                    Log(Debug::Info) << "[FOCUS] Computing bounds from scene...";
                     osg::ComputeBoundsVisitor computeBoundsVisitor;
                     computeBoundsVisitor.setTraversalMask(~(MWRender::Mask_ParticleSystem | MWRender::Mask_Effect));
                     object.getRefData().getBaseNode()->accept(computeBoundsVisitor);
                     bb = computeBoundsVisitor.getBoundingBox();
                 }
+                Log(Debug::Info) << "[FOCUS] Getting screen coords...";
                 const osg::Vec2f pos = mRendering->getScreenCoords(bb);
                 MWBase::Environment::get().getWindowManager()->setFocusObjectScreenCoords(pos.x(), pos.y());
             }
 
+            Log(Debug::Info) << "[FOCUS] Setting focus object in window manager...";
             MWBase::Environment::get().getWindowManager()->setFocusObject(object);
+            Log(Debug::Info) << "[FOCUS] updateFocusObject complete";
         }
         catch (std::exception& e)
         {
