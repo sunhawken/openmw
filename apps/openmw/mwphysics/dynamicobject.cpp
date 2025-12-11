@@ -311,116 +311,74 @@ namespace MWPhysics
 
     void DynamicObject::updateBuoyancy(float waterHeight, float gravity, float dt)
     {
-        if (!mBasePhysicsShape)
+        if (mPhysicsBody == nullptr)
             return;
 
-        // Get current position
-        osg::Vec3f position = getSimulationPosition();
+        // Use Jolt's built-in buoyancy system which correctly handles:
+        // - World-space shape bounds (works with rotated shapes)
+        // - Proper submerged volume calculation
+        // - Physically correct buoyancy and drag forces
 
-        // Get actual object bounds from the physics shape
-        // Note: GetExtent() returns half-extents, and for OpenMW (Z-up) we need the Z component
-        JPH::AABox bounds = mBasePhysicsShape->GetLocalBounds();
-        // Use the maximum of X and Z extents as the "radius" for buoyancy calculation
-        // since objects may be rotated and we want reasonable behavior
-        float halfHeight = std::max(bounds.GetExtent().GetZ(), bounds.GetExtent().GetY()) * mScale.z();
-        halfHeight = std::max(halfHeight, 5.0f);  // Minimum half-height to ensure some buoyancy interaction
+        // Water surface is a horizontal plane at waterHeight
+        // In OpenMW/Jolt coordinate system, Z is up
+        JPH::RVec3 surfacePosition(0.0, 0.0, static_cast<double>(waterHeight));
+        JPH::Vec3 surfaceNormal(0.0f, 0.0f, 1.0f);  // Points up (out of water)
 
-        float objectBottom = position.z() - halfHeight;
-        float objectTop = position.z() + halfHeight;
+        // Gravity vector points down in Z
+        JPH::Vec3 gravityVec(0.0f, 0.0f, -gravity);
 
-        // Check if object is in water
-        if (objectBottom >= waterHeight)
+        // Buoyancy parameters (from Jolt documentation):
+        // - buoyancy: 1.0 = neutral, < 1.0 sinks, > 1.0 floats
+        // - linearDrag: ~0.3-0.5 for water resistance
+        // - angularDrag: ~0.01-0.05 for rotational damping
+        constexpr float buoyancy = 1.2f;      // Slightly buoyant (most objects float)
+        constexpr float linearDrag = 0.5f;    // Water resistance
+        constexpr float angularDrag = 0.05f;  // Rotational damping
+        JPH::Vec3 fluidVelocity = JPH::Vec3::sZero();  // Still water
+
+        // Use BodyInterface::ApplyBuoyancyImpulse which:
+        // 1. Wakes up sleeping bodies automatically
+        // 2. Calculates submerged volume using world-space shape geometry
+        // 3. Applies proper buoyancy force at center of buoyancy
+        // 4. Applies linear and angular drag
+        JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
+        bool wasInWater = bodyInterface.ApplyBuoyancyImpulse(
+            getPhysicsBody(),
+            surfacePosition,
+            surfaceNormal,
+            buoyancy,
+            linearDrag,
+            angularDrag,
+            fluidVelocity,
+            gravityVec,
+            dt
+        );
+
+        // Track water state for effects/sounds
+        if (wasInWater != mInWater)
         {
-            // Object is above water
-            if (mInWater)
+            if (wasInWater)
             {
-                // Just left water
                 Log(Debug::Verbose) << "DynamicObject " << getPtr().getCellRef().getRefId()
-                                    << " left water at z=" << position.z() << " waterHeight=" << waterHeight;
+                                    << " entered water at waterHeight=" << waterHeight;
             }
-            mInWater = false;
-            mSubmersionDepth = 0.0f;
-            return;
+            else
+            {
+                Log(Debug::Verbose) << "DynamicObject " << getPtr().getCellRef().getRefId()
+                                    << " left water";
+            }
         }
+        mInWater = wasInWater;
 
-        if (!mInWater)
+        // Update submersion depth for gameplay purposes (if needed)
+        if (mInWater)
         {
-            // Just entered water
-            Log(Debug::Info) << "DynamicObject " << getPtr().getCellRef().getRefId()
-                             << " entered water at z=" << position.z() << " waterHeight=" << waterHeight;
-        }
-        mInWater = true;
-
-        // Calculate submersion depth (how deep the object center is below water)
-        mSubmersionDepth = waterHeight - position.z();
-
-        // Calculate submersion factor (0 to 1, clamped)
-        float submersionFactor;
-        if (objectTop <= waterHeight)
-        {
-            // Fully submerged
-            submersionFactor = 1.0f;
+            osg::Vec3f position = getSimulationPosition();
+            mSubmersionDepth = waterHeight - position.z();
         }
         else
         {
-            // Partially submerged
-            float objectHeight = objectTop - objectBottom;
-            if (objectHeight > 0.0f)
-                submersionFactor = (waterHeight - objectBottom) / objectHeight;
-            else
-                submersionFactor = 1.0f;
+            mSubmersionDepth = 0.0f;
         }
-        submersionFactor = std::clamp(submersionFactor, 0.0f, 1.0f);
-
-        // IMPORTANT: Activate the body FIRST when in water so it doesn't sleep
-        // Forces applied to sleeping bodies are ignored in Jolt!
-        activate();
-
-        // Calculate how far below water surface the object is
-        float depthBelowSurface = waterHeight - position.z();
-
-        // Buoyancy: objects should float up to the water surface
-        // Use a spring-like force that increases with depth
-        // This creates stable floating behavior at the surface
-        constexpr float buoyancyStrength = 5.0f;  // Spring constant
-        constexpr float dampingFactor = 2.0f;     // Damping to prevent oscillation
-
-        // Buoyancy force: stronger the deeper you are
-        float buoyancyForce = buoyancyStrength * mMass * gravity * submersionFactor;
-
-        // Add extra force based on depth to help objects rise from bottom
-        if (depthBelowSurface > 0)
-        {
-            // Exponential increase for deeply submerged objects
-            buoyancyForce += mMass * gravity * std::min(depthBelowSurface / 10.0f, 5.0f);
-        }
-
-        // Apply upward buoyancy force
-        applyForce(osg::Vec3f(0.0f, 0.0f, buoyancyForce));
-
-        // Apply water drag (resistance) to slow down movement in water
-        osg::Vec3f velocity = getLinearVelocity();
-        float speed = velocity.length();
-
-        // Strong vertical damping to stabilize floating
-        if (std::abs(velocity.z()) > 0.1f)
-        {
-            float verticalDamping = -velocity.z() * dampingFactor * mMass;
-            applyForce(osg::Vec3f(0.0f, 0.0f, verticalDamping));
-        }
-
-        if (speed > 0.01f)
-        {
-            // Drag force opposes motion, proportional to velocity squared
-            constexpr float dragCoefficient = 1.5f;  // Increased drag in water
-            float dragMagnitude = dragCoefficient * submersionFactor * speed * speed;
-
-            // Limit drag to prevent instability
-            dragMagnitude = std::min(dragMagnitude, speed * mMass / dt);
-
-            osg::Vec3f dragForce = -velocity * (dragMagnitude / speed);
-            applyForce(dragForce);
-        }
-
     }
 }
