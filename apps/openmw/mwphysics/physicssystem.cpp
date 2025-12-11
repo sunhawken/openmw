@@ -1218,7 +1218,7 @@ namespace MWPhysics
         updatePtrHolders();
 
         // Apply buoyancy forces to dynamic objects in water
-        // Check per-object water level based on cell, with fallback to global water
+        // Must handle both interior cells (with their own water level) and exterior cells (ocean level)
         const float gravity = Constants::GravityConst * Constants::UnitsPerMeter;
         for (auto& [_, dynObj] : mDynamicObjects)
         {
@@ -1227,20 +1227,35 @@ namespace MWPhysics
                 continue;
 
             const MWWorld::CellStore* cell = ptr.getCell();
-            bool hasWater = cell && cell->getCell()->hasWater();
-            float waterHeight = hasWater ? cell->getWaterLevel() : mWaterHeight;
 
-            // For exterior cells, always use global water if enabled (ocean level)
-            // Interior cells use their own water level
-            bool isExterior = cell && cell->getCell()->isExterior();
-            if (isExterior && mWaterEnabled)
+            // Guard against invalid/unloading cells during cell transitions
+            // This prevents crashes when dynamic objects have stale cell references
+            if (!cell)
+                continue;
+
+            float waterHeight = 0.0f;
+            bool applyBuoyancy = false;
+
+            if (cell->getCell()->isExterior())
             {
-                hasWater = true;
-                waterHeight = mWaterHeight;
+                // Exterior cells: use global ocean level if water is enabled
+                if (mWaterEnabled)
+                {
+                    waterHeight = mWaterHeight;
+                    applyBuoyancy = true;
+                }
+            }
+            else
+            {
+                // Interior cells: use the cell's own water level if it has water
+                if (cell->getCell()->hasWater())
+                {
+                    waterHeight = cell->getWaterLevel();
+                    applyBuoyancy = true;
+                }
             }
 
-            // Apply buoyancy if we have water (either cell water or global water)
-            if (hasWater || mWaterEnabled)
+            if (applyBuoyancy)
             {
                 dynObj->updateBuoyancy(waterHeight, gravity, mPhysicsDt);
             }
