@@ -2806,6 +2806,10 @@ namespace MWMechanics
         // Keeping track of when to stop a continuous VFX seems to be very difficult to do inside the spells code,
         // as it's extremely spread out (ActiveSpells, Spells, InventoryStore effects, etc...) so we do it here.
 
+        // Animation may be null if the actor was invalidated during cell transition
+        if (!mAnimation)
+            return;
+
         // Stop any effects that are no longer active
         std::vector<std::string_view> effects = mAnimation->getLoopingEffects();
 
@@ -2828,6 +2832,10 @@ namespace MWMechanics
     void CharacterController::updateMagicEffects() const
     {
         if (!mPtr.getClass().isActor())
+            return;
+
+        // Animation may be null if the actor was invalidated during cell transition
+        if (!mAnimation)
             return;
 
         float light = mPtr.getClass()
