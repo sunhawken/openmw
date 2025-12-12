@@ -244,6 +244,17 @@ namespace MWMechanics
     void AiSequence::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, float duration, bool outOfRange)
     {
+        // Safety check: actor must be valid and in a cell before we access any of its data.
+        // During cell transitions, actors may have dangling mRef pointers.
+        if (actor.isEmpty() || !actor.isInCell())
+        {
+            Log(Debug::Warning) << "[AI] AiSequence::execute called with invalid actor (empty=" << actor.isEmpty()
+                                << " inCell=" << (actor.isEmpty() ? false : actor.isInCell()) << "), aborting";
+            return;
+        }
+
+        Log(Debug::Info) << "[AI] AiSequence::execute start for " << actor.getCellRef().getRefId().toDebugString();
+
         if (actor == getPlayer())
         {
             // Players don't use this.
@@ -259,20 +270,27 @@ namespace MWMechanics
         if (mPackages.empty())
         {
             mLastAiPackage = AiPackageTypeId::None;
+            Log(Debug::Info) << "[AI] No packages, returning";
             return;
         }
 
+        Log(Debug::Info) << "[AI] Have " << mPackages.size() << " packages";
         auto* package = mPackages.front().get();
         if (!package->alwaysActive() && outOfRange)
+        {
+            Log(Debug::Info) << "[AI] Out of range, returning";
             return;
+        }
 
         auto packageTypeId = package->getTypeId();
+        Log(Debug::Info) << "[AI] Package type: " << static_cast<int>(packageTypeId);
         // workaround ai packages not being handled as in the vanilla engine
         if (isActualAiPackage(packageTypeId))
             mLastAiPackage = packageTypeId;
         // if active package is combat one, choose nearest target
         if (packageTypeId == AiPackageTypeId::Combat)
         {
+            Log(Debug::Info) << "[AI] Processing combat package";
             auto itActualCombat = mPackages.end();
 
             float nearestDist = std::numeric_limits<float>::max();
@@ -285,19 +303,24 @@ namespace MWMechanics
                 if ((*it)->getTypeId() != AiPackageTypeId::Combat)
                     break;
 
+                Log(Debug::Info) << "[AI] Getting combat target...";
                 MWWorld::Ptr target = (*it)->getTarget();
 
                 // target disappeared (e.g. summoned creatures)
                 if (target.isEmpty())
                 {
+                    Log(Debug::Info) << "[AI] Target empty, erasing package";
                     it = erase(it);
                 }
                 else
                 {
+                    Log(Debug::Info) << "[AI] Target: " << target.getCellRef().getRefId().toDebugString()
+                                     << " isInCell=" << target.isInCell();
                     float rating = 0.f;
                     if (MWMechanics::canFight(actor, target))
                         rating = MWMechanics::getBestActionRating(actor, target);
 
+                    Log(Debug::Info) << "[AI] Getting target position...";
                     const ESM::Position& targetPos = target.getRefData().getPosition();
 
                     float distTo = (targetPos.asVec3() - vActorPos).length2();
@@ -318,7 +341,10 @@ namespace MWMechanics
             }
 
             if (mPackages.empty())
+            {
+                Log(Debug::Info) << "[AI] Packages empty after combat processing, returning";
                 return;
+            }
 
             if (nearestDist < std::numeric_limits<float>::max() && mPackages.begin() != itActualCombat)
             {
@@ -329,10 +355,13 @@ namespace MWMechanics
 
             package = mPackages.front().get();
             packageTypeId = package->getTypeId();
+            Log(Debug::Info) << "[AI] Combat processing done";
         }
 
+        Log(Debug::Info) << "[AI] About to execute package type " << static_cast<int>(packageTypeId);
         try
         {
+            Log(Debug::Info) << "[AI] Calling package->execute...";
             if (package->execute(actor, characterController, mAiState, duration))
             {
                 // Put repeating non-combat AI packages on the end of the stack so they can be used again
@@ -357,11 +386,13 @@ namespace MWMechanics
             {
                 mDone = false;
             }
+            Log(Debug::Info) << "[AI] Package execute completed";
         }
         catch (std::exception& e)
         {
             Log(Debug::Error) << "Error during AiSequence::execute: " << e.what();
         }
+        Log(Debug::Info) << "[AI] AiSequence::execute done";
     }
 
     void AiSequence::clear()

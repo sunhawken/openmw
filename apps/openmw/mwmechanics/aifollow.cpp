@@ -95,6 +95,10 @@ namespace MWMechanics
     bool AiFollow::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, AiState& state, float duration)
     {
+        // Safety check: actor must be valid and in a cell
+        if (actor.isEmpty() || !actor.isInCell())
+            return true;
+
         const MWWorld::Ptr target = getTarget();
 
         // Target is not here right now, wait for it to return
