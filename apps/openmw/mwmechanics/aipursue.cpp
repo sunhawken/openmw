@@ -30,6 +30,10 @@ namespace MWMechanics
     bool AiPursue::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, AiState& state, float duration)
     {
+        // Safety check: actor must be valid and in a cell
+        if (actor.isEmpty() || !actor.isInCell())
+            return true;
+
         if (actor.getClass().getCreatureStats(actor).isDead())
             return true;
 
