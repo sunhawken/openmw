@@ -23,6 +23,10 @@ namespace MWMechanics
     bool AiActivate::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, AiState& state, float duration)
     {
+        // Safety check: actor must be valid and in a cell
+        if (actor.isEmpty() || !actor.isInCell())
+            return true;
+
         const MWWorld::Ptr target
             = MWBase::Environment::get().getWorld()->searchPtr(mObjectId, false); // The target to follow
 
