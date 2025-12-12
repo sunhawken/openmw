@@ -43,6 +43,10 @@ namespace MWMechanics
 
     bool proximityToDoor(const MWWorld::Ptr& actor, float minDist)
     {
+        // Safety check: getBaseNode() can be null during cell transitions
+        if (actor.isEmpty() || !actor.isInCell() || !actor.getRefData().getBaseNode())
+            return false;
+
         if (getNearbyDoor(actor, minDist).isEmpty())
             return false;
         else
@@ -101,6 +105,10 @@ namespace MWMechanics
 
     const MWWorld::Ptr getNearbyDoor(const MWWorld::Ptr& actor, float minDist)
     {
+        // Safety check: actor must be in a cell with a valid base node
+        if (!actor.isInCell() || !actor.getRefData().getBaseNode())
+            return MWWorld::Ptr();
+
         GetNearbyDoorVisitor visitor(actor, minDist);
         actor.getCell()->forEachType<ESM::Door>(visitor);
         return visitor.mResult;
