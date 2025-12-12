@@ -1197,6 +1197,10 @@ namespace MWMechanics
         const auto world = MWBase::Environment::get().getWorld();
         if (world->isInStorm())
         {
+            // Safety check: getBaseNode() can be null during cell transitions
+            if (!mPtr.getRefData().getBaseNode())
+                return;
+
             osg::Vec3f stormDirection = world->getStormDirection();
             osg::Vec3f characterDirection = mPtr.getRefData().getBaseNode()->getAttitude() * osg::Vec3f(0, 1, 0);
             stormDirection.normalize();

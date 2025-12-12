@@ -1507,21 +1507,16 @@ namespace MWMechanics
                 mTimerUpdateEquippedLight = 0;
 
             // show torches only when there are darkness and no precipitations
-            Log(Debug::Info) << "[ACTORS] Getting world...";
             MWBase::World* const world = MWBase::Environment::get().getWorld();
             const bool showTorches = world->useTorches();
 
-            Log(Debug::Info) << "[ACTORS] Getting player...";
             const MWWorld::Ptr player = getPlayer();
-            Log(Debug::Info) << "[ACTORS] Getting player position...";
             const osg::Vec3f playerPos = player.getRefData().getPosition().asVec3();
-            Log(Debug::Info) << "[ACTORS] Player position: " << playerPos.x() << ", " << playerPos.y() << ", " << playerPos.z();
 
             /// \todo move update logic to Actor class where appropriate
 
             SidingCache cachedAllies{ *this, true }; // will be filled as engageCombat iterates
 
-            Log(Debug::Info) << "[ACTORS] Getting AI state and player stats...";
             const bool aiActive = MWBase::Environment::get().getMechanicsManager()->isAIActive();
             const int attackedByPlayerId = player.getClass().getCreatureStats(player).getHitAttemptActorId();
             if (attackedByPlayerId != -1)
@@ -1533,7 +1528,6 @@ namespace MWMechanics
             }
             const int actorsProcessingRange = Settings::game().mActorsProcessingRange;
 
-            Log(Debug::Info) << "[ACTORS] Starting actor loop iteration...";
             int actorIndex = 0;
             // AI and magic effects update
             for (Actor& actor : mActors)
@@ -1543,99 +1537,79 @@ namespace MWMechanics
                     actorIndex++;
                     continue;
                 }
-                Log(Debug::Info) << "[ACTORS] Processing actor " << actorIndex << ", checking isPlayer...";
                 const bool isPlayer = actor.getPtr() == player;
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " isPlayer=" << isPlayer << ", getting CharacterController...";
                 CharacterController& ctrl = actor.getCharacterController();
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " getting Lua controls...";
                 MWBase::LuaManager::ActorControls* luaControls
                     = MWBase::Environment::get().getLuaManager()->getActorControls(actor.getPtr());
 
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " computing distance...";
                 const float distSqr = (playerPos - actor.getPtr().getRefData().getPosition().asVec3()).length2();
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " distance computed, checking processing range...";
                 // AI processing is only done within given distance to the player.
                 const bool inProcessingRange = distSqr <= actorsProcessingRange * actorsProcessingRange;
 
                 // If dead or no longer in combat, no longer store any actors who attempted to hit us. Also remove for
                 // the player.
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " checking dead/combat state...";
                 if (!isPlayer
                     && (actor.getPtr().getClass().getCreatureStats(actor.getPtr()).isDead()
                         || !actor.getPtr().getClass().getCreatureStats(actor.getPtr()).getAiSequence().isInCombat()
                         || !inProcessingRange))
                 {
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " clearing hit attempt...";
                     actor.getPtr().getClass().getCreatureStats(actor.getPtr()).setHitAttemptActorId(-1);
                     if (player.getClass().getCreatureStats(player).getHitAttemptActorId()
                         == actor.getPtr().getClass().getCreatureStats(actor.getPtr()).getActorId())
                         player.getClass().getCreatureStats(player).setHitAttemptActorId(-1);
                 }
 
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updating engage combat timer...";
                 const Misc::TimerStatus engageCombatTimerStatus = actor.updateEngageCombatTimer(duration);
 
                 // For dead actors we need to update looping spell particles
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " checking if dead...";
-                // Debug: Check ptr validity before accessing
                 const MWWorld::Ptr& actorPtrRef = actor.getPtr();
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " ptr.mRef=" << (void*)actorPtrRef.mRef
-                                 << " isEmpty=" << actorPtrRef.isEmpty();
-                if (!actorPtrRef.isEmpty())
-                {
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " refId=" << actorPtrRef.getCellRef().getRefId().toDebugString();
-                }
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " getting class...";
                 const MWWorld::Class& actorClass = actorPtrRef.getClass();
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " getting creatureStats...";
                 MWMechanics::CreatureStats& creatureStats = actorClass.getCreatureStats(actorPtrRef);
-                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " checking isDead...";
                 if (creatureStats.isDead())
                 {
                     // They can be added during the death animation
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " is dead, checking animation...";
                     if (!creatureStats.isDeathAnimationFinished())
-                    {
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " (dead) calling adjustMagicEffects...";
                         adjustMagicEffects(actor.getPtr(), duration);
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " (dead) adjustMagicEffects done";
-                    }
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " (dead) calling updateContinuousVfx...";
                     ctrl.updateContinuousVfx();
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " (dead) updateContinuousVfx done";
                 }
                 else
                 {
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " is alive, getting worldScene...";
                     MWWorld::Scene* worldScene = MWBase::Environment::get().getWorldScene();
                     const bool cellChanged = worldScene->hasCellChanged();
                     const MWWorld::Ptr actorPtr = actor.getPtr(); // make a copy of the map key to avoid it being
                                                                   // invalidated when the player teleports
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " calling updateActor...";
                     updateActor(actorPtr, duration);
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateActor done";
 
                     // Looping magic VFX update
                     // Note: we need to do this before any of the animations are updated.
                     // Reaching the text keys may trigger Hit / Spellcast (and as such, particles),
                     // so updating VFX immediately after that would just remove the particle effects instantly.
                     // There needs to be a magic effect update in between.
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " calling updateContinuousVfx...";
                     ctrl.updateContinuousVfx();
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateContinuousVfx done";
+
+                    // DEBUG: Targeted logging for crash between updateContinuousVfx and end of loop
+                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " (" << actorPtrRef.getCellRef().getRefId().toDebugString()
+                                     << ") post-vfx, aiActive=" << aiActive << " inRange=" << inProcessingRange;
 
                     if (!cellChanged && worldScene->hasCellChanged())
                     {
                         return; // for now abort update of the old cell when cell changes by teleportation magic effect
                                 // a better solution might be to apply cell changes at the end of the frame
                     }
+
                     if (aiActive && inProcessingRange)
                     {
+                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " entering AI block";
                         if (engageCombatTimerStatus == Misc::TimerStatus::Elapsed)
                         {
+                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " engageCombat timer elapsed";
                             if (!isPlayer)
+                            {
+                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " adjustCommandedActor...";
                                 adjustCommandedActor(actor.getPtr());
+                            }
 
+                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " iterating other actors for combat...";
                             for (const Actor& otherActor : mActors)
                             {
                                 if (otherActor.isInvalid())
@@ -1645,28 +1619,41 @@ namespace MWMechanics
                                 engageCombat(
                                     actor.getPtr(), otherActor.getPtr(), cachedAllies, otherActor.getPtr() == player);
                             }
+                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " engageCombat done";
                         }
                         if (mTimerUpdateHeadTrack == 0)
+                        {
+                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateHeadTracking...";
                             updateHeadTracking(actor.getPtr(), mActors, isPlayer, ctrl);
+                        }
 
                         if (actor.getPtr().getClass().isNpc() && !isPlayer)
+                        {
+                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateCrimePursuit...";
                             updateCrimePursuit(actor.getPtr(), duration, cachedAllies);
+                        }
 
                         if (!isPlayer)
                         {
                             CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
                             if (isConscious(actor.getPtr()) && !(luaControls && luaControls->mDisableAI))
                             {
+                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " AI execute...";
                                 stats.getAiSequence().execute(actor.getPtr(), ctrl, duration);
+                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateGreetingState...";
                                 updateGreetingState(actor.getPtr(), actor, mTimerUpdateHello > 0);
+                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " playIdleDialogue...";
                                 playIdleDialogue(actor.getPtr());
+                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateMovementSpeed...";
                                 updateMovementSpeed(actor.getPtr());
                             }
                         }
+                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " AI block done";
                     }
                     else if (aiActive && !isPlayer && isConscious(actor.getPtr())
                         && !(luaControls && luaControls->mDisableAI))
                     {
+                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " out-of-range AI execute...";
                         CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
                         stats.getAiSequence().execute(actor.getPtr(), ctrl, duration, /*outOfRange*/ true);
                     }
@@ -1675,17 +1662,24 @@ namespace MWMechanics
                     {
                         // We can not update drowning state for actors outside of AI distance - they can not resurface
                         // to breathe
+                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateDrowning...";
                         updateDrowning(actor.getPtr(), duration, ctrl.isKnockedOut(), isPlayer);
                     }
                     if (mTimerUpdateEquippedLight == 0 && actor.getPtr().getClass().hasInventoryStore(actor.getPtr()))
+                    {
+                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateEquippedLight...";
                         updateEquippedLight(actor.getPtr(), updateEquippedLightInterval, showTorches);
+                    }
 
                     if (luaControls != nullptr && isConscious(actor.getPtr()))
+                    {
+                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateLuaControls...";
                         updateLuaControls(actor.getPtr(), isPlayer, *luaControls);
+                    }
+                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " loop iteration complete";
                 }
                 actorIndex++;
             }
-            Log(Debug::Info) << "[ACTORS] First actor loop complete, processed " << actorIndex << " actors";
 
             if (Settings::game().mNPCsAvoidCollisions)
                 predictAndAvoidCollisions(duration);
@@ -1696,17 +1690,12 @@ namespace MWMechanics
             mTimerDisposeSummonsCorpses += duration;
 
             // Animation/movement update
-            Log(Debug::Info) << "[ACTORS] Starting second actor loop (animation/movement)...";
             CharacterController* playerCharacter = nullptr;
-            int animActorIndex = 0;
             for (Actor& actor : mActors)
             {
                 if (actor.isInvalid())
-                {
-                    animActorIndex++;
                     continue;
-                }
-                Log(Debug::Info) << "[ACTORS ANIM] Processing actor " << animActorIndex << "...";
+
                 const float dist = (playerPos - actor.getPtr().getRefData().getPosition().asVec3()).length();
                 const bool isPlayer = actor.getPtr() == player;
                 CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
@@ -1727,7 +1716,8 @@ namespace MWMechanics
 
                 if (!inRange)
                 {
-                    actor.getPtr().getRefData().getBaseNode()->setNodeMask(0);
+                    if (osg::Group* baseNode = actor.getPtr().getRefData().getBaseNode())
+                        baseNode->setNodeMask(0);
                     world->setActorActive(actor.getPtr(), false);
                     continue;
                 }
@@ -1746,7 +1736,11 @@ namespace MWMechanics
                     continue;
                 }
 
-                actor.getPtr().getRefData().getBaseNode()->setNodeMask(MWRender::Mask_Actor);
+                if (osg::Group* baseNode = actor.getPtr().getRefData().getBaseNode())
+                    baseNode->setNodeMask(MWRender::Mask_Actor);
+                else
+                    continue; // Skip actors with null baseNode (can happen during cell transitions)
+
                 world->setActorCollisionMode(actor.getPtr(), true,
                     !actor.getPtr().getClass().getCreatureStats(actor.getPtr()).isDeathAnimationFinished());
 
@@ -1756,12 +1750,9 @@ namespace MWMechanics
                     actor.setPositionAdjusted(true);
                 }
 
-                Log(Debug::Info) << "[ACTORS ANIM] Actor " << animActorIndex << " calling ctrl.update()...";
                 ctrl.update(duration);
-                Log(Debug::Info) << "[ACTORS ANIM] Actor " << animActorIndex << " ctrl.update() done";
 
                 updateVisibility(actor.getPtr(), ctrl);
-                animActorIndex++;
             }
 
             if (playerCharacter)

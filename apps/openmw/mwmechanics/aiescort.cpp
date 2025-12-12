@@ -64,6 +64,10 @@ namespace MWMechanics
     bool AiEscort::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, AiState& state, float duration)
     {
+        // Safety check: actor must be valid and in a cell
+        if (actor.isEmpty() || !actor.isInCell())
+            return true;
+
         // If AiEscort has ran for as long or longer then the duration specified
         // and the duration is not infinite, the package is complete.
         if (mDuration > 0)
