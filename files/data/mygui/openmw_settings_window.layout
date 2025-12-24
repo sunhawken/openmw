@@ -792,6 +792,57 @@
                     </Widget>
                 </Widget>
             </Widget>
+            <Widget type="TabItem">
+                <Property key="Caption" value=" #{OMWEngine:Physics} "/>
+                <Widget type="AutoSizedTextBox" skin="NormalText" position="4 4 400 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:PhysicsNote}"/>
+                </Widget>
+
+                <!-- Dynamic Objects (Oblivion-style physics) -->
+                <Widget type="HBox" position="4 34 500 28">
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Physics"/>
+                        <UserString key="SettingName" value="enable dynamic objects"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText">
+                        <Property key="Caption" value="#{OMWEngine:EnableDynamicObjects}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="TextToolTip"/>
+                        <UserString key="Caption_Text" value="#{OMWEngine:EnableDynamicObjectsTooltip}"/>
+                    </Widget>
+                </Widget>
+
+                <!-- Buoyancy -->
+                <Widget type="HBox" position="4 64 500 28">
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Physics"/>
+                        <UserString key="SettingName" value="enable buoyancy"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText">
+                        <Property key="Caption" value="#{OMWEngine:EnableBuoyancy}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="TextToolTip"/>
+                        <UserString key="Caption_Text" value="#{OMWEngine:EnableBuoyancyTooltip}"/>
+                    </Widget>
+                </Widget>
+
+                <!-- Ragdoll -->
+                <Widget type="HBox" position="4 94 500 28">
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Physics"/>
+                        <UserString key="SettingName" value="enable ragdoll"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText">
+                        <Property key="Caption" value="#{OMWEngine:EnableRagdoll}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="TextToolTip"/>
+                        <UserString key="Caption_Text" value="#{OMWEngine:EnableRagdollTooltip}"/>
+                    </Widget>
+                </Widget>
+            </Widget>
         </Widget>
         <Widget type="AutoSizedButton" skin="MW_Button" position="320 420 56 24" align="Right Bottom" name="OkButton">
             <Property key="ExpandDirection" value="Left"/>
