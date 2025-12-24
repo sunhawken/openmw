@@ -1273,9 +1273,10 @@ namespace MWPhysics
 
             // Apply buoyancy forces before each physics step
             // This ensures buoyancy is applied at the same rate as gravity
+            const bool buoyancyEnabled = Settings::physics().mEnableBuoyancy;
             for (auto& [_, dynObj] : mDynamicObjects)
             {
-                if (!dynObj->isInWaterZone())
+                if (!buoyancyEnabled || !dynObj->isInWaterZone())
                     continue;
 
                 MWWorld::Ptr ptr = dynObj->getPtr();
@@ -1940,6 +1941,10 @@ namespace MWPhysics
     void PhysicsSystem::activateRagdoll(const MWWorld::Ptr& ptr, SceneUtil::Skeleton* skeleton,
         const osg::Vec3f& hitImpulse)
     {
+        // Check if ragdoll physics is enabled in settings
+        if (!Settings::physics().mEnableRagdoll)
+            return;
+
         if (!ptr.getClass().isActor())
             return;
 

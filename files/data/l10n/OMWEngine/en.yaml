@@ -224,6 +224,24 @@ WindowModeWindowed: "Windowed"
 WindowModeWindowedFullscreen: "Windowed Fullscreen"
 WobblyShores: "Wobbly Shores"
 
+# Physics settings
+Physics: "Physics"
+PhysicsNote: "Advanced physics options for enhanced object interaction."
+EnableDynamicObjects: "Dynamic Objects (Oblivion-style)"
+EnableDynamicObjectsTooltip: |-
+    Enable Oblivion-style dynamic object physics.
+    When enabled, dropped items bounce and roll realistically instead of freezing in place.
+    Items can be pushed by walking into them and knocked around by attacks.
+EnableBuoyancy: "Object Buoyancy"
+EnableBuoyancyTooltip: |-
+    Enable buoyancy for dynamic objects.
+    When enabled, dynamic objects will float in water and respond to water physics.
+    Objects will bob and drift realistically when thrown into water.
+EnableRagdoll: "Ragdoll Physics"
+EnableRagdollTooltip: |-
+    Enable ragdoll physics for dead actors.
+    When enabled, dead actors will ragdoll instead of playing a static death animation.
+    Note: This feature is experimental and may cause instability.
 
 # Controller button names
 
