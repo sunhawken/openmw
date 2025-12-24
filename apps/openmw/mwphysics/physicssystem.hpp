@@ -375,6 +375,7 @@ namespace MWPhysics
 
     private:
         void updateWater();
+        void updateDynamicObjectWaterZones();
         void updatePtrHolders();
 
         void prepareSimulation(bool willSimulate, std::vector<Simulation>& simulations);
