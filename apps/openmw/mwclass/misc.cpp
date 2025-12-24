@@ -67,13 +67,22 @@ namespace MWClass
         if (isGold(ptr))
             return;
 
-        // Get the weight of the item to calculate mass
-        // Using weight directly as mass (in game units)
-        float mass = getWeight(ptr);
-        if (mass <= 0.0f)
-            mass = 1.0f; // Minimum mass for very light items
+        // Check if dynamic object physics is enabled
+        if (Settings::physics().mEnableDynamicObjects)
+        {
+            // Get the weight of the item to calculate mass
+            // Using weight directly as mass (in game units)
+            float mass = getWeight(ptr);
+            if (mass <= 0.0f)
+                mass = 1.0f; // Minimum mass for very light items
 
-        physics.addDynamicObject(ptr, VFS::Path::toNormalized(model), rotation, mass);
+            physics.addDynamicObject(ptr, VFS::Path::toNormalized(model), rotation, mass);
+        }
+        else
+        {
+            // Fall back to static object physics
+            physics.addObject(ptr, VFS::Path::toNormalized(model), rotation, MWPhysics::Layers::WORLD);
+        }
     }
 
     std::string_view Miscellaneous::getModel(const MWWorld::ConstPtr& ptr) const
