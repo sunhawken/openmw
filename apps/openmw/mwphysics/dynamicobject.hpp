@@ -72,6 +72,10 @@ namespace MWPhysics
         bool isInWater() const { return mInWater; }
         float getSubmersionDepth() const { return mSubmersionDepth; }
 
+        // Water zone tracking - indicates object is near enough to water to need buoyancy checks
+        bool isInWaterZone() const { return mInWaterZone; }
+        void setInWaterZone(bool inZone) { mInWaterZone = inZone; }
+
     private:
         osg::ref_ptr<Resource::PhysicsShapeInstance> mShapeInstance;
         JPH::Ref<JPH::Shape> mBasePhysicsShape;
@@ -84,6 +88,7 @@ namespace MWPhysics
 
         // Buoyancy state
         bool mInWater = false;
+        bool mInWaterZone = false;  // Near water, needs buoyancy checks
         float mSubmersionDepth = 0.0f;
     };
 }
