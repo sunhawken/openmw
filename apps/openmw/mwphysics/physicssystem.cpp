@@ -197,8 +197,6 @@ namespace MWPhysics
         , mParentNode(std::move(parentNode))
         , mPhysicsDt(1.f / 60.f)
     {
-        Log(Debug::Info) << "[JOLT DEBUG] PhysicsSystem constructor starting...";
-
         // NOTE: Jolt initialization (RegisterDefaultAllocator, Factory, RegisterTypes) is done
         // in main() before any other code runs, because Jolt types like JPH::Ref<> are used
         // in headers that get included early.
@@ -208,19 +206,15 @@ namespace MWPhysics
         JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = AssertFailedImpl;)
 
         // Create Jolt filter/listener objects
-        Log(Debug::Info) << "[JOLT DEBUG] Creating Jolt listeners and filters...";
         mContactListener = std::make_unique<JoltContactListener>();
         mBPLayerInterface = std::make_unique<JoltBPLayerInterface>();
         mObjectVsBPLayerFilter = std::make_unique<JoltObjectVsBroadPhaseLayerFilter>();
         mObjectVsObjectLayerFilter = std::make_unique<JoltObjectLayerPairFilter>();
-        Log(Debug::Info) << "[JOLT DEBUG] Jolt listeners and filters created";
 
         // Now we can safely create the shape manager (it uses Jolt types internally)
-        Log(Debug::Info) << "[JOLT DEBUG] Creating PhysicsShapeManager...";
         mShapeManager = std::make_unique<Resource::PhysicsShapeManager>(resourceSystem->getVFS(),
             resourceSystem->getSceneManager(), resourceSystem->getNifFileManager(), Settings::cells().mCacheExpiryDelay);
         mResourceSystem->addResourceManager(mShapeManager.get());
-        Log(Debug::Info) << "[JOLT DEBUG] PhysicsShapeManager created";
 
         // Mark this as main thread for profiling
         JPH_PROFILE_START("Main");
@@ -237,30 +231,22 @@ namespace MWPhysics
         }
 
         // We need a temp allocator for temporary allocations during the physics update.
-        // Pre-allocatings 25 MB to avoid having to do allocations during the physics update.
-        Log(Debug::Info) << "[JOLT DEBUG] Creating TempAllocator...";
+        // Pre-allocating 25 MB to avoid having to do allocations during the physics update.
         mMemoryAllocator = std::make_unique<JPH::TempAllocatorImpl>(25 * 1024 * 1024);
-        Log(Debug::Info) << "[JOLT DEBUG] TempAllocator created";
 
         // Now we can create the actual physics system.
         // NOTE: Must be created after RegisterTypes() is called, hence unique_ptr
-        Log(Debug::Info) << "[JOLT DEBUG] Creating JPH::PhysicsSystem...";
         mPhysicsSystem = std::make_unique<JPH::PhysicsSystem>();
-        Log(Debug::Info) << "[JOLT DEBUG] JPH::PhysicsSystem created, calling Init...";
         mPhysicsSystem->Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints, *mBPLayerInterface,
             *mObjectVsBPLayerFilter, *mObjectVsObjectLayerFilter);
-        Log(Debug::Info) << "[JOLT DEBUG] JPH::PhysicsSystem Init done";
         mPhysicsSystem->SetContactListener(mContactListener.get());
         mPhysicsSystem->SetGravity(JPH::Vec3(0, 0, -Constants::GravityConst * Constants::UnitsPerMeter));
 
         // Debug helper
-        Log(Debug::Info) << "[JOLT DEBUG] Creating JoltDebugDrawer...";
         mJoltDebugDrawer = std::make_unique<MWRender::JoltDebugDrawer>(mParentNode, mPhysicsSystem.get(), mDebugDrawEnabled);
-        Log(Debug::Info) << "[JOLT DEBUG] JoltDebugDrawer created";
 
         // Detect number of wanted async threads, if 0 then use single threaded job system
         unsigned numThreads = getNumThreads(detectLockingPolicy());
-        Log(Debug::Info) << "[JOLT DEBUG] Creating JobSystem with " << numThreads << " threads...";
         if (numThreads > 0)
         {
             mPhysicsJobSystem
@@ -270,49 +256,31 @@ namespace MWPhysics
         {
             mPhysicsJobSystem = std::make_unique<JPH::JobSystemSingleThreaded>(cMaxPhysicsJobs);
         }
-        Log(Debug::Info) << "[JOLT DEBUG] JobSystem created";
 
         // Create a job scheduler responsible for simulating the game world (actors etc)
-        Log(Debug::Info) << "[JOLT DEBUG] Creating PhysicsTaskScheduler...";
         mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(
             mPhysicsDt, mPhysicsSystem.get(), mJoltDebugDrawer.get(), mPhysicsJobSystem.get());
-        Log(Debug::Info) << "[JOLT DEBUG] PhysicsTaskScheduler created";
 
         // Load collision shape configuration for dynamic objects
-        Log(Debug::Info) << "[JOLT DEBUG] Loading collision shape config...";
         mCollisionShapeConfig = std::make_unique<CollisionShapeConfig>();
         mCollisionShapeConfig->load(resourceSystem->getVFS(), "collision-shapes.yaml");
-        Log(Debug::Info) << "[JOLT DEBUG] PhysicsSystem constructor complete!";
     }
 
     PhysicsSystem::~PhysicsSystem()
     {
-        Log(Debug::Info) << "Destroying physics system...";
-
-        Log(Debug::Info) << "[JOLT DEBUG] Removing shape manager from resource system...";
         mResourceSystem->removeResourceManager(mShapeManager.get());
-        Log(Debug::Info) << "[JOLT DEBUG] Resetting water instance...";
         mWaterInstance.reset();
-        Log(Debug::Info) << "[JOLT DEBUG] Releasing shared states...";
         mTaskScheduler->releaseSharedStates();
-        Log(Debug::Info) << "[JOLT DEBUG] Clearing ragdolls...";
         mRagdolls.clear();
-        Log(Debug::Info) << "[JOLT DEBUG] Clearing dynamic objects...";
         mDynamicObjects.clear();
-        Log(Debug::Info) << "[JOLT DEBUG] Clearing height fields...";
         mHeightFields.clear();
-        Log(Debug::Info) << "[JOLT DEBUG] Clearing objects...";
         mObjects.clear();
-        Log(Debug::Info) << "[JOLT DEBUG] Clearing actors...";
         mActors.clear();
-        Log(Debug::Info) << "[JOLT DEBUG] Clearing projectiles...";
         mProjectiles.clear();
 
-        Log(Debug::Info) << "[JOLT DEBUG] Resetting job system...";
         // Pre-emptive end jobs system
         mPhysicsJobSystem.reset();
 
-        Log(Debug::Info) << "[JOLT DEBUG] Ending profiler...";
         // Signal to end profiling
         JPH_PROFILE_END();
 
@@ -321,8 +289,6 @@ namespace MWPhysics
         // and should persist for the entire application lifetime. Destroying it here
         // would cause crashes if any Jolt-related cleanup happens after PhysicsSystem
         // is destroyed (e.g., during exception handling or in other destructors).
-
-        Log(Debug::Info) << "[JOLT DEBUG] PhysicsSystem destructor complete";
     }
 
     Resource::PhysicsShapeManager* PhysicsSystem::getShapeManager()
@@ -705,15 +671,8 @@ namespace MWPhysics
             && mPendingRagdollRemovals.empty() && mPendingHeightFieldRemovals.empty())
             return;
 
-        Log(Debug::Info) << "[PHYSICS FLUSH] Starting flush: " << mPendingObjectRemovals.size() << " objects, "
-                         << mPendingDynamicRemovals.size() << " dynamic, " << mPendingActorRemovals.size() << " actors, "
-                         << mPendingRagdollRemovals.size() << " ragdolls, " << mPendingHeightFieldRemovals.size()
-                         << " heightfields";
-
         // Fully synchronize physics simulation before removing bodies (see remove() for explanation)
-        Log(Debug::Info) << "[PHYSICS FLUSH] Syncing simulation...";
         mTaskScheduler->syncSimulation();
-        Log(Debug::Info) << "[PHYSICS FLUSH] Simulation synced";
 
         // Clear any actor's mStandingOnPtr that references objects being removed.
         // After syncSimulation(), actors may have mStandingOnPtr set to these objects.
@@ -777,23 +736,17 @@ namespace MWPhysics
         }
 
         // Batch remove bodies from physics system
-        Log(Debug::Info) << "[PHYSICS FLUSH] Collected " << bodyIds.size() << " body IDs for removal";
         if (!bodyIds.empty())
         {
             JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
-            Log(Debug::Info) << "[PHYSICS FLUSH] Calling RemoveBodies...";
             bodyInterface.RemoveBodies(bodyIds.data(), static_cast<int>(bodyIds.size()));
-            Log(Debug::Info) << "[PHYSICS FLUSH] RemoveBodies done, destroying bodies...";
 
             // Destroy bodies after removal
             for (const JPH::BodyID& id : bodyIds)
                 bodyInterface.DestroyBody(id);
-
-            Log(Debug::Info) << "[PHYSICS FLUSH] Batch removed " << bodyIds.size() << " bodies from physics system";
         }
 
         // Mark bodies as removed so destructors don't try to remove/destroy again
-        Log(Debug::Info) << "[PHYSICS FLUSH] Marking bodies as removed...";
         for (const auto* ref : mPendingObjectRemovals)
         {
             if (auto it = mObjects.find(ref); it != mObjects.end())
@@ -816,7 +769,6 @@ namespace MWPhysics
         }
 
         // Now safely erase from maps (destructors won't try to remove/destroy again)
-        Log(Debug::Info) << "[PHYSICS FLUSH] Erasing from maps...";
         for (const auto* ref : mPendingObjectRemovals)
             mObjects.erase(ref);
         for (const auto* ref : mPendingDynamicRemovals)
@@ -827,12 +779,10 @@ namespace MWPhysics
         // Remove ragdolls associated with removed actors
         // Ragdoll bodies are managed by Jolt's Ragdoll class and removed in the destructor
         // via RemoveFromPhysicsSystem(), so we just need to erase from the map
-        Log(Debug::Info) << "[PHYSICS FLUSH] Erasing ragdolls...";
         for (const auto* ref : mPendingRagdollRemovals)
             mRagdolls.erase(ref);
 
         // Erase heightfields
-        Log(Debug::Info) << "[PHYSICS FLUSH] Erasing heightfields...";
         for (const auto& key : mPendingHeightFieldRemovals)
             mHeightFields.erase(key);
 
@@ -841,8 +791,6 @@ namespace MWPhysics
         mPendingActorRemovals.clear();
         mPendingRagdollRemovals.clear();
         mPendingHeightFieldRemovals.clear();
-
-        Log(Debug::Info) << "[PHYSICS FLUSH] Flush complete";
     }
 
     void PhysicsSystem::addHeightField(
@@ -929,6 +877,31 @@ namespace MWPhysics
 
         auto obj = std::make_shared<DynamicObject>(ptr, shapeInstance, rotation, mass, mTaskScheduler.get(), this, shapeType);
         mDynamicObjects.emplace(ptr.mRef, obj);
+
+        // Initialize water zone status for the new object
+        const MWWorld::CellStore* cell = ptr.getCell();
+        if (cell && cell->getCell())
+        {
+            float waterHeight = 0.0f;
+            bool hasWater = false;
+            if (cell->getCell()->isExterior() && mWaterEnabled)
+            {
+                waterHeight = mWaterHeight;
+                hasWater = true;
+            }
+            else if (!cell->getCell()->isExterior() && cell->getCell()->hasWater())
+            {
+                waterHeight = cell->getWaterLevel();
+                hasWater = true;
+            }
+
+            if (hasWater)
+            {
+                constexpr float waterZoneThreshold = 500.0f;
+                osg::Vec3f pos = obj->getSimulationPosition();
+                obj->setInWaterZone(pos.z() < (waterHeight + waterZoneThreshold));
+            }
+        }
 
         Log(Debug::Verbose) << "Added dynamic physics object: " << ptr.getCellRef().getRefId()
                            << " with shape type: " << static_cast<int>(shapeType);
@@ -1245,11 +1218,8 @@ namespace MWPhysics
     void PhysicsSystem::stepSimulation(
         float dt, bool skipSimulation, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
     {
-        Log(Debug::Info) << "[STEP] stepSimulation called, dt=" << dt << ", skipSimulation=" << skipSimulation;
-
         // We cannot modify shapes at runtime while there is a body query going on (such as actor collision)
         // so we must update all animated objects first when we are guaranteed to not be having any physics queries
-        Log(Debug::Info) << "[STEP] Updating animated objects...";
         {
             std::scoped_lock lock(mTaskScheduler->getSimulationMutex());
             for (auto& [animatedObject, changed] : mAnimatedObjects)
@@ -1265,52 +1235,38 @@ namespace MWPhysics
                 }
             }
         }
-        Log(Debug::Info) << "[STEP] Animated objects updated";
 
-        // FIXME: looping every object each frame to do this is a smell
-        // most objects wont even need resetting
-        Log(Debug::Info) << "[STEP] Resetting collisions for " << mObjects.size() << " objects...";
         for (auto& [_, object] : mObjects)
             object->resetCollisions();
-        Log(Debug::Info) << "[STEP] Collisions reset";
 
         mTimeAccum += dt;
         mTimeAccumJolt += dt;
 
         if (skipSimulation)
         {
-            Log(Debug::Info) << "[STEP] Skipping simulation, resetting...";
             mTaskScheduler->resetSimulation(mActors);
         }
         else
         {
-            Log(Debug::Info) << "[STEP] Preparing simulation for " << mActors.size() << " actors...";
             std::vector<Simulation>& simulations = mSimulations[mSimulationsCounter++ % mSimulations.size()];
             prepareSimulation(mTimeAccum >= mPhysicsDt, simulations);
-            Log(Debug::Info) << "[STEP] Simulation prepared, applying queued movements...";
 
             // Runs world simulation for required steps, modifies mTimeAccum
             mTaskScheduler->applyQueuedMovements(mTimeAccum, simulations, frameStart, frameNumber, stats);
-            Log(Debug::Info) << "[STEP] Queued movements applied";
         }
 
         // Synchronize/commit all transform updates for actors and objects
-        Log(Debug::Info) << "[STEP] Updating ptr holders...";
         updatePtrHolders();
-        Log(Debug::Info) << "[STEP] Ptr holders updated";
 
         // Gravity constant for buoyancy calculations (used inside physics loop below)
         const float gravity = Constants::GravityConst * Constants::UnitsPerMeter;
 
         // Push dynamic objects that actors are walking into
-        Log(Debug::Info) << "[STEP] Pushing dynamic objects from actors...";
         pushDynamicObjectsFromActors();
-        Log(Debug::Info) << "[STEP] Dynamic objects pushed";
 
         // Run dynamic body sim, broadphase updates etc
         // IMPORTANT: Buoyancy must be applied INSIDE this loop, once per physics substep,
         // to ensure buoyancy and gravity are balanced correctly regardless of frame rate.
-        Log(Debug::Info) << "[STEP] Starting Jolt physics loop with " << mDynamicObjects.size() << " dynamic objects...";
         while (mTimeAccumJolt >= mPhysicsDt)
         {
             mTimeAccumJolt -= mPhysicsDt;
@@ -1319,6 +1275,9 @@ namespace MWPhysics
             // This ensures buoyancy is applied at the same rate as gravity
             for (auto& [_, dynObj] : mDynamicObjects)
             {
+                if (!dynObj->isInWaterZone())
+                    continue;
+
                 MWWorld::Ptr ptr = dynObj->getPtr();
                 if (ptr.isEmpty())
                     continue;
@@ -1355,12 +1314,14 @@ namespace MWPhysics
 
             mPhysicsSystem->Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
         }
-        Log(Debug::Info) << "[STEP] Jolt physics loop complete";
+
+        // Update water zone tracking for dynamic objects (once per frame, not per substep)
+        // This updates which objects need buoyancy checks based on their current position
+        updateDynamicObjectWaterZones();
 
 #ifdef JPH_PROFILE_ENABLED
         JPH_PROFILE_NEXTFRAME();
 #endif
-        Log(Debug::Info) << "[STEP] stepSimulation complete";
     }
 
     void PhysicsSystem::updatePtrHolders()
@@ -1488,10 +1449,71 @@ namespace MWPhysics
         if (!mWaterEnabled)
         {
             mWaterInstance.reset();
+            // Clear water zone flags for all dynamic objects
+            for (auto& [_, dynObj] : mDynamicObjects)
+                dynObj->setInWaterZone(false);
             return;
         }
 
         mWaterInstance = std::make_unique<MWWater>(mTaskScheduler.get(), mWaterHeight);
+
+        // Update water zone flags for all dynamic objects
+        updateDynamicObjectWaterZones();
+    }
+
+    void PhysicsSystem::updateDynamicObjectWaterZones()
+    {
+        // Water zone threshold: objects within this distance above water get buoyancy checks
+        // This ensures objects falling toward water start buoyancy before fully submerging
+        constexpr float waterZoneThreshold = 500.0f;
+
+        for (auto& [_, dynObj] : mDynamicObjects)
+        {
+            MWWorld::Ptr ptr = dynObj->getPtr();
+            if (ptr.isEmpty())
+            {
+                dynObj->setInWaterZone(false);
+                continue;
+            }
+
+            const MWWorld::CellStore* cell = ptr.getCell();
+            if (!cell || !cell->getCell())
+            {
+                dynObj->setInWaterZone(false);
+                continue;
+            }
+
+            float waterHeight = 0.0f;
+            bool hasWater = false;
+
+            if (cell->getCell()->isExterior())
+            {
+                if (mWaterEnabled)
+                {
+                    waterHeight = mWaterHeight;
+                    hasWater = true;
+                }
+            }
+            else
+            {
+                if (cell->getCell()->hasWater())
+                {
+                    waterHeight = cell->getWaterLevel();
+                    hasWater = true;
+                }
+            }
+
+            if (!hasWater)
+            {
+                dynObj->setInWaterZone(false);
+                continue;
+            }
+
+            // Check if object is near water (below water + threshold above)
+            osg::Vec3f pos = dynObj->getSimulationPosition();
+            bool inZone = pos.z() < (waterHeight + waterZoneThreshold);
+            dynObj->setInWaterZone(inZone);
+        }
     }
 
     bool PhysicsSystem::isAreaOccupiedByOtherActor(
