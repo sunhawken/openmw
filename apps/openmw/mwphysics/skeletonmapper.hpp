@@ -97,6 +97,9 @@ namespace MWPhysics
         /// Compute neutral poses for both skeletons
         void computeNeutralPoses();
 
+        /// Log comparison of neutral poses for debugging
+        void logNeutralPoseComparison();
+
         /// Apply a model-space transform to an OSG bone
         void applyModelSpaceTransform(size_t boneIndex, const JPH::Mat44& modelSpaceTransform);
 
@@ -131,6 +134,11 @@ namespace MWPhysics
         size_t mRootOsgBoneIndex = 0;
         int mRootRagdollJointIndex = 0;
         osg::Vec3f mInitialRootOffset;  // World position of ragdoll root at initialization
+
+        // Bip01 (non-physics root parent) bind pose info - stored to avoid feedback loops
+        osg::Matrix mBip01BindPoseLocal;     // Bip01's original local matrix
+        osg::Vec3f mPelvisBindPoseLocalPos;  // Pelvis's original local position relative to Bip01
+        int mBip01OsgIndex = -1;             // OSG index of Bip01 node
 
         // Index mappings between OSG bone order and Jolt animation skeleton order
         std::vector<int> mOsgToAnimIndex;       // OSG bone index -> Jolt animation joint index
