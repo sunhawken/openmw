@@ -903,8 +903,6 @@ namespace MWPhysics
             }
         }
 
-        Log(Debug::Verbose) << "Added dynamic physics object: " << ptr.getCellRef().getRefId()
-                           << " with shape type: " << static_cast<int>(shapeType);
     }
 
     void PhysicsSystem::remove(const MWWorld::Ptr& ptr)

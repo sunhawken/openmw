@@ -889,7 +889,6 @@ namespace MWWorld
 
     void Scene::changePlayerCell(CellStore& cell, const ESM::Position& pos, bool adjustPlayerPos)
     {
-        Log(Debug::Info) << "[SCENE] changePlayerCell starting";
         mHalfGridSize = cell.getCell()->isEsm4() ? Constants::ESM4CellGridRadius : Constants::CellGridRadius;
         mCurrentCell = &cell;
 
@@ -901,11 +900,9 @@ namespace MWWorld
 
         MWWorld::Ptr player = mWorld.getPlayerPtr();
         mRendering.updatePlayerPtr(player);
-        Log(Debug::Info) << "[SCENE] Player ptr updated";
 
         if (old.mCell == &cell)
         {
-            Log(Debug::Info) << "[SCENE] Same cell path - optimizing and tracing down";
             // We can optimize physics collisions when rapidly changing dataset (such as interior load)
             // NOTE: for exteriors we call optimize in changeToExteriorCell
             if (!isExterior)
@@ -920,27 +917,20 @@ namespace MWWorld
 
         if (adjustPlayerPos)
         {
-            Log(Debug::Info) << "[SCENE] Adjusting player position...";
             mWorld.moveObject(player, pos.asVec3());
             mWorld.rotateObject(player, pos.asRotationVec3());
 
             player.getClass().adjustPosition(player, true);
-            Log(Debug::Info) << "[SCENE] Player position adjusted";
         }
 
-        Log(Debug::Info) << "[SCENE] Updating cell in mechanics manager...";
         MWBase::Environment::get().getMechanicsManager()->updateCell(old, player);
-        Log(Debug::Info) << "[SCENE] Watching actor in window manager...";
         MWBase::Environment::get().getWindowManager()->watchActor(player);
 
-        Log(Debug::Info) << "[SCENE] Updating physics ptr...";
         mPhysics->updatePtr(old, player);
 
-        Log(Debug::Info) << "[SCENE] Adjusting sky...";
         mWorld.adjustSky();
 
         mLastPlayerPos = player.getRefData().getPosition().asVec3();
-        Log(Debug::Info) << "[SCENE] changePlayerCell complete";
     }
 
     Scene::Scene(MWWorld::World& world, MWRender::RenderingManager& rendering, MWPhysics::PhysicsSystem* physics,
@@ -1075,9 +1065,7 @@ namespace MWWorld
 
         MWBase::Environment::get().getWorld()->getPostProcessor()->setExteriorFlag(true);
 
-        Log(Debug::Info) << "[SCENE] Calling physics optimize...";
         mPhysics->optimize();
-        Log(Debug::Info) << "[SCENE] changeToExteriorCell complete";
     }
 
     CellStore* Scene::getCurrentCell()
