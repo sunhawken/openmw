@@ -6,7 +6,6 @@
 #include <limits>
 #include <sstream>
 
-#include <components/debug/debuglog.hpp>
 #include <components/misc/color.hpp>
 #include <components/misc/mathutil.hpp>
 #include <components/misc/strings/algorithm.hpp>
@@ -185,37 +184,28 @@ namespace LuaUtil
 
     sol::table initUtilPackage(lua_State* state)
     {
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: starting";
         sol::state_view lua(state);
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating util table";
         sol::table util(lua, sol::create);
 
         // Lua bindings for Vec2
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating Vec2 bindings";
         util["vector2"] = [](float x, float y) { return Vec2(x, y); };
         sol::usertype<Vec2> vec2Type = lua.new_usertype<Vec2>("Vec2");
         addVectorMethods<Vec2>(vec2Type);
         vec2Type["rotate"] = &Misc::rotateVec2f;
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: Vec2 done";
 
         // Lua bindings for Vec3
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating Vec3 bindings";
         util["vector3"] = [](float x, float y, float z) { return Vec3(x, y, z); };
         sol::usertype<Vec3> vec3Type = lua.new_usertype<Vec3>("Vec3");
         addVectorMethods<Vec3>(vec3Type);
         vec3Type[sol::meta_function::involution] = [](const Vec3& a, const Vec3& b) { return a ^ b; };
         vec3Type["cross"] = [](const Vec3& a, const Vec3& b) { return a ^ b; };
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: Vec3 done";
 
         // Lua bindings for Vec4
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating Vec4 bindings";
         util["vector4"] = [](float x, float y, float z, float w) { return Vec4(x, y, z, w); };
         sol::usertype<Vec4> vec4Type = lua.new_usertype<Vec4>("Vec4");
         addVectorMethods<Vec4>(vec4Type);
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: Vec4 done";
 
         // Lua bindings for Box
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating Box bindings";
         util["box"] = sol::overload([](const Vec3& center, const Vec3& halfSize) { return Box(center, halfSize); },
             [](const TransformM& transform) { return Box(transform.mM); },
             [](const TransformQ& transform) { return Box(Vec3(), Vec3(1, 1, 1), transform.mQ); });
@@ -239,10 +229,8 @@ namespace LuaUtil
             ss << " }";
             return ss.str();
         };
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: Box done";
 
         // Lua bindings for Color
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating Color bindings";
         sol::usertype<Misc::Color> colorType = lua.new_usertype<Misc::Color>("Color");
         colorType["r"] = sol::readonly_property([](const Misc::Color& c) { return c.r(); });
         colorType["g"] = sol::readonly_property([](const Misc::Color& c) { return c.g(); });
@@ -281,10 +269,8 @@ namespace LuaUtil
                 MyGUI::utility::parseInt(rgba[2]) / 255.f, MyGUI::utility::parseInt(rgba[3]) / 255.f);
         };
         util["color"] = LuaUtil::makeReadOnly(color);
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: Color done";
 
         // Lua bindings for Transform
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating Transform bindings";
         sol::usertype<TransformM> transMType = lua.new_usertype<TransformM>("TransformM");
         sol::usertype<TransformQ> transQType = lua.new_usertype<TransformQ>("TransformQ");
         sol::table transforms(lua, sol::create);
@@ -394,19 +380,13 @@ namespace LuaUtil
             osg::Vec3f angles = Misc::toEulerAnglesZYX(q.mQ);
             return std::make_tuple(angles.z(), angles.y(), angles.x());
         };
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: Transform done";
 
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: loading internal util lib";
         sol::function luaUtilLoader = lua["loadInternalLib"]("util");
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: calling luaUtilLoader";
         sol::table utils = luaUtilLoader();
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: iterating utils";
         for (const auto& [key, value] : utils)
             util[key.as<std::string>()] = value;
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: internal util lib done";
 
         // Utility functions
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: creating utility functions";
         util["makeReadOnly"] = [](const sol::table& tbl) { return makeReadOnly(tbl, /*strictIndex=*/false); };
         util["makeStrictReadOnly"] = [](const sol::table& tbl) { return makeReadOnly(tbl, /*strictIndex=*/true); };
 
@@ -450,7 +430,6 @@ namespace LuaUtil
             return fn;
         };
 
-        Log(Debug::Info) << "[LUA DEBUG] initUtilPackage: complete";
         return util;
     }
 }

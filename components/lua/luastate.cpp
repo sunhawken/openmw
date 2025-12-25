@@ -39,33 +39,19 @@ namespace LuaUtil
     static std::filesystem::path packageNameToPath(
         std::string_view packageName, const std::vector<std::filesystem::path>& searchDirs)
     {
-        Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: packageName = '" << packageName << "'";
-        Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: searchDirs.size() = " << searchDirs.size();
         std::string path(packageName);
         std::replace(path.begin(), path.end(), '.', '/');
         std::string pathWithInit = path + "/init.lua";
         path.append(".lua");
-        Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: looking for '" << path << "'";
-        for (size_t i = 0; i < searchDirs.size(); ++i)
+        for (const auto& base : searchDirs)
         {
-            const auto& base = searchDirs[i];
-            Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: checking dir[" << i << "] = " << base;
             std::filesystem::path p1 = base / path;
-            Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: checking p1 = " << p1;
             if (std::filesystem::exists(p1))
-            {
-                Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: found at " << p1;
                 return p1;
-            }
             std::filesystem::path p2 = base / pathWithInit;
-            Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: checking p2 = " << p2;
             if (std::filesystem::exists(p2))
-            {
-                Log(Debug::Info) << "[LUA DEBUG] packageNameToPath: found at " << p2;
                 return p2;
-            }
         }
-        Log(Debug::Error) << "[LUA DEBUG] packageNameToPath: module not found!";
         throw std::runtime_error("module not found: " + std::string(packageName));
     }
 
@@ -443,29 +429,12 @@ namespace LuaUtil
 
     sol::function LuaState::loadInternalLib(std::string_view libName)
     {
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: loading '" << libName << "'";
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: this = " << static_cast<const void*>(this);
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: mLibSearchPaths.size() = " << mLibSearchPaths.size();
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: calling packageNameToPath...";
         const auto path = packageNameToPath(libName, mLibSearchPaths);
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: path = " << path;
         std::ifstream stream(path);
-        if (!stream.is_open())
-        {
-            Log(Debug::Error) << "[LUA DEBUG] loadInternalLib: failed to open file!";
-            throw std::runtime_error("Failed to open internal lib: " + path.string());
-        }
         std::string fileContent(std::istreambuf_iterator<char>(stream), {});
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: file size = " << fileContent.size() << " bytes";
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: calling mSol.load()...";
         sol::load_result res = mSol.load(fileContent, Files::pathToUnicodeString(path), sol::load_mode::text);
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: mSol.load() returned, checking validity...";
         if (!res.valid())
-        {
-            Log(Debug::Error) << "[LUA DEBUG] loadInternalLib: load failed!";
             throw std::runtime_error("Lua error: " + res.get<std::string>());
-        }
-        Log(Debug::Info) << "[LUA DEBUG] loadInternalLib: success, returning function";
         return res;
     }
 
