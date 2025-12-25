@@ -143,6 +143,26 @@ namespace MWPhysics
                          << mMapper.GetChains().size() << " chains, "
                          << mMapper.GetUnmapped().size() << " unmapped joints";
 
+        // Log neutral pose comparison for debugging
+        logNeutralPoseComparison();
+
+        // Extra debug: log the ragdoll root body's actual transform
+        if (mRootRagdollJointIndex >= 0)
+        {
+            JPH::BodyID rootBodyId = mRagdoll->GetBodyID(mRootRagdollJointIndex);
+            if (!rootBodyId.IsInvalid())
+            {
+                JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+                JPH::RVec3 bodyPos;
+                JPH::Quat bodyRot;
+                bodyInterface.GetPositionAndRotation(rootBodyId, bodyPos, bodyRot);
+                Log(Debug::Info) << "Ragdoll root body actual transform: pos=("
+                                 << bodyPos.GetX() << "," << bodyPos.GetY() << "," << bodyPos.GetZ()
+                                 << ") rot=(" << bodyRot.GetX() << "," << bodyRot.GetY() << ","
+                                 << bodyRot.GetZ() << "," << bodyRot.GetW() << ")";
+            }
+        }
+
         // Debug: verify that mapped joints have matching positions in neutral poses
         for (const auto& mapping : mMapper.GetMappings())
         {
@@ -249,6 +269,32 @@ namespace MWPhysics
                     mRootRagdollJointIndex = joltIdx;
                     Log(Debug::Info) << "RagdollSkeletonMapper: Root bone is '"
                                      << mOsgBones[i].name << "' (OSG " << i << ", Jolt " << joltIdx << ")";
+
+                    // Store Bip01's bind pose for later use (to avoid feedback loops)
+                    OsgBoneInfo& rootBone = mOsgBones[i];
+                    if (rootBone.node->getNumParents() > 0)
+                    {
+                        osg::Node* osgParent = rootBone.node->getParent(0);
+                        auto* bip01 = dynamic_cast<osg::MatrixTransform*>(osgParent);
+                        if (bip01)
+                        {
+                            mBip01BindPoseLocal = bip01->getMatrix();
+                            mPelvisBindPoseLocalPos = rootBone.node->getMatrix().getTrans();
+
+                            // Find Bip01's OSG index for later reference
+                            std::string bip01Name = Misc::StringUtils::lowerCase(bip01->getName());
+                            auto bip01It = mOsgBonesByName.find(bip01Name);
+                            if (bip01It != mOsgBonesByName.end())
+                            {
+                                mBip01OsgIndex = static_cast<int>(bip01It->second);
+                            }
+
+                            Log(Debug::Info) << "RagdollSkeletonMapper: Stored Bip01 bind pose, pelvis offset = ("
+                                             << mPelvisBindPoseLocalPos.x() << ", "
+                                             << mPelvisBindPoseLocalPos.y() << ", "
+                                             << mPelvisBindPoseLocalPos.z() << "), Bip01 OSG index = " << mBip01OsgIndex;
+                        }
+                    }
                     break;
                 }
             }
@@ -334,23 +380,26 @@ namespace MWPhysics
 
     void RagdollSkeletonMapper::computeNeutralPoses()
     {
-        // Get the ragdoll neutral pose using GetPose
-        // GetPose returns model-space matrices: translations are relative to root position,
-        // rotations are world-space (not relative to parent)
-        mRagdollNeutralPose.resize(mRagdollSkeleton->GetJointCount());
-        JPH::RVec3 ragdollRootOffset;
-        mRagdoll->GetPose(ragdollRootOffset, mRagdollNeutralPose.data());
-        mInitialRootOffset = Misc::Convert::toOsg(ragdollRootOffset);
+        // CRITICAL: The SkeletonMapper requires that mapped joints have IDENTICAL neutral poses.
+        // We build BOTH neutral poses from OSG world transforms to ensure consistency.
+        // Using GetPose() for ragdoll could differ if bodies have been moved by physics.
 
-        // Animation skeleton neutral pose - build from OSG using the same reference point
+        // Find the ragdoll root bone's OSG world position - this is our reference point
+        osg::Vec3f rootWorldPos;
+        if (mRootOsgBoneIndex < mOsgBones.size())
+        {
+            osg::Matrix rootWorldMat = getWorldMatrix(mOsgBones[mRootOsgBoneIndex].node);
+            rootWorldPos = rootWorldMat.getTrans();
+        }
+        mInitialRootOffset = rootWorldPos;
+
+        Log(Debug::Info) << "computeNeutralPoses: using OSG root position = ("
+                         << rootWorldPos.x() << ", " << rootWorldPos.y() << ", " << rootWorldPos.z() << ")";
+
+        // Build animation skeleton neutral pose from OSG
         mAnimationNeutralPose.resize(mAnimationSkeleton->GetJointCount());
         mAnimationLocalPose.resize(mAnimationSkeleton->GetJointCount());
 
-        // Use the ragdoll root world position as the reference point for both skeletons
-        // This ensures mapped joints have identical positions in both neutral poses
-        osg::Vec3f rootWorldPos = mInitialRootOffset;
-
-        // Convert each OSG bone to model space (relative to ragdoll root position)
         for (size_t osgIdx = 0; osgIdx < mOsgBones.size(); ++osgIdx)
         {
             int animIdx = mOsgToAnimIndex[osgIdx];
@@ -361,10 +410,10 @@ namespace MWPhysics
                 osg::Vec3f worldPos = worldMat.getTrans();
                 osg::Quat worldRot = worldMat.getRotate();
 
-                // Convert to model space: translation relative to ragdoll root
+                // Convert to model space: translation relative to root
                 osg::Vec3f modelPos = worldPos - rootWorldPos;
 
-                // Build model-space matrix with world rotation and root-relative translation
+                // Build model-space matrix
                 JPH::Mat44 modelMat = JPH::Mat44::sRotationTranslation(
                     Misc::Convert::toJolt(worldRot),
                     Misc::Convert::toJolt<JPH::Vec3>(modelPos)
@@ -378,9 +427,94 @@ namespace MWPhysics
             }
         }
 
-        Log(Debug::Verbose) << "RagdollSkeletonMapper: Computed neutral poses (root offset: "
-                            << mInitialRootOffset.x() << ", " << mInitialRootOffset.y() << ", "
-                            << mInitialRootOffset.z() << ")";
+        // Build ragdoll skeleton neutral pose from the SAME OSG source
+        // This ensures mapped joints have identical neutral poses
+        mRagdollNeutralPose.resize(mRagdollSkeleton->GetJointCount());
+
+        for (int ragIdx = 0; ragIdx < mRagdollSkeleton->GetJointCount(); ++ragIdx)
+        {
+            std::string jointName = Misc::StringUtils::lowerCase(mRagdollSkeleton->GetJoint(ragIdx).mName.c_str());
+            auto it = mOsgBonesByName.find(jointName);
+            if (it != mOsgBonesByName.end())
+            {
+                size_t osgIdx = it->second;
+                osg::Matrix worldMat = getWorldMatrix(mOsgBones[osgIdx].node);
+                osg::Vec3f worldPos = worldMat.getTrans();
+                osg::Quat worldRot = worldMat.getRotate();
+
+                // Convert to model space: translation relative to root
+                osg::Vec3f modelPos = worldPos - rootWorldPos;
+
+                mRagdollNeutralPose[ragIdx] = JPH::Mat44::sRotationTranslation(
+                    Misc::Convert::toJolt(worldRot),
+                    Misc::Convert::toJolt<JPH::Vec3>(modelPos)
+                );
+
+                // Debug: log ragdoll joints
+                Log(Debug::Verbose) << "  Ragdoll joint " << ragIdx << " (" << jointName << ")"
+                                    << ": modelPos=(" << modelPos.x() << "," << modelPos.y() << "," << modelPos.z() << ")"
+                                    << " worldRot=(" << worldRot.x() << "," << worldRot.y() << "," << worldRot.z() << "," << worldRot.w() << ")";
+            }
+            else
+            {
+                // Fallback to identity if bone not found (shouldn't happen)
+                Log(Debug::Warning) << "computeNeutralPoses: ragdoll joint " << jointName << " not found in OSG!";
+                mRagdollNeutralPose[ragIdx] = JPH::Mat44::sIdentity();
+            }
+        }
+
+        Log(Debug::Info) << "RagdollSkeletonMapper: Computed neutral poses from OSG (root offset: "
+                         << mInitialRootOffset.x() << ", " << mInitialRootOffset.y() << ", "
+                         << mInitialRootOffset.z() << ")";
+    }
+
+    void RagdollSkeletonMapper::logNeutralPoseComparison()
+    {
+        // DEBUG: Compare neutral poses for mapped joints
+        Log(Debug::Info) << "=== NEUTRAL POSE COMPARISON ===";
+
+        // First log ragdoll skeleton structure
+        Log(Debug::Info) << "Ragdoll skeleton (" << mRagdollSkeleton->GetJointCount() << " joints):";
+        for (int i = 0; i < mRagdollSkeleton->GetJointCount(); ++i)
+        {
+            const auto& joint = mRagdollSkeleton->GetJoint(i);
+            Log(Debug::Info) << "  [" << i << "] " << joint.mName << " parent=" << joint.mParentJointIndex;
+        }
+
+        // Then log animation skeleton structure
+        Log(Debug::Info) << "Animation skeleton (" << mAnimationSkeleton->GetJointCount() << " joints):";
+        for (int i = 0; i < mAnimationSkeleton->GetJointCount(); ++i)
+        {
+            const auto& joint = mAnimationSkeleton->GetJoint(i);
+            Log(Debug::Info) << "  [" << i << "] " << joint.mName << " parent=" << joint.mParentJointIndex;
+        }
+
+        // Compare poses for mapped joints
+        Log(Debug::Info) << "Mapped joints comparison:";
+        for (const auto& mapping : mMapper.GetMappings())
+        {
+            int ragIdx = mapping.mJointIdx1;
+            int animIdx = mapping.mJointIdx2;
+
+            JPH::Vec3 ragPos = mRagdollNeutralPose[ragIdx].GetTranslation();
+            JPH::Quat ragRot = mRagdollNeutralPose[ragIdx].GetRotation().GetQuaternion();
+
+            JPH::Vec3 animPos = mAnimationNeutralPose[animIdx].GetTranslation();
+            JPH::Quat animRot = mAnimationNeutralPose[animIdx].GetRotation().GetQuaternion();
+
+            // Calculate rotation difference
+            JPH::Quat rotDiff = ragRot.Conjugated() * animRot;
+            float angleDiff = 2.0f * std::acos(std::min(1.0f, std::abs(rotDiff.GetW()))) * 180.0f / 3.14159f;
+
+            Log(Debug::Info) << "  " << mRagdollSkeleton->GetJoint(ragIdx).mName
+                             << " [rag" << ragIdx << "] -> " << mAnimationSkeleton->GetJoint(animIdx).mName << " [anim" << animIdx << "]"
+                             << "\n    Ragdoll: pos=(" << ragPos.GetX() << "," << ragPos.GetY() << "," << ragPos.GetZ()
+                             << ") rot=(" << ragRot.GetX() << "," << ragRot.GetY() << "," << ragRot.GetZ() << "," << ragRot.GetW() << ")"
+                             << "\n    Anim:    pos=(" << animPos.GetX() << "," << animPos.GetY() << "," << animPos.GetZ()
+                             << ") rot=(" << animRot.GetX() << "," << animRot.GetY() << "," << animRot.GetZ() << "," << animRot.GetW() << ")"
+                             << "\n    Rotation diff: " << angleDiff << " degrees";
+        }
+        Log(Debug::Info) << "=== END NEUTRAL POSE COMPARISON ===";
     }
 
     void RagdollSkeletonMapper::mapRagdollToOsg()
@@ -455,90 +589,101 @@ namespace MWPhysics
             }
         }
 
-        // Step 4: First, handle the OSG skeleton root (e.g., Bip01) which is the parent of the physics root
-        // This node needs to be moved to follow the physics, otherwise the mesh stays at the death position
-        if (mRootOsgBoneIndex < mOsgBones.size())
+        // Step 4: Handle the non-physics ancestor bones (e.g., Bip01)
+        // These bones are not part of the physics skeleton, but we need to position them
+        // so the physics root (pelvis) ends up at the correct world position.
+        //
+        // IMPORTANT: We use STORED bind pose values to avoid feedback loops.
+        // Only translation is updated - rotation stays at original bind pose value.
+        //
+        // We also store the computed Bip01 world matrix for use in Step 6, because
+        // OSG's cached world matrices won't be updated until the next traversal.
+        osg::Matrix computedBip01World;  // Will be used in Step 6 for pelvis parent
+        bool haveBip01World = false;
+
+        if (mRootOsgBoneIndex < mOsgBones.size() && mRootRagdollJointIndex >= 0)
         {
             OsgBoneInfo& rootBone = mOsgBones[mRootOsgBoneIndex];
 
-            // Get the physics root's world transform
-            int rootAnimIdx = mOsgToAnimIndex[mRootOsgBoneIndex];
-            if (rootAnimIdx >= 0)
+            // Get the physics root's world position
+            osg::Vec3f physicsRootWorldPos = rootWorldPos;  // From GetPose() rootOffset
+
+            // Find Bip01 (the OSG parent of the physics root / pelvis)
+            if (rootBone.node->getNumParents() > 0)
             {
-                const JPH::Mat44& rootModelSpace = mAnimationPoseBuffer[rootAnimIdx];
-                osg::Matrix rootModelOsg = toOsgMatrix(rootModelSpace);
-
-                // Physics root world position and rotation
-                osg::Vec3f physicsRootWorldPos = rootModelOsg.getTrans() + rootWorldPos;
-                osg::Quat physicsRootWorldRot = rootModelOsg.getRotate();
-
-                // Find Bip01 (the OSG parent of the physics root)
-                if (rootBone.node->getNumParents() > 0)
+                osg::Node* osgParent = rootBone.node->getParent(0);
+                auto* bip01 = dynamic_cast<osg::MatrixTransform*>(osgParent);
+                if (bip01)
                 {
-                    osg::Node* osgParent = rootBone.node->getParent(0);
-                    auto* bip01 = dynamic_cast<osg::MatrixTransform*>(osgParent);
-                    if (bip01)
+                    // Use STORED bind pose rotation (not current, which may have drifted)
+                    osg::Quat bip01LocalRot = mBip01BindPoseLocal.getRotate();
+
+                    // Get Bip01's parent world transform
+                    osg::Matrix bip01ParentWorld;
+                    if (bip01->getNumParents() > 0)
                     {
-                        // Get Bip01's parent world transform
-                        osg::Matrix bip01ParentWorld;
-                        if (bip01->getNumParents() > 0)
+                        osg::NodePathList nodePaths = bip01->getParent(0)->getParentalNodePaths();
+                        if (!nodePaths.empty())
                         {
-                            osg::NodePathList nodePaths = bip01->getParent(0)->getParentalNodePaths();
-                            if (!nodePaths.empty())
-                            {
-                                osg::NodePath pathWithParent = nodePaths[0];
-                                pathWithParent.push_back(bip01->getParent(0));
-                                bip01ParentWorld = osg::computeLocalToWorld(pathWithParent);
-                            }
+                            osg::NodePath pathWithParent = nodePaths[0];
+                            pathWithParent.push_back(bip01->getParent(0));
+                            bip01ParentWorld = osg::computeLocalToWorld(pathWithParent);
                         }
+                    }
 
-                        // Get the pelvis local offset from Bip01 (from original bind pose)
-                        osg::Matrix pelvisOriginalLocal = rootBone.node->getMatrix();
-                        osg::Vec3f pelvisLocalOffset = pelvisOriginalLocal.getTrans();
+                    // Use STORED pelvis offset (not current, which may have been modified)
+                    osg::Vec3f pelvisLocalPos = mPelvisBindPoseLocalPos;
 
-                        // Calculate where Bip01 needs to be so that pelvis ends up at physics position
-                        // pelvisWorld = pelvisLocal * bip01World
-                        // We want pelvisWorld.pos = physicsRootWorldPos
-                        // bip01World.pos = physicsRootWorldPos - pelvisLocalOffset * bip01World.rot
-                        osg::Matrix bip01RotMat;
-                        bip01RotMat.makeRotate(physicsRootWorldRot);
-                        osg::Vec3f rotatedOffset = pelvisLocalOffset * bip01RotMat;
-                        osg::Vec3f bip01WorldPos = physicsRootWorldPos - rotatedOffset;
+                    // Bip01's world rotation (using stored bind pose local rotation)
+                    osg::Quat bip01ParentRot = bip01ParentWorld.getRotate();
+                    osg::Quat bip01WorldRot = bip01LocalRot * bip01ParentRot;
 
-                        // Convert Bip01 world to local (relative to its parent)
-                        osg::Vec3f bip01ParentPos = bip01ParentWorld.getTrans();
-                        osg::Quat bip01ParentRot = bip01ParentWorld.getRotate();
+                    // Calculate where Bip01 should be so pelvis ends up at physicsRootWorldPos
+                    // pelvisWorld = pelvisLocal * bip01World
+                    // physicsRootWorldPos = pelvisLocalPos * bip01WorldRot + bip01WorldPos
+                    // bip01WorldPos = physicsRootWorldPos - pelvisLocalPos * bip01WorldRot
+                    osg::Matrix bip01WorldRotMat;
+                    bip01WorldRotMat.makeRotate(bip01WorldRot);
+                    osg::Vec3f rotatedPelvisOffset = pelvisLocalPos * bip01WorldRotMat;
+                    osg::Vec3f bip01WorldPos = physicsRootWorldPos - rotatedPelvisOffset;
 
-                        osg::Vec3f bip01DeltaPos = bip01WorldPos - bip01ParentPos;
-                        osg::Matrix invBip01ParentRot;
-                        invBip01ParentRot.makeRotate(bip01ParentRot.inverse());
-                        osg::Vec3f bip01LocalPos = bip01DeltaPos * invBip01ParentRot;
-                        osg::Quat bip01LocalRot = physicsRootWorldRot * bip01ParentRot.inverse();
+                    // Convert Bip01 world position to local (relative to its parent)
+                    osg::Vec3f bip01ParentPos = bip01ParentWorld.getTrans();
+                    osg::Vec3f bip01DeltaPos = bip01WorldPos - bip01ParentPos;
+                    osg::Matrix invBip01ParentRot;
+                    invBip01ParentRot.makeRotate(bip01ParentRot.inverse());
+                    osg::Vec3f bip01LocalPos = bip01DeltaPos * invBip01ParentRot;
 
-                        // Apply to Bip01
-                        auto* nifBip01 = dynamic_cast<NifOsg::MatrixTransform*>(bip01);
-                        if (nifBip01)
-                        {
-                            nifBip01->setRotation(bip01LocalRot);
-                            nifBip01->setTranslation(bip01LocalPos);
-                        }
-                        else
-                        {
-                            osg::Matrix bip01LocalMatrix;
-                            bip01LocalMatrix.makeRotate(bip01LocalRot);
-                            bip01LocalMatrix.setTrans(bip01LocalPos);
-                            bip01->setMatrix(bip01LocalMatrix);
-                        }
+                    // Apply stored rotation and new translation
+                    auto* nifBip01 = dynamic_cast<NifOsg::MatrixTransform*>(bip01);
+                    if (nifBip01)
+                    {
+                        nifBip01->setRotation(bip01LocalRot);  // Stored bind pose rotation
+                        nifBip01->setTranslation(bip01LocalPos);  // New position
+                    }
+                    else
+                    {
+                        osg::Matrix bip01LocalMatrix;
+                        bip01LocalMatrix.makeRotate(bip01LocalRot);  // Stored bind pose rotation
+                        bip01LocalMatrix.setTrans(bip01LocalPos);    // New position
+                        bip01->setMatrix(bip01LocalMatrix);
+                    }
 
-                        // Debug: log what we applied
-                        static int bip01DebugCount = 0;
-                        if (bip01DebugCount++ < 5)
-                        {
-                            Log(Debug::Info) << "Applied to Bip01: localPos=("
-                                             << bip01LocalPos.x() << ", " << bip01LocalPos.y() << ", " << bip01LocalPos.z()
-                                             << ") worldPos=(" << bip01WorldPos.x() << ", " << bip01WorldPos.y() << ", " << bip01WorldPos.z()
-                                             << ") physicsRootWorldPos=(" << physicsRootWorldPos.x() << ", " << physicsRootWorldPos.y() << ", " << physicsRootWorldPos.z() << ")";
-                        }
+                    // Store the computed Bip01 world matrix for use in Step 6
+                    // This is the world matrix that Bip01 will have AFTER OSG processes our update
+                    computedBip01World.makeRotate(bip01WorldRot);
+                    computedBip01World.setTrans(bip01WorldPos);
+                    haveBip01World = true;
+
+                    // Debug: log what we applied
+                    static int bip01DebugCount = 0;
+                    if (bip01DebugCount++ < 10)
+                    {
+                        Log(Debug::Info) << "Applied to Bip01: localPos=("
+                                         << bip01LocalPos.x() << ", " << bip01LocalPos.y() << ", " << bip01LocalPos.z()
+                                         << ") computedWorldPos=(" << bip01WorldPos.x() << ", " << bip01WorldPos.y() << ", " << bip01WorldPos.z()
+                                         << ") physicsRootWorldPos=(" << physicsRootWorldPos.x() << ", " << physicsRootWorldPos.y() << ", " << physicsRootWorldPos.z()
+                                         << ") pelvisBindOffset=(" << pelvisLocalPos.x() << ", " << pelvisLocalPos.y() << ", " << pelvisLocalPos.z() << ")";
                     }
                 }
             }
@@ -563,6 +708,28 @@ namespace MWPhysics
             worldMatrices[animIdx] = worldMat;
         }
 
+        // CRITICAL FIX: Override Bip01's world matrix with the one we computed in Step 4.
+        // The SkeletonMapper doesn't handle Bip01 (it's not a physics bone), so
+        // mAnimationPoseBuffer[bip01AnimIdx] contains stale/wrong data. We need to use
+        // the correct Bip01 world transform that we computed based on physics root position.
+        if (haveBip01World && mBip01OsgIndex >= 0)
+        {
+            int bip01AnimIdx = mOsgToAnimIndex[mBip01OsgIndex];
+            if (bip01AnimIdx >= 0 && bip01AnimIdx < static_cast<int>(worldMatrices.size()))
+            {
+                worldMatrices[bip01AnimIdx] = computedBip01World;
+
+                static int bip01OverrideLogCount = 0;
+                if (bip01OverrideLogCount++ < 5)
+                {
+                    Log(Debug::Info) << "Step 5: Overrode Bip01 worldMatrix[" << bip01AnimIdx << "] with computedBip01World: ("
+                                     << computedBip01World.getTrans().x() << ", "
+                                     << computedBip01World.getTrans().y() << ", "
+                                     << computedBip01World.getTrans().z() << ")";
+                }
+            }
+        }
+
         // Step 6: Apply to OSG bones, computing local transforms from world matrices
         for (int animIdx = 0; animIdx < mAnimationSkeleton->GetJointCount(); ++animIdx)
         {
@@ -577,7 +744,15 @@ namespace MWPhysics
             // (e.g., Bip01 which is already handled in Step 4, or mesh nodes)
             // Applying world coordinates as local transforms would break rendering
             if (info.osgParentIndex < 0)
+            {
+                static int skippedBoneLogCount = 0;
+                if (skippedBoneLogCount++ < 20)
+                {
+                    Log(Debug::Info) << "SKIPPED bone with no OSG parent: " << info.name
+                                     << " (animIdx=" << animIdx << ", joltMapped=" << info.joltMappedIndex << ")";
+                }
                 continue;
+            }
 
             const osg::Matrix& worldMat = worldMatrices[animIdx];
 
@@ -595,11 +770,46 @@ namespace MWPhysics
             else
             {
                 // Parent is not in animation skeleton (e.g., Bip01 is parent of Pelvis)
-                // Get parent's current world transform (which we may have just updated)
-                osg::Matrix parentWorld = getWorldMatrix(mOsgBones[info.osgParentIndex].node);
+                // ISSUE: getWorldMatrix() queries OSG's cached matrix, but we may have just
+                // updated Bip01's local matrix in Step 4. OSG won't propagate this to world
+                // matrix until the next traversal. We need to use the computed world matrix.
+                osg::Matrix parentWorld;
+
+                // Check if the parent is Bip01 (which we updated in Step 4)
+                if (haveBip01World && mBip01OsgIndex >= 0 && info.osgParentIndex == mBip01OsgIndex)
+                {
+                    // Use the Bip01 world matrix we computed in Step 4
+                    parentWorld = computedBip01World;
+                }
+                else
+                {
+                    // Fallback to OSG's cached world matrix
+                    parentWorld = getWorldMatrix(mOsgBones[info.osgParentIndex].node);
+                }
+
+                // Debug: Log pelvis specifically
+                static int pelvisDebugCount = 0;
+                std::string lowerName = Misc::StringUtils::lowerCase(info.name);
+                bool isPelvis = (lowerName.find("pelvis") != std::string::npos);
+
+                if (isPelvis && pelvisDebugCount < 10)
+                {
+                    Log(Debug::Info) << "PELVIS: targetWorld=("
+                                     << worldMat.getTrans().x() << ", " << worldMat.getTrans().y() << ", " << worldMat.getTrans().z()
+                                     << ") parentWorld=(" << parentWorld.getTrans().x() << ", " << parentWorld.getTrans().y() << ", " << parentWorld.getTrans().z()
+                                     << ") parent=" << mOsgBones[info.osgParentIndex].name
+                                     << " usedComputedBip01=" << (haveBip01World && mBip01OsgIndex >= 0 && info.osgParentIndex == mBip01OsgIndex);
+                }
+
                 osg::Matrix parentInv;
                 parentInv.invert(parentWorld);
                 localMat = worldMat * parentInv;
+
+                if (isPelvis && pelvisDebugCount++ < 10)
+                {
+                    Log(Debug::Info) << "PELVIS: computedLocal=("
+                                     << localMat.getTrans().x() << ", " << localMat.getTrans().y() << ", " << localMat.getTrans().z() << ")";
+                }
             }
 
             // Debug: Check for extreme values that might make mesh disappear
