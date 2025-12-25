@@ -134,9 +134,9 @@ namespace MWPhysics
                 case Layers::DOOR:
                     return broadPhaseLayer == BroadPhaseLayers::MOVING || broadPhaseLayer == BroadPhaseLayers::DEBRIS;
 
-                // Debris should only collide with static world
+                // Debris (ragdolls) should collide with static world and moving objects
                 case Layers::DEBRIS:
-                    return broadPhaseLayer == BroadPhaseLayers::WORLD;
+                    return broadPhaseLayer == BroadPhaseLayers::WORLD || broadPhaseLayer == BroadPhaseLayers::MOVING;
 
                 // Sensors should collide with moving objects and other sensors
                 case Layers::SENSOR:
@@ -174,7 +174,8 @@ namespace MWPhysics
                 case Layers::DYNAMIC_WORLD:
                     return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP || inObject2 == Layers::DOOR
                         || inObject2 == Layers::ACTOR || inObject2 == Layers::PROJECTILE
-                        || inObject2 == Layers::DYNAMIC_WORLD || inObject2 == Layers::SENSOR;
+                        || inObject2 == Layers::DYNAMIC_WORLD || inObject2 == Layers::SENSOR
+                        || inObject2 == Layers::DEBRIS;
 
                 // Actors and projectiles collide with water (for water walking, projectile stopping)
                 case Layers::PROJECTILE:
@@ -187,9 +188,10 @@ namespace MWPhysics
                 case Layers::SENSOR:
                     return inObject2 == Layers::SENSOR || inObject2 == Layers::PROJECTILE || inObject2 == Layers::ACTOR;
 
-                // Debris layer should only collide with static world for performance
+                // Debris (ragdolls) should collide with static world and dynamic objects
                 case Layers::DEBRIS:
-                    return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP || inObject2 == Layers::DOOR;
+                    return inObject2 == Layers::WORLD || inObject2 == Layers::HEIGHTMAP || inObject2 == Layers::DOOR
+                        || inObject2 == Layers::DYNAMIC_WORLD;
 
                 default:
                     return false;
