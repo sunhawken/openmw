@@ -423,13 +423,10 @@ namespace MWPhysics
 
     void PhysicsTaskScheduler::syncSimulation()
     {
-        Log(Debug::Info) << "[SYNC] Waiting for simulation barrier...";
         waitForSimulationBarrier();
-        Log(Debug::Info) << "[SYNC] Barrier done";
 
         if (mSimulations != nullptr)
         {
-            Log(Debug::Info) << "[SYNC] Processing " << mSimulations->size() << " simulations";
             // For each simulation, call the Sync method
             const Visitors::Sync vis{ mAdvanceSimulation, mTimeAccum, mPhysicsDt, this };
             for (auto& sim : *mSimulations)
@@ -437,11 +434,6 @@ namespace MWPhysics
 
             mSimulations->clear();
             mSimulations = nullptr;
-            Log(Debug::Info) << "[SYNC] Simulations cleared";
-        }
-        else
-        {
-            Log(Debug::Info) << "[SYNC] No simulations to process";
         }
     }
 
@@ -595,7 +587,6 @@ namespace MWPhysics
             validBodies.data(), static_cast<int>(validBodies.size()),
             addState, JPH::EActivation::DontActivate);
 
-        Log(Debug::Verbose) << "Batch added " << validBodies.size() << " bodies to physics system";
 
         mPendingAddBodies.clear();
     }
@@ -629,7 +620,6 @@ namespace MWPhysics
                 bodyInterface.DestroyBody(body->GetID());
         }
 
-        Log(Debug::Verbose) << "Batch removed " << mPendingRemoveBodies.size() << " bodies from physics system";
 
         mPendingRemoveBodies.clear();
         mPendingDestroyBodies.clear();
@@ -641,7 +631,6 @@ namespace MWPhysics
         waitForSimulationBarrier();
 
         mPhysicsSystem->OptimizeBroadPhase();
-        Log(Debug::Verbose) << "Optimized physics broadphase";
     }
 
     bool PhysicsTaskScheduler::getLineOfSight(

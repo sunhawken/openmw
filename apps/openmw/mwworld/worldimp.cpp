@@ -275,42 +275,24 @@ namespace MWWorld
         , mPlayerInJail(false)
         , mSpellPreloadTimer(0.f)
     {
-        Log(Debug::Info) << "[DEBUG] World constructor completed";
     }
 
     void World::loadData(const Files::Collections& fileCollections, const std::vector<std::string>& contentFiles,
         const std::vector<std::string>& groundcoverFiles, ToUTF8::Utf8Encoder* encoder, Loading::Listener* listener)
     {
-        Log(Debug::Info) << "[DEBUG] loadData: starting";
         mContentFiles = contentFiles;
         mESMVersions.resize(mContentFiles.size(), -1);
 
-        Log(Debug::Info) << "[DEBUG] loadData: calling loadContentFiles";
-        try {
-            loadContentFiles(fileCollections, contentFiles, encoder, listener);
-        } catch (const std::exception& e) {
-            Log(Debug::Error) << "[DEBUG] loadContentFiles threw exception: " << e.what();
-            throw;
-        } catch (...) {
-            Log(Debug::Error) << "[DEBUG] loadContentFiles threw unknown exception";
-            throw;
-        }
-        Log(Debug::Info) << "[DEBUG] loadData: loadContentFiles done, calling loadGroundcoverFiles";
+        loadContentFiles(fileCollections, contentFiles, encoder, listener);
         loadGroundcoverFiles(fileCollections, groundcoverFiles, encoder, listener);
 
-        Log(Debug::Info) << "[DEBUG] loadData: calling fillGlobalVariables";
         fillGlobalVariables();
 
-        Log(Debug::Info) << "[DEBUG] loadData: calling mStore.setUp";
         mStore.setUp();
-        Log(Debug::Info) << "[DEBUG] loadData: calling validateRecords";
         mStore.validateRecords(mReaders);
-        Log(Debug::Info) << "[DEBUG] loadData: calling movePlayerRecord";
         mStore.movePlayerRecord();
 
-        Log(Debug::Info) << "[DEBUG] loadData: getting fSwimHeightScale";
         mSwimHeightScale = mStore.get<ESM::GameSetting>().find("fSwimHeightScale")->mValue.getFloat();
-        Log(Debug::Info) << "[DEBUG] loadData: complete";
     }
 
     void World::init(Debug::Level maxRecastLogLevel, osgViewer::Viewer* viewer, osg::ref_ptr<osg::Group> rootNode,
@@ -1494,22 +1476,14 @@ namespace MWWorld
 
     void World::doPhysics(float duration, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
     {
-        Log(Debug::Info) << "[WORLD] doPhysics starting, duration=" << duration;
-        Log(Debug::Info) << "[WORLD] Processing doors...";
         processDoors(duration);
-        Log(Debug::Info) << "[WORLD] Updating projectiles...";
         mProjectileManager->update(duration);
         mPhysics->stepSimulation(duration, mDiscardMovements, frameStart, frameNumber, stats);
-        Log(Debug::Info) << "[WORLD] Processing projectile hits...";
         mProjectileManager->processHits();
-        Log(Debug::Info) << "[WORLD] Moving actors...";
         mDiscardMovements = false;
         mPhysics->moveActors();
-        Log(Debug::Info) << "[WORLD] Moving dynamic objects...";
         mPhysics->moveDynamicObjects();
-        Log(Debug::Info) << "[WORLD] Updating ragdolls...";
         mPhysics->updateRagdolls();
-        Log(Debug::Info) << "[WORLD] doPhysics complete";
     }
 
     void World::updateNavigator()
@@ -1685,7 +1659,6 @@ namespace MWWorld
 
     void World::update(float duration, bool paused)
     {
-        Log(Debug::Info) << "[WORLD UPDATE] Starting World::update";
         if (mGoToJail && !paused)
             goToJail();
 
@@ -1698,22 +1671,16 @@ namespace MWWorld
         if (mPlayerInJail && !mGoToJail && !MWBase::Environment::get().getWindowManager()->containsMode(MWGui::GM_Jail))
             mPlayerInJail = false;
 
-        Log(Debug::Info) << "[WORLD UPDATE] Updating weather...";
         updateWeather(duration, paused);
 
-        Log(Debug::Info) << "[WORLD UPDATE] Updating navigator...";
         updateNavigator();
 
-        Log(Debug::Info) << "[WORLD UPDATE] Updating player...";
         mPlayer->update();
 
-        Log(Debug::Info) << "[WORLD UPDATE] Updating world scene...";
         mWorldScene->update(duration);
 
-        Log(Debug::Info) << "[WORLD UPDATE] Updating rendering...";
         mRendering->update(duration, paused);
 
-        Log(Debug::Info) << "[WORLD UPDATE] Updating sound listener...";
         updateSoundListener();
 
         mSpellPreloadTimer -= duration;
@@ -1725,15 +1692,12 @@ namespace MWWorld
 
         if (mWorldScene->hasCellLoaded())
         {
-            Log(Debug::Info) << "[WORLD UPDATE] Waiting for navigator tiles...";
             mNavigator->wait(DetourNavigator::WaitConditionType::requiredTilesPresent,
                 MWBase::Environment::get().getWindowManager()->getLoadingScreen());
             mWorldScene->resetCellLoaded();
         }
 
-        Log(Debug::Info) << "[WORLD UPDATE] Physics debug draw...";
         mPhysics->debugDraw();
-        Log(Debug::Info) << "[WORLD UPDATE] World::update complete";
     }
 
     void World::updatePhysics(
@@ -1815,38 +1779,31 @@ namespace MWWorld
 
     void World::updateFocusObject()
     {
-        Log(Debug::Info) << "[FOCUS] Starting updateFocusObject";
         try
         {
             // inform the GUI about focused object
-            Log(Debug::Info) << "[FOCUS] Getting focus object...";
             MWWorld::Ptr object = getFocusObject();
 
             // retrieve the object's top point's screen position so we know where to place the floating label
             if (!object.isEmpty())
             {
-                Log(Debug::Info) << "[FOCUS] Object not empty, getting bounding box...";
                 osg::BoundingBox bb = mPhysics->getBoundingBox(object);
                 if (!bb.valid() && object.getRefData().getBaseNode())
                 {
-                    Log(Debug::Info) << "[FOCUS] Computing bounds from scene...";
                     osg::ComputeBoundsVisitor computeBoundsVisitor;
                     computeBoundsVisitor.setTraversalMask(~(MWRender::Mask_ParticleSystem | MWRender::Mask_Effect));
                     object.getRefData().getBaseNode()->accept(computeBoundsVisitor);
                     bb = computeBoundsVisitor.getBoundingBox();
                 }
-                Log(Debug::Info) << "[FOCUS] Getting screen coords...";
                 const osg::Vec2f pos = mRendering->getScreenCoords(bb);
                 MWBase::Environment::get().getWindowManager()->setFocusObjectScreenCoords(pos.x(), pos.y());
             }
 
-            Log(Debug::Info) << "[FOCUS] Setting focus object in window manager...";
             MWBase::Environment::get().getWindowManager()->setFocusObject(object);
-            Log(Debug::Info) << "[FOCUS] updateFocusObject complete";
         }
         catch (std::exception& e)
         {
-            Log(Debug::Error) << "Error updating window manager: " << e.what();
+            Log(Debug::Error) << "Error updating focus object: " << e.what();
         }
     }
 
@@ -2715,12 +2672,12 @@ namespace MWWorld
         }
 
         // Stop all animations - ragdoll will take over bone control
-        // This must be done BEFORE setting skeleton inactive to prevent
-        // any pending animation updates from conflicting with ragdoll
+        // Note: We intentionally do NOT call setActive(Inactive) here.
+        // While Inactive prevents animation updates, it also causes RigGeometry
+        // to skip skinning updates entirely. The mesh would freeze in its last
+        // animation pose instead of following the ragdoll. disableAllAnimations()
+        // is sufficient to prevent animations from overwriting ragdoll bone transforms.
         anim->disableAllAnimations();
-
-        // Disable the skeleton's animation updates so ragdoll can control the bones
-        anim->setActive(0);  // SceneUtil::Skeleton::Inactive
 
         mPhysics->activateRagdoll(actor, skeleton, hitImpulse);
 
@@ -2946,17 +2903,9 @@ namespace MWWorld
     void World::loadContentFiles(const Files::Collections& fileCollections, const std::vector<std::string>& content,
         ToUTF8::Utf8Encoder* encoder, Loading::Listener* listener)
     {
-        std::cout << "[DEBUG] INSIDE loadContentFiles - start" << std::endl;
-        std::cout.flush();
-        Log(Debug::Info) << "[DEBUG] loadContentFiles: creating GameContentLoader";
-        std::cout.flush();
         GameContentLoader gameContentLoader;
-        std::cout << "[DEBUG] GameContentLoader created" << std::endl;
-        std::cout.flush();
-        Log(Debug::Info) << "[DEBUG] loadContentFiles: creating EsmLoader";
         EsmLoader esmLoader(mStore, mReaders, encoder, mESMVersions);
 
-        Log(Debug::Info) << "[DEBUG] loadContentFiles: adding loaders";
         gameContentLoader.addLoader(".esm", esmLoader);
         gameContentLoader.addLoader(".esp", esmLoader);
         gameContentLoader.addLoader(".omwgame", esmLoader);
@@ -2966,18 +2915,14 @@ namespace MWWorld
         OMWScriptsLoader omwScriptsLoader(mStore);
         gameContentLoader.addLoader(".omwscripts", omwScriptsLoader);
 
-        Log(Debug::Info) << "[DEBUG] loadContentFiles: loaders added, starting content loop";
         int idx = 0;
         for (const std::string& file : content)
         {
-            Log(Debug::Info) << "[DEBUG] loadContentFiles: processing file " << file;
             const Files::MultiDirCollection& col
                 = fileCollections.getCollection(Misc::getFileExtension(file));
             if (col.doesExist(file))
             {
-                Log(Debug::Info) << "[DEBUG] loadContentFiles: loading file " << file;
                 gameContentLoader.load(col.getPath(file), idx, listener);
-                Log(Debug::Info) << "[DEBUG] loadContentFiles: loaded file " << file;
             }
             else
             {
@@ -2987,10 +2932,8 @@ namespace MWWorld
             idx++;
         }
 
-        Log(Debug::Info) << "[DEBUG] loadContentFiles: content loop done";
         if (const auto v = esmLoader.getMasterFileFormat(); v.has_value() && *v == 0)
             ensureNeededRecords(); // Insert records that may not be present in all versions of master files.
-        Log(Debug::Info) << "[DEBUG] loadContentFiles: complete";
     }
 
     void World::loadGroundcoverFiles(const Files::Collections& fileCollections,

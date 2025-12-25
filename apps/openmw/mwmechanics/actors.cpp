@@ -1489,7 +1489,6 @@ namespace MWMechanics
 
     void Actors::update(float duration, bool paused)
     {
-        Log(Debug::Info) << "[ACTORS] Actors::update starting, paused=" << paused << ", actors count=" << mActors.size();
         if (!paused)
         {
             const float updateEquippedLightInterval = 1.0f;
@@ -1587,10 +1586,6 @@ namespace MWMechanics
                     // There needs to be a magic effect update in between.
                     ctrl.updateContinuousVfx();
 
-                    // DEBUG: Targeted logging for crash between updateContinuousVfx and end of loop
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " (" << actorPtrRef.getCellRef().getRefId().toDebugString()
-                                     << ") post-vfx, aiActive=" << aiActive << " inRange=" << inProcessingRange;
-
                     if (!cellChanged && worldScene->hasCellChanged())
                     {
                         return; // for now abort update of the old cell when cell changes by teleportation magic effect
@@ -1599,17 +1594,11 @@ namespace MWMechanics
 
                     if (aiActive && inProcessingRange)
                     {
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " entering AI block";
                         if (engageCombatTimerStatus == Misc::TimerStatus::Elapsed)
                         {
-                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " engageCombat timer elapsed";
                             if (!isPlayer)
-                            {
-                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " adjustCommandedActor...";
                                 adjustCommandedActor(actor.getPtr());
-                            }
 
-                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " iterating other actors for combat...";
                             for (const Actor& otherActor : mActors)
                             {
                                 if (otherActor.isInvalid())
@@ -1619,41 +1608,28 @@ namespace MWMechanics
                                 engageCombat(
                                     actor.getPtr(), otherActor.getPtr(), cachedAllies, otherActor.getPtr() == player);
                             }
-                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " engageCombat done";
                         }
                         if (mTimerUpdateHeadTrack == 0)
-                        {
-                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateHeadTracking...";
                             updateHeadTracking(actor.getPtr(), mActors, isPlayer, ctrl);
-                        }
 
                         if (actor.getPtr().getClass().isNpc() && !isPlayer)
-                        {
-                            Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateCrimePursuit...";
                             updateCrimePursuit(actor.getPtr(), duration, cachedAllies);
-                        }
 
                         if (!isPlayer)
                         {
                             CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
                             if (isConscious(actor.getPtr()) && !(luaControls && luaControls->mDisableAI))
                             {
-                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " AI execute...";
                                 stats.getAiSequence().execute(actor.getPtr(), ctrl, duration);
-                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateGreetingState...";
                                 updateGreetingState(actor.getPtr(), actor, mTimerUpdateHello > 0);
-                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " playIdleDialogue...";
                                 playIdleDialogue(actor.getPtr());
-                                Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateMovementSpeed...";
                                 updateMovementSpeed(actor.getPtr());
                             }
                         }
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " AI block done";
                     }
                     else if (aiActive && !isPlayer && isConscious(actor.getPtr())
                         && !(luaControls && luaControls->mDisableAI))
                     {
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " out-of-range AI execute...";
                         CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
                         stats.getAiSequence().execute(actor.getPtr(), ctrl, duration, /*outOfRange*/ true);
                     }
@@ -1662,23 +1638,14 @@ namespace MWMechanics
                     {
                         // We can not update drowning state for actors outside of AI distance - they can not resurface
                         // to breathe
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateDrowning...";
                         updateDrowning(actor.getPtr(), duration, ctrl.isKnockedOut(), isPlayer);
                     }
                     if (mTimerUpdateEquippedLight == 0 && actor.getPtr().getClass().hasInventoryStore(actor.getPtr()))
-                    {
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateEquippedLight...";
                         updateEquippedLight(actor.getPtr(), updateEquippedLightInterval, showTorches);
-                    }
 
                     if (luaControls != nullptr && isConscious(actor.getPtr()))
-                    {
-                        Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " updateLuaControls...";
                         updateLuaControls(actor.getPtr(), isPlayer, *luaControls);
-                    }
-                    Log(Debug::Info) << "[ACTORS] Actor " << actorIndex << " loop iteration complete";
                 }
-                actorIndex++;
             }
 
             if (Settings::game().mNPCsAvoidCollisions)
