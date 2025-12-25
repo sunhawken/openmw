@@ -2,6 +2,7 @@
 #define OPENMW_MWPHYSICS_RAGDOLLWRAPPER_H
 
 #include "ragdollbuilder.hpp"
+#include "skeletonmapper.hpp"
 
 #include <osg/Vec3f>
 #include <osg/Quat>
@@ -30,8 +31,17 @@ namespace MWPhysics
 {
     class PhysicsTaskScheduler;
 
-    /// Wrapper around Jolt's built-in Ragdoll class
-    /// Handles creation from OSG skeleton and bone transform synchronization
+    /// Wrapper around Jolt's Ragdoll class with skeleton mapping.
+    ///
+    /// This class manages the lifecycle of a ragdoll physics simulation and
+    /// uses Jolt's SkeletonMapper (via RagdollSkeletonMapper) to properly sync
+    /// transforms between the low-detail physics skeleton and the high-detail
+    /// animation skeleton.
+    ///
+    /// The skeleton mapping approach solves the rotation mismatch issue by:
+    /// 1. Building a proper neutral pose at ragdoll creation
+    /// 2. Using Jolt's SkeletonMapper to interpolate unmapped joints
+    /// 3. Computing delta rotations from bind pose rather than absolute rotations
     class RagdollWrapper
     {
     public:
@@ -58,8 +68,9 @@ namespace MWPhysics
         RagdollWrapper(const RagdollWrapper&) = delete;
         RagdollWrapper& operator=(const RagdollWrapper&) = delete;
 
-        /// Update the OSG skeleton's bone transforms from the physics simulation
-        /// Should be called after physics step, before rendering
+        /// Update the OSG skeleton's bone transforms from the physics simulation.
+        /// Uses SkeletonMapper for proper interpolation of unmapped joints.
+        /// Should be called after physics step, before rendering.
         void updateBoneTransforms();
 
         /// Apply an impulse to the ragdoll at a world position
@@ -108,6 +119,9 @@ namespace MWPhysics
         /// Get approximate center position of the ragdoll (root body position)
         osg::Vec3f getPosition() const;
 
+        /// Get the root rotation
+        osg::Quat getRotation() const;
+
         /// Get the root body ID (for collision queries)
         JPH::BodyID getRootBodyId() const;
 
@@ -115,7 +129,10 @@ namespace MWPhysics
         std::vector<JPH::BodyID> getBodyIds() const;
 
         /// Check if ragdoll was created successfully
-        bool isValid() const { return mRagdoll != nullptr; }
+        bool isValid() const { return mRagdoll != nullptr && mMapper.isValid(); }
+
+        /// Get the skeleton mapper (for debugging)
+        const RagdollSkeletonMapper& getMapper() const { return mMapper; }
 
     private:
         MWWorld::Ptr mPtr;
@@ -126,7 +143,8 @@ namespace MWPhysics
         JPH::Ref<JPH::RagdollSettings> mSettings;
         JPH::Ragdoll* mRagdoll;  // Owned by us, must call RemoveFromPhysicsSystem
 
-        std::vector<BoneMapping> mBoneMappings;
+        /// Skeleton mapper for proper physics-to-animation sync
+        RagdollSkeletonMapper mMapper;
 
         /// Collision group for this ragdoll (unique per ragdoll instance)
         JPH::CollisionGroup::GroupID mCollisionGroup;
