@@ -35,21 +35,24 @@ namespace MWPhysics
         float shapeScale = 0.7f;
     };
 
-    /// Mapping between Jolt skeleton joint and OSG bone node
-    struct BoneMapping
+    /// Information about a bone used during ragdoll construction
+    struct BoneData
     {
-        int joltJointIndex;
-        osg::MatrixTransform* osgNode;
-        osg::Vec3f shapeOffset;  // Offset from joint origin to shape center (in bone local space)
-        std::string boneName;
-        std::string physicsParentName;  // Physics parent bone name (may differ from OSG parent)
-        osg::Vec3f boneDirection;  // Direction the bone points (normalized, world space at creation)
-        osg::Quat bodyRotation;    // Rotation used for physics body (aligns Z with bone direction)
-        osg::Quat originalBoneWorldRot;  // Original OSG bone world rotation at ragdoll creation
+        osg::MatrixTransform* osgNode = nullptr;
+        std::string name;
+        std::string physicsParentName;
+        int joltJointIndex = -1;
+        osg::Vec3f worldPosition;
+        osg::Quat worldRotation;
+        osg::Vec3f boneDirection;  // Direction to child bone (normalized, world space)
+        float boneLength = 15.0f;
     };
 
-    /// Builds JPH::RagdollSettings from an OSG skeleton hierarchy
-    /// This is rig-agnostic - it works with any skeleton structure
+    /// Builds JPH::RagdollSettings from an OSG skeleton hierarchy.
+    ///
+    /// This builder creates a physics-only ragdoll skeleton. The mapping between
+    /// the physics skeleton and the full animation skeleton is handled separately
+    /// by RagdollSkeletonMapper.
     class RagdollSettingsBuilder
     {
     public:
@@ -60,69 +63,43 @@ namespace MWPhysics
         /// @param totalMass Total mass of the ragdoll in kg
         /// @param scale Actor scale factor
         /// @param overrides Optional per-bone configuration overrides (by lowercase bone name)
-        /// @param outMappings Output vector of bone mappings for transform sync
         /// @return RagdollSettings ready to create a Ragdoll, or nullptr on failure
         static JPH::Ref<JPH::RagdollSettings> build(
             SceneUtil::Skeleton* osgSkeleton,
             float totalMass,
             float scale,
-            const JointConfigMap* overrides,
-            std::vector<BoneMapping>& outMappings
+            const JointConfigMap* overrides = nullptr
         );
 
         /// Get default joint config for common bone types based on name heuristics
         static JointConfig getDefaultConfig(const std::string& boneName);
 
+        /// Get the list of physics bone names (for reference)
+        static const std::vector<std::string>& getPhysicsBoneNames();
+
     private:
-        struct BuildContext
-        {
-            JPH::Skeleton* joltSkeleton;
-            JPH::RagdollSettings* settings;
-            std::vector<BoneMapping>* mappings;
-            const JointConfigMap* overrides;
-            float totalMass;
-            float scale;
-            float massSum;  // For normalization
-        };
-
-        /// Recursively traverse OSG skeleton to build Jolt skeleton and parts
-        static void traverseSkeleton(
-            osg::MatrixTransform* node,
-            int parentJoltIndex,
-            BuildContext& ctx
-        );
-
         /// Create collision shape for a bone
         static JPH::Ref<JPH::Shape> createBoneShape(
-            osg::MatrixTransform* bone,
-            const osg::Vec3f& boneSize,
+            const BoneData& bone,
             const JointConfig& config,
-            float scale,
-            const osg::Vec3f& localBoneDir,
-            osg::Vec3f& outShapeOffset
-        );
-
-        /// Estimate bone size from parent-child distance
-        static osg::Vec3f estimateBoneSize(
-            osg::MatrixTransform* bone,
             float scale
         );
 
         /// Create constraint settings for a joint
         static JPH::Ref<JPH::TwoBodyConstraintSettings> createConstraintSettings(
-            const osg::Matrix& parentWorldMatrix,
-            const osg::Matrix& childWorldMatrix,
+            const BoneData& parentBone,
+            const BoneData& childBone,
             const JointConfig& config
         );
-
-        /// Check if a node is a bone (MatrixTransform with a name)
-        static bool isBone(osg::Node* node);
 
         /// Get world matrix for a node
         static osg::Matrix getWorldMatrix(osg::Node* node);
 
-        /// Find first child bone of a node
-        static osg::MatrixTransform* findFirstChildBone(osg::MatrixTransform* node);
+        /// Check if a bone name is in our physics skeleton
+        static bool isPhysicsBone(const std::string& lowerName);
+
+        /// Get the physics parent for a bone
+        static std::string getPhysicsParent(const std::string& lowerName);
     };
 }
 
