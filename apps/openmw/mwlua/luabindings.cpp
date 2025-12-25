@@ -1,6 +1,5 @@
 #include "luabindings.hpp"
 
-#include <components/debug/debuglog.hpp>
 #include <components/lua/asyncpackage.hpp>
 #include <components/lua/utilpackage.hpp>
 
@@ -30,53 +29,16 @@ namespace MWLua
 {
     std::map<std::string, sol::object> initCommonPackages(const Context& context)
     {
-        Log(Debug::Info) << "[LUA DEBUG] initCommonPackages starting...";
         sol::state_view lua = context.mLua->unsafeState();
-        Log(Debug::Info) << "[LUA DEBUG] Got lua state view";
         MWWorld::DateTimeManager* tm = MWBase::Environment::get().getWorld()->getTimeManager();
-        Log(Debug::Info) << "[LUA DEBUG] Got TimeManager";
-
-        std::map<std::string, sol::object> result;
-
-        try {
-            Log(Debug::Info) << "[LUA DEBUG] Creating openmw.async...";
-            result["openmw.async"] = LuaUtil::getAsyncPackageInitializer(
-                lua, [tm] { return tm->getSimulationTime(); }, [tm] { return tm->getGameTime(); });
-            Log(Debug::Info) << "[LUA DEBUG] openmw.async created";
-        } catch (const std::exception& e) {
-            Log(Debug::Error) << "[LUA DEBUG] openmw.async failed: " << e.what();
-            throw;
-        }
-
-        try {
-            Log(Debug::Info) << "[LUA DEBUG] Creating openmw.markup...";
-            result["openmw.markup"] = initMarkupPackage(context);
-            Log(Debug::Info) << "[LUA DEBUG] openmw.markup created";
-        } catch (const std::exception& e) {
-            Log(Debug::Error) << "[LUA DEBUG] openmw.markup failed: " << e.what();
-            throw;
-        }
-
-        try {
-            Log(Debug::Info) << "[LUA DEBUG] Creating openmw.util...";
-            result["openmw.util"] = LuaUtil::initUtilPackage(lua);
-            Log(Debug::Info) << "[LUA DEBUG] openmw.util created";
-        } catch (const std::exception& e) {
-            Log(Debug::Error) << "[LUA DEBUG] openmw.util failed: " << e.what();
-            throw;
-        }
-
-        try {
-            Log(Debug::Info) << "[LUA DEBUG] Creating openmw.vfs...";
-            result["openmw.vfs"] = initVFSPackage(context);
-            Log(Debug::Info) << "[LUA DEBUG] openmw.vfs created";
-        } catch (const std::exception& e) {
-            Log(Debug::Error) << "[LUA DEBUG] openmw.vfs failed: " << e.what();
-            throw;
-        }
-
-        Log(Debug::Info) << "[LUA DEBUG] initCommonPackages complete";
-        return result;
+        return {
+            { "openmw.async",
+                LuaUtil::getAsyncPackageInitializer(
+                    lua, [tm] { return tm->getSimulationTime(); }, [tm] { return tm->getGameTime(); }) },
+            { "openmw.markup", initMarkupPackage(context) },
+            { "openmw.util", LuaUtil::initUtilPackage(lua) },
+            { "openmw.vfs", initVFSPackage(context) },
+        };
     }
 
     std::map<std::string, sol::object> initGlobalPackages(const Context& context)

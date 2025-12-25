@@ -189,7 +189,6 @@ void OMW::Engine::executeLocalScripts()
 
 bool OMW::Engine::frame(unsigned frameNumber, float frametime)
 {
-    Log(Debug::Info) << "[FRAME] ===== FRAME START #" << frameNumber << " =====";
     const osg::Timer_t frameStart = mViewer->getStartTick();
     const osg::Timer* const timer = osg::Timer::instance();
     osg::Stats* const stats = mViewer->getViewerStats();
@@ -199,18 +198,15 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     try
     {
         // update input
-        Log(Debug::Info) << "[FRAME] Updating input...";
         {
             ScopedProfile<UserStatsType::Input> profile(frameStart, frameNumber, *timer, *stats);
             mInputManager->update(frametime, false);
         }
-        Log(Debug::Info) << "[FRAME] Input update complete";
 
         // When the window is minimized, pause the game. Currently this *has* to be here to work around a MyGUI bug.
         // If we are not currently rendering, then RenderItems will not be reused resulting in a memory leak upon
         // changing widget textures (fixed in MyGUI 3.3.2), and destroyed widgets will not be deleted (not fixed yet,
         // https://github.com/MyGUI/mygui/issues/21)
-        Log(Debug::Info) << "[FRAME] Starting sound update...";
         {
             ScopedProfile<UserStatsType::Sound> profile(frameStart, frameNumber, *timer, *stats);
 
@@ -226,28 +222,22 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
             if (mUseSound)
                 mSoundManager->update(frametime);
         }
-        Log(Debug::Info) << "[FRAME] Sound update complete";
 
-        Log(Debug::Info) << "[FRAME] Starting Lua synchronizedUpdate...";
         {
             ScopedProfile<UserStatsType::LuaSyncUpdate> profile(frameStart, frameNumber, *timer, *stats);
             // Should be called after input manager update and before any change to the game world.
             // It applies to the game world queued changes from the previous frame.
             mLuaManager->synchronizedUpdate();
         }
-        Log(Debug::Info) << "[FRAME] Lua synchronizedUpdate complete";
 
         // update game state
-        Log(Debug::Info) << "[FRAME] Starting state update...";
         {
             ScopedProfile<UserStatsType::State> profile(frameStart, frameNumber, *timer, *stats);
             mStateManager->update(frametime);
         }
-        Log(Debug::Info) << "[FRAME] State update complete";
 
         bool paused = mWorld->getTimeManager()->isPaused();
 
-        Log(Debug::Info) << "[FRAME] Starting script update...";
         {
             ScopedProfile<UserStatsType::Script> profile(frameStart, frameNumber, *timer, *stats);
 
@@ -258,11 +248,9 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                     if (mWorld->getScriptsEnabled())
                     {
                         // local scripts
-                        Log(Debug::Info) << "[FRAME] Executing local scripts...";
                         executeLocalScripts();
 
                         // global scripts
-                        Log(Debug::Info) << "[FRAME] Executing global scripts...";
                         mScriptManager->getGlobalScripts().run();
                     }
 
@@ -277,10 +265,8 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                 }
             }
         }
-        Log(Debug::Info) << "[FRAME] Script update complete";
 
         // update mechanics
-        Log(Debug::Info) << "[FRAME] Starting mechanics update...";
         {
             ScopedProfile<UserStatsType::Mechanics> profile(frameStart, frameNumber, *timer, *stats);
 
@@ -296,10 +282,8 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                     mStateManager->endGame();
             }
         }
-        Log(Debug::Info) << "[FRAME] Mechanics update complete";
 
         // update physics
-        Log(Debug::Info) << "[FRAME] Starting physics update...";
         {
             ScopedProfile<UserStatsType::Physics> profile(frameStart, frameNumber, *timer, *stats);
 
@@ -308,7 +292,6 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                 mWorld->updatePhysics(frametime, paused, frameStart, frameNumber, *stats);
             }
         }
-        Log(Debug::Info) << "[FRAME] Physics update complete, starting world update...";
 
         // update world
         {
@@ -319,27 +302,23 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                 mWorld->update(frametime, paused);
             }
         }
-        Log(Debug::Info) << "[FRAME] World update complete, starting GUI update...";
 
         // update GUI
         {
             ScopedProfile<UserStatsType::Gui> profile(frameStart, frameNumber, *timer, *stats);
             mWindowManager->update(frametime);
         }
-        Log(Debug::Info) << "[FRAME] GUI update complete";
     }
     catch (const std::exception& e)
     {
         Log(Debug::Error) << "Error in frame: " << e.what();
     }
 
-    Log(Debug::Info) << "[FRAME] Starting post-update work...";
     const bool reportResource = stats->collectStats("resource");
 
     if (reportResource)
         stats->setAttribute(frameNumber, "UnrefQueue", static_cast<double>(mUnrefQueue->getSize()));
 
-    Log(Debug::Info) << "[FRAME] Flushing unref queue...";
     mUnrefQueue->flush(*mWorkQueue);
 
     if (reportResource)
@@ -356,32 +335,24 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
         mLuaManager->reportStats(frameNumber, *stats);
     }
 
-    Log(Debug::Info) << "[FRAME] Updating stereo settings...";
     mStereoManager->updateSettings(Settings::camera().mNearClip, Settings::camera().mViewingDistance);
 
-    Log(Debug::Info) << "[FRAME] Starting OSG event traversal...";
     mViewer->eventTraversal();
-    Log(Debug::Info) << "[FRAME] Starting OSG update traversal...";
     mViewer->updateTraversal();
 
     // update focus object for GUI
-    Log(Debug::Info) << "[FRAME] Updating focus object...";
     {
         ScopedProfile<UserStatsType::Focus> profile(frameStart, frameNumber, *timer, *stats);
         mWorld->updateFocusObject();
     }
 
     // if there is a separate Lua thread, it starts the update now
-    Log(Debug::Info) << "[FRAME] Allowing Lua update...";
     mLuaWorker->allowUpdate(frameStart, frameNumber, *stats);
 
-    Log(Debug::Info) << "[FRAME] Starting OSG rendering traversals...";
     mViewer->renderingTraversals();
 
-    Log(Debug::Info) << "[FRAME] Finishing Lua update...";
     mLuaWorker->finishUpdate(frameStart, frameNumber, *stats);
 
-    Log(Debug::Info) << "[FRAME] Frame complete";
     return true;
 }
 
@@ -475,14 +446,6 @@ void OMW::Engine::setDataDirs(const Files::PathContainer& dataDirs)
     mDataDirs = dataDirs;
     mDataDirs.insert(mDataDirs.begin(), mResDir / "vfs");
     mFileCollections = Files::Collections(mDataDirs);
-
-    // Debug: Print file collections paths
-    Log(Debug::Info) << "[DEBUG] setDataDirs: mResDir = " << mResDir;
-    Log(Debug::Info) << "[DEBUG] setDataDirs: vfs path = " << (mResDir / "vfs");
-    for (const auto& dir : mDataDirs)
-    {
-        Log(Debug::Info) << "[DEBUG] setDataDirs: data dir = " << dir;
-    }
 }
 
 // Add BSA archive
@@ -869,27 +832,17 @@ void OMW::Engine::prepareEngine()
     mSoundManager = std::make_unique<MWSound::SoundManager>(mVFS.get(), mUseSound);
     mEnvironment.setSoundManager(*mSoundManager);
 
-    Log(Debug::Info) << "[DEBUG] About to create World...";
-
     // Create the world
     mWorld = std::make_unique<MWWorld::World>(
         mResourceSystem.get(), mActivationDistanceOverride, mCellName, mCfgMgr.getUserDataPath());
-    Log(Debug::Info) << "[DEBUG] World created, setting environment...";
     mEnvironment.setWorld(*mWorld);
     mEnvironment.setWorldModel(mWorld->getWorldModel());
     mEnvironment.setESMStore(mWorld->getStore());
-    Log(Debug::Info) << "[DEBUG] Environment set, starting data loading...";
 
-    Log(Debug::Info) << "[DEBUG] Getting WindowManager...";
-    auto windowManager = MWBase::Environment::get().getWindowManager();
-    Log(Debug::Info) << "[DEBUG] Getting loading screen...";
-    Loading::Listener* listener = windowManager->getLoadingScreen();
-    Log(Debug::Info) << "[DEBUG] Creating AsyncListener...";
+    Loading::Listener* listener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
     Loading::AsyncListener asyncListener(*listener);
-    Log(Debug::Info) << "[DEBUG] Starting async data loading task...";
     auto dataLoading = std::async(std::launch::async,
         [&] { mWorld->loadData(mFileCollections, mContentFiles, mGroundcoverFiles, mEncoder.get(), &asyncListener); });
-    Log(Debug::Info) << "[DEBUG] Async task started";
 
     if (!mSkipMenu)
     {
@@ -906,10 +859,8 @@ void OMW::Engine::prepareEngine()
         dataLoading.get();
     }
     listener->loadingOff();
-    Log(Debug::Info) << "[DEBUG] Data loading complete, calling World::init()...";
 
     mWorld->init(mMaxRecastLogLevel, mViewer, std::move(rootNode), mWorkQueue.get(), *mUnrefQueue);
-    Log(Debug::Info) << "[DEBUG] World::init() complete";
     mEnvironment.setWorldScene(mWorld->getWorldScene());
     mWorld->setupPlayer();
     mWorld->setRandomSeed(mRandomSeed);
@@ -1076,24 +1027,20 @@ void OMW::Engine::go()
     const std::chrono::steady_clock::duration maxSimulationInterval(std::chrono::milliseconds(200));
     while (!mViewer->done() && !mStateManager->hasQuitRequest())
     {
-        Log(Debug::Info) << "[MAINLOOP] Loop iteration start";
         const double dt = std::chrono::duration_cast<std::chrono::duration<double>>(
                               std::min(frameRateLimiter.getLastFrameDuration(), maxSimulationInterval))
                               .count()
             * timeManager.getSimulationTimeScale();
 
-        Log(Debug::Info) << "[MAINLOOP] Calling mViewer->advance()...";
         mViewer->advance(timeManager.getRenderingSimulationTime());
 
         const unsigned frameNumber = mViewer->getFrameStamp()->getFrameNumber();
 
-        Log(Debug::Info) << "[MAINLOOP] Calling frame(" << frameNumber << ")...";
         if (!frame(frameNumber, static_cast<float>(dt)))
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
-        Log(Debug::Info) << "[MAINLOOP] frame() returned, updating time...";
         timeManager.updateIsPaused();
         if (!timeManager.isPaused())
         {
@@ -1116,9 +1063,7 @@ void OMW::Engine::go()
             }
         }
 
-        Log(Debug::Info) << "[MAINLOOP] Calling frameRateLimiter.limit()...";
         frameRateLimiter.limit();
-        Log(Debug::Info) << "[MAINLOOP] Loop iteration complete";
     }
 
     mLuaWorker->join();
