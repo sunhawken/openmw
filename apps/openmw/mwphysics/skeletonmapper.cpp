@@ -471,10 +471,8 @@ namespace MWPhysics
     void RagdollSkeletonMapper::logNeutralPoseComparison()
     {
         // DEBUG: Compare neutral poses for mapped joints
-        Log(Debug::Info) << "=== NEUTRAL POSE COMPARISON ===";
 
         // First log ragdoll skeleton structure
-        Log(Debug::Info) << "Ragdoll skeleton (" << mRagdollSkeleton->GetJointCount() << " joints):";
         for (int i = 0; i < mRagdollSkeleton->GetJointCount(); ++i)
         {
             const auto& joint = mRagdollSkeleton->GetJoint(i);
@@ -482,7 +480,6 @@ namespace MWPhysics
         }
 
         // Then log animation skeleton structure
-        Log(Debug::Info) << "Animation skeleton (" << mAnimationSkeleton->GetJointCount() << " joints):";
         for (int i = 0; i < mAnimationSkeleton->GetJointCount(); ++i)
         {
             const auto& joint = mAnimationSkeleton->GetJoint(i);
@@ -514,7 +511,6 @@ namespace MWPhysics
                              << ") rot=(" << animRot.GetX() << "," << animRot.GetY() << "," << animRot.GetZ() << "," << animRot.GetW() << ")"
                              << "\n    Rotation diff: " << angleDiff << " degrees";
         }
-        Log(Debug::Info) << "=== END NEUTRAL POSE COMPARISON ===";
     }
 
     void RagdollSkeletonMapper::mapRagdollToOsg()
