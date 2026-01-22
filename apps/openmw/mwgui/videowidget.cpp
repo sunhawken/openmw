@@ -53,7 +53,7 @@ namespace MWGui
         mTexture = std::make_unique<MyGUIPlatform::OSGTexture>(texture);
 
         setRenderItemTexture(mTexture.get());
-        getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 1.f, 1.f, 0.f));
+        getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 0.f, 1.f, 1.f));
     }
 
     int VideoWidget::getVideoWidth()
