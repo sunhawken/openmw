@@ -111,8 +111,7 @@ namespace MWRender
         mParticleSystem = new osgParticle::ParticleSystem;
 
         mParticleSystem->setParticleAlignment(osgParticle::ParticleSystem::FIXED);
-        mParticleSystem->setAlignVectorX(osg::Vec3f(1, 0, 0));
-        mParticleSystem->setAlignVectorY(osg::Vec3f(0, 1, 0));
+        mParticleSystem->setAlignVectors(osg::Vec3f(1, 0, 0), osg::Vec3f(0, -1, 0));
 
         osgParticle::Particle& particleTemplate = mParticleSystem->getDefaultParticleTemplate();
         particleTemplate.setSizeRange(osgParticle::rangef(15, 180));
