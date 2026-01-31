@@ -358,11 +358,12 @@ bool Launcher::SettingsPage::loadSettings()
 
 void Launcher::SettingsPage::populateLoadedConfigs()
 {
+    QString localPath = Files::pathToQString(mCfgMgr.getLocalPath());
+    QString globalPath = Files::pathToQString(mCfgMgr.getGlobalPath());
+
     for (const auto& path : mCfgMgr.getActiveConfigPaths())
     {
         QString confPath = Files::pathToQString(path);
-        QString localPath = Files::pathToQString(mCfgMgr.getLocalPath());
-        QString globalPath = Files::pathToQString(mCfgMgr.getGlobalPath());
         QString toolTipText = "";
 
         if (confPath == localPath)
