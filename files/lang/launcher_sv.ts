@@ -578,31 +578,31 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <translation>Textfil (*.txt)</translation>
     </message>
     <message>
-        <source>Local openmw.cfg. Usually this config is loaded first.</source>
+        <source>Local config directory contains an openmw.cfg. Usually this config is loaded first.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
+        <source>Global config directory&apos;s openmw.cfg loaded. This was because there was no local openmw.cfg</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
+        <source>User config directory. It was loaded because %1 contains the line config=%2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>has openmw.cfg</source>
+        <source>%1 contains an openmw.cfg and settings.cfg</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>has settings.cfg</source>
+        <source>%1 contains an openmw.cfg</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>has openmw.cfg and settings.cfg</source>
+        <source>%1 contains a settings.cfg</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
+        <source>%1 doesn&apos;t have an openmw.cfg or settings.cfg</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1523,7 +1523,7 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Kontrollerar styrkan på dopplereffekten. Noll innebär helt inaktiverat.&lt;/p&gt;&lt;p&gt;Dopplereffekten höjer eller sänker tonhöjden på ljud i förhållande till ljudkällans hastighet och lyssnaren.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
-        <source>Loaded configs</source>
+        <source>Active config directories</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

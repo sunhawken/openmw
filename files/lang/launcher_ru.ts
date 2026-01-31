@@ -578,31 +578,59 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     </message>
     <message>
         <source>Local openmw.cfg. Usually this config is loaded first.</source>
-        <translation>Локальный openmw.cfg. Обычно этот конфиг загружается первым.</translation>
+        <translation type="vanished">Локальный openmw.cfg. Обычно этот конфиг загружается первым.</translation>
     </message>
     <message>
         <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
-        <translation>Глобальный openmw.cfg. Он был загружен потому что не был найден локальный openmw.cfg</translation>
+        <translation type="vanished">Глобальный openmw.cfg. Он был загружен потому что не был найден локальный openmw.cfg</translation>
     </message>
     <message>
         <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
-        <translation>не содержит openmw.cfg или settings.cfg</translation>
+        <translation type="vanished">не содержит openmw.cfg или settings.cfg</translation>
     </message>
     <message>
         <source>has openmw.cfg</source>
-        <translation>содержит openmw.cfg</translation>
+        <translation type="vanished">содержит openmw.cfg</translation>
     </message>
     <message>
         <source>has settings.cfg</source>
-        <translation>содержит settings.cfg</translation>
+        <translation type="vanished">содержит settings.cfg</translation>
     </message>
     <message>
         <source>has openmw.cfg and settings.cfg</source>
-        <translation>содержит openmw.cfg и settings.cfg</translation>
+        <translation type="vanished">содержит openmw.cfg и settings.cfg</translation>
     </message>
     <message>
         <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
-        <translation>Пользовательский openmw.cfg. Он был загружен потому что %1 содержит строку config=%2</translation>
+        <translation type="vanished">Пользовательский openmw.cfg. Он был загружен потому что %1 содержит строку config=%2</translation>
+    </message>
+    <message>
+        <source>Local config directory contains an openmw.cfg. Usually this config is loaded first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global config directory&apos;s openmw.cfg loaded. This was because there was no local openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User config directory. It was loaded because %1 contains the line config=%2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 contains an openmw.cfg and settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 contains an openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 contains a settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 doesn&apos;t have an openmw.cfg or settings.cfg</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1519,7 +1547,7 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Определяет силу эффекта Доплера. Нулевое значение означает, что эффект отключен полностью.&lt;/p&gt;&lt;p&gt;Эффект Доплера увеличивает или уменьшает высоту звуков в зависимости от скорости источника звука и слушателя.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
-        <source>Loaded configs</source>
+        <source>Active config directories</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
