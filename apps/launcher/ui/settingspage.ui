@@ -1541,7 +1541,7 @@
        <item>
         <widget class="QGroupBox" name="configsGroup">
          <property name="title">
-          <string>Loaded configs</string>
+          <string>Active config directories</string>
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_4">
           <item>
