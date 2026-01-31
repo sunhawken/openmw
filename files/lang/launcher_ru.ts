@@ -576,6 +576,34 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <source>Text file (*.txt)</source>
         <translation>Текстовый файл (*.txt)</translation>
     </message>
+    <message>
+        <source>Local openmw.cfg. Usually this config is loaded first.</source>
+        <translation>Локальный openmw.cfg. Обычно этот конфиг загружается первым.</translation>
+    </message>
+    <message>
+        <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
+        <translation>Глобальный openmw.cfg. Он был загружен потому что не был найден локальный openmw.cfg</translation>
+    </message>
+    <message>
+        <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
+        <translation>не содержит openmw.cfg или settings.cfg</translation>
+    </message>
+    <message>
+        <source>has openmw.cfg</source>
+        <translation>содержит openmw.cfg</translation>
+    </message>
+    <message>
+        <source>has settings.cfg</source>
+        <translation>содержит settings.cfg</translation>
+    </message>
+    <message>
+        <source>has openmw.cfg and settings.cfg</source>
+        <translation>содержит openmw.cfg и settings.cfg</translation>
+    </message>
+    <message>
+        <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
+        <translation>Пользовательский openmw.cfg. Он был загружен потому что %1 содержит строку config=%2</translation>
+    </message>
 </context>
 <context>
     <name>MainWindow</name>
@@ -1489,6 +1517,10 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the strength of the Doppler effect. Zero means it is completely disabled.&lt;/p&gt;&lt;p&gt;The Doppler effect increases or decreases the pitch of sounds relative to the velocity of the sound source and the listener.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Определяет силу эффекта Доплера. Нулевое значение означает, что эффект отключен полностью.&lt;/p&gt;&lt;p&gt;Эффект Доплера увеличивает или уменьшает высоту звуков в зависимости от скорости источника звука и слушателя.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+    </message>
+    <message>
+        <source>Loaded configs</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>
