@@ -574,6 +574,34 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <source>Text file (*.txt)</source>
         <translation>Fichier texte (*.txt)</translation>
     </message>
+    <message>
+        <source>Local openmw.cfg. Usually this config is loaded first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has openmw.cfg and settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>MainWindow</name>
@@ -1477,6 +1505,10 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the strength of the Doppler effect. Zero means it is completely disabled.&lt;/p&gt;&lt;p&gt;The Doppler effect increases or decreases the pitch of sounds relative to the velocity of the sound source and the listener.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controle la puissance de l&apos;effet Doppler. La valeur zéro le désactivant complétement.&lt;/p&gt;&lt;p&gt;L&apos;effet Doppler augmente ou diminue la hauteur des sons relativement à la vélocité de leur source par rapport au joueur.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+    </message>
+    <message>
+        <source>Loaded configs</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

@@ -577,6 +577,34 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <source>Text file (*.txt)</source>
         <translation>Textfil (*.txt)</translation>
     </message>
+    <message>
+        <source>Local openmw.cfg. Usually this config is loaded first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>has openmw.cfg and settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>MainWindow</name>
@@ -1493,6 +1521,10 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the strength of the Doppler effect. Zero means it is completely disabled.&lt;/p&gt;&lt;p&gt;The Doppler effect increases or decreases the pitch of sounds relative to the velocity of the sound source and the listener.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Kontrollerar styrkan på dopplereffekten. Noll innebär helt inaktiverat.&lt;/p&gt;&lt;p&gt;Dopplereffekten höjer eller sänker tonhöjden på ljud i förhållande till ljudkällans hastighet och lyssnaren.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+    </message>
+    <message>
+        <source>Loaded configs</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

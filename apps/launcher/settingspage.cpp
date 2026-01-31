@@ -5,11 +5,12 @@
 #include <string>
 
 #include <QCompleter>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QString>
 
 #include <components/config/gamesettings.hpp>
-
+#include <components/files/qtconfigpath.hpp>
 #include <components/settings/values.hpp>
 
 #include "utils/openalutil.hpp"
@@ -71,8 +72,10 @@ namespace
     }
 }
 
-Launcher::SettingsPage::SettingsPage(Config::GameSettings& gameSettings, QWidget* parent)
+Launcher::SettingsPage::SettingsPage(
+    const Files::ConfigurationManager& configurationManager, Config::GameSettings& gameSettings, QWidget* parent)
     : QWidget(parent)
+    , mCfgMgr(configurationManager)
     , mGameSettings(gameSettings)
 {
     setObjectName("SettingsPage");
@@ -331,6 +334,8 @@ bool Launcher::SettingsPage::loadSettings()
         screenshotFormatComboBox->setCurrentIndex(screenshotFormatComboBox->findText(screenshotFormatString));
 
         loadSettingBool(Settings::general().mNotifyOnSavedScreenshot, *notifyOnSavedScreenshotCheckBox);
+
+        populateLoadedConfigs();
     }
 
     // Testing
@@ -349,6 +354,73 @@ bool Launcher::SettingsPage::loadSettings()
         runScriptAfterStartupField->setText(mGameSettings.value("script-run").value);
     }
     return true;
+}
+
+void Launcher::SettingsPage::populateLoadedConfigs()
+{
+    for (const auto& path : mCfgMgr.getActiveConfigPaths())
+    {
+        QString confPath = Files::pathToQString(path);
+        QString localPath = Files::pathToQString(mCfgMgr.getLocalPath());
+        QString globalPath = Files::pathToQString(mCfgMgr.getGlobalPath());
+        QString toolTipText = "";
+
+        if (confPath == localPath)
+        {
+            toolTipText = tr("Local openmw.cfg. Usually this config is loaded first.");
+        }
+        else if (confPath == globalPath)
+        {
+            toolTipText = tr("Global openmw.cfg. It was loaded because there was no local openmw.cfg");
+        }
+        else
+        {
+            Config::SettingValue configSetting;
+            for (const auto& v : mGameSettings.values(QString("config")))
+            {
+                if (v.value == confPath)
+                {
+                    configSetting = v;
+                    break;
+                }
+            }
+
+            if (!configSetting.value.isEmpty())
+            {
+                const QFileInfo configPathInfo = QFileInfo(configSetting.context + "/openmw.cfg");
+                toolTipText = QString(tr("User openmw.cfg. It was loaded because %1 contains the line config=%2"))
+                                  .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
+            }
+        }
+
+        bool hasOpenmwCfg = QFileInfo(Files::pathToQString(path / "openmw.cfg")).exists();
+        bool hasSettingsCfg = QFileInfo(Files::pathToQString(path / "settings.cfg")).exists();
+
+        QString hasConfigs;
+        if (hasOpenmwCfg && hasSettingsCfg)
+        {
+            hasConfigs = tr("has openmw.cfg and settings.cfg");
+        }
+        else if (hasOpenmwCfg && !hasSettingsCfg)
+        {
+            hasConfigs = tr("has openmw.cfg");
+        }
+        else if (!hasOpenmwCfg && hasSettingsCfg)
+        {
+            hasConfigs = tr("has settings.cfg");
+        }
+        else
+        {
+            hasConfigs = tr("doesn't have openmw.cfg or settings.cfg");
+        }
+
+        QListWidgetItem* confItem
+            = new QListWidgetItem(QString(QFileInfo(confPath).canonicalPath() + " " + hasConfigs), configsList);
+
+        confItem->setToolTip(toolTipText);
+        confItem->setData(Qt::ItemDataRole::UserRole, QVariant(confPath));
+        connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
+    }
 }
 
 void Launcher::SettingsPage::saveSettings()
@@ -587,4 +659,10 @@ void Launcher::SettingsPage::slotDistantLandToggled(bool checked)
 {
     activeGridObjectPagingCheckBox->setEnabled(checked);
     objectPagingMinSizeComboBox->setEnabled(checked);
+}
+
+void Launcher::SettingsPage::slotOpenFile(QListWidgetItem* item)
+{
+    QUrl confFolderUrl = QUrl::fromLocalFile(item->data(Qt::ItemDataRole::UserRole).toString());
+    QDesktopServices::openUrl(confFolderUrl);
 }
