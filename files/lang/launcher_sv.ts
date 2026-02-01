@@ -590,22 +590,6 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>%1 contains an openmw.cfg and settings.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 contains an openmw.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 contains a settings.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 doesn&apos;t have an openmw.cfg or settings.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open directory</source>
         <translation type="unfinished"></translation>
     </message>
@@ -615,6 +599,22 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     </message>
     <message>
         <source>Open settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt; contains an &lt;b&gt;openmw.cfg&lt;/b&gt; and &lt;b&gt;settings.cfg&lt;/b&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt; contains an &lt;b&gt;openmw.cfg&lt;/b&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt; contains a &lt;b&gt;settings.cfg&lt;/b&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt; doesn&apos;t have an &lt;b&gt;openmw.cfg&lt;/b&gt; or &lt;b&gt;settings.cfg&lt;/b&gt;</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
