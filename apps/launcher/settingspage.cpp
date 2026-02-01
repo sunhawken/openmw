@@ -96,6 +96,28 @@ Launcher::SettingsPage::SettingsPage(
     startDefaultCharacterAtField->setCompleter(&mCellNameCompleter);
 
     connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
+
+    auto actionOpenDir = new QAction(tr("Open directory"), configsList);
+    connect(actionOpenDir, &QAction::triggered, [=]() { 
+        QUrl configFolderUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole).toUrl();
+        QDesktopServices::openUrl(configFolderUrl);
+    });
+
+    auto actionOpenOpenmwCfg = new QAction(tr("Open openmw.cfg"), configsList);
+    connect(actionOpenOpenmwCfg, &QAction::triggered, [=]() {
+        QVariant configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 1);
+        if (configFileUrl.isValid())
+            QDesktopServices::openUrl(configFileUrl.toUrl());
+    });
+
+    auto actionOpenSettingsCfg = new QAction(tr("Open settings.cfg"), configsList);
+    connect(actionOpenSettingsCfg, &QAction::triggered, [=]() {
+        QVariant configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 2);
+        if (configFileUrl.isValid())
+            QDesktopServices::openUrl(configFileUrl.toUrl());
+    });
+
+    configsList->addActions({ actionOpenDir, actionOpenOpenmwCfg, actionOpenSettingsCfg });
 }
 
 void Launcher::SettingsPage::loadCellsForAutocomplete(QStringList cellNames)
@@ -414,11 +436,14 @@ void Launcher::SettingsPage::populateLoadedConfigs()
             hasConfigs = tr("%1 doesn't have an openmw.cfg or settings.cfg");
         }
 
-        QListWidgetItem* confItem
-            = new QListWidgetItem(hasConfigs.arg(configPath), configsList);
+        QListWidgetItem* configItem = new QListWidgetItem(hasConfigs.arg(configPath), configsList);
 
-        confItem->setToolTip(toolTipText);
-        confItem->setData(Qt::ItemDataRole::UserRole, QVariant(configPath));
+        configItem->setToolTip(toolTipText);
+        configItem->setData(Qt::ItemDataRole::UserRole, QUrl::fromLocalFile(configPath));
+        if (hasOpenmwCfg)
+            configItem->setData(Qt::ItemDataRole::UserRole + 1, QUrl::fromLocalFile(Files::pathToQString(path / "openmw.cfg")));
+        if (hasSettingsCfg)
+            configItem->setData(Qt::ItemDataRole::UserRole + 2, QUrl::fromLocalFile(Files::pathToQString(path / "settings.cfg")));
     }
 }
 
@@ -662,6 +687,6 @@ void Launcher::SettingsPage::slotDistantLandToggled(bool checked)
 
 void Launcher::SettingsPage::slotOpenFile(QListWidgetItem* item)
 {
-    QUrl confFolderUrl = QUrl::fromLocalFile(item->data(Qt::ItemDataRole::UserRole).toString());
-    QDesktopServices::openUrl(confFolderUrl);
+    QUrl configFolderUrl = item->data(Qt::ItemDataRole::UserRole).toUrl();
+    QDesktopServices::openUrl(configFolderUrl);
 }
