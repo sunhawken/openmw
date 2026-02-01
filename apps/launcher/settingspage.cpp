@@ -7,6 +7,7 @@
 #include <QCompleter>
 #include <QDesktopServices>
 #include <QFileDialog>
+#include <QMenu>
 #include <QString>
 
 #include <components/config/gamesettings.hpp>
@@ -117,7 +118,22 @@ Launcher::SettingsPage::SettingsPage(
             QDesktopServices::openUrl(configFileUrl.toUrl());
     });
 
-    configsList->addActions({ actionOpenDir, actionOpenOpenmwCfg, actionOpenSettingsCfg });
+    connect(configsList, &QListWidget::customContextMenuRequested, [=](const QPoint& pos) {
+        if (configsList->currentItem())
+        {
+            QMenu* contextMenu = new QMenu();
+
+            QVariant configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 1);
+            actionOpenOpenmwCfg->setEnabled(configFileUrl.isValid());
+            configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 2);
+            actionOpenSettingsCfg->setEnabled(configFileUrl.isValid());
+
+            contextMenu->addActions({ actionOpenDir, actionOpenOpenmwCfg, actionOpenSettingsCfg });
+
+            contextMenu->exec(configsList->mapToGlobal(pos));
+            contextMenu->deleteLater();
+        }
+    });
 }
 
 void Launcher::SettingsPage::loadCellsForAutocomplete(QStringList cellNames)
