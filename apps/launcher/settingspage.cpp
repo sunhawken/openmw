@@ -438,22 +438,24 @@ void Launcher::SettingsPage::populateLoadedConfigs()
         QString hasConfigs;
         if (hasOpenmwCfg && hasSettingsCfg)
         {
-            hasConfigs = tr("%1 contains an openmw.cfg and settings.cfg");
+            hasConfigs = tr("<b>%1</b> contains an <b>openmw.cfg</b> and <b>settings.cfg</b>");
         }
         else if (hasOpenmwCfg && !hasSettingsCfg)
         {
-            hasConfigs = tr("%1 contains an openmw.cfg");
+            hasConfigs = tr("<b>%1</b> contains an <b>openmw.cfg</b>");
         }
         else if (!hasOpenmwCfg && hasSettingsCfg)
         {
-            hasConfigs = tr("%1 contains a settings.cfg");
+            hasConfigs = tr("<b>%1</b> contains a <b>settings.cfg</b>");
         }
         else
         {
-            hasConfigs = tr("%1 doesn't have an openmw.cfg or settings.cfg");
+            hasConfigs = tr("<b>%1</b> doesn't have an <b>openmw.cfg</b> or <b>settings.cfg</b>");
         }
 
-        QListWidgetItem* configItem = new QListWidgetItem(hasConfigs.arg(configPath), configsList);
+        QListWidgetItem* configItem = new QListWidgetItem(configsList);
+        QLabel* alternativeLabel = new QLabel(hasConfigs.arg(configPath));
+        configsList->setItemWidget(configItem, alternativeLabel);
 
         configItem->setToolTip(toolTipText);
         configItem->setData(Qt::ItemDataRole::UserRole, QUrl::fromLocalFile(configPath));
