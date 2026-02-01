@@ -94,6 +94,8 @@ Launcher::SettingsPage::SettingsPage(
 
     mCellNameCompleter.setModel(&mCellNameCompleterModel);
     startDefaultCharacterAtField->setCompleter(&mCellNameCompleter);
+
+    connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
 }
 
 void Launcher::SettingsPage::loadCellsForAutocomplete(QStringList cellNames)
@@ -417,7 +419,6 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
         confItem->setToolTip(toolTipText);
         confItem->setData(Qt::ItemDataRole::UserRole, QVariant(configPath));
-        connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
     }
 }
 
