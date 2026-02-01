@@ -99,7 +99,7 @@ Launcher::SettingsPage::SettingsPage(
     connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
 
     auto actionOpenDir = new QAction(tr("Open directory"), configsList);
-    connect(actionOpenDir, &QAction::triggered, [=]() { 
+    connect(actionOpenDir, &QAction::triggered, [=]() {
         QUrl configFolderUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole).toUrl();
         QDesktopServices::openUrl(configFolderUrl);
     });
@@ -409,7 +409,8 @@ void Launcher::SettingsPage::populateLoadedConfigs()
         }
         else if (path == mCfgMgr.getGlobalPath())
         {
-            toolTipText = tr("Global config directory's openmw.cfg loaded. This was because there was no local openmw.cfg");
+            toolTipText
+                = tr("Global config directory's openmw.cfg loaded. This was because there was no local openmw.cfg");
         }
         else
         {
@@ -457,9 +458,11 @@ void Launcher::SettingsPage::populateLoadedConfigs()
         configItem->setToolTip(toolTipText);
         configItem->setData(Qt::ItemDataRole::UserRole, QUrl::fromLocalFile(configPath));
         if (hasOpenmwCfg)
-            configItem->setData(Qt::ItemDataRole::UserRole + 1, QUrl::fromLocalFile(Files::pathToQString(path / "openmw.cfg")));
+            configItem->setData(
+                Qt::ItemDataRole::UserRole + 1, QUrl::fromLocalFile(Files::pathToQString(path / "openmw.cfg")));
         if (hasSettingsCfg)
-            configItem->setData(Qt::ItemDataRole::UserRole + 2, QUrl::fromLocalFile(Files::pathToQString(path / "settings.cfg")));
+            configItem->setData(
+                Qt::ItemDataRole::UserRole + 2, QUrl::fromLocalFile(Files::pathToQString(path / "settings.cfg")));
     }
 }
 
