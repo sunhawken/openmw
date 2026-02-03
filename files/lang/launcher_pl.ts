@@ -602,22 +602,6 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
         <source>Open settings.cfg</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
-        <source>&lt;b&gt;%1&lt;/b&gt; contains an &lt;b&gt;openmw.cfg&lt;/b&gt; and &lt;b&gt;settings.cfg&lt;/b&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;%1&lt;/b&gt; contains an &lt;b&gt;openmw.cfg&lt;/b&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;%1&lt;/b&gt; contains a &lt;b&gt;settings.cfg&lt;/b&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;%1&lt;/b&gt; doesn&apos;t have an &lt;b&gt;openmw.cfg&lt;/b&gt; or &lt;b&gt;settings.cfg&lt;/b&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
 </context>
 <context>
     <name>MainWindow</name>
