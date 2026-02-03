@@ -39,7 +39,7 @@ namespace Launcher
         void slotShadowDistLimitToggled(bool checked);
         void slotDistantLandToggled(bool checked);
         void slotControllerMenusToggled(bool checked);
-        void slotOpenFile(QListWidgetItem* item);
+        void slotOpenFile(QTreeWidgetItem* item);
 
     private:
         const Files::ConfigurationManager& mCfgMgr;
