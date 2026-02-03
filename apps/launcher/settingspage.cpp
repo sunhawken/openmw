@@ -71,6 +71,14 @@ namespace
         }
         return 0;
     }
+
+    enum FileTypeRoles
+    {
+        ThisFile = Qt::ItemDataRole::UserRole,
+        ConfigDirectory,
+        OpenMWCfg,
+        SettingsCfg
+    };
 }
 
 Launcher::SettingsPage::SettingsPage(
@@ -96,39 +104,50 @@ Launcher::SettingsPage::SettingsPage(
     mCellNameCompleter.setModel(&mCellNameCompleterModel);
     startDefaultCharacterAtField->setCompleter(&mCellNameCompleter);
 
-    connect(configsList, &QListWidget::itemActivated, this, &SettingsPage::slotOpenFile);
+    connect(configsList, &QTreeWidget::itemActivated, this, &SettingsPage::slotOpenFile);
 
     auto actionOpenDir = new QAction(tr("Open directory"), configsList);
     connect(actionOpenDir, &QAction::triggered, [=]() {
-        QUrl configFolderUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole).toUrl();
+        QUrl configFolderUrl = configsList->currentItem()->data(0, ConfigDirectory).toUrl();
         QDesktopServices::openUrl(configFolderUrl);
     });
 
     auto actionOpenOpenmwCfg = new QAction(tr("Open openmw.cfg"), configsList);
     connect(actionOpenOpenmwCfg, &QAction::triggered, [=]() {
-        QVariant configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 1);
+        QVariant configFileUrl = configsList->currentItem()->data(0, OpenMWCfg);
         if (configFileUrl.isValid())
             QDesktopServices::openUrl(configFileUrl.toUrl());
     });
 
     auto actionOpenSettingsCfg = new QAction(tr("Open settings.cfg"), configsList);
     connect(actionOpenSettingsCfg, &QAction::triggered, [=]() {
-        QVariant configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 2);
+        QVariant configFileUrl = configsList->currentItem()->data(0, SettingsCfg);
         if (configFileUrl.isValid())
             QDesktopServices::openUrl(configFileUrl.toUrl());
     });
 
-    connect(configsList, &QListWidget::customContextMenuRequested, [=](const QPoint& pos) {
+    connect(configsList, &QTreeWidget::customContextMenuRequested, [=](const QPoint& pos) {
         if (configsList->currentItem())
         {
             QMenu* contextMenu = new QMenu();
 
-            QVariant configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 1);
+            QVariant configFileUrl = configsList->currentItem()->data(0, OpenMWCfg);
             actionOpenOpenmwCfg->setEnabled(configFileUrl.isValid());
-            configFileUrl = configsList->currentItem()->data(Qt::ItemDataRole::UserRole + 2);
+            configFileUrl = configsList->currentItem()->data(0, SettingsCfg);
             actionOpenSettingsCfg->setEnabled(configFileUrl.isValid());
 
             contextMenu->addActions({ actionOpenDir, actionOpenOpenmwCfg, actionOpenSettingsCfg });
+
+            for (QAction* action : contextMenu->actions())
+                action->setVisible(true);
+
+            if (configsList->currentItem()->parent())
+            {
+                // we're a child and don't want sibling files in our context menu
+                // must temporarily make them visible first as isEnabled() is false for invisible things
+                for (QAction* action : contextMenu->actions())
+                    action->setVisible(action->isEnabled());
+            }
 
             contextMenu->exec(configsList->mapToGlobal(pos));
             contextMenu->deleteLater();
@@ -432,39 +451,45 @@ void Launcher::SettingsPage::populateLoadedConfigs()
             }
         }
 
+        QTreeWidgetItem* configItem = new QTreeWidgetItem(configsList);
+        configItem->setText(0, configPath);
+        configItem->setToolTip(0, toolTipText);
+        configItem->setExpanded(true);
+
+        QUrl directoryUrl = QUrl::fromLocalFile(configPath);
+        configItem->setData(0, ThisFile, directoryUrl);
+        configItem->setData(0, ConfigDirectory, directoryUrl);
+
         bool hasOpenmwCfg = std::filesystem::exists(path / "openmw.cfg");
         bool hasSettingsCfg = std::filesystem::exists(path / "settings.cfg");
 
-        QString hasConfigs;
-        if (hasOpenmwCfg && hasSettingsCfg)
-        {
-            hasConfigs = tr("<b>%1</b> contains an <b>openmw.cfg</b> and <b>settings.cfg</b>");
-        }
-        else if (hasOpenmwCfg && !hasSettingsCfg)
-        {
-            hasConfigs = tr("<b>%1</b> contains an <b>openmw.cfg</b>");
-        }
-        else if (!hasOpenmwCfg && hasSettingsCfg)
-        {
-            hasConfigs = tr("<b>%1</b> contains a <b>settings.cfg</b>");
-        }
-        else
-        {
-            hasConfigs = tr("<b>%1</b> doesn't have an <b>openmw.cfg</b> or <b>settings.cfg</b>");
-        }
-
-        QListWidgetItem* configItem = new QListWidgetItem(configsList);
-        QLabel* alternativeLabel = new QLabel(hasConfigs.arg(configPath));
-        configsList->setItemWidget(configItem, alternativeLabel);
-
-        configItem->setToolTip(toolTipText);
-        configItem->setData(Qt::ItemDataRole::UserRole, QUrl::fromLocalFile(configPath));
         if (hasOpenmwCfg)
-            configItem->setData(
-                Qt::ItemDataRole::UserRole + 1, QUrl::fromLocalFile(Files::pathToQString(path / "openmw.cfg")));
+        {
+            QTreeWidgetItem* openmwCfgItem = new QTreeWidgetItem(configItem);
+            openmwCfgItem->setText(0, "openmw.cfg");
+
+            QUrl url = QUrl::fromLocalFile(Files::pathToQString(path / "openmw.cfg"));
+
+            openmwCfgItem->setData(0, ThisFile, url);
+            openmwCfgItem->setData(0, OpenMWCfg, url);
+            openmwCfgItem->setData(0, ConfigDirectory, directoryUrl);
+
+            configItem->setData(0, OpenMWCfg, url);
+        }
+
         if (hasSettingsCfg)
-            configItem->setData(
-                Qt::ItemDataRole::UserRole + 2, QUrl::fromLocalFile(Files::pathToQString(path / "settings.cfg")));
+        {
+            QTreeWidgetItem* settingsCfgItem = new QTreeWidgetItem(configItem);
+            settingsCfgItem->setText(0, "settings.cfg");
+
+            QUrl url = QUrl::fromLocalFile(Files::pathToQString(path / "settings.cfg"));
+
+            settingsCfgItem->setData(0, ThisFile, url);
+            settingsCfgItem->setData(0, SettingsCfg, url);
+            settingsCfgItem->setData(0, ConfigDirectory, directoryUrl);
+
+            configItem->setData(0, SettingsCfg, url);
+        }
     }
 }
 
@@ -706,8 +731,8 @@ void Launcher::SettingsPage::slotDistantLandToggled(bool checked)
     objectPagingMinSizeComboBox->setEnabled(checked);
 }
 
-void Launcher::SettingsPage::slotOpenFile(QListWidgetItem* item)
+void Launcher::SettingsPage::slotOpenFile(QTreeWidgetItem* item)
 {
-    QUrl configFolderUrl = item->data(Qt::ItemDataRole::UserRole).toUrl();
+    QUrl configFolderUrl = item->data(0, ThisFile).toUrl();
     QDesktopServices::openUrl(configFolderUrl);
 }

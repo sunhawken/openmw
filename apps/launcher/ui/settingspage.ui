@@ -1545,7 +1545,7 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_4">
           <item>
-           <widget class="QListWidget" name="configsList">
+           <widget class="QTreeWidget" name="configsList">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -1555,6 +1555,17 @@
             <property name="contextMenuPolicy">
              <enum>Qt::CustomContextMenu</enum>
             </property>
+            <property name="expandsOnDoubleClick">
+             <bool>false</bool>
+            </property>
+            <attribute name="headerVisible">
+             <bool>false</bool>
+            </attribute>
+            <column>
+             <property name="text">
+              <string notr="true">1</string>
+             </property>
+            </column>
            </widget>
           </item>
          </layout>
