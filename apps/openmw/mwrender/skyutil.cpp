@@ -64,6 +64,7 @@ namespace
 
         geom->setVertexArray(verts);
 
+        // This expects Y-down texture convention
         osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array;
         texcoords->push_back(osg::Vec2f(0, 0));
         texcoords->push_back(osg::Vec2f(0, 1));
