@@ -310,6 +310,7 @@ namespace MWGui
         mSplashImage->setVisible(false);
 
         mSceneImage->setRenderItemTexture(mGuiTexture.get());
+        // The widget is Y-down, the RTT image is Y-up, so this UV is inverted
         mSceneImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 1.f, 1.f, 0.f));
         mSceneImage->setVisible(true);
     }

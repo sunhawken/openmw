@@ -111,6 +111,7 @@ namespace MWRender
         mParticleSystem = new osgParticle::ParticleSystem;
 
         mParticleSystem->setParticleAlignment(osgParticle::ParticleSystem::FIXED);
+        // Horizontal placement. Inverted vertically so that the UV uses Y-down convention
         mParticleSystem->setAlignVectors(osg::Vec3f(1, 0, 0), osg::Vec3f(0, -1, 0));
 
         osgParticle::Particle& particleTemplate = mParticleSystem->getDefaultParticleTemplate();

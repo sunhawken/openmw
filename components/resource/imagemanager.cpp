@@ -196,7 +196,7 @@ namespace Resource
                     // This is most likely a KTX texture that OSG can't flip
                     // We don't want it to be corrupted or displayed incorrectly, so bail
                     // OSGoS *can* flip RGTC, but we can't verify that (yet?)
-                    Log(Debug::Error) << "Error loading " << path << ": cannot flip non-S3TC-compressed texture";
+                    Log(Debug::Error) << "Error loading " << path << ": cannot flip non-S3TC compressed texture";
                     mCache->addEntryToObjectCache(path.value(), mWarningImage);
                     return mWarningImage;
                 }
