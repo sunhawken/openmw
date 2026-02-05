@@ -106,7 +106,7 @@ Launcher::SettingsPage::SettingsPage(
 
     connect(configsList, &QTreeWidget::itemActivated, this, &SettingsPage::slotOpenFile);
 
-    auto actionOpenDir = new QAction(tr("Open directory"), configsList);
+    auto actionOpenDir = new QAction(tr("Open Directory"), configsList);
     connect(actionOpenDir, &QAction::triggered, [this]() {
         QUrl configFolderUrl = configsList->currentItem()->data(0, Role_ConfigDirectory).toUrl();
         QDesktopServices::openUrl(configFolderUrl);
