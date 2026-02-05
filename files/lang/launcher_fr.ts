@@ -587,15 +587,15 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Open directory</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open openmw.cfg</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Open settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open Directory</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1503,7 +1503,7 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controle la puissance de l&apos;effet Doppler. La valeur zéro le désactivant complétement.&lt;/p&gt;&lt;p&gt;L&apos;effet Doppler augmente ou diminue la hauteur des sons relativement à la vélocité de leur source par rapport au joueur.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
-        <source>Active config directories</source>
+        <source>Active Config Directories</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

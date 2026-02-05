@@ -591,15 +591,15 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Open directory</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open openmw.cfg</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Open settings.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open Directory</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1530,7 +1530,7 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Jeśli włączone -- sprawia, że przejścia między różnymi animacjami/pozycjami są znacznie płynniejsze. Pozwala również na ładowanie plików konfiguracyjnych blendowania animacji w formacie YAML, które mogą być dołączone do animacji w celu dostosowania stylów blendowania.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
-        <source>Active config directories</source>
+        <source>Active Config Directories</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
