@@ -118,6 +118,7 @@ namespace MWGui
 
         mAvatarImage->eventMouseButtonClick += MyGUI::newDelegate(this, &InventoryWindow::onAvatarClicked);
         mAvatarImage->setRenderItemTexture(mPreviewTexture.get());
+        // The widget is Y-down, the RTT image is Y-up, so this UV is inverted
         mAvatarImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 1.f, 1.f, 0.f));
 
         getWidget(mItemView, "ItemView");
@@ -556,6 +557,7 @@ namespace MWGui
         mPreview->setViewport(viewport.width, viewport.height);
         const float top = viewport.height / static_cast<float>(mPreview->getTextureHeight());
         const float right = viewport.width / static_cast<float>(mPreview->getTextureWidth());
+        // The widget is Y-down, the RTT image is Y-up, so this UV is inverted
         mAvatarImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, top, right, 0.f));
     }
 

@@ -629,6 +629,7 @@ namespace MWGui
                 {
                     entry.mMapTexture = std::make_unique<MyGUIPlatform::OSGTexture>(texture);
                     entry.mMapWidget->setRenderItemTexture(entry.mMapTexture.get());
+                    // The widget is Y-down, the RTT image is Y-up, so this UV is inverted
                     entry.mMapWidget->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 1.f, 1.f, 0.f));
                     needRedraw = true;
                 }
@@ -642,6 +643,7 @@ namespace MWGui
                 {
                     entry.mFogTexture = std::make_unique<MyGUIPlatform::OSGTexture>(tex);
                     entry.mFogWidget->setRenderItemTexture(entry.mFogTexture.get());
+                    // For inexplicable historical reasons the fog texture is Y-down so this UV is *not* inverted
                     entry.mFogWidget->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 0.f, 1.f, 1.f));
                 }
                 else
@@ -1334,6 +1336,9 @@ namespace MWGui
     {
         if (!mGlobalMapTexture.get())
         {
+            // The generated unexplored map and explored map RTT images are Y-up so the UVs are inverted
+            // The unexplored map isn't saved so we *could* consider generating it the "right" way
+            // but mixing conventions for map images could make things confusing
             mGlobalMapTexture = std::make_unique<MyGUIPlatform::OSGTexture>(mGlobalMapRender->getBaseTexture());
             mGlobalMapImage->setRenderItemTexture(mGlobalMapTexture.get());
             mGlobalMapImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 1.f, 1.f, 0.f));
