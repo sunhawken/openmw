@@ -107,26 +107,26 @@ Launcher::SettingsPage::SettingsPage(
     connect(configsList, &QTreeWidget::itemActivated, this, &SettingsPage::slotOpenFile);
 
     auto actionOpenDir = new QAction(tr("Open directory"), configsList);
-    connect(actionOpenDir, &QAction::triggered, [=]() {
+    connect(actionOpenDir, &QAction::triggered, [this]() {
         QUrl configFolderUrl = configsList->currentItem()->data(0, ConfigDirectory).toUrl();
         QDesktopServices::openUrl(configFolderUrl);
     });
 
     auto actionOpenOpenmwCfg = new QAction(tr("Open openmw.cfg"), configsList);
-    connect(actionOpenOpenmwCfg, &QAction::triggered, [=]() {
+    connect(actionOpenOpenmwCfg, &QAction::triggered, [this]() {
         QVariant configFileUrl = configsList->currentItem()->data(0, OpenMWCfg);
         if (configFileUrl.isValid())
             QDesktopServices::openUrl(configFileUrl.toUrl());
     });
 
     auto actionOpenSettingsCfg = new QAction(tr("Open settings.cfg"), configsList);
-    connect(actionOpenSettingsCfg, &QAction::triggered, [=]() {
+    connect(actionOpenSettingsCfg, &QAction::triggered, [this]() {
         QVariant configFileUrl = configsList->currentItem()->data(0, SettingsCfg);
         if (configFileUrl.isValid())
             QDesktopServices::openUrl(configFileUrl.toUrl());
     });
 
-    connect(configsList, &QTreeWidget::customContextMenuRequested, [=](const QPoint& pos) {
+    connect(configsList, &QTreeWidget::customContextMenuRequested, [=, this](const QPoint& pos) {
         if (configsList->currentItem())
         {
             QMenu* contextMenu = new QMenu();
