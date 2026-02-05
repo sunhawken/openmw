@@ -74,10 +74,10 @@ namespace
 
     enum FileTypeRoles
     {
-        ThisFile = Qt::ItemDataRole::UserRole,
-        ConfigDirectory,
-        OpenMWCfg,
-        SettingsCfg
+        Role_ThisFile = Qt::ItemDataRole::UserRole,
+        Role_ConfigDirectory,
+        Role_OpenMWCfg,
+        Role_SettingsCfg
     };
 }
 
@@ -108,20 +108,20 @@ Launcher::SettingsPage::SettingsPage(
 
     auto actionOpenDir = new QAction(tr("Open directory"), configsList);
     connect(actionOpenDir, &QAction::triggered, [this]() {
-        QUrl configFolderUrl = configsList->currentItem()->data(0, ConfigDirectory).toUrl();
+        QUrl configFolderUrl = configsList->currentItem()->data(0, Role_ConfigDirectory).toUrl();
         QDesktopServices::openUrl(configFolderUrl);
     });
 
     auto actionOpenOpenmwCfg = new QAction(tr("Open openmw.cfg"), configsList);
     connect(actionOpenOpenmwCfg, &QAction::triggered, [this]() {
-        QVariant configFileUrl = configsList->currentItem()->data(0, OpenMWCfg);
+        QVariant configFileUrl = configsList->currentItem()->data(0, Role_OpenMWCfg);
         if (configFileUrl.isValid())
             QDesktopServices::openUrl(configFileUrl.toUrl());
     });
 
     auto actionOpenSettingsCfg = new QAction(tr("Open settings.cfg"), configsList);
     connect(actionOpenSettingsCfg, &QAction::triggered, [this]() {
-        QVariant configFileUrl = configsList->currentItem()->data(0, SettingsCfg);
+        QVariant configFileUrl = configsList->currentItem()->data(0, Role_SettingsCfg);
         if (configFileUrl.isValid())
             QDesktopServices::openUrl(configFileUrl.toUrl());
     });
@@ -131,9 +131,9 @@ Launcher::SettingsPage::SettingsPage(
         {
             QMenu* contextMenu = new QMenu();
 
-            QVariant configFileUrl = configsList->currentItem()->data(0, OpenMWCfg);
+            QVariant configFileUrl = configsList->currentItem()->data(0, Role_OpenMWCfg);
             actionOpenOpenmwCfg->setEnabled(configFileUrl.isValid());
-            configFileUrl = configsList->currentItem()->data(0, SettingsCfg);
+            configFileUrl = configsList->currentItem()->data(0, Role_SettingsCfg);
             actionOpenSettingsCfg->setEnabled(configFileUrl.isValid());
 
             contextMenu->addActions({ actionOpenDir, actionOpenOpenmwCfg, actionOpenSettingsCfg });
@@ -457,8 +457,8 @@ void Launcher::SettingsPage::populateLoadedConfigs()
         configItem->setExpanded(true);
 
         QUrl directoryUrl = QUrl::fromLocalFile(configPath);
-        configItem->setData(0, ThisFile, directoryUrl);
-        configItem->setData(0, ConfigDirectory, directoryUrl);
+        configItem->setData(0, Role_ThisFile, directoryUrl);
+        configItem->setData(0, Role_ConfigDirectory, directoryUrl);
 
         bool hasOpenmwCfg = std::filesystem::exists(path / "openmw.cfg");
         bool hasSettingsCfg = std::filesystem::exists(path / "settings.cfg");
@@ -470,11 +470,11 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
             QUrl url = QUrl::fromLocalFile(Files::pathToQString(path / "openmw.cfg"));
 
-            openmwCfgItem->setData(0, ThisFile, url);
-            openmwCfgItem->setData(0, OpenMWCfg, url);
-            openmwCfgItem->setData(0, ConfigDirectory, directoryUrl);
+            openmwCfgItem->setData(0, Role_ThisFile, url);
+            openmwCfgItem->setData(0, Role_OpenMWCfg, url);
+            openmwCfgItem->setData(0, Role_ConfigDirectory, directoryUrl);
 
-            configItem->setData(0, OpenMWCfg, url);
+            configItem->setData(0, Role_OpenMWCfg, url);
         }
 
         if (hasSettingsCfg)
@@ -484,11 +484,11 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
             QUrl url = QUrl::fromLocalFile(Files::pathToQString(path / "settings.cfg"));
 
-            settingsCfgItem->setData(0, ThisFile, url);
-            settingsCfgItem->setData(0, SettingsCfg, url);
-            settingsCfgItem->setData(0, ConfigDirectory, directoryUrl);
+            settingsCfgItem->setData(0, Role_ThisFile, url);
+            settingsCfgItem->setData(0, Role_SettingsCfg, url);
+            settingsCfgItem->setData(0, Role_ConfigDirectory, directoryUrl);
 
-            configItem->setData(0, SettingsCfg, url);
+            configItem->setData(0, Role_SettingsCfg, url);
         }
     }
 }
@@ -733,6 +733,6 @@ void Launcher::SettingsPage::slotDistantLandToggled(bool checked)
 
 void Launcher::SettingsPage::slotOpenFile(QTreeWidgetItem* item)
 {
-    QUrl configFolderUrl = item->data(0, ThisFile).toUrl();
+    QUrl configFolderUrl = item->data(0, Role_ThisFile).toUrl();
     QDesktopServices::openUrl(configFolderUrl);
 }
