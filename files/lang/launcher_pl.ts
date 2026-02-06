@@ -591,15 +591,11 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Open openmw.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Open settings.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open Directory</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open %1</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
