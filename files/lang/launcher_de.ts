@@ -587,15 +587,11 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Open openmw.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Open settings.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open Directory</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open %1</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
