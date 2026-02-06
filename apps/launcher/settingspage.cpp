@@ -87,7 +87,7 @@ namespace
     struct FileType
     {
         FileTypeRoles itemDataRole;
-        const char*  name;
+        const char* name;
         bool showInAllConfigDirectories;
     };
 
@@ -149,8 +149,7 @@ Launcher::SettingsPage::SettingsPage(
         {
             QMenu contextMenu;
 
-            QList<QAction*> relevantActions;
-            relevantActions.push_back(actionOpenDir);
+            contextMenu.addAction(actionOpenDir);
 
             bool topLevel = !configsList->currentItem()->parent();
 
@@ -163,11 +162,9 @@ Launcher::SettingsPage::SettingsPage(
                     bool fileExists = fileUrl.isValid();
                     openFileActions[i]->setEnabled(fileExists);
                     openFileActions[i]->setVisible(topLevel || fileExists);
-                    relevantActions.push_back(openFileActions[i]);
+                    contextMenu.addAction(openFileActions[i]);
                 }
             }
-
-            contextMenu.addActions(relevantActions);
 
             contextMenu.exec(configsList->mapToGlobal(pos));
         }
@@ -484,7 +481,8 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
         for (const auto& fileType : configDirectoryFiles)
         {
-            if ((isMainUserConfig || fileType.showInAllConfigDirectories) && std::filesystem::exists(path / fileType.name))
+            if ((isMainUserConfig || fileType.showInAllConfigDirectories)
+                && std::filesystem::exists(path / fileType.name))
             {
                 QTreeWidgetItem* fileItem = new QTreeWidgetItem(configItem);
                 fileItem->setText(0, fileType.name);
