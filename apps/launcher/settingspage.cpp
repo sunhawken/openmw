@@ -147,7 +147,7 @@ Launcher::SettingsPage::SettingsPage(
     connect(configsList, &QTreeWidget::customContextMenuRequested, [=, this](const QPoint& pos) {
         if (configsList->currentItem())
         {
-            QMenu* contextMenu = new QMenu();
+            QMenu contextMenu;
 
             QList<QAction*> relevantActions;
             relevantActions.push_back(actionOpenDir);
@@ -167,10 +167,9 @@ Launcher::SettingsPage::SettingsPage(
                 }
             }
 
-            contextMenu->addActions(relevantActions);
+            contextMenu.addActions(relevantActions);
 
-            contextMenu->exec(configsList->mapToGlobal(pos));
-            contextMenu->deleteLater();
+            contextMenu.exec(configsList->mapToGlobal(pos));
         }
     });
 }
