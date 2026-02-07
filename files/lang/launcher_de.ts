@@ -575,23 +575,43 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Local config directory contains an openmw.cfg. Usually this config is loaded first.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Global config directory&apos;s openmw.cfg loaded. This was because there was no local openmw.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>User config directory. It was loaded because %1 contains the line config=%2</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open Directory</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Open %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Local config directory used because it contains an openmw.cfg.
+Logs and settings changed through the launcher and in-game will be saved here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Local config directory used because it contains an openmw.cfg.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global config directory used because local directory did not contain an openmw.cfg
+Logs and settings changed through the launcher and in-game will be saved here.
+This is typically a symptom of a broken OpenMW installation or bad package.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global config directory used because local directory did not contain an openmw.cfg</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User config directory used because %1 contains the line config=%2
+Logs and settings changed through the launcher and in-game will be saved here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User config directory used because %1 contains the line config=%2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
