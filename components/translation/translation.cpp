@@ -17,7 +17,7 @@ namespace Translation
 
         loadData(mCellNamesTranslations, esmNameNoExtension, "cel", dataFileCollections);
         loadData(mPhraseForms, esmNameNoExtension, "top", dataFileCollections);
-        loadData(mTopicIDs, esmNameNoExtension, "mrk", dataFileCollections);
+        loadData(mKeywords, esmNameNoExtension, "mrk", dataFileCollections);
     }
 
     void Storage::loadData(ContainerType& container, std::string_view fileNameNoExtension, std::string_view extension,
@@ -75,18 +75,6 @@ namespace Translation
         return entry->second;
     }
 
-    std::string_view Storage::topicID(std::string_view phrase) const
-    {
-        std::string_view result = topicStandardForm(phrase);
-
-        // seeking for the topic ID
-        auto topicIDIterator = mTopicIDs.find(result);
-
-        if (topicIDIterator != mTopicIDs.end())
-            result = topicIDIterator->second;
-
-        return result;
-    }
 
     std::string_view Storage::topicStandardForm(std::string_view phrase) const
     {
@@ -98,6 +86,16 @@ namespace Translation
             return phrase;
     }
 
+    std::string_view Storage::topicKeyword(std::string_view phrase) const
+    {
+        auto entry = mKeywords.find(phrase);
+
+        if (entry == mKeywords.end())
+            return phrase;
+
+        return entry->second;
+    }
+
     void Storage::setEncoder(ToUTF8::Utf8Encoder* encoder)
     {
         mEncoder = encoder;
@@ -105,6 +103,6 @@ namespace Translation
 
     bool Storage::hasTranslation() const
     {
-        return !mCellNamesTranslations.empty() || !mTopicIDs.empty() || !mPhraseForms.empty();
+        return !mCellNamesTranslations.empty() || !mKeywords.empty() || !mPhraseForms.empty();
     }
 }
