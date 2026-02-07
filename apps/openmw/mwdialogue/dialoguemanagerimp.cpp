@@ -77,6 +77,8 @@ namespace MWDialogue
         mOriginalDisposition = 0;
         mCurrentDisposition = 0;
         mPermanentDispositionChange = 0;
+        mKeywordSearch.clear();
+        mKeywordSearchInitialized = false;
     }
 
     void DialogueManager::addTopic(const ESM::RefId& topic)
@@ -84,15 +86,29 @@ namespace MWDialogue
         mKnownTopics.insert(topic);
     }
 
-    std::vector<ESM::RefId> DialogueManager::parseTopicIdsFromText(const std::string& text)
+    const MWDialogue::KeywordSearch<std::string>& DialogueManager::getKeywordSearch() const
+    {
+        const auto& dialogue = MWBase::Environment::get().getESMStore()->get<ESM::Dialogue>();
+        if (!mKeywordSearchInitialized || dialogue.getKeywordSearchModFlag())
+        {
+            mKeywordSearch.clear();
+            for (const ESM::Dialogue& topic : dialogue)
+                mKeywordSearch.seed(topic.mStringId, topic.mStringId);
+            mKeywordSearchInitialized = true;
+        }
+
+        return mKeywordSearch;
+    }
+
+    std::vector<ESM::RefId> DialogueManager::parseTopicIdsFromText(const std::string& text) const
     {
         std::vector<ESM::RefId> topicIdList;
 
-        std::vector<HyperTextParser::Token> hypertext = HyperTextParser::parseHyperText(text);
+        std::vector<HyperTextParser::Token> hypertext = HyperTextParser::parseHyperText(text, getKeywordSearch());
 
         for (std::vector<HyperTextParser::Token>::iterator tok = hypertext.begin(); tok != hypertext.end(); ++tok)
         {
-            std::string topicId = Misc::StringUtils::lowerCase(tok->mText);
+            std::string topicId = Misc::StringUtils::lowerCase(tok->mMatch.mValue);
 
             if (tok->isExplicitLink())
             {

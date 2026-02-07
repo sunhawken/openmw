@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "../mwdialogue/keywordsearch.hpp"
+
 namespace MWDialogue
 {
     namespace HyperTextParser
@@ -16,22 +18,20 @@ namespace MWDialogue
                 ImplicitKeyword
             };
 
-            Token(const std::string& text, Type type)
-                : mText(text)
+            Token(const KeywordSearch<std::string>::Match& token, Type type)
+                : mMatch(token)
                 , mType(type)
             {
             }
 
             bool isExplicitLink() { return mType == ExplicitLink; }
 
-            std::string mText;
+            KeywordSearch<std::string>::Match mMatch;
             Type mType;
         };
 
-        // In translations (at least Russian) the links are marked with @#, so
-        // it should be a function to parse it
-        std::vector<Token> parseHyperText(const std::string& text);
-        void tokenizeKeywords(const std::string& text, std::vector<Token>& tokens);
+        std::vector<Token> parseHyperText(
+            const std::string& text, const MWDialogue::KeywordSearch<std::string>& search);
         size_t removePseudoAsterisks(std::string& phrase);
     }
 }

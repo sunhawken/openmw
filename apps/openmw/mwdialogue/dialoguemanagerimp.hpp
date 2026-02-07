@@ -14,6 +14,7 @@
 #include <components/misc/strings/algorithm.hpp>
 #include <components/translation/translation.hpp>
 
+#include "../mwdialogue/keywordsearch.hpp"
 #include "../mwworld/ptr.hpp"
 
 #include "../mwscript/compilercontext.hpp"
@@ -42,6 +43,9 @@ namespace MWDialogue
         std::map<ESM::RefId, ActorKnownTopicInfo> mActorKnownTopics;
 
         Translation::Storage& mTranslationDataStorage;
+        mutable bool mKeywordSearchInitialized{ false };
+        mutable MWDialogue::KeywordSearch<std::string> mKeywordSearch;
+
         MWScript::CompilerContext mCompilerContext;
         Compiler::StreamErrorHandler mErrorHandler;
 
@@ -59,7 +63,8 @@ namespace MWDialogue
         int mCurrentDisposition;
         int mPermanentDispositionChange;
 
-        std::vector<ESM::RefId> parseTopicIdsFromText(const std::string& text);
+        const MWDialogue::KeywordSearch<std::string>& getKeywordSearch() const;
+        std::vector<ESM::RefId> parseTopicIdsFromText(const std::string& text) const;
         void addTopicsFromText(const std::string& text);
 
         void updateActorKnownTopics();
