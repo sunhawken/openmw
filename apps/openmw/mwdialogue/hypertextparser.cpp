@@ -13,11 +13,19 @@ namespace MWDialogue
 {
     namespace HyperTextParser
     {
-        std::vector<Token> parseHyperText(const std::string& text)
+        std::vector<Token> parseHyperText(const std::string& text, const MWDialogue::KeywordSearch<std::string>& search)
         {
             std::vector<Token> result;
             size_t posEnd = std::string::npos;
             size_t iterationPos = 0;
+
+            auto tokenizeKeywords = [&](std::string::const_iterator begin, std::string::const_iterator end) {
+                std::vector<KeywordSearch<std::string>::Match> matches;
+                search.highlightKeywords(begin, end, matches);
+                for (const auto& match : matches)
+                    result.emplace_back(match, Token::ImplicitKeyword);
+            };
+
             for (;;)
             {
                 const size_t posBegin = text.find('@', iterationPos);
@@ -27,36 +35,25 @@ namespace MWDialogue
                 if (posBegin != std::string::npos && posEnd != std::string::npos)
                 {
                     if (posBegin != iterationPos)
-                        tokenizeKeywords(text.substr(iterationPos, posBegin - iterationPos), result);
+                        tokenizeKeywords(text.begin() + iterationPos, text.begin() + posBegin);
 
-                    std::string link = text.substr(posBegin + 1, posEnd - posBegin - 1);
-                    result.emplace_back(link, Token::ExplicitLink);
+                    KeywordSearch<std::string>::Match token;
+                    token.mBeg = text.begin() + posBegin + 1;
+                    token.mEnd = text.begin() + posEnd;
+                    token.mValue = std::string(token.mBeg, token.mEnd);
+                    result.emplace_back(token, Token::ExplicitLink);
 
                     iterationPos = posEnd + 1;
                 }
                 else
                 {
                     if (iterationPos != text.size())
-                        tokenizeKeywords(text.substr(iterationPos), result);
+                        tokenizeKeywords(text.begin() + iterationPos, text.end());
                     break;
                 }
             }
 
             return result;
-        }
-
-        void tokenizeKeywords(const std::string& text, std::vector<Token>& tokens)
-        {
-            const auto& keywordSearch
-                = MWBase::Environment::get().getESMStore()->get<ESM::Dialogue>().getDialogIdKeywordSearch();
-
-            std::vector<KeywordSearch<int /*unused*/>::Match> matches;
-            keywordSearch.highlightKeywords(text.begin(), text.end(), matches);
-
-            for (const auto& match : matches)
-            {
-                tokens.emplace_back(std::string(match.mBeg, match.mEnd), Token::ImplicitKeyword);
-            }
         }
 
         size_t removePseudoAsterisks(std::string& phrase)
