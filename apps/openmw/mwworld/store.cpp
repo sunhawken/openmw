@@ -1037,11 +1037,6 @@ namespace MWWorld
     // Dialogue
     //=========================================================================
 
-    Store<ESM::Dialogue>::Store()
-        : mKeywordSearchModFlag(true)
-    {
-    }
-
     void Store<ESM::Dialogue>::setUp()
     {
         // DialInfos marked as deleted are kept during the loading phase, so that the linked list
@@ -1137,19 +1132,9 @@ namespace MWWorld
             list.push_back(dialogue->mId);
     }
 
-    const MWDialogue::KeywordSearch<int>& Store<ESM::Dialogue>::getDialogIdKeywordSearch() const
+    bool Store<ESM::Dialogue>::getKeywordSearchModFlag() const
     {
-        if (mKeywordSearchModFlag)
-        {
-            mKeywordSearch.clear();
-
-            for (const ESM::Dialogue& topic : *this)
-                mKeywordSearch.seed(topic.mStringId, 0 /*unused*/);
-
-            mKeywordSearchModFlag = false;
-        }
-
-        return mKeywordSearch;
+        return std::exchange(mKeywordSearchModFlag, false);
     }
 
     // ESM4 Cell
