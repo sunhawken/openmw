@@ -442,12 +442,22 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 
         if (path == mCfgMgr.getLocalPath())
         {
-            toolTipText = tr("Local config directory contains an openmw.cfg. Usually this config is loaded first.");
+            if (isMainUserConfig)
+                toolTipText = tr(
+                    "Local config directory used because it contains an openmw.cfg.\n"
+                    "Logs and settings changed through the launcher and in-game will be saved here.");
+            else
+                toolTipText = tr("Local config directory used because it contains an openmw.cfg.");
         }
         else if (path == mCfgMgr.getGlobalPath())
         {
-            toolTipText
-                = tr("Global config directory's openmw.cfg loaded. This was because there was no local openmw.cfg");
+            if (isMainUserConfig)
+                toolTipText = tr(
+                    "Global config directory used because local directory did not contain an openmw.cfg\n"
+                    "Logs and settings changed through the launcher and in-game will be saved here.\n"
+                    "This is typically a symptom of a broken OpenMW installation or bad package.");
+            else
+                toolTipText = tr("Global config directory used because local directory did not contain an openmw.cfg");
         }
         else
         {
@@ -464,9 +474,17 @@ void Launcher::SettingsPage::populateLoadedConfigs()
             if (!configSetting.value.isEmpty())
             {
                 const QFileInfo configPathInfo = QFileInfo(configSetting.context + "/openmw.cfg");
-                toolTipText = QString(tr("User config directory. It was loaded because %1 contains the line config=%2"))
-                                  .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
+                if (isMainUserConfig)
+                    toolTipText = tr(
+                        "User config directory used because %1 contains the line config=%2\n"
+                        "Logs and settings changed through the launcher and in-game will be saved here.")
+                                      .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
+                else
+                    toolTipText = tr("User config directory used because %1 contains the line config=%2")
+                                      .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
             }
+            else if (isMainUserConfig)
+                toolTipText = tr("Logs and settings changed through the launcher and in-game will be saved here.");
         }
 
         QTreeWidgetItem* configItem = new QTreeWidgetItem(configsList);
