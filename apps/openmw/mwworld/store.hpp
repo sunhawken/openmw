@@ -512,7 +512,7 @@ namespace MWWorld
         mutable bool mKeywordSearchModFlag{ true };
 
     public:
-        Store() = default;
+        Store();
 
         typedef SharedIterator<ESM::Dialogue> iterator;
 

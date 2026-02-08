@@ -1037,6 +1037,8 @@ namespace MWWorld
     // Dialogue
     //=========================================================================
 
+    Store<ESM::Dialogue>::Store() {}
+
     void Store<ESM::Dialogue>::setUp()
     {
         // DialInfos marked as deleted are kept during the loading phase, so that the linked list
