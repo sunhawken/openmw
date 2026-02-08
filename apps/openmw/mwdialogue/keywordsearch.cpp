@@ -130,4 +130,71 @@ namespace MWDialogue
             }
         }
     }
+
+    std::vector<KeywordSearch::Match> KeywordSearch::parseHyperText(const std::string& text) const
+    {
+        std::vector<Match> matches;
+        size_t posEnd = std::string::npos;
+        size_t iterationPos = 0;
+
+        for (;;)
+        {
+            const size_t posBegin = text.find('@', iterationPos);
+            if (posBegin != std::string::npos)
+                posEnd = text.find('#', posBegin);
+
+            if (posBegin != std::string::npos && posEnd != std::string::npos)
+            {
+                if (posBegin != iterationPos)
+                    highlightKeywords(text.begin() + iterationPos, text.begin() + posBegin, matches);
+
+                Match token;
+                token.mBeg = text.begin() + posBegin + 1;
+                token.mEnd = text.begin() + posEnd;
+                token.mValue = std::string(token.mBeg, token.mEnd);
+                token.mExplicit = true;
+
+                // Some post-processing for easier standard form conversion
+                size_t asteriskCount = removePseudoAsterisks(token.mValue);
+                for (; asteriskCount > 0; --asteriskCount)
+                    token.mValue.append("*");
+
+                matches.push_back(token);
+
+                iterationPos = posEnd + 1;
+            }
+            else
+            {
+                if (iterationPos < text.size())
+                    highlightKeywords(text.begin() + iterationPos, text.end(), matches);
+                break;
+            }
+        }
+
+        return matches;
+    }
+
+    size_t removePseudoAsterisks(std::string& phrase)
+    {
+        size_t pseudoAsterisksCount = 0;
+
+        if (!phrase.empty())
+        {
+            std::string::reverse_iterator rit = phrase.rbegin();
+            const char specialPseudoAsteriskCharacter = 127;
+
+            while (rit != phrase.rend() && *rit == specialPseudoAsteriskCharacter)
+            {
+                pseudoAsterisksCount++;
+                ++rit;
+            }
+        }
+
+        if (pseudoAsterisksCount > 0)
+        {
+            phrase = phrase.substr(0, phrase.length() - pseudoAsterisksCount);
+        }
+
+        return pseudoAsterisksCount;
+    }
 }

@@ -50,7 +50,7 @@
 #include "../mwmechanics/npcstats.hpp"
 
 #include "filter.hpp"
-#include "hypertextparser.hpp"
+#include "keywordsearch.hpp"
 
 namespace MWDialogue
 {
@@ -104,12 +104,12 @@ namespace MWDialogue
     {
         std::vector<ESM::RefId> topicIdList;
 
-        std::vector<HyperTextParser::Token> tokens = HyperTextParser::parseHyperText(text, getKeywordSearch());
+        std::vector<KeywordSearch::Match> matches = getKeywordSearch().parseHyperText(text);
 
-        for (const HyperTextParser::Token& token : tokens)
+        for (const auto& match : matches)
         {
-            std::string topicId(token.mMatch.mValue);
-            if (token.mIsExplicit)
+            std::string topicId(match.mValue);
+            if (match.mExplicit)
                 topicId = mTranslationDataStorage.topicStandardForm(topicId);
             topicIdList.push_back(ESM::RefId::stringRefId(topicId));
         }
