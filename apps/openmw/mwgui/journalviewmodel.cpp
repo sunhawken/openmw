@@ -1,6 +1,6 @@
 #include "journalviewmodel.hpp"
 
-#include <map>
+#include <unordered_map>
 
 #include <MyGUI_LanguageManager.h>
 
@@ -27,6 +27,10 @@ namespace MWGui
 
         mutable bool mKeywordSearchLoaded;
         mutable TopicSearch mKeywordSearch;
+        using TopicMap = std::unordered_map<std::string_view, const MWDialogue::Topic*, Misc::StringUtils::CiHash,
+            Misc::StringUtils::CiEqual>;
+
+        mutable TopicMap mTopics;
 
         JournalViewModelImpl() { mKeywordSearchLoaded = false; }
 
@@ -37,6 +41,7 @@ namespace MWGui
         void unload() override
         {
             mKeywordSearch.clear();
+            mTopics.clear();
             mKeywordSearchLoaded = false;
         }
 
@@ -47,7 +52,10 @@ namespace MWGui
                 MWBase::Journal* journal = MWBase::Environment::get().getJournal();
 
                 for (const auto& [_, topic] : journal->getTopics())
+                {
+                    mTopics[topic.getName()] = &topic;
                     mKeywordSearch.seed(topic.getName(), &topic);
+                }
 
                 mKeywordSearchLoaded = true;
             }
@@ -94,41 +102,44 @@ namespace MWGui
                     MWBase::WindowManager& windowManager = *MWBase::Environment::get().getWindowManager();
                     const Translation::Storage& translationStorage = windowManager.getTranslationDataStorage();
 
-                    mText = mEntry->getText();
+                    const std::string& text = mEntry->getText();
+                    mText.reserve(text.size());
 
-                    size_t posEnd = 0;
-                    for (;;)
+                    using HyperTextToken = MWDialogue::HyperTextParser::Token<const MWDialogue::Topic*>;
+                    std::vector<HyperTextToken> tokens
+                        = MWDialogue::HyperTextParser::parseHyperText(text, mModel->mKeywordSearch);
+                    mTokens.reserve(tokens.size());
+
+                    // Generate the display text by removing @# and pseudoasterisks from the explicit links
+                    // and generate a more convenient token list in the process.
+                    // The matches we got provide positions in the original text and must be recalculated.
+                    std::string::const_iterator pos = text.begin();
+                    for (const HyperTextToken& token : tokens)
                     {
-                        const size_t posBegin = mText.find('@');
-                        if (posBegin != std::string::npos)
-                            posEnd = mText.find('#', posBegin);
+                        std::string displayName(token.mMatch.mBeg, token.mMatch.mEnd);
+                        const MWDialogue::Topic* value = token.mMatch.mValue;
 
-                        if (posBegin != std::string::npos && posEnd != std::string::npos)
+                        if (token.mIsExplicit)
                         {
-                            std::string link = mText.substr(posBegin + 1, posEnd - posBegin - 1);
-                            size_t asteriskCount = MWDialogue::HyperTextParser::removePseudoAsterisks(link);
-                            const std::string displayName = link;
-                            mText.replace(posBegin, posEnd + 1 - posBegin, displayName);
-
+                            size_t asteriskCount = MWDialogue::HyperTextParser::removePseudoAsterisks(displayName);
+                            std::string keyword = displayName;
                             for (; asteriskCount > 0; --asteriskCount)
-                                link.append("*");
-                            std::string_view topicName = translationStorage.topicStandardForm(link);
+                                keyword.append("*");
 
-                            const MWDialogue::Topic* value = nullptr;
-                            if (mModel->mKeywordSearch.containsKeyword(topicName, value))
-                                mTokens.emplace_back(posBegin, posBegin + displayName.size(), value);
+                            auto found = mModel->mTopics.find(translationStorage.topicStandardForm(keyword));
+                            if (found != mModel->mTopics.end())
+                                value = found->second;
                         }
-                        else
-                            break;
-                    }
 
-                    if (mTokens.empty() || !translationStorage.hasTranslation())
-                    {
-                        std::vector<TopicSearch::Match> matches;
-                        mModel->mKeywordSearch.highlightKeywords(mText.begin(), mText.end(), matches);
-                        for (TopicSearch::Match& match : matches)
-                            mTokens.emplace_back(match.mBeg - mText.begin(), match.mEnd - mText.begin(), match.mValue);
+                        // Explicit matches do not include the surrounding tags
+                        const int tagLen = token.mIsExplicit ? 1 : 0;
+                        mText.append(pos, token.mMatch.mBeg - tagLen);
+                        if (value)
+                            mTokens.emplace_back(mText.size(), mText.size() + displayName.size(), value);
+                        mText.append(displayName);
+                        pos = token.mMatch.mEnd + tagLen;
                     }
+                    mText.append(pos, text.end());
 
                     mLoaded = true;
                 }
