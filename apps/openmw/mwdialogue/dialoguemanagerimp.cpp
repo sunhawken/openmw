@@ -92,8 +92,10 @@ namespace MWDialogue
         if (!mKeywordSearchInitialized || dialogue.getKeywordSearchModFlag())
         {
             mKeywordSearch.clear();
+
             for (const ESM::Dialogue& topic : dialogue)
-                mKeywordSearch.seed(topic.mStringId, topic.mStringId);
+                mKeywordSearch.seed(mTranslationDataStorage.topicKeyword(topic.mStringId), topic.mStringId);
+
             mKeywordSearchInitialized = true;
         }
 
