@@ -1,5 +1,7 @@
 #include "apps/openmw/mwdialogue/keywordsearch.hpp"
 
+#include <components/translation/translation.hpp>
+
 #include <gtest/gtest.h>
 
 struct KeywordSearchTest : public ::testing::Test
@@ -180,4 +182,155 @@ TEST_F(KeywordSearchTest, keyword_test_single_char_strings)
     EXPECT_EQ(matches.size(), 2);
     EXPECT_EQ(std::string(matches[0].mBeg, matches[0].mEnd), "a");
     EXPECT_EQ(std::string(matches[1].mBeg, matches[1].mEnd), "ab");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_explicit_links)
+{
+    // Verify that @...# sequences are parsed as explicit links
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+
+    std::string text = "Go to @Balmora#.";
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 1);
+    EXPECT_TRUE(matches[0].mExplicit);
+    EXPECT_EQ(matches[0].mTopicId, "balmora");
+    EXPECT_EQ(matches[0].getDisplayName(), "Balmora");
+
+    std::string matchedText(matches[0].mBeg, matches[0].mEnd);
+    EXPECT_EQ(matchedText, "@Balmora#");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_mixed_implicit_and_explicit)
+{
+    // Verify that explicit links and seeded keywords are both returned
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+
+    search.seed("guild", "mages guild");
+
+    std::string text = "To @join# the guild, talk to the head.";
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 2);
+
+    EXPECT_TRUE(matches[0].mExplicit);
+    EXPECT_EQ(matches[0].getDisplayName(), "join");
+    EXPECT_EQ(matches[0].mTopicId, "join");
+    EXPECT_FALSE(matches[1].mExplicit);
+    EXPECT_EQ(matches[1].getDisplayName(), "guild");
+    EXPECT_EQ(matches[1].mTopicId, "mages guild");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_keywords_ignored_inside_explicit)
+{
+    // Verify that a seeded keyword is NOT detected if it sits inside an explicit tag
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+
+    search.seed("test", "test_id");
+
+    std::string text = "This is a @test#.";
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 1);
+    EXPECT_TRUE(matches[0].mExplicit);
+    EXPECT_EQ(matches[0].mTopicId, "test");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_broken_tags)
+{
+    // Verify behavior when tags are malformed
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+
+    search.seed("text", "text_id");
+
+    std::string text = "This is @broken text.";
+
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 1);
+    EXPECT_FALSE(matches[0].mExplicit);
+    EXPECT_EQ(matches[0].mTopicId, "text_id");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_explicit_with_translation)
+{
+    // Verify that standard form conversion works
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+
+    storage.addPhraseForm("Балмору", "Балмора");
+    std::string text = "Поезжайте в @Балмору#.";
+
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 1);
+    EXPECT_TRUE(matches[0].mExplicit);
+    EXPECT_EQ(matches[0].getDisplayName(), "Балмору");
+    EXPECT_EQ(matches[0].mTopicId, "Балмора");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_explicit_with_pseudo_asterisk_and_translation)
+{
+    // Verify that alternative forms are properly used
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+
+    storage.addPhraseForm("Guild", "Fighters Guild");
+    storage.addPhraseForm("Guild*", "Mages Guild");
+
+    std::string text = "Join the @Guild\x7F#.";
+
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 1);
+    EXPECT_EQ(matches[0].getDisplayName(), "Guild");
+    EXPECT_EQ(matches[0].mTopicId, "mages guild");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_preserve_untranslated_links)
+{
+    // Verify that explicit hyperlinks without a standard form are preserved
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+
+    storage.addPhraseForm("Двемеры", "Двемер");
+
+    std::string text = "@Двемеры# и @данмеры#.";
+
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 2);
+    EXPECT_EQ(matches[0].getDisplayName(), "Двемеры");
+    EXPECT_EQ(matches[0].mTopicId, "Двемер");
+    EXPECT_EQ(matches[1].getDisplayName(), "данмеры");
+    EXPECT_EQ(matches[1].mTopicId, "данмеры");
+}
+
+TEST_F(KeywordSearchTest, parse_hypertext_mark_file_overrides_keyword)
+{
+    // The infamous Bloodmoon test case
+    // The mark file overrides the keyword that matches the убит topic
+    MWDialogue::KeywordSearch search;
+    search.seed("assassinated", "убит");
+    search.seed("proof", "доказательство");
+
+    Translation::Storage storage;
+    storage.addPhraseForm("доказательств", "доказательство");
+    storage.addPhraseForm("убит", "убит");
+
+    std::string text = "Конечно же, у меня нет @доказательств#, что он был убит or assassinated";
+
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 2);
+    EXPECT_TRUE(matches[0].mExplicit);
+    EXPECT_EQ(matches[0].getDisplayName(), "доказательств");
+    EXPECT_EQ(matches[0].mTopicId, "доказательство");
+    EXPECT_FALSE(matches[1].mExplicit);
+    EXPECT_EQ(matches[1].getDisplayName(), "assassinated");
+    EXPECT_EQ(matches[1].mTopicId, "убит");
 }
