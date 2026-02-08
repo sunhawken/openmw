@@ -45,12 +45,14 @@ namespace MWGui
             if (!mKeywordSearchLoaded)
             {
                 MWBase::Journal* journal = MWBase::Environment::get().getJournal();
+                MWBase::WindowManager& windowManager = *MWBase::Environment::get().getWindowManager();
+                const Translation::Storage& translationStorage = windowManager.getTranslationDataStorage();
 
                 for (const auto& [_, topic] : journal->getTopics())
                 {
                     const std::string topicId = Misc::StringUtils::lowerCase(topic.getName());
                     mTopics[topicId] = &topic;
-                    mKeywordSearch.seed(topicId, topicId);
+                    mKeywordSearch.seed(translationStorage.topicKeyword(topic.getName()), topicId);
                 }
 
                 mKeywordSearchLoaded = true;

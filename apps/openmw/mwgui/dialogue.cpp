@@ -620,13 +620,16 @@ namespace MWGui
         if (mTopicsList->getItemCount() > 0)
             mTopicsList->addSeparator();
 
+        MWBase::WindowManager& windowManager = *MWBase::Environment::get().getWindowManager();
+        const Translation::Storage& translationStorage = windowManager.getTranslationDataStorage();
+
         for (const auto& keyword : mKeywords)
         {
             std::string topicId = Misc::StringUtils::lowerCase(keyword);
             mTopicsList->addItem(keyword, sVerticalPadding);
 
             auto t = std::make_unique<Topic>(keyword);
-            mKeywordSearch.seed(topicId, topicId);
+            mKeywordSearch.seed(translationStorage.topicKeyword(keyword), topicId);
             t->eventTopicActivated += MyGUI::newDelegate(this, &DialogueWindow::onTopicActivated);
             mTopicLinks[topicId] = std::move(t);
 
