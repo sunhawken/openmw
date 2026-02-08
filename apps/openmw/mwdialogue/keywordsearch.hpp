@@ -29,12 +29,16 @@ namespace MWDialogue
             Point mBeg;
             Point mEnd;
             std::string mValue;
+            bool mExplicit{ false };
         };
 
         void seed(std::string_view keyword, std::string_view value);
         void clear();
         void highlightKeywords(Point beg, Point end, std::vector<Match>& out) const;
+        std::vector<KeywordSearch::Match> parseHyperText(const std::string& text) const;
     };
+
+    size_t removePseudoAsterisks(std::string& phrase);
 
 }
 
