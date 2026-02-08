@@ -111,7 +111,7 @@ namespace MWGui
         void activated() override;
     };
 
-    using TopicSearch = MWDialogue::KeywordSearch<const Topic*>;
+    using TopicSearch = MWDialogue::KeywordSearch<Topic*>;
 
     struct DialogueText
     {
