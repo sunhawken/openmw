@@ -23,13 +23,11 @@ namespace MWGui
 
     struct JournalViewModelImpl : JournalViewModel
     {
-        using TopicSearch = MWDialogue::KeywordSearch<const MWDialogue::Topic*>;
-
         mutable bool mKeywordSearchLoaded;
-        mutable TopicSearch mKeywordSearch;
+        mutable MWDialogue::KeywordSearch mKeywordSearch;
+
         using TopicMap = std::unordered_map<std::string_view, const MWDialogue::Topic*, Misc::StringUtils::CiHash,
             Misc::StringUtils::CiEqual>;
-
         mutable TopicMap mTopics;
 
         JournalViewModelImpl() { mKeywordSearchLoaded = false; }
@@ -54,7 +52,7 @@ namespace MWGui
                 for (const auto& [_, topic] : journal->getTopics())
                 {
                     mTopics[topic.getName()] = &topic;
-                    mKeywordSearch.seed(topic.getName(), &topic);
+                    mKeywordSearch.seed(topic.getName(), topic.getName());
                 }
 
                 mKeywordSearchLoaded = true;
@@ -98,6 +96,8 @@ namespace MWGui
             {
                 if (!mLoaded)
                 {
+                    using namespace MWDialogue;
+
                     mModel->ensureKeyWordSearchLoaded();
                     MWBase::WindowManager& windowManager = *MWBase::Environment::get().getWindowManager();
                     const Translation::Storage& translationStorage = windowManager.getTranslationDataStorage();
@@ -105,31 +105,29 @@ namespace MWGui
                     const std::string& text = mEntry->getText();
                     mText.reserve(text.size());
 
-                    using HyperTextToken = MWDialogue::HyperTextParser::Token<const MWDialogue::Topic*>;
-                    std::vector<HyperTextToken> tokens
-                        = MWDialogue::HyperTextParser::parseHyperText(text, mModel->mKeywordSearch);
+                    std::vector<HyperTextParser::Token> tokens
+                        = HyperTextParser::parseHyperText(text, mModel->mKeywordSearch);
                     mTokens.reserve(tokens.size());
 
                     // Generate the display text by removing @# and pseudoasterisks from the explicit links
                     // and generate a more convenient token list in the process.
                     // The matches we got provide positions in the original text and must be recalculated.
                     std::string::const_iterator pos = text.begin();
-                    for (const HyperTextToken& token : tokens)
+                    for (const HyperTextParser::Token& token : tokens)
                     {
                         std::string displayName(token.mMatch.mBeg, token.mMatch.mEnd);
-                        const MWDialogue::Topic* value = token.mMatch.mValue;
+                        std::string topicId(token.mMatch.mValue);
 
                         if (token.mIsExplicit)
                         {
-                            size_t asteriskCount = MWDialogue::HyperTextParser::removePseudoAsterisks(displayName);
-                            std::string keyword = displayName;
-                            for (; asteriskCount > 0; --asteriskCount)
-                                keyword.append("*");
-
-                            auto found = mModel->mTopics.find(translationStorage.topicStandardForm(keyword));
-                            if (found != mModel->mTopics.end())
-                                value = found->second;
+                            HyperTextParser::removePseudoAsterisks(displayName);
+                            topicId = Misc::StringUtils::lowerCase(translationStorage.topicStandardForm(topicId));
                         }
+
+                        const Topic* value = nullptr;
+                        auto found = mModel->mTopics.find(topicId);
+                        if (found != mModel->mTopics.end())
+                            value = found->second;
 
                         // Explicit matches do not include the surrounding tags
                         const int tagLen = token.mIsExplicit ? 1 : 0;

@@ -44,7 +44,7 @@ namespace MWDialogue
 
         Translation::Storage& mTranslationDataStorage;
         mutable bool mKeywordSearchInitialized{ false };
-        mutable MWDialogue::KeywordSearch<std::string> mKeywordSearch;
+        mutable MWDialogue::KeywordSearch mKeywordSearch;
 
         MWScript::CompilerContext mCompilerContext;
         Compiler::StreamErrorHandler mErrorHandler;
@@ -63,7 +63,7 @@ namespace MWDialogue
         int mCurrentDisposition;
         int mPermanentDispositionChange;
 
-        const MWDialogue::KeywordSearch<std::string>& getKeywordSearch() const;
+        const MWDialogue::KeywordSearch& getKeywordSearch() const;
         std::vector<ESM::RefId> parseTopicIdsFromText(const std::string& text) const;
         void addTopicsFromText(const std::string& text);
 
