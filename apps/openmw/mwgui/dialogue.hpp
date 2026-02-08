@@ -115,7 +115,7 @@ namespace MWGui
     {
         virtual ~DialogueText() = default;
         virtual void write(std::shared_ptr<BookTypesetter> typesetter, const MWDialogue::KeywordSearch& keywordSearch,
-            std::map<std::string, std::unique_ptr<Link>>& topicLinks) const
+            std::unordered_map<std::string, std::unique_ptr<Link>>& topicLinks) const
             = 0;
         std::string mText;
     };
@@ -124,7 +124,7 @@ namespace MWGui
     {
         Response(std::string_view text, std::string_view title = {}, bool needMargin = true);
         void write(std::shared_ptr<BookTypesetter> typesetter, const MWDialogue::KeywordSearch& keywordSearch,
-            std::map<std::string, std::unique_ptr<Link>>& topicLinks) const override;
+            std::unordered_map<std::string, std::unique_ptr<Link>>& topicLinks) const override;
         std::string mTitle;
         bool mNeedMargin;
     };
@@ -133,7 +133,7 @@ namespace MWGui
     {
         Message(std::string_view text);
         void write(std::shared_ptr<BookTypesetter> typesetter, const MWDialogue::KeywordSearch& keywordSearch,
-            std::map<std::string, std::unique_ptr<Link>>& topicLinks) const override;
+            std::unordered_map<std::string, std::unique_ptr<Link>>& topicLinks) const override;
     };
 
     class DialogueWindow : public WindowBase, public ReferenceInterface
@@ -201,7 +201,7 @@ namespace MWGui
         bool mGoodbye;
 
         std::vector<std::unique_ptr<Link>> mLinks;
-        std::map<std::string, std::unique_ptr<Link>> mTopicLinks;
+        std::unordered_map<std::string, std::unique_ptr<Link>> mTopicLinks;
 
         std::vector<std::unique_ptr<Link>> mDeleteLater;
 

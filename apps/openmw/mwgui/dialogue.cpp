@@ -20,7 +20,7 @@
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
 
-#include "../mwdialogue/hypertextparser.hpp"
+#include "../mwdialogue/keywordsearch.hpp"
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/containerstore.hpp"
@@ -209,7 +209,7 @@ namespace MWGui
     }
 
     void Response::write(std::shared_ptr<BookTypesetter> typesetter, const MWDialogue::KeywordSearch& keywordSearch,
-        std::map<std::string, std::unique_ptr<Link>>& topicLinks) const
+        std::unordered_map<std::string, std::unique_ptr<Link>>& topicLinks) const
     {
         using namespace MWDialogue;
 
@@ -233,38 +233,34 @@ namespace MWGui
             Link* mTopic;
         };
 
-        std::vector<HyperTextParser::Token> sourceTokens = HyperTextParser::parseHyperText(mText, keywordSearch);
+        std::vector<KeywordSearch::Match> matches = keywordSearch.parseHyperText(mText);
         std::vector<Token> tokens;
-        tokens.reserve(sourceTokens.size());
+        tokens.reserve(matches.size());
         std::string text;
         text.reserve(mText.size());
 
         // Generate the display text by removing @# and pseudoasterisks from the explicit links
         // and generate a more convenient token list in the process.
         // The matches we got provide positions in the original text and must be recalculated.
-        std::string::const_iterator pos = mText.begin();
-        for (const HyperTextParser::Token& token : sourceTokens)
+        KeywordSearch::Point pos = mText.begin();
+        for (const KeywordSearch::Match& token : matches)
         {
-            std::string displayName(token.mMatch.mBeg, token.mMatch.mEnd);
-            std::string topicId(token.mMatch.mValue);
-            if (token.mIsExplicit)
+            std::string displayName(token.mBeg, token.mEnd);
+            std::string topicId(token.mValue);
+            if (token.mExplicit)
             {
-                HyperTextParser::removePseudoAsterisks(displayName);
+                removePseudoAsterisks(displayName);
                 topicId = Misc::StringUtils::lowerCase(translationStorage.topicStandardForm(topicId));
             }
 
-            Link* value = nullptr;
-            auto found = topicLinks.find(topicId);
-            if (found != topicLinks.end())
-                value = found->second.get();
-
             // Explicit matches do not include the surrounding tags
-            const int tagLen = token.mIsExplicit ? 1 : 0;
-            text.append(pos, token.mMatch.mBeg - tagLen);
-            if (value)
-                tokens.emplace_back(text.size(), text.size() + displayName.size(), value);
+            text.append(pos, token.mBeg - token.mExplicit);
             text.append(displayName);
-            pos = token.mMatch.mEnd + tagLen;
+            pos = token.mEnd + token.mExplicit;
+
+            auto value = topicLinks.find(topicId);
+            if (value != topicLinks.end())
+                tokens.emplace_back(text.size() - displayName.size(), text.size(), value->second.get());
         }
         text.append(pos, mText.end());
 
@@ -295,7 +291,7 @@ namespace MWGui
     }
 
     void Message::write(std::shared_ptr<BookTypesetter> typesetter, const MWDialogue::KeywordSearch&,
-        std::map<std::string, std::unique_ptr<Link>>&) const
+        std::unordered_map<std::string, std::unique_ptr<Link>>&) const
     {
         const MyGUI::Colour& textColour = MWBase::Environment::get().getWindowManager()->getTextColours().notify;
         BookTypesetter::Style* title = typesetter->createStyle({}, textColour, false);
