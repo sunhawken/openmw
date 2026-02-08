@@ -137,7 +137,7 @@ namespace MWDialogue
             {
                 std::string_view existingKeyword = found->second.mKeyword;
                 if (Misc::StringUtils::ciEqual(keyword, existingKeyword))
-                    throw std::runtime_error("duplicate keyword inserted");
+                    return;
                 if (depth >= existingKeyword.size())
                     throw std::runtime_error("unexpected trie depth");
                 // Turn this Entry into a branch and append a leaf to hold its current ID
