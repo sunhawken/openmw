@@ -6,6 +6,33 @@
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/strings/lower.hpp>
 
+namespace
+{
+    size_t removePseudoAsterisks(std::string& phrase)
+    {
+        size_t pseudoAsterisksCount = 0;
+
+        if (!phrase.empty())
+        {
+            std::string::reverse_iterator rit = phrase.rbegin();
+            const char specialPseudoAsteriskCharacter = 127;
+
+            while (rit != phrase.rend() && *rit == specialPseudoAsteriskCharacter)
+            {
+                pseudoAsterisksCount++;
+                ++rit;
+            }
+        }
+
+        if (pseudoAsterisksCount > 0)
+        {
+            phrase = phrase.substr(0, phrase.length() - pseudoAsterisksCount);
+        }
+
+        return pseudoAsterisksCount;
+    }
+}
+
 namespace MWDialogue
 {
     void KeywordSearch::seed(std::string_view keyword, std::string_view value)
@@ -185,29 +212,5 @@ namespace MWDialogue
             return displayName;
         }
         return std::string(mBeg, mEnd);
-    }
-
-    size_t removePseudoAsterisks(std::string& phrase)
-    {
-        size_t pseudoAsterisksCount = 0;
-
-        if (!phrase.empty())
-        {
-            std::string::reverse_iterator rit = phrase.rbegin();
-            const char specialPseudoAsteriskCharacter = 127;
-
-            while (rit != phrase.rend() && *rit == specialPseudoAsteriskCharacter)
-            {
-                pseudoAsterisksCount++;
-                ++rit;
-            }
-        }
-
-        if (pseudoAsterisksCount > 0)
-        {
-            phrase = phrase.substr(0, phrase.length() - pseudoAsterisksCount);
-        }
-
-        return pseudoAsterisksCount;
     }
 }

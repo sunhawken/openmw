@@ -40,8 +40,6 @@ namespace MWDialogue
         std::vector<KeywordSearch::Match> parseHyperText(const std::string& text) const;
     };
 
-    size_t removePseudoAsterisks(std::string& phrase);
-
 }
 
 #endif
