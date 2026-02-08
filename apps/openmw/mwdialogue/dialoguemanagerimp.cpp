@@ -104,20 +104,25 @@ namespace MWDialogue
     {
         std::vector<ESM::RefId> topicIdList;
 
-        std::vector<HyperTextParser::Token> hypertext = HyperTextParser::parseHyperText(text, getKeywordSearch());
+        using LinkToken = HyperTextParser::Token<std::string>;
+        std::vector<LinkToken> tokens = HyperTextParser::parseHyperText(text, getKeywordSearch());
 
-        for (std::vector<HyperTextParser::Token>::iterator tok = hypertext.begin(); tok != hypertext.end(); ++tok)
+        for (const LinkToken& token : tokens)
         {
-            std::string topicId = Misc::StringUtils::lowerCase(tok->mMatch.mValue);
-
-            if (tok->isExplicitLink())
+            std::string topicId;
+            if (token.mIsExplicit)
             {
+                topicId = Misc::StringUtils::lowerCase(std::string(token.mMatch.mBeg, token.mMatch.mEnd));
                 // calculation of standard form for all hyperlinks
                 size_t asteriskCount = HyperTextParser::removePseudoAsterisks(topicId);
                 for (; asteriskCount > 0; --asteriskCount)
                     topicId.append("*");
 
                 topicId = mTranslationDataStorage.topicStandardForm(topicId);
+            }
+            else
+            {
+                topicId = Misc::StringUtils::lowerCase(token.mMatch.mValue);
             }
 
             topicIdList.push_back(ESM::RefId::stringRefId(topicId));
