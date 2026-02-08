@@ -95,13 +95,13 @@ namespace Translation
         return entry->second;
     }
 
+    void Storage::addPhraseForm(std::string_view phrase, std::string_view topicId)
+    {
+        mPhraseForms.emplace(phrase, topicId);
+    }
+
     void Storage::setEncoder(ToUTF8::Utf8Encoder* encoder)
     {
         mEncoder = encoder;
-    }
-
-    bool Storage::hasTranslation() const
-    {
-        return !mCellNamesTranslations.empty() || !mKeywords.empty() || !mPhraseForms.empty();
     }
 }
