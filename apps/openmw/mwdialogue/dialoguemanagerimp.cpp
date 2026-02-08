@@ -86,7 +86,7 @@ namespace MWDialogue
         mKnownTopics.insert(topic);
     }
 
-    const MWDialogue::KeywordSearch<std::string>& DialogueManager::getKeywordSearch() const
+    const MWDialogue::KeywordSearch& DialogueManager::getKeywordSearch() const
     {
         const auto& dialogue = MWBase::Environment::get().getESMStore()->get<ESM::Dialogue>();
         if (!mKeywordSearchInitialized || dialogue.getKeywordSearchModFlag())
@@ -104,27 +104,13 @@ namespace MWDialogue
     {
         std::vector<ESM::RefId> topicIdList;
 
-        using LinkToken = HyperTextParser::Token<std::string>;
-        std::vector<LinkToken> tokens = HyperTextParser::parseHyperText(text, getKeywordSearch());
+        std::vector<HyperTextParser::Token> tokens = HyperTextParser::parseHyperText(text, getKeywordSearch());
 
-        for (const LinkToken& token : tokens)
+        for (const HyperTextParser::Token& token : tokens)
         {
-            std::string topicId;
+            std::string topicId(token.mMatch.mValue);
             if (token.mIsExplicit)
-            {
-                topicId = Misc::StringUtils::lowerCase(std::string(token.mMatch.mBeg, token.mMatch.mEnd));
-                // calculation of standard form for all hyperlinks
-                size_t asteriskCount = HyperTextParser::removePseudoAsterisks(topicId);
-                for (; asteriskCount > 0; --asteriskCount)
-                    topicId.append("*");
-
                 topicId = mTranslationDataStorage.topicStandardForm(topicId);
-            }
-            else
-            {
-                topicId = Misc::StringUtils::lowerCase(token.mMatch.mValue);
-            }
-
             topicIdList.push_back(ESM::RefId::stringRefId(topicId));
         }
 
