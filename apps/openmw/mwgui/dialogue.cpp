@@ -233,28 +233,23 @@ namespace MWGui
             Link* mTopic;
         };
 
-        std::vector<KeywordSearch::Match> matches = keywordSearch.parseHyperText(mText);
+        std::vector<KeywordSearch::Match> matches = keywordSearch.parseHyperText(mText, translationStorage);
         std::vector<Token> tokens;
         tokens.reserve(matches.size());
         std::string text;
         text.reserve(mText.size());
 
-        // Generate the display text by removing @# and pseudoasterisks from the explicit links
-        // and generate a more convenient token list in the process.
+        // Generate the displayed text and a more convenient token list.
         // The matches we got provide positions in the original text and must be recalculated.
         KeywordSearch::Point pos = mText.begin();
         for (const KeywordSearch::Match& token : matches)
         {
             const std::string displayName(token.getDisplayName());
-            std::string topicId(token.mValue);
-            if (token.mExplicit)
-                topicId = Misc::StringUtils::lowerCase(translationStorage.topicStandardForm(topicId));
-
             text.append(pos, token.mBeg);
             text.append(displayName);
             pos = token.mEnd;
 
-            auto value = topicLinks.find(topicId);
+            auto value = topicLinks.find(token.mTopicId);
             if (value != topicLinks.end())
                 tokens.emplace_back(text.size() - displayName.size(), text.size(), value->second.get());
         }
