@@ -113,19 +113,14 @@ namespace MWGui
                     KeywordSearch::Point pos = text.begin();
                     for (const KeywordSearch::Match& token : matches)
                     {
-                        std::string displayName(token.mBeg, token.mEnd);
+                        const std::string displayName(token.getDisplayName());
                         std::string topicId(token.mValue);
-
                         if (token.mExplicit)
-                        {
-                            removePseudoAsterisks(displayName);
                             topicId = Misc::StringUtils::lowerCase(translationStorage.topicStandardForm(topicId));
-                        }
 
-                        // Explicit matches do not include the surrounding tags
-                        mText.append(pos, token.mBeg - token.mExplicit);
+                        mText.append(pos, token.mBeg);
                         mText.append(displayName);
-                        pos = token.mEnd + token.mExplicit;
+                        pos = token.mEnd;
 
                         auto value = mModel->mTopics.find(topicId);
                         if (value != mModel->mTopics.end())
