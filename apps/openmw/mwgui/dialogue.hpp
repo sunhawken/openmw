@@ -126,8 +126,6 @@ namespace MWGui
         Response(std::string_view text, std::string_view title = {}, bool needMargin = true);
         void write(std::shared_ptr<BookTypesetter> typesetter, const TopicSearch& keywordSearch,
             std::map<std::string, std::unique_ptr<Link>>& topicLinks) const override;
-        void addTopicLink(
-            std::shared_ptr<BookTypesetter> typesetter, const Topic* topic, size_t begin, size_t end) const;
         std::string mTitle;
         bool mNeedMargin;
     };
