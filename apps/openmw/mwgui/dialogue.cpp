@@ -224,50 +224,51 @@ namespace MWGui
             typesetter->sectionBreak();
         }
 
+        using HyperTextToken = MWDialogue::HyperTextParser::Token<Topic*>;
         struct Token
         {
             size_t mStart;
             size_t mEnd;
-            const Link* mTopic;
+            Link* mTopic;
         };
+
+        std::vector<HyperTextToken> sourceTokens = MWDialogue::HyperTextParser::parseHyperText(mText, keywordSearch);
         std::vector<Token> tokens;
+        tokens.reserve(sourceTokens.size());
+        std::string text;
+        text.reserve(mText.size());
 
-        // We need this copy for when @# hyperlinks are replaced
-        std::string text = mText;
-
-        size_t posEnd = std::string::npos;
-        for (;;)
+        // Generate the display text by removing @# and pseudoasterisks from the explicit links
+        // and generate a more convenient token list in the process.
+        // The matches we got provide positions in the original text and must be recalculated.
+        std::string::const_iterator pos = mText.begin();
+        for (const HyperTextToken& token : sourceTokens)
         {
-            const size_t posBegin = text.find('@');
-            if (posBegin != std::string::npos)
-                posEnd = text.find('#', posBegin);
+            std::string displayName(token.mMatch.mBeg, token.mMatch.mEnd);
+            Link* value = token.mMatch.mValue;
 
-            if (posBegin != std::string::npos && posEnd != std::string::npos)
+            if (token.mIsExplicit)
             {
-                std::string link = text.substr(posBegin + 1, posEnd - posBegin - 1);
-                size_t asteriskCount = MWDialogue::HyperTextParser::removePseudoAsterisks(link);
-                std::string displayName = link;
-
-                text.replace(posBegin, posEnd + 1 - posBegin, displayName);
-
+                size_t asteriskCount = MWDialogue::HyperTextParser::removePseudoAsterisks(displayName);
+                std::string keyword = displayName;
                 for (; asteriskCount > 0; --asteriskCount)
-                    link.append("*");
-                link = Misc::StringUtils::lowerCase(translationStorage.topicStandardForm(link));
+                    keyword.append("*");
 
-                if (topicLinks.find(link) != topicLinks.end())
-                    tokens.emplace_back(posBegin, posBegin + displayName.size(), topicLinks[link].get());
+                keyword = Misc::StringUtils::lowerCase(translationStorage.topicStandardForm(keyword));
+                auto found = topicLinks.find(keyword);
+                if (found != topicLinks.end())
+                    value = found->second.get();
             }
-            else
-                break;
-        }
 
-        if (tokens.empty() || !translationStorage.hasTranslation())
-        {
-            std::vector<TopicSearch::Match> matches;
-            keywordSearch.highlightKeywords(text.begin(), text.end(), matches);
-            for (TopicSearch::Match& match : matches)
-                tokens.emplace_back(match.mBeg - text.begin(), match.mEnd - text.begin(), match.mValue);
+            // Explicit matches do not include the surrounding tags
+            const int tagLen = token.mIsExplicit ? 1 : 0;
+            text.append(pos, token.mMatch.mBeg - tagLen);
+            if (value)
+                tokens.emplace_back(text.size(), text.size() + displayName.size(), value);
+            text.append(displayName);
+            pos = token.mMatch.mEnd + tagLen;
         }
+        text.append(pos, mText.end());
 
         typesetter->addContent(text);
 
