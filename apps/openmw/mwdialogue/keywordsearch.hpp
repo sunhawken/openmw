@@ -6,6 +6,11 @@
 #include <string_view>
 #include <vector>
 
+namespace Translation
+{
+    class Storage;
+}
+
 namespace MWDialogue
 {
 
@@ -14,7 +19,7 @@ namespace MWDialogue
         struct Entry
         {
             std::string mKeyword;
-            std::string mValue;
+            std::string mTopicId;
             std::map<char, Entry> mChildren;
         };
 
@@ -28,7 +33,7 @@ namespace MWDialogue
         {
             Point mBeg;
             Point mEnd;
-            std::string mValue;
+            std::string mTopicId;
             bool mExplicit{ false };
 
             std::string getDisplayName() const;
@@ -37,7 +42,8 @@ namespace MWDialogue
         void seed(std::string_view keyword, std::string_view value);
         void clear();
         void highlightKeywords(Point beg, Point end, std::vector<Match>& out) const;
-        std::vector<KeywordSearch::Match> parseHyperText(const std::string& text) const;
+        std::vector<KeywordSearch::Match> parseHyperText(
+            const std::string& text, const Translation::Storage& storage) const;
     };
 
 }
