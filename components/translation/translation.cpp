@@ -75,7 +75,6 @@ namespace Translation
         return entry->second;
     }
 
-
     std::string_view Storage::topicStandardForm(std::string_view phrase) const
     {
         auto phraseFormsIterator = mPhraseForms.find(phrase);
