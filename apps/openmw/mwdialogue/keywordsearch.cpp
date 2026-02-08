@@ -149,12 +149,14 @@ namespace MWDialogue
                     highlightKeywords(text.begin() + iterationPos, text.begin() + posBegin, matches);
 
                 Match token;
-                token.mBeg = text.begin() + posBegin + 1;
-                token.mEnd = text.begin() + posEnd;
-                token.mValue = std::string(token.mBeg, token.mEnd);
                 token.mExplicit = true;
 
-                // Some post-processing for easier standard form conversion
+                // This covers the entire link including the tags
+                token.mBeg = text.begin() + posBegin;
+                token.mEnd = text.begin() + posEnd + 1;
+
+                // This is the translation-ready line with the tags excluded
+                token.mValue = std::string(token.mBeg + 1, token.mEnd - 1);
                 size_t asteriskCount = removePseudoAsterisks(token.mValue);
                 for (; asteriskCount > 0; --asteriskCount)
                     token.mValue.append("*");
@@ -172,6 +174,17 @@ namespace MWDialogue
         }
 
         return matches;
+    }
+
+    std::string KeywordSearch::Match::getDisplayName() const
+    {
+        if (mExplicit)
+        {
+            std::string displayName = std::string(mBeg + 1, mEnd - 1);
+            removePseudoAsterisks(displayName);
+            return displayName;
+        }
+        return std::string(mBeg, mEnd);
     }
 
     size_t removePseudoAsterisks(std::string& phrase)
