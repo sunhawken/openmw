@@ -25,9 +25,7 @@ namespace MWGui
         mutable bool mKeywordSearchLoaded;
         mutable MWDialogue::KeywordSearch mKeywordSearch;
 
-        using TopicMap = std::unordered_map<std::string_view, const MWDialogue::Topic*, Misc::StringUtils::CiHash,
-            Misc::StringUtils::CiEqual>;
-        mutable TopicMap mTopics;
+        mutable std::unordered_map<std::string, const MWDialogue::Topic*> mTopics;
 
         JournalViewModelImpl() { mKeywordSearchLoaded = false; }
 
@@ -50,8 +48,9 @@ namespace MWGui
 
                 for (const auto& [_, topic] : journal->getTopics())
                 {
-                    mTopics[topic.getName()] = &topic;
-                    mKeywordSearch.seed(topic.getName(), topic.getName());
+                    const std::string topicId = Misc::StringUtils::lowerCase(topic.getName());
+                    mTopics[topicId] = &topic;
+                    mKeywordSearch.seed(topicId, topicId);
                 }
 
                 mKeywordSearchLoaded = true;
