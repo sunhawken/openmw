@@ -38,24 +38,6 @@ namespace MWDialogue
             mRoot.mKeyword.clear();
         }
 
-        bool containsKeyword(std::string_view keyword, Value& value) const
-        {
-            const Entry* current = &mRoot;
-            for (char c : keyword)
-            {
-                auto it = current->mChildren.find(Misc::StringUtils::toLower(c));
-                if (it == current->mChildren.end())
-                    return false;
-                else if (Misc::StringUtils::ciEqual(it->second.mKeyword, keyword))
-                {
-                    value = it->second.mValue;
-                    return true;
-                }
-                current = &it->second;
-            }
-            return false;
-        }
-
         void highlightKeywords(Point beg, Point end, std::vector<Match>& out) const
         {
             std::vector<Match> matches;
