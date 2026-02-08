@@ -30,6 +30,8 @@ namespace MWDialogue
             Point mEnd;
             std::string mValue;
             bool mExplicit{ false };
+
+            std::string getDisplayName() const;
         };
 
         void seed(std::string_view keyword, std::string_view value);
