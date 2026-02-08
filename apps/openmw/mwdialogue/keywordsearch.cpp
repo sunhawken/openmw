@@ -5,6 +5,7 @@
 
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/strings/lower.hpp>
+#include <components/translation/translation.hpp>
 
 namespace
 {
@@ -76,7 +77,7 @@ namespace MWDialogue
                     if (Misc::StringUtils::ciStartsWith(remainingText, remainingKeyword))
                     {
                         Match match;
-                        match.mValue = current->mValue;
+                        match.mTopicId = current->mTopicId;
                         match.mBeg = i;
                         match.mEnd = i + current->mKeyword.size();
                         matches.push_back(match);
@@ -120,14 +121,14 @@ namespace MWDialogue
         std::sort(out.begin(), out.end(), [](const Match& left, const Match& right) { return left.mBeg < right.mBeg; });
     }
 
-    void KeywordSearch::buildTrie(std::string_view keyword, std::string_view value, size_t depth, Entry& entry)
+    void KeywordSearch::buildTrie(std::string_view keyword, std::string_view topicId, size_t depth, Entry& entry)
     {
         const char ch = Misc::StringUtils::toLower(keyword[depth]);
         const auto found = entry.mChildren.find(ch);
 
         if (found == entry.mChildren.end())
         {
-            entry.mChildren[ch].mValue = std::string(value);
+            entry.mChildren[ch].mTopicId = std::string(topicId);
             entry.mChildren[ch].mKeyword = std::string(keyword);
         }
         else
@@ -139,26 +140,27 @@ namespace MWDialogue
                     throw std::runtime_error("duplicate keyword inserted");
                 if (depth >= existingKeyword.size())
                     throw std::runtime_error("unexpected trie depth");
-                // Turn this Entry into a branch and append a leaf to hold its current value
+                // Turn this Entry into a branch and append a leaf to hold its current ID
                 if (depth + 1 < existingKeyword.size())
                 {
-                    buildTrie(existingKeyword, found->second.mValue, depth + 1, found->second);
+                    buildTrie(existingKeyword, found->second.mTopicId, depth + 1, found->second);
                     found->second.mKeyword.clear();
                 }
             }
             if (depth + 1 == keyword.size())
             {
-                found->second.mValue = std::string(value);
+                found->second.mTopicId = std::string(topicId);
                 found->second.mKeyword = std::string(keyword);
             }
             else
             {
-                buildTrie(keyword, value, depth + 1, found->second);
+                buildTrie(keyword, topicId, depth + 1, found->second);
             }
         }
     }
 
-    std::vector<KeywordSearch::Match> KeywordSearch::parseHyperText(const std::string& text) const
+    std::vector<KeywordSearch::Match> KeywordSearch::parseHyperText(
+        const std::string& text, const Translation::Storage& storage) const
     {
         std::vector<Match> matches;
         size_t posEnd = std::string::npos;
@@ -182,11 +184,11 @@ namespace MWDialogue
                 token.mBeg = text.begin() + posBegin;
                 token.mEnd = text.begin() + posEnd + 1;
 
-                // This is the translation-ready line with the tags excluded
-                token.mValue = std::string(token.mBeg + 1, token.mEnd - 1);
-                size_t asteriskCount = removePseudoAsterisks(token.mValue);
+                token.mTopicId = std::string(token.mBeg + 1, token.mEnd - 1);
+                size_t asteriskCount = removePseudoAsterisks(token.mTopicId);
                 for (; asteriskCount > 0; --asteriskCount)
-                    token.mValue.append("*");
+                    token.mTopicId.append("*");
+                token.mTopicId = Misc::StringUtils::lowerCase(storage.topicStandardForm(token.mTopicId));
 
                 matches.push_back(token);
 
