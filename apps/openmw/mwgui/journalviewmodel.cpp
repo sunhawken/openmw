@@ -12,7 +12,6 @@
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
 
-#include "../mwdialogue/hypertextparser.hpp"
 #include "../mwdialogue/keywordsearch.hpp"
 #include "../mwworld/datetimemanager.hpp"
 
@@ -105,37 +104,32 @@ namespace MWGui
                     const std::string& text = mEntry->getText();
                     mText.reserve(text.size());
 
-                    std::vector<HyperTextParser::Token> tokens
-                        = HyperTextParser::parseHyperText(text, mModel->mKeywordSearch);
-                    mTokens.reserve(tokens.size());
+                    std::vector<KeywordSearch::Match> matches = mModel->mKeywordSearch.parseHyperText(text);
+                    mTokens.reserve(matches.size());
 
                     // Generate the display text by removing @# and pseudoasterisks from the explicit links
                     // and generate a more convenient token list in the process.
                     // The matches we got provide positions in the original text and must be recalculated.
-                    std::string::const_iterator pos = text.begin();
-                    for (const HyperTextParser::Token& token : tokens)
+                    KeywordSearch::Point pos = text.begin();
+                    for (const KeywordSearch::Match& token : matches)
                     {
-                        std::string displayName(token.mMatch.mBeg, token.mMatch.mEnd);
-                        std::string topicId(token.mMatch.mValue);
+                        std::string displayName(token.mBeg, token.mEnd);
+                        std::string topicId(token.mValue);
 
-                        if (token.mIsExplicit)
+                        if (token.mExplicit)
                         {
-                            HyperTextParser::removePseudoAsterisks(displayName);
+                            removePseudoAsterisks(displayName);
                             topicId = Misc::StringUtils::lowerCase(translationStorage.topicStandardForm(topicId));
                         }
 
-                        const Topic* value = nullptr;
-                        auto found = mModel->mTopics.find(topicId);
-                        if (found != mModel->mTopics.end())
-                            value = found->second;
-
                         // Explicit matches do not include the surrounding tags
-                        const int tagLen = token.mIsExplicit ? 1 : 0;
-                        mText.append(pos, token.mMatch.mBeg - tagLen);
-                        if (value)
-                            mTokens.emplace_back(mText.size(), mText.size() + displayName.size(), value);
+                        mText.append(pos, token.mBeg - token.mExplicit);
                         mText.append(displayName);
-                        pos = token.mMatch.mEnd + tagLen;
+                        pos = token.mEnd + token.mExplicit;
+
+                        auto value = mModel->mTopics.find(topicId);
+                        if (value != mModel->mTopics.end())
+                            mTokens.emplace_back(mText.size() - displayName.size(), mText.size(), value->second);
                     }
                     mText.append(pos, text.end());
 
