@@ -36,7 +36,7 @@ namespace MWDialogue
             std::string mTopicId;
             bool mExplicit{ false };
 
-            std::string getDisplayName() const;
+            std::string_view getDisplayName() const;
         };
 
         void seed(std::string_view keyword, std::string_view value);
