@@ -291,6 +291,22 @@ TEST_F(KeywordSearchTest, parse_hypertext_explicit_with_pseudo_asterisk_and_tran
     EXPECT_EQ(matches[0].mTopicId, "mages guild");
 }
 
+TEST_F(KeywordSearchTest, parse_hypertext_explicit_pseudo_asterisks_only)
+{
+    // Verify the behavior of a link that *only* contains pseudo-asterisks
+    MWDialogue::KeywordSearch search;
+    Translation::Storage storage;
+    storage.addPhraseForm("****", "tier two swear word");
+
+    std::string text = "@\x7F\x7F\x7F\x7F#.";
+
+    auto matches = search.parseHyperText(text, storage);
+
+    ASSERT_EQ(matches.size(), 1);
+    EXPECT_TRUE(matches[0].getDisplayName().empty());
+    EXPECT_EQ(matches[0].mTopicId, "tier two swear word");
+}
+
 TEST_F(KeywordSearchTest, parse_hypertext_preserve_untranslated_links)
 {
     // Verify that explicit hyperlinks without a standard form are preserved

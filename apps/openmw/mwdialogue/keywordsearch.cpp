@@ -11,10 +11,7 @@ namespace
 {
     std::string_view removePseudoAsterisks(std::string_view phrase)
     {
-        const size_t index = phrase.find_last_not_of('\x7F');
-        if (index == std::string_view::npos)
-            return phrase;
-        return phrase.substr(0, index + 1);
+        return phrase.substr(0, phrase.find_last_not_of('\x7F') + 1);
     }
 }
 
