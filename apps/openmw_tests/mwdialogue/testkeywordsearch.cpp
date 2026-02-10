@@ -131,7 +131,7 @@ TEST_F(KeywordSearchTest, keyword_test_substrings_without_word_separators)
     std::vector<MWDialogue::KeywordSearch::Match> matches;
     search.highlightKeywords(text.begin(), text.end(), matches);
 
-    EXPECT_EQ(matches.size(), {});
+    EXPECT_EQ(matches.size(), 0);
 }
 
 TEST_F(KeywordSearchTest, keyword_test_initial_substrings_match)
@@ -164,7 +164,7 @@ TEST_F(KeywordSearchTest, keyword_test_french_substrings)
     std::vector<MWDialogue::KeywordSearch::Match> matches;
     search.highlightKeywords(text.begin(), text.end(), matches);
 
-    EXPECT_EQ(matches.size(), {});
+    EXPECT_EQ(matches.size(), 0);
 }
 
 TEST_F(KeywordSearchTest, keyword_test_single_char_strings)

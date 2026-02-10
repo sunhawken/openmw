@@ -113,7 +113,7 @@ namespace MWGui
                     KeywordSearch::Point pos = text.begin();
                     for (const KeywordSearch::Match& token : matches)
                     {
-                        const std::string displayName(token.getDisplayName());
+                        const std::string_view displayName(token.getDisplayName());
                         mText.append(pos, token.mBeg);
                         mText.append(displayName);
                         pos = token.mEnd;
