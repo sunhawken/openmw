@@ -9,28 +9,12 @@
 
 namespace
 {
-    size_t removePseudoAsterisks(std::string& phrase)
+    std::string_view removePseudoAsterisks(std::string_view phrase)
     {
-        size_t pseudoAsterisksCount = 0;
-
-        if (!phrase.empty())
-        {
-            std::string::reverse_iterator rit = phrase.rbegin();
-            const char specialPseudoAsteriskCharacter = 127;
-
-            while (rit != phrase.rend() && *rit == specialPseudoAsteriskCharacter)
-            {
-                pseudoAsterisksCount++;
-                ++rit;
-            }
-        }
-
-        if (pseudoAsterisksCount > 0)
-        {
-            phrase = phrase.substr(0, phrase.length() - pseudoAsterisksCount);
-        }
-
-        return pseudoAsterisksCount;
+        const size_t index = phrase.find_last_not_of('\x7F');
+        if (index == std::string_view::npos)
+            return phrase;
+        return phrase.substr(0, index + 1);
     }
 }
 
@@ -128,8 +112,8 @@ namespace MWDialogue
 
         if (found == entry.mChildren.end())
         {
-            entry.mChildren[ch].mTopicId = std::string(topicId);
-            entry.mChildren[ch].mKeyword = std::string(keyword);
+            entry.mChildren[ch].mTopicId = topicId;
+            entry.mChildren[ch].mKeyword = keyword;
         }
         else
         {
@@ -149,8 +133,8 @@ namespace MWDialogue
             }
             if (depth + 1 == keyword.size())
             {
-                found->second.mTopicId = std::string(topicId);
-                found->second.mKeyword = std::string(keyword);
+                found->second.mTopicId = topicId;
+                found->second.mKeyword = keyword;
             }
             else
             {
@@ -184,9 +168,9 @@ namespace MWDialogue
                 token.mBeg = text.begin() + posBegin;
                 token.mEnd = text.begin() + posEnd + 1;
 
-                token.mTopicId = std::string(token.mBeg + 1, token.mEnd - 1);
-                size_t asteriskCount = removePseudoAsterisks(token.mTopicId);
-                for (; asteriskCount > 0; --asteriskCount)
+                const std::string_view id(token.mBeg + 1, token.mEnd - 1);
+                token.mTopicId = removePseudoAsterisks(id);
+                for (size_t i = token.mTopicId.size(); i < id.size(); ++i)
                     token.mTopicId.append("*");
                 token.mTopicId = Misc::StringUtils::lowerCase(storage.topicStandardForm(token.mTopicId));
 
@@ -205,14 +189,10 @@ namespace MWDialogue
         return matches;
     }
 
-    std::string KeywordSearch::Match::getDisplayName() const
+    std::string_view KeywordSearch::Match::getDisplayName() const
     {
         if (mExplicit)
-        {
-            std::string displayName = std::string(mBeg + 1, mEnd - 1);
-            removePseudoAsterisks(displayName);
-            return displayName;
-        }
-        return std::string(mBeg, mEnd);
+            return removePseudoAsterisks(std::string_view(mBeg + 1, mEnd - 1));
+        return std::string_view(mBeg, mEnd);
     }
 }
