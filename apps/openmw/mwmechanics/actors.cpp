@@ -551,8 +551,7 @@ namespace MWMechanics
             greetingTimer++;
 
             static const int greetDuration = static_cast<int>(iGreetDuration / sUpdateHelloInterval);
-            const MWBase::SoundManager& soundManager = *MWBase::Environment::get().getSoundManager();
-            if (greetingTimer <= greetDuration || soundManager.sayActive(actor))
+            if (greetingTimer <= greetDuration)
                 turnActorToFacePlayer(actor, actorState, dir);
             else
             {
@@ -2383,15 +2382,6 @@ namespace MWMechanics
             return GreetingState::None;
 
         return it->second->getGreetingState();
-    }
-
-    bool Actors::isTurningToPlayer(const MWWorld::Ptr& ptr) const
-    {
-        const auto it = mIndex.find(ptr.mRef);
-        if (it == mIndex.end())
-            return false;
-
-        return it->second->isTurningToPlayer();
     }
 
     void Actors::fastForwardAi() const
