@@ -2068,11 +2068,6 @@ namespace MWMechanics
         return mActors.getGreetingState(ptr);
     }
 
-    bool MechanicsManager::isTurningToPlayer(const MWWorld::Ptr& ptr) const
-    {
-        return mActors.isTurningToPlayer(ptr);
-    }
-
     void MechanicsManager::fastForwardAi() const
     {
         mActors.fastForwardAi();
