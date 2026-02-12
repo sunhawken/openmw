@@ -451,6 +451,11 @@ namespace Compiler
 
         if (code == Scanner::S_newline && mState == MessageButtonState)
         {
+            if (mNumButtons > 10)
+            {
+                getErrorHandler().warning("Only 10 message box buttons can be used", loc);
+                mNumButtons = 10;
+            }
             for (unsigned int i = 0; i < mNumButtons; ++i)
                 Generator::pushString(mCode, mLiterals, mPotentialButtons[i]);
             Generator::message(mCode, mLiterals, mName, mNumButtons);
