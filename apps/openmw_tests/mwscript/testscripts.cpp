@@ -514,6 +514,9 @@ End)mwscript";
 MessageBox "must include all buttons" "A" "B" "C"
 MessageBox "must ignore all buttons" A B C
 MessageBox "the number of buttons must match the number of quoted arguments (two)" A B "C" D "E"
+MessageBox "use strings that start with numbers, - and ." 1 -2 3.14pi .todd "A" "B" "C" "D"
+MessageBox "use keywords" messagebox set "messagebox2" "set2"
+MessageBox "don't use more than 10 buttons" "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11"
 
 End)mwscript";
 
@@ -1023,7 +1026,10 @@ End)mwscript";
             run(*script, context);
             const TestInterpreterContext::Messages expected{ { "must include all buttons", { "A", "B", "C" } },
                 { "must ignore all buttons", {} },
-                { "the number of buttons must match the number of quoted arguments (two)", { "A", "B" } } };
+                { "the number of buttons must match the number of quoted arguments (two)", { "A", "B" } },
+                { "use strings that start with numbers, - and .", { "1", "-2", "3.14pi", ".todd" } },
+                { "use keywords", { "messagebox", "set" } },
+                { "don't use more than 10 buttons", { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" } } };
             EXPECT_EQ(expected, context.getMessages());
         }
         else
