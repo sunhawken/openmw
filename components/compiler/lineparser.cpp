@@ -157,6 +157,13 @@ namespace Compiler
             mName = name;
 
             mState = MessageButtonState;
+            // Every message box button argument is essentially a string literal.
+            // Morrowind's console breaks if it encounters a special character
+            // that can't possibly start a string.
+            // It uses the last valid literal in the buffer for the rest of the buttons.
+            // ...Nope. Let's throw instead.
+            scanner.enableExpectName();
+            scanner.enableTolerantNames();
             return true;
         }
 
@@ -167,6 +174,8 @@ namespace Compiler
             // Morrowind counts the number of quoted arguments.
             if (loc.mLiteral.size() >= 2 && loc.mLiteral.front() == '"' && loc.mLiteral.back() == '"')
                 ++mNumButtons;
+            // This might have been a string that started with a . or a -, restore this
+            scanner.enableExpectName();
             return true;
         }
 
@@ -244,9 +253,9 @@ namespace Compiler
             return false;
         }
 
-        if (mState == SetState)
+        if (mState == SetState || mState == MessageButtonState)
         {
-            // allow keywords to be used as variable names when assigning a value to a variable.
+            // Allow keywords to be used as variable names and as buttons.
             return parseName(loc.mLiteral, loc, scanner);
         }
 
