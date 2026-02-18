@@ -167,6 +167,7 @@ namespace MWRender
 
             std::string mGroupname;
             std::string mStartKey;
+            std::string mStopKey;
 
             float getTime() const { return *mTime; }
             void setTime(float time) { *mTime = time; }
@@ -314,6 +315,8 @@ namespace MWRender
             std::map<osg::ref_ptr<osg::Node>, osg::ref_ptr<ControllerType>>& blendControllers,
             const AnimBlendStateData& stateData, const osg::ref_ptr<const SceneUtil::AnimBlendRules>& blendRules,
             const AnimState& active);
+
+        void animationEnded(AnimState& state) const;
 
     public:
         Animation(
