@@ -921,7 +921,10 @@ namespace MWRender
         while (stateiter != mStates.end())
         {
             if (stateiter->second.mPriority == priority && stateiter->first != groupname)
-                mStates.erase(stateiter++);
+            {
+                animationEnded(stateiter->second);
+                stateiter = mStates.erase(stateiter);
+            }
             else
                 ++stateiter;
         }
@@ -949,6 +952,7 @@ namespace MWRender
                 state.mAutoDisable = autodisable;
                 state.mGroupname = groupname;
                 state.mStartKey = start;
+                state.mStopKey = stop;
                 mStates[std::string{ groupname }] = state;
 
                 if (state.mPlaying)
@@ -1277,7 +1281,10 @@ namespace MWRender
     {
         AnimStateMap::iterator iter = mStates.find(groupname);
         if (iter != mStates.end())
+        {
+            animationEnded(iter->second);
             mStates.erase(iter);
+        }
         resetActiveGroups();
     }
 
@@ -1416,7 +1423,8 @@ namespace MWRender
 
             if (!state.mPlaying && state.mAutoDisable)
             {
-                mStates.erase(stateiter++);
+                animationEnded(stateiter->second);
+                stateiter = mStates.erase(stateiter);
 
                 resetActiveGroups();
             }
@@ -2010,6 +2018,15 @@ namespace MWRender
 
         if (mObjectRoot != nullptr)
             mInsert->removeChild(mObjectRoot);
+    }
+
+    void Animation::animationEnded(AnimState& state) const
+    {
+        float time = state.getTime();
+        float completion = 0.f;
+        this->getInfo(state.mGroupname, &completion);
+        MWBase::Environment::get().getLuaManager()->animationEnded(
+            mPtr, state.mGroupname, time, completion, state.mStartKey, state.mStopKey);
     }
 
     MWWorld::MovementDirectionFlags Animation::getSupportedMovementDirections(
