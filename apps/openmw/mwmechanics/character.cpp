@@ -1727,6 +1727,10 @@ namespace MWMechanics
                         startKey, stopKey, 0.0f, 0);
                 }
             }
+            else
+            {
+                resetIdle = false;
+            }
 
             // We should not break swim and sneak animations
             if (resetIdle && mIdleState != CharState_IdleSneak && mIdleState != CharState_IdleSwim)
