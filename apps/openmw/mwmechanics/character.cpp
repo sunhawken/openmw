@@ -1524,9 +1524,9 @@ namespace MWMechanics
         float complete = 0.f;
         bool animPlaying = false;
         ESM::WeaponType::Class weapclass = getWeaponType(mWeaponType)->mWeaponClass;
+        bool resetIdle = false;
         if (getAttackingOrSpell())
         {
-            bool resetIdle = true;
             if (mUpperBodyState == UpperBodyState::WeaponEquipped
                 && (mHitState == CharState_None || mHitState == CharState_Block))
             {
@@ -1580,7 +1580,6 @@ namespace MWMechanics
                         world->breakInvisibility(mPtr);
                         // Enchanted items by default do not use casting animations
                         world->castSpell(mPtr);
-                        resetIdle = false;
                         // Spellcasting animation needs to "play" for at least one frame to reset the aiming factor
                         animPlaying = true;
                         mUpperBodyState = UpperBodyState::Casting;
@@ -1589,6 +1588,7 @@ namespace MWMechanics
                     // insufficient magicka. Used up powers are exempt from this from some reason.
                     else if (!spellid.empty() && spellCastResult != MWWorld::SpellCastState::PowerAlreadyUsed)
                     {
+                        resetIdle = true;
                         world->breakInvisibility(mPtr);
                         MWMechanics::CastSpell cast(mPtr, {}, false, mCastingScriptedSpell);
 
@@ -1665,10 +1665,6 @@ namespace MWMechanics
                             mUpperBodyState = UpperBodyState::Casting;
                         }
                     }
-                    else
-                    {
-                        resetIdle = false;
-                    }
                 }
                 else
                 {
@@ -1727,16 +1723,6 @@ namespace MWMechanics
                         startKey, stopKey, 0.0f, 0);
                 }
             }
-            else
-            {
-                resetIdle = false;
-            }
-
-            // We should not break swim and sneak animations
-            if (resetIdle && mIdleState != CharState_IdleSneak && mIdleState != CharState_IdleSwim)
-            {
-                resetCurrentIdleState();
-            }
         }
 
         // Random attack and pick/probe animations never have wind up and are played to their end.
@@ -1746,6 +1732,7 @@ namespace MWMechanics
                 || !getAttackingOrSpell()))
         {
             mUpperBodyState = UpperBodyState::AttackRelease;
+            resetIdle = true;
             world->breakInvisibility(mPtr);
             if (mWeaponType == ESM::Weapon::PickProbe)
             {
@@ -1905,6 +1892,12 @@ namespace MWMechanics
         }
 
         mAnimation->setAccurateAiming(mUpperBodyState > UpperBodyState::WeaponEquipped);
+
+        // We should not break swim and sneak animations
+        if (resetIdle && mIdleState != CharState_IdleSneak && mIdleState != CharState_IdleSwim)
+        {
+            resetCurrentIdleState();
+        }
 
         return forcestateupdate;
     }
