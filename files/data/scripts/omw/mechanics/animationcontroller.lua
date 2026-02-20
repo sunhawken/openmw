@@ -100,7 +100,7 @@ return {
     interface = {
         --- Interface version
         -- @field [parent=#AnimationController] #number version
-        version = 0,
+        version = 1,
         
         --- AnimationController Package
         -- @type Package
