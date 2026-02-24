@@ -580,43 +580,47 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
     </message>
     <message>
         <source>Open Directory</source>
-        <translation type="unfinished"></translation>
+        <translation>Otwórz katalog</translation>
     </message>
     <message>
         <source>Open %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Otwórz %1</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokalny katalog konfiguracyjny używany, ponieważ zawiera plik openmw.cfg.
+Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze będą zapisywane w tym miejscu.</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokalny katalog konfiguracyjny używany, ponieważ zawiera plik openmw.cfg.</translation>
     </message>
     <message>
         <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze będą zapisywane w tym miejsu</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
-        <translation type="unfinished"></translation>
+        <translation>Użyto globalnego katalogu konfiguracyjnego, ponieważ lokalny katalog nie zawierał pliku openmw.cfg. 
+Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostaną zapisane w tym miejscu.
+Jest to zazwyczaj objaw uszkodzonej instalacji OpenMW lub wadliwego pakietu.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
-        <translation type="unfinished"></translation>
+        <translation>Użyto globalnego katalogu konfiguracyjnego, ponieważ lokalny katalog nie zawierał pliku openmw.cfg.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Katalog konfiguracyjny użytkownika używany, ponieważ %1 zawiera wiersz config=%2.
+ Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostaną zapisane w tym miejscu.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.</source>
-        <translation type="unfinished"></translation>
+        <translation>Katalog konfiguracyjny użytkownika używany, ponieważ %1 zawiera wiersz config=%2.</translation>
     </message>
 </context>
 <context>
