@@ -578,47 +578,47 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     </message>
     <message>
         <source>Open Directory</source>
-        <translation type="unfinished">Открыть директорию</translation>
+        <translation>Открыть директорию</translation>
     </message>
     <message>
         <source>Open %1</source>
-        <translation type="unfinished">Открыть %1</translation>
+        <translation>Открыть %1</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished">Локальная директория конфигурации используется, потому что содержит openmw.cfg.
+        <translation>Локальная директория конфигурации используется, потому что содержит openmw.cfg.
 Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.</source>
-        <translation type="unfinished">Локальная директория конфигурации используется, потому что содержит openmw.cfg.</translation>
+        <translation>Локальная директория конфигурации используется, потому что содержит openmw.cfg.</translation>
     </message>
     <message>
         <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished">Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
+        <translation>Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
-        <translation type="unfinished">Глобальная директория конфигурации используется, потому что локальная директория не содержит openmw.cfg.
+        <translation>Глобальная директория конфигурации используется, потому что локальная директория не содержит openmw.cfg.
 Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.
 Обычно это знак, что OpenMW установлен или упакован некорректно.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
-        <translation type="unfinished">Глобальная директория конфигурации используется, потому что локальная директория не содержит openmw.cfg.</translation>
+        <translation>Глобальная директория конфигурации используется, потому что локальная директория не содержит openmw.cfg.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished">Эта пользовательская директория конфигурации используется, потому что в %1 содержится строка config=%2.
+        <translation>Эта пользовательская директория конфигурации используется, потому что в %1 содержится строка config=%2.
 Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.</source>
-        <translation type="unfinished">Эта пользовательская директория конфигурации используется, потому что в %1 содержится строка config=%2.</translation>
+        <translation>Эта пользовательская директория конфигурации используется, потому что в %1 содержится строка config=%2.</translation>
     </message>
 </context>
 <context>
@@ -1536,7 +1536,7 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     </message>
     <message>
         <source>Active Config Directories</source>
-        <translation type="unfinished">Активные директории конфигурации</translation>
+        <translation>Активные директории конфигурации</translation>
     </message>
 </context>
 </TS>
