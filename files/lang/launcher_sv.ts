@@ -595,26 +595,26 @@ Logs and settings changed through the launcher and in-game will be saved here.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Global config directory used because local directory did not contain an openmw.cfg
+        <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Global config directory used because local directory did not contain an openmw.cfg</source>
+        <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>User config directory used because %1 contains the line config=%2
+        <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>User config directory used because %1 contains the line config=%2</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
+        <source>User config directory used because %1 contains the line config=%2.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
