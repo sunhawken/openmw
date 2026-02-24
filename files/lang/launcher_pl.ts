@@ -596,26 +596,26 @@ Logs and settings changed through the launcher and in-game will be saved here.</
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Global config directory used because local directory did not contain an openmw.cfg
+        <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Global config directory used because local directory did not contain an openmw.cfg</source>
+        <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>User config directory used because %1 contains the line config=%2
+        <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>User config directory used because %1 contains the line config=%2</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
+        <source>User config directory used because %1 contains the line config=%2.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -843,14 +843,6 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     <message>
         <source>Classic Reflected Absorb Spells Behavior</source>
         <translation>Klasyczne zachowanie odbitych zaklęć Absorpcji</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Makes unarmed creature attacks able to reduce armor condition, just as attacks from NPCs and armed creatures.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="vanished">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Sprawia, że ataki nieuzbrojonych stworzeń mogą zmniejszać wytrzymałość pancerza, tak jak ataki NPC i uzbrojonych stworzeń.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Unarmed Creature Attacks Damage Armor</source>
-        <translation type="vanished">Ataki nieuzbrojonych stworzeń uszkadzają pancerz</translation>
     </message>
     <message>
         <source>Factor Strength into Hand-to-Hand Combat</source>
