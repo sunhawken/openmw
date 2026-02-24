@@ -453,11 +453,11 @@ void Launcher::SettingsPage::populateLoadedConfigs()
         {
             if (isMainUserConfig)
                 toolTipText = tr(
-                    "Global config directory used because local directory did not contain an openmw.cfg\n"
+                    "Global config directory used because local directory did not contain an openmw.cfg.\n"
                     "Logs and settings changed through the launcher and in-game will be saved here.\n"
                     "This is typically a symptom of a broken OpenMW installation or bad package.");
             else
-                toolTipText = tr("Global config directory used because local directory did not contain an openmw.cfg");
+                toolTipText = tr("Global config directory used because local directory did not contain an openmw.cfg.");
         }
         else
         {
@@ -476,11 +476,11 @@ void Launcher::SettingsPage::populateLoadedConfigs()
                 const QFileInfo configPathInfo = QFileInfo(configSetting.context + "/openmw.cfg");
                 if (isMainUserConfig)
                     toolTipText = tr(
-                        "User config directory used because %1 contains the line config=%2\n"
+                        "User config directory used because %1 contains the line config=%2.\n"
                         "Logs and settings changed through the launcher and in-game will be saved here.")
                                       .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
                 else
-                    toolTipText = tr("User config directory used because %1 contains the line config=%2")
+                    toolTipText = tr("User config directory used because %1 contains the line config=%2.")
                                       .arg(configPathInfo.absoluteFilePath(), configSetting.originalRepresentation);
             }
             else if (isMainUserConfig)
