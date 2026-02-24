@@ -587,12 +587,12 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>Local config directory used because it contains an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished">Локальная директория конфигурация используется, потому что содержит openmw.cfg.
+        <translation type="unfinished">Локальная директория конфигурации используется, потому что содержит openmw.cfg.
 Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.</source>
-        <translation type="unfinished">Локальная директория конфигурация используется, потому что содержит openmw.cfg.</translation>
+        <translation type="unfinished">Локальная директория конфигурации используется, потому что содержит openmw.cfg.</translation>
     </message>
     <message>
         <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
@@ -602,13 +602,13 @@ Logs and settings changed through the launcher and in-game will be saved here.</
         <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
-        <translation type="unfinished">Глобальная директория конфигурация используется, потому что локальная директория не содержит openmw.cfg.
+        <translation type="unfinished">Глобальная директория конфигурации используется, потому что локальная директория не содержит openmw.cfg.
 Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.
 Обычно это знак, что OpenMW установлен или упакован некорректно.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
-        <translation type="unfinished">Глобальная директория конфигурация используется, потому что локальная директория не содержит openmw.cfg.</translation>
+        <translation type="unfinished">Глобальная директория конфигурации используется, потому что локальная директория не содержит openmw.cfg.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.
