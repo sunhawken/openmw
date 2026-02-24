@@ -577,72 +577,48 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>Текстовый файл (*.txt)</translation>
     </message>
     <message>
-        <source>Local openmw.cfg. Usually this config is loaded first.</source>
-        <translation type="vanished">Локальный openmw.cfg. Обычно этот конфиг загружается первым.</translation>
-    </message>
-    <message>
-        <source>Global openmw.cfg. It was loaded because there was no local openmw.cfg</source>
-        <translation type="vanished">Глобальный openmw.cfg. Он был загружен потому что не был найден локальный openmw.cfg</translation>
-    </message>
-    <message>
-        <source>doesn&apos;t have openmw.cfg or settings.cfg</source>
-        <translation type="vanished">не содержит openmw.cfg или settings.cfg</translation>
-    </message>
-    <message>
-        <source>has openmw.cfg</source>
-        <translation type="vanished">содержит openmw.cfg</translation>
-    </message>
-    <message>
-        <source>has settings.cfg</source>
-        <translation type="vanished">содержит settings.cfg</translation>
-    </message>
-    <message>
-        <source>has openmw.cfg and settings.cfg</source>
-        <translation type="vanished">содержит openmw.cfg и settings.cfg</translation>
-    </message>
-    <message>
-        <source>User openmw.cfg. It was loaded because %1 contains the line config=%2</source>
-        <translation type="vanished">Пользовательский openmw.cfg. Он был загружен потому что %1 содержит строку config=%2</translation>
-    </message>
-    <message>
         <source>Open Directory</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Открыть директорию</translation>
     </message>
     <message>
         <source>Open %1</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Открыть %1</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Локальная директория конфигурация используется, потому что содержит openmw.cfg.
+Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Global config directory used because local directory did not contain an openmw.cfg
-Logs and settings changed through the launcher and in-game will be saved here.
-This is typically a symptom of a broken OpenMW installation or bad package.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Global config directory used because local directory did not contain an openmw.cfg</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>User config directory used because %1 contains the line config=%2
-Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>User config directory used because %1 contains the line config=%2</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Локальная директория конфигурация используется, потому что содержит openmw.cfg.</translation>
     </message>
     <message>
         <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
+    </message>
+    <message>
+        <source>Global config directory used because local directory did not contain an openmw.cfg.
+Logs and settings changed through the launcher and in-game will be saved here.
+This is typically a symptom of a broken OpenMW installation or bad package.</source>
+        <translation type="unfinished">Глобальная директория конфигурация используется, потому что локальная директория не содержит openmw.cfg.
+Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.
+Обычно это знак, что OpenMW установлен или упакован некорректно.</translation>
+    </message>
+    <message>
+        <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
+        <translation type="unfinished">Глобальная директория конфигурация используется, потому что локальная директория не содержит openmw.cfg.</translation>
+    </message>
+    <message>
+        <source>User config directory used because %1 contains the line config=%2.
+Logs and settings changed through the launcher and in-game will be saved here.</source>
+        <translation type="unfinished">Эта пользовательская директория конфигурации используется, потому что в %1 содержится строка config=%2.
+Лог-файлы и настройки, измененные через лаунчер и в игре, будут сохранены здесь.</translation>
+    </message>
+    <message>
+        <source>User config directory used because %1 contains the line config=%2.</source>
+        <translation type="unfinished">Эта пользовательская директория конфигурации используется, потому что в %1 содержится строка config=%2.</translation>
     </message>
 </context>
 <context>
@@ -1560,7 +1536,7 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     </message>
     <message>
         <source>Active Config Directories</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Активные директории конфигурации</translation>
     </message>
 </context>
 </TS>
