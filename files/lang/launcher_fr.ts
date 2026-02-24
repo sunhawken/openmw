@@ -576,43 +576,46 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     </message>
     <message>
         <source>Open Directory</source>
-        <translation type="unfinished"></translation>
+        <translation>Ouvrir le dossier</translation>
     </message>
     <message>
         <source>Open %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Ouvrir %1</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Le dossier local de configuration est utilisé car il contient un fichier openmw.cfg. Les logs et préférences modifiées y seront sauvegardés.</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.</source>
-        <translation type="unfinished"></translation>
+        <translation>Le dossier local de configuration est utilisé car il contient un fichier openmw.cfg.</translation>
     </message>
     <message>
         <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Les logs et préférences modifiées y seront sauvegardés.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
-        <translation type="unfinished"></translation>
+        <translation>Le dossier global de configuration est utilisé car le dossier courant ne contient pas de fichier openmw.cfg.
+Les logs et préférences modifiées y seront sauvegardés.
+C'est un syndrome typoque d'une installation corrompue d'OpeNMW ou d'un mauvais paquet</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
-        <translation type="unfinished"></translation>
+        <translation>Le dossier global de configuration est utilisé car le dossier courant ne contient pas de fichier openmw.cfg.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Le dossier de configuration utilisateur est utilisé case %1 contient la ligne config=%2.
+Les logs et préférences modifiées y seront sauvegardés.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.</source>
-        <translation type="unfinished"></translation>
+        <translation>Le dossier de configuration utilisateur est utilisé case %1 contient la ligne config=%2.</translation>
     </message>
 </context>
 <context>
