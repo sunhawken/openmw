@@ -89,7 +89,7 @@ namespace MWDialogue
     const MWDialogue::KeywordSearch& DialogueManager::getKeywordSearch() const
     {
         const auto& dialogue = MWBase::Environment::get().getESMStore()->get<ESM::Dialogue>();
-        if (!mKeywordSearchInitialized || dialogue.getKeywordSearchModFlag())
+        if (dialogue.getKeywordSearchModFlag() || !mKeywordSearchInitialized)
         {
             mKeywordSearch.clear();
 

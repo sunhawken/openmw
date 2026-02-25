@@ -167,8 +167,7 @@ namespace MWDialogue
 
                 const std::string_view id(token.mBeg + 1, token.mEnd - 1);
                 token.mTopicId = removePseudoAsterisks(id);
-                for (size_t i = token.mTopicId.size(); i < id.size(); ++i)
-                    token.mTopicId.append("*");
+                token.mTopicId.append(id.size() - token.mTopicId.size(), '*');
                 token.mTopicId = Misc::StringUtils::lowerCase(storage.topicStandardForm(token.mTopicId));
 
                 matches.push_back(token);
