@@ -14,10 +14,10 @@
 #include <components/misc/strings/algorithm.hpp>
 #include <components/translation/translation.hpp>
 
-#include "../mwdialogue/keywordsearch.hpp"
+#include "../mwscript/compilercontext.hpp"
 #include "../mwworld/ptr.hpp"
 
-#include "../mwscript/compilercontext.hpp"
+#include "keywordsearch.hpp"
 
 namespace ESM
 {
