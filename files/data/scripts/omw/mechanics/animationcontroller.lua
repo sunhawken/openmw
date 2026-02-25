@@ -130,7 +130,7 @@ return {
         --   * `startKey` - The start key of the animation that ended
         --   * `stopKey` - The stop key of the animation that ended
         --
-        -- @function [parent=#AnimationController] animationEnded
+        -- @function [parent=#AnimationController] addAnimationEndedHandler
         -- @param #function handler The handler.
         addAnimationEndedHandler = function(handler)
             animationEndedHandlers[#animationEndedHandlers + 1] = handler

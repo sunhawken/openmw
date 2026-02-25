@@ -1245,11 +1245,7 @@ namespace MWRender
 
         if (complete)
         {
-            if (iter->second.mStopTime > iter->second.mStartTime)
-                *complete = (iter->second.getTime() - iter->second.mStartTime)
-                    / (iter->second.mStopTime - iter->second.mStartTime);
-            else
-                *complete = (iter->second.mPlaying ? 0.0f : 1.0f);
+            *complete = iter->second.getCompletion();
         }
         if (speedmult)
             *speedmult = iter->second.mSpeedMult;
@@ -2022,11 +2018,8 @@ namespace MWRender
 
     void Animation::animationEnded(AnimState& state) const
     {
-        float time = state.getTime();
-        float completion = 0.f;
-        this->getInfo(state.mGroupname, &completion);
         MWBase::Environment::get().getLuaManager()->animationEnded(
-            mPtr, state.mGroupname, time, completion, state.mStartKey, state.mStopKey);
+            mPtr, state.mGroupname, state.getTime(), state.getCompletion(), state.mStartKey, state.mStopKey);
     }
 
     MWWorld::MovementDirectionFlags Animation::getSupportedMovementDirections(
@@ -2171,5 +2164,13 @@ namespace MWRender
                                     << ") parents";
             mNode->getParent(0)->removeChild(mNode);
         }
+    }
+
+    float Animation::AnimState::getCompletion() const
+    {
+        if (mStopTime > mStartTime)
+            return (getTime() - mStartTime) / (mStopTime - mStartTime);
+        else
+            return mPlaying ? 0.0f : 1.0f;
     }
 }
