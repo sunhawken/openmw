@@ -597,7 +597,7 @@ Ubuntu_GCC_integration_tests_asan:
 macOS15_Xcode16_amd64:
   extends: .MacOS
   cache:
-    - key: macOS15_Xcode16_amd64.v2
+    - key: macOS15_Xcode16_amd64.v3
     - key:
         files:
           - CI/macos/deps_versions.sh
@@ -612,7 +612,7 @@ macOS15_Xcode16_amd64:
 macOS15_Xcode16_arm64:
   extends: .MacOS
   cache:
-    - key: macOS15_Xcode16_arm64.v2
+    - key: macOS15_Xcode16_arm64.v3
     - key:
         files:
           - CI/macos/deps_versions.sh
