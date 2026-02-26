@@ -614,7 +614,8 @@ Det här är oftast ett symtom på en trasig OpenMW-installation eller ett dåli
     <message>
         <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation>Användarens konfigurationskatalog används eftersom %1 innehåller raden config=%2.</translation>
+        <translation>Användarens konfigurationskatalog används eftersom %1 innehåller raden config=%2.
+Loggar och inställningar som ändras genom startaren och inne i spelet kommer sparas här.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.</source>
