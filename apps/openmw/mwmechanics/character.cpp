@@ -1456,6 +1456,7 @@ namespace MWMechanics
                             mAnimation->showWeapons(false);
                             int equipMask = MWRender::BlendMask_All;
                             mUpperBodyState = UpperBodyState::Equipping;
+                            mResetIdleOnAttackEnd = true;
                             if (useShieldAnims && weaptype != ESM::Weapon::Spell)
                             {
                                 equipMask = equipMask | ~MWRender::BlendMask_LeftArm;
