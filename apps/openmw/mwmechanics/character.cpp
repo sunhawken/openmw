@@ -1328,14 +1328,7 @@ namespace MWMechanics
                     ammunition = ammo != inv.end() && ammo->get<ESM::Weapon>()->mBase->mData.mType == ammotype;
                 // Cancel attack if we no longer have ammunition
                 if (!ammunition)
-                {
-                    if (mUpperBodyState == UpperBodyState::AttackWindUp)
-                    {
-                        mAnimation->disable(mCurrentWeapon);
-                        mUpperBodyState = UpperBodyState::WeaponEquipped;
-                    }
                     setAttackingOrSpell(false);
-                }
             }
 
             MWWorld::ConstContainerStoreIterator torch = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedLeft);
