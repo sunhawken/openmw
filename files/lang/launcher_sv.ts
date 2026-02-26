@@ -579,43 +579,46 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     </message>
     <message>
         <source>Open Directory</source>
-        <translation type="unfinished"></translation>
+        <translation>Öppna katalog</translation>
     </message>
     <message>
         <source>Open %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Öppna %1</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokal konfigurationskatalog används eftersom den innehåller en openmw.cfg.
+Loggar och inställningar som ändras genom startaren och inne i spelet kommer sparas här.</translation>
     </message>
     <message>
         <source>Local config directory used because it contains an openmw.cfg.</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokal konfigurationskatalog används eftersom den innehåller en openmw.cfg.</translation>
     </message>
     <message>
         <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Loggar och inställningar som ändras genom startaren och inne i spelet kommer sparas här.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
-        <translation type="unfinished"></translation>
+        <translation>Global konfigurationskatalog används eftersom den lokala konfigurationskatalogen inte innehöll en openmw.cfg.
+Loggar och inställningar som ändras genom startaren och inne i spelet kommer sparas här.
+Det här är oftast ett symtom på en trasig OpenMW-installation eller ett dåligt paket.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
-        <translation type="unfinished"></translation>
+        <translation>Global konfigurationskatalog används eftersom den lokala konfigurationskatalogen inte innehöll en openmw.cfg.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation type="unfinished"></translation>
+        <translation>Användarens konfigurationskatalog används eftersom %1 innehåller raden config=%2.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.</source>
-        <translation type="unfinished"></translation>
+        <translation>Användarens konfigurationskatalog används eftersom %1 innehåller raden config=%2.</translation>
     </message>
 </context>
 <context>
@@ -1536,7 +1539,7 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     </message>
     <message>
         <source>Active Config Directories</source>
-        <translation type="unfinished"></translation>
+        <translation>Aktiva konfigurationskataloger</translation>
     </message>
 </context>
 </TS>
