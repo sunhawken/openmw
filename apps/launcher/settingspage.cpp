@@ -435,7 +435,7 @@ void Launcher::SettingsPage::populateLoadedConfigs()
 {
     for (const auto& path : mCfgMgr.getActiveConfigPaths())
     {
-        QString configPath = QFileInfo(Files::pathToQString(path)).absolutePath();
+        QString configPath = QDir(Files::pathToQString(path)).absolutePath();
         QString toolTipText;
 
         bool isMainUserConfig = path == mCfgMgr.getUserConfigPath();
