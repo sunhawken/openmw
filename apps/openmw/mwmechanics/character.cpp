@@ -1467,7 +1467,7 @@ namespace MWMechanics
 
                             if (weaptype != ESM::Weapon::Spell || cls.isBipedal(mPtr))
                             {
-                                playBlendedAnimation(weapgroup, priorityWeapon, equipMask, true, 1.0f, "equip start",
+                                playBlendedAnimation(weapgroup, priorityWeapon, equipMask, false, 1.0f, "equip start",
                                     "equip stop", 0.0f, 0);
                             }
 
