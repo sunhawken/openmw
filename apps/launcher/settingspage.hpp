@@ -25,7 +25,6 @@ namespace Launcher
 
         bool loadSettings();
         void saveSettings();
-        void populateLoadedConfigs();
 
     public slots:
         void slotLoadedCellsChanged(QStringList cellNames);
@@ -42,6 +41,8 @@ namespace Launcher
         void slotOpenFile(QTreeWidgetItem* item);
 
     private:
+        void populateLoadedConfigs();
+
         const Files::ConfigurationManager& mCfgMgr;
 
         Config::GameSettings& mGameSettings;
