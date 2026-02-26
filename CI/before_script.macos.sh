@@ -103,12 +103,12 @@ if [[ "${MACOS_AMD64}" ]]; then
     VCPKG_TARGET_TRIPLET="x64-osx-dynamic"
     CMAKE_CONF_OPTS+=(
         -D CMAKE_OSX_ARCHITECTURES="x86_64"
-        -D CMAKE_OSX_DEPLOYMENT_TARGET="13.3"
+        -D CMAKE_OSX_DEPLOYMENT_TARGET="13.7"
     )
 else
     VCPKG_TARGET_TRIPLET="arm64-osx-dynamic"
     CMAKE_CONF_OPTS+=(
-        -D CMAKE_OSX_DEPLOYMENT_TARGET="15.0"
+        -D CMAKE_OSX_DEPLOYMENT_TARGET="14.8"
     )
 fi
 
