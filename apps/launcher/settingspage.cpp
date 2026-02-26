@@ -433,6 +433,8 @@ bool Launcher::SettingsPage::loadSettings()
 
 void Launcher::SettingsPage::populateLoadedConfigs()
 {
+    configsList->clear();
+
     for (const auto& path : mCfgMgr.getActiveConfigPaths())
     {
         QString configPath = QDir(Files::pathToQString(path)).absolutePath();
