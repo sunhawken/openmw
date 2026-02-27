@@ -40,7 +40,7 @@ Wizard::InstallationPage::InstallationPage(QWidget* parent, Config::GameSettings
 
     connect(
         mUnshield.get(), &UnshieldWorker::textChanged, this,
-        [](const QString& text) { Log(Debug::Info) << text.toUtf8().constData(); }, Qt::QueuedConnection);
+        [](const QString& text) { Log(Debug::Info) << qUtf8Printable(text); }, Qt::QueuedConnection);
 
     connect(mUnshield.get(), &UnshieldWorker::progressChanged, installProgressBar, &QProgressBar::setValue,
         Qt::QueuedConnection);
@@ -163,7 +163,7 @@ void Wizard::InstallationPage::showFileDialog(Wizard::Component component)
             break;
     }
     logTextEdit->appendHtml(tr("<p>Attempting to install component %1.</p>").arg(name));
-    Log(Debug::Info) << tr("Attempting to install component %1.").arg(name).toUtf8().constData();
+    Log(Debug::Info) << "Attempting to install component " << qUtf8Printable(name) << ".";
 
     QMessageBox msgBox;
     msgBox.setWindowTitle(tr("%1 Installation").arg(name));
@@ -196,7 +196,7 @@ void Wizard::InstallationPage::showFileDialog(Wizard::Component component)
 void Wizard::InstallationPage::showOldVersionDialog()
 {
     logTextEdit->appendHtml(tr("<p>Detected old version of component Morrowind.</p>"));
-    Log(Debug::Info) << tr("Detected old version of component Morrowind.").toUtf8().constData();
+    Log(Debug::Info) << "Detected old version of component Morrowind.";
 
     QMessageBox msgBox;
     msgBox.setWindowTitle(tr("Morrowind Installation"));
@@ -244,8 +244,8 @@ void Wizard::InstallationPage::installationError(const QString& text, const QStr
     logTextEdit->appendHtml(tr("<p><br/><span style=\"color:red;\"><b>Error: %1</b></p>").arg(text));
     logTextEdit->appendHtml(tr("<p><span style=\"color:red;\"><b>%1</b></p>").arg(details));
 
-    Log(Debug::Error) << (QLatin1String("Error: ") + text).toUtf8().constData();
-    Log(Debug::Error) << details.toUtf8().constData();
+    Log(Debug::Error) << "Error: " << qUtf8Printable(text);
+    Log(Debug::Error) << qUtf8Printable(details);
 
     mWizard->mError = true;
     QMessageBox msgBox;
