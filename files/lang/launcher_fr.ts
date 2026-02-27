@@ -610,12 +610,12 @@ C&apos;est un syndrome typoque d&apos;une installation corrompue d&apos;OpeNMW o
     <message>
         <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation>Le dossier de configuration utilisateur est utilisé case %1 contient la ligne config=%2.
+        <translation>Le dossier de configuration utilisateur est utilisé car %1 contient la ligne config=%2.
 Les logs et préférences modifiées y seront sauvegardés.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.</source>
-        <translation>Le dossier de configuration utilisateur est utilisé case %1 contient la ligne config=%2.</translation>
+        <translation>Le dossier de configuration utilisateur est utilisé car %1 contient la ligne config=%2.</translation>
     </message>
 </context>
 <context>
@@ -1523,7 +1523,7 @@ Les logs et préférences modifiées y seront sauvegardés.</translation>
     </message>
     <message>
         <source>Active Config Directories</source>
-        <translation type="unfinished"></translation>
+        <translation>Dossier de configuration actif</translation>
     </message>
 </context>
 </TS>
