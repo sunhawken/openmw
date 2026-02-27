@@ -468,10 +468,6 @@ de ordinarie fonterna i Morrowind. Bocka i denna ruta om du ändå föredrar ord
         <translation>OpenMW installationsguide</translation>
     </message>
     <message>
-        <source>Error opening Wizard log file</source>
-        <translation>Kunde inte öppna guidens loggfil</translation>
-    </message>
-    <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Could not open %1 for writing&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Please make sure you have the right permissions and try again.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Kunde inte öppna %1 för att skriva&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Se till att du har rätt behörigheter och försök igen.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
