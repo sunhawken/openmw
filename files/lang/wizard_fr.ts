@@ -466,10 +466,6 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>Assistant d&apos;installation d&apos;OpenMW</translation>
     </message>
     <message>
-        <source>Error opening Wizard log file</source>
-        <translation>Erreur lors de l&apos;ouverture du journal de l&apos;Assistant d&apos;installation</translation>
-    </message>
-    <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Could not open %1 for writing&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Please make sure you have the right permissions and try again.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Impossible d&apos;ouvrir %1 en écriture.&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Assurez-vous d&apos;avoir les bons droits d&apos;accès puis réessayez.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
