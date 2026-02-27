@@ -148,34 +148,34 @@ void Wizard::InstallationPage::startInstallation()
 
 void Wizard::InstallationPage::showFileDialog(Wizard::Component component)
 {
-    QString name;
+    std::string_view name;
     switch (component)
     {
 
         case Wizard::Component_Morrowind:
-            name = QLatin1String("Morrowind");
+            name = "Morrowind";
             break;
         case Wizard::Component_Tribunal:
-            name = QLatin1String("Tribunal");
+            name = "Tribunal";
             break;
         case Wizard::Component_Bloodmoon:
-            name = QLatin1String("Bloodmoon");
+            name = "Bloodmoon";
             break;
     }
-    logTextEdit->appendHtml(tr("<p>Attempting to install component %1.</p>").arg(name));
-    Log(Debug::Info) << "Attempting to install component " << qUtf8Printable(name) << ".";
+    logTextEdit->appendHtml(tr("<p>Attempting to install component %1.</p>").arg(QLatin1String(name)));
+    Log(Debug::Info) << "Attempting to install component " << name << ".";
 
     QMessageBox msgBox;
-    msgBox.setWindowTitle(tr("%1 Installation").arg(name));
+    msgBox.setWindowTitle(tr("%1 Installation").arg(QLatin1String(name)));
     msgBox.setIcon(QMessageBox::Information);
     msgBox.setText(
         QObject::tr("Select a valid %1 installation media.<br><b>Hint</b>: make sure that it contains at least one "
                     "<b>.cab</b> file.")
-            .arg(name));
+            .arg(QLatin1String(name)));
     msgBox.exec();
 
-    QString path
-        = QFileDialog::getExistingDirectory(this, tr("Select %1 installation media").arg(name), QDir::rootPath());
+    QString path = QFileDialog::getExistingDirectory(
+        this, tr("Select %1 installation media").arg(QLatin1String(name)), QDir::rootPath());
 
     if (path.isEmpty())
     {
