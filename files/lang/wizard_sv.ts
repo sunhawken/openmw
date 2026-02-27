@@ -343,10 +343,6 @@ de ordinarie fonterna i Morrowind. Bocka i denna ruta om du ändå föredrar ord
         <translation>&lt;p&gt;Försöker installera komponent %1.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>Attempting to install component %1.</source>
-        <translation>Försöker installera komponent %1.</translation>
-    </message>
-    <message>
         <source>%1 Installation</source>
         <translation>%1 Installation</translation>
     </message>
@@ -361,10 +357,6 @@ de ordinarie fonterna i Morrowind. Bocka i denna ruta om du ändå föredrar ord
     <message>
         <source>&lt;p&gt;Detected old version of component Morrowind.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Hittade gammal version av Morrowind.&lt;/p&gt;</translation>
-    </message>
-    <message>
-        <source>Detected old version of component Morrowind.</source>
-        <translation>Hittade gammal version av komponenten Morrowind.</translation>
     </message>
     <message>
         <source>Morrowind Installation</source>
