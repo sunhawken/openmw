@@ -598,7 +598,7 @@ Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze będą
     </message>
     <message>
         <source>Logs and settings changed through the launcher and in-game will be saved here.</source>
-        <translation>Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze będą zapisywane w tym miejsu</translation>
+        <translation>Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze będą zapisywane w tym miejscu.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.
@@ -616,7 +616,7 @@ Jest to zazwyczaj objaw uszkodzonej instalacji OpenMW lub wadliwego pakietu.</tr
         <source>User config directory used because %1 contains the line config=%2.
 Logs and settings changed through the launcher and in-game will be saved here.</source>
         <translation>Katalog konfiguracyjny użytkownika używany, ponieważ %1 zawiera wiersz config=%2.
- Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostaną zapisane w tym miejscu.</translation>
+Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostaną zapisane w tym miejscu.</translation>
     </message>
     <message>
         <source>User config directory used because %1 contains the line config=%2.</source>
