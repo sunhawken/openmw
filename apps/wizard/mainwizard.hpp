@@ -60,11 +60,7 @@ namespace Wizard
 
         bool mError;
 
-    public slots:
-        void addLogText(const QString& text);
-
     private:
-        void setupLog();
         void setupGameSettings();
         void setupLauncherSettings();
         void setupInstallations();
