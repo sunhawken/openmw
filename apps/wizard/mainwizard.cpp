@@ -58,11 +58,6 @@ Wizard::MainWizard::MainWizard(Files::ConfigurationManager&& cfgMgr, QWidget* pa
     connect(mImporterInvoker->getProcess(), qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
         &MainWizard::importerFinished);
 
-    mLogError = tr(
-        "<html><head/><body><p><b>Could not open %1 for writing</b></p>"
-        "<p>Please make sure you have the right permissions "
-        "and try again.</p></body></html>");
-
     std::filesystem::create_directories(mCfgMgr.getUserConfigPath());
     std::filesystem::create_directories(mCfgMgr.getUserDataPath());
 

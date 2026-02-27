@@ -71,8 +71,6 @@ namespace Wizard
         Config::GameSettings mGameSettings;
         Config::LauncherSettings mLauncherSettings;
 
-        QString mLogError;
-
     private slots:
 
         void importerStarted();
