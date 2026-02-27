@@ -468,10 +468,6 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>Мастер OpenMW</translation>
     </message>
     <message>
-        <source>Error opening Wizard log file</source>
-        <translation>Не удалось открыть лог-файл Мастера</translation>
-    </message>
-    <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Could not open %1 for writing&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Please make sure you have the right permissions and try again.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Не удалось открыть %1 для записи&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Пожалуйста, проверьте права доступа и повторите попытку.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
