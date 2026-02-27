@@ -341,10 +341,6 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <translation>&lt;p&gt;Tentative d&apos;installation de la composante %1.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>Attempting to install component %1.</source>
-        <translation>Tentative d&apos;installation de la composante %1.</translation>
-    </message>
-    <message>
         <source>%1 Installation</source>
         <translation>Installation de %1</translation>
     </message>
@@ -359,10 +355,6 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     <message>
         <source>&lt;p&gt;Detected old version of component Morrowind.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Ancienne version de la composante Morrowind détectée.&lt;/p&gt;</translation>
-    </message>
-    <message>
-        <source>Detected old version of component Morrowind.</source>
-        <translation>Ancienne version de la composante Morrowind détectée.</translation>
     </message>
     <message>
         <source>Morrowind Installation</source>
