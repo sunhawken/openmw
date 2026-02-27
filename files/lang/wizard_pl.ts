@@ -474,10 +474,6 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Nie udało się otworzyć %1 do zapisu&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Upewnij się, że masz odpowiednie uprawnienia, a następnie spróbuj ponownie.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
-        <source>Error opening Wizard log file</source>
-        <translation>Błąd podczas otwierania pliku dziennika kreatora</translation>
-    </message>
-    <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Could not open %1 for reading&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Please make sure you have the right permissions and try again.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Nie udało się otworzyć %1 do zapisu&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Upewnij się, że masz odpowiednie uprawnienia, a następnie spróbuj ponownie.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
