@@ -1543,7 +1543,7 @@ Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostan
     </message>
     <message>
         <source>Active Config Directories</source>
-        <translation type="unfinished"></translation>
+        <translation>Aktywne katalogi konfiguracyjne</translation>
     </message>
 </context>
 </TS>
