@@ -11,7 +11,7 @@
 #include <QString>
 
 #include <components/config/gamesettings.hpp>
-#include <components/files/qtconfigpath.hpp>
+#include <components/files/qtconversion.hpp>
 #include <components/settings/values.hpp>
 
 #include "utils/openalutil.hpp"
