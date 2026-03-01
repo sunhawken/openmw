@@ -601,7 +601,7 @@ Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
         <translation>Le dossier global de configuration est utilisé car le dossier courant ne contient pas de fichier openmw.cfg.
 Les logs et préférences modifiées y seront sauvegardés.
-C&apos;est un syndrome typique d&apos;une installation corrompue d&apos;OpenMW ou d&apos;un mauvais paquet</translation>
+C&apos;est un syndrome typique d&apos;une installation corrompue d&apos;OpenMW ou d&apos;un mauvais paquet.</translation>
     </message>
     <message>
         <source>Global config directory used because local directory did not contain an openmw.cfg.</source>
