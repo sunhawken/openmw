@@ -1513,7 +1513,7 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     </message>
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Controls the strength of the Doppler effect. Zero means it is completely disabled.&lt;/p&gt;&lt;p&gt;The Doppler effect increases or decreases the pitch of sounds relative to the velocity of the sound source and the listener.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Active Config Directories</source>
