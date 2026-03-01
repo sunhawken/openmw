@@ -1449,6 +1449,7 @@ namespace MWMechanics
                             mAnimation->showWeapons(false);
                             int equipMask = MWRender::BlendMask_All;
                             mUpperBodyState = UpperBodyState::Equipping;
+                            mResetIdleOnAttackEnd = true;
                             if (useShieldAnims && weaptype != ESM::Weapon::Spell)
                             {
                                 equipMask = equipMask | ~MWRender::BlendMask_LeftArm;
@@ -1459,7 +1460,7 @@ namespace MWMechanics
 
                             if (weaptype != ESM::Weapon::Spell || cls.isBipedal(mPtr))
                             {
-                                playBlendedAnimation(weapgroup, priorityWeapon, equipMask, true, 1.0f, "equip start",
+                                playBlendedAnimation(weapgroup, priorityWeapon, equipMask, false, 1.0f, "equip start",
                                     "equip stop", 0.0f, 0);
                             }
 
@@ -1519,7 +1520,7 @@ namespace MWMechanics
         ESM::WeaponType::Class weapclass = getWeaponType(mWeaponType)->mWeaponClass;
         if (getAttackingOrSpell())
         {
-            bool resetIdle = true;
+            mResetIdleOnAttackEnd = true;
             if (mUpperBodyState == UpperBodyState::WeaponEquipped
                 && (mHitState == CharState_None || mHitState == CharState_Block))
             {
@@ -1573,10 +1574,11 @@ namespace MWMechanics
                         world->breakInvisibility(mPtr);
                         // Enchanted items by default do not use casting animations
                         world->castSpell(mPtr);
-                        resetIdle = false;
                         // Spellcasting animation needs to "play" for at least one frame to reset the aiming factor
                         animPlaying = true;
                         mUpperBodyState = UpperBodyState::Casting;
+                        // But idle should not be reset
+                        mResetIdleOnAttackEnd = false;
                     }
                     // Play the spellcasting animation/VFX if the spellcasting was successful or failed due to
                     // insufficient magicka. Used up powers are exempt from this from some reason.
@@ -1658,10 +1660,6 @@ namespace MWMechanics
                             mUpperBodyState = UpperBodyState::Casting;
                         }
                     }
-                    else
-                    {
-                        resetIdle = false;
-                    }
                 }
                 else
                 {
@@ -1719,12 +1717,6 @@ namespace MWMechanics
                     playBlendedAnimation(mCurrentWeapon, priorityWeapon, MWRender::BlendMask_All, false, weapSpeed,
                         startKey, stopKey, 0.0f, 0);
                 }
-            }
-
-            // We should not break swim and sneak animations
-            if (resetIdle && mIdleState != CharState_IdleSneak && mIdleState != CharState_IdleSwim)
-            {
-                resetCurrentIdleState();
             }
         }
 
@@ -1854,6 +1846,11 @@ namespace MWMechanics
                         mCurrentWeapon = getWeaponAnimation(mWeaponType);
                         mAnimation->showWeapons(false);
                     }
+                }
+                // We should not break swim and sneak animations
+                if (mResetIdleOnAttackEnd && mIdleState != CharState_IdleSneak && mIdleState != CharState_IdleSwim)
+                {
+                    resetCurrentIdleState();
                 }
 
                 mUpperBodyState = UpperBodyState::WeaponEquipped;
