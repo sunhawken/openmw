@@ -54,7 +54,7 @@ namespace MWPhysics
     private:
         osg::ref_ptr<Resource::PhysicsShapeInstance> mShapeInstance;
         JPH::Ref<JPH::Shape> mBasePhysicsShape;
-        std::map<int, osg::NodePath> mRecIndexToNodePath;
+        std::map<int, osg::NodePath> mRecordIndexToNodePath;
         bool mSolid;
         osg::Vec3f mScale;
         osg::Vec3f mPosition;
