@@ -6,7 +6,7 @@ source_group(apps\\physicsobjecttool FILES ${PHYSICSMESHTOOL})
 openmw_add_executable(openmw-physicsobjecttool ${PHYSICSMESHTOOL})
 
 target_link_libraries(openmw-physicsobjecttool
-    ${Boost_PROGRAM_OPTIONS_LIBRARY}
+    Boost::program_options
     components
 )
 
@@ -20,8 +20,5 @@ if (WIN32)
 endif()
 
 if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
-    target_precompile_headers(openmw-physicsobjecttool PRIVATE
-        <string>
-        <vector>
-    )
+    target_precompile_headers(openmw-physicsobjecttool REUSE_FROM components)
 endif()

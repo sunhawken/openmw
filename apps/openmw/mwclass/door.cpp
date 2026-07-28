@@ -81,7 +81,7 @@ namespace MWClass
     void Door::insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
         MWPhysics::PhysicsSystem& physics) const
     {
-        physics.addObject(ptr, model, rotation, MWPhysics::Layers::DOOR);
+        physics.addObject(ptr, VFS::Path::toNormalized(model), rotation, MWPhysics::Layers::DOOR);
     }
 
     bool Door::isDoor() const
@@ -126,7 +126,7 @@ namespace MWClass
 
         // make door glow if player activates it with telekinesis
         if (actor == MWMechanics::getPlayer()
-            && MWBase::Environment::get().getWorld()->getDistanceToFacedObject()
+            && MWBase::Environment::get().getWorld()->getDistanceToFocusObject()
                 > MWBase::Environment::get().getWorld()->getMaxActivationDistance())
         {
             MWRender::Animation* animation = MWBase::Environment::get().getWorld()->getAnimation(ptr);
@@ -186,7 +186,7 @@ namespace MWClass
             if (ptr.getCellRef().getTeleport())
             {
                 if (actor == MWMechanics::getPlayer()
-                    && MWBase::Environment::get().getWorld()->getDistanceToFacedObject()
+                    && MWBase::Environment::get().getWorld()->getDistanceToFocusObject()
                         > MWBase::Environment::get().getWorld()->getMaxActivationDistance())
                 {
                     // player activated teleport door with telekinesis
