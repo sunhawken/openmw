@@ -501,7 +501,7 @@ namespace MWWorld
                 mPhysics->addHeightField(defaultHeight.data(), cellX, cellY, worldsize, verts,
                     ESM::Land::DEFAULT_HEIGHT, ESM::Land::DEFAULT_HEIGHT, land.get());
             }
-            if (const auto heightField = mPhysics->getHeightField(cellX, cellY))
+            if (mPhysics->getHeightField(cellX, cellY))
             {
                 const osg::Vec2i cellPosition(cellX, cellY);
                 const HeightfieldShape shape = [&]() -> HeightfieldShape {
@@ -554,7 +554,7 @@ namespace MWWorld
 
             if (cellVariant.isExterior())
             {
-                if (const auto heightField = mPhysics->getHeightField(cellX, cellY))
+                if (mPhysics->getHeightField(cellX, cellY))
                     mNavigator.addWater(
                         osg::Vec2i(cellX, cellY), ESM::Land::REAL_SIZE, waterLevel, navigatorUpdateGuard);
             }
@@ -1139,17 +1139,6 @@ namespace MWWorld
     bool Scene::isCellActive(const CellStore& cell)
     {
         return mActiveCells.contains(&cell);
-    }
-
-    Ptr Scene::searchPtrViaActorId(int actorId)
-    {
-        for (CellStoreCollection::const_iterator iter(mActiveCells.begin()); iter != mActiveCells.end(); ++iter)
-        {
-            Ptr ptr = (*iter)->searchViaActorId(actorId);
-            if (!ptr.isEmpty())
-                return ptr;
-        }
-        return Ptr();
     }
 
     class PreloadMeshItem : public SceneUtil::WorkItem
