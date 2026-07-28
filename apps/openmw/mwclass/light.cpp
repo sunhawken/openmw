@@ -62,7 +62,7 @@ namespace MWClass
     {
         // TODO: add option somewhere to enable collision for placeable objects
         if ((ptr.get<ESM::Light>()->mBase->mData.mFlags & ESM::Light::Carry) == 0)
-            physics.addObject(ptr, model, rotation, MWPhysics::Layers::WORLD);
+            physics.addObject(ptr, VFS::Path::toNormalized(model), rotation, MWPhysics::Layers::WORLD);
     }
 
     bool Light::useAnim() const
