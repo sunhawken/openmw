@@ -1,5 +1,6 @@
 #include "ragdollwrapper.hpp"
 
+#include "havokragdolltemplate.hpp"
 #include "joltlayers.hpp"
 #include "mtphysics.hpp"
 
@@ -23,7 +24,8 @@ namespace MWPhysics
         const osg::Quat& rotation,
         float scale,
         JPH::PhysicsSystem* joltSystem,
-        PhysicsTaskScheduler* scheduler)
+        PhysicsTaskScheduler* scheduler,
+        Resource::ResourceSystem* resourceSystem)
         : mPtr(ptr)
         , mSkeleton(skeleton)
         , mJoltSystem(joltSystem)
@@ -37,9 +39,13 @@ namespace MWPhysics
             return;
         }
 
-        // Build ragdoll settings from OSG skeleton
+        // Build ragdoll settings from OSG skeleton, using authored Havok ragdoll
+        // data (bhkRagdollTemplate) for bones it covers, and heuristic defaults
+        // for everything else (which is every bone, for vanilla Morrowind actors).
         const float totalMass = 70.0f * scale;
-        mSettings = RagdollSettingsBuilder::build(skeleton, totalMass, scale);
+        const RagdollSettingsBuilder::JointConfigMap havokOverrides = loadHavokRagdollTemplate(ptr, resourceSystem);
+        mSettings = RagdollSettingsBuilder::build(
+            skeleton, totalMass, scale, havokOverrides.empty() ? nullptr : &havokOverrides);
 
         if (!mSettings)
         {

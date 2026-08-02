@@ -251,7 +251,7 @@ namespace MWPhysics
         {
             case JointConfig::ShapeType::Sphere:
             {
-                float radius = length * 0.4f * shapeScale;
+                float radius = config.explicitRadius >= 0.0f ? config.explicitRadius : length * 0.4f * shapeScale;
                 shape = new JPH::RotatedTranslatedShape(
                     Misc::Convert::toJolt<JPH::Vec3>(shapeCenter),
                     JPH::Quat::sIdentity(),
@@ -276,12 +276,12 @@ namespace MWPhysics
             case JointConfig::ShapeType::Capsule:
             default:
             {
-                float radius = width * 0.3f * shapeScale;
+                float radius = config.explicitRadius >= 0.0f ? config.explicitRadius : width * 0.3f * shapeScale;
                 float halfHeight = (length * 0.5f - radius) * shapeScale;
                 if (halfHeight < 0.0f)
                 {
                     halfHeight = 0.0f;
-                    radius = length * 0.4f * shapeScale;
+                    radius = config.explicitRadius >= 0.0f ? config.explicitRadius : length * 0.4f * shapeScale;
                 }
 
                 // Jolt capsules are along Y axis, rotate to align with bone
@@ -370,7 +370,7 @@ namespace MWPhysics
 
         // Joint limits
         settings->mNormalHalfConeAngle = config.swingLimit;
-        settings->mPlaneHalfConeAngle = config.swingLimit;
+        settings->mPlaneHalfConeAngle = config.planeSwingLimit >= 0.0f ? config.planeSwingLimit : config.swingLimit;
         settings->mTwistMinAngle = config.twistMinLimit;
         settings->mTwistMaxAngle = config.twistMaxLimit;
 
@@ -508,8 +508,8 @@ namespace MWPhysics
 
             part.mLinearDamping = 0.5f;
             part.mAngularDamping = 0.8f;
-            part.mFriction = 0.8f;
-            part.mRestitution = 0.0f;
+            part.mFriction = config.friction;
+            part.mRestitution = config.restitution;
             part.mMotionQuality = JPH::EMotionQuality::LinearCast;
             part.mAllowSleeping = true;
             part.mGravityFactor = 1.0f;

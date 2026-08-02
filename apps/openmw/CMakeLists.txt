@@ -89,7 +89,7 @@ add_openmw_dir (mwworld
 add_openmw_dir (mwphysics
     physicssystem trace collisiontype actor convert object heightfield collisionshapeconfig
     stepper movementsolver projectile raycasting mtphysics water dynamicobject
-    ragdollbuilder ragdollwrapper skeletonmapper
+    ragdollbuilder ragdollwrapper skeletonmapper havokragdolltemplate
     )
 
 add_openmw_dir (mwclass

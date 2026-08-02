@@ -1996,7 +1996,7 @@ namespace MWPhysics
         // Create the ragdoll using the new wrapper
         auto ragdoll = std::make_shared<RagdollWrapper>(
             ptr, skeleton, position, rotation, scale,
-            mPhysicsSystem.get(), mTaskScheduler.get());
+            mPhysicsSystem.get(), mTaskScheduler.get(), mResourceSystem);
 
         if (!ragdoll->isValid())
         {

@@ -24,7 +24,7 @@ namespace MWPhysics
     struct JointConfig
     {
         float mass = 1.0f;              // Relative mass (will be normalized)
-        float swingLimit = 0.5f;        // Swing cone half-angle in radians
+        float swingLimit = 0.5f;        // Swing cone half-angle in radians (normal axis)
         float twistMinLimit = -0.3f;    // Twist min angle in radians
         float twistMaxLimit = 0.3f;     // Twist max angle in radians
 
@@ -33,6 +33,22 @@ namespace MWPhysics
 
         // Shape scale multiplier (1.0 = full bone length)
         float shapeScale = 0.7f;
+
+        float friction = 0.8f;
+        float restitution = 0.0f;
+
+        // Fields below are only populated when this config was derived from an
+        // authored bhkRagdollTemplate (see havokragdolltemplate.hpp). A negative
+        // value means "unset" and the corresponding heuristic/derived value is used.
+
+        // Plane-axis swing half-angle, independent of swingLimit (normal axis).
+        // Havok's cone limit is split into a normal cone angle and a separate
+        // plane min/max pair; unset falls back to swingLimit for both axes.
+        float planeSwingLimit = -1.0f;
+
+        // Absolute capsule/sphere radius in game units, already Havok-scale-converted.
+        // Unset means derive the radius from bone length and shapeScale as before.
+        float explicitRadius = -1.0f;
     };
 
     /// Information about a bone used during ragdoll construction

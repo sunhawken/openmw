@@ -27,6 +27,11 @@ namespace SceneUtil
     class Skeleton;
 }
 
+namespace Resource
+{
+    class ResourceSystem;
+}
+
 namespace MWPhysics
 {
     class PhysicsTaskScheduler;
@@ -53,6 +58,9 @@ namespace MWPhysics
         /// @param scale Actor scale factor
         /// @param joltSystem Jolt physics system
         /// @param scheduler Physics task scheduler for body interface access
+        /// @param resourceSystem Used to check the actor's model for an authored
+        ///        Havok ragdoll template (bhkRagdollTemplate); may be null, in
+        ///        which case the ragdoll is always built from heuristic defaults.
         RagdollWrapper(
             const MWWorld::Ptr& ptr,
             SceneUtil::Skeleton* skeleton,
@@ -60,7 +68,8 @@ namespace MWPhysics
             const osg::Quat& rotation,
             float scale,
             JPH::PhysicsSystem* joltSystem,
-            PhysicsTaskScheduler* scheduler
+            PhysicsTaskScheduler* scheduler,
+            Resource::ResourceSystem* resourceSystem
         );
 
         ~RagdollWrapper();
