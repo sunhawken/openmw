@@ -61,6 +61,7 @@
 #include "../mwmechanics/weapontype.hpp"
 
 #include "actorutil.hpp"
+#include "jigglebonecontroller.hpp"
 #include "rotatecontroller.hpp"
 #include "util.hpp"
 #include "vismask.hpp"
@@ -1665,6 +1666,26 @@ namespace MWRender
         mObjectRoot->addCullCallback(mLightListCallback);
         if (mTransparencyUpdater)
             mObjectRoot->addCullCallback(mTransparencyUpdater);
+
+        attachJiggleBoneControllers();
+    }
+
+    void Animation::attachJiggleBoneControllers()
+    {
+        static constexpr std::string_view boneNames[] = {
+            "bip01 l breast",
+            "bip01 r breast",
+            "bip01 l butt",
+            "bip01 r butt",
+        };
+        for (std::string_view bone : boneNames)
+        {
+            auto iter = getNodeMap().find(bone);
+            if (iter == getNodeMap().end())
+                continue;
+            osg::MatrixTransform* node = iter->second;
+            node->addUpdateCallback(new JiggleBoneController);
+        }
     }
 
     osg::Group* Animation::getObjectRoot()
