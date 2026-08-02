@@ -232,6 +232,15 @@ namespace MWRender
 
         osg::ref_ptr<RotateController> addRotateController(std::string_view bone);
 
+        /// Scans this actor's skeleton for known jiggle-bone names (breast/butt
+        /// secondary-motion bones added by some body-replacer meshes) and attaches
+        /// a JiggleBoneController directly to each one found. Unlike
+        /// addRotateController()/addControllers(), these are not tracked in
+        /// mActiveControllers - they must persist across animation-group changes,
+        /// not be reset by them. Cleanup is automatic: the controllers live on
+        /// nodes owned by mObjectRoot, so they're destroyed with it.
+        void attachJiggleBoneControllers();
+
         bool mHasMagicEffects;
 
         osg::ref_ptr<SceneUtil::LightSource> mGlowLight;
