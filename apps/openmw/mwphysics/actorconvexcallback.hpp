@@ -79,7 +79,12 @@ namespace MWPhysics
             float earlyOut = inResult.GetEarlyOutFraction();
             if (collisionGroup == Layers::ACTOR)
             {
-                bool isOverlapping = inResult.mPenetrationDepth != 0.0f;
+                // mPenetrationDepth is the distance between the two contact points, which is
+                // exactly zero when the actors are exactly coincident - i.e. false right when this
+                // override is needed most. mFraction == 0 is what Jolt actually sets whenever the
+                // shapes are already overlapping at the start of the cast (any depth, including
+                // exact coincidence), so it's a strict improvement here.
+                bool isOverlapping = inResult.mFraction == 0.0f;
                 if (isOverlapping)
                 {
                     auto originA = Misc::Convert::toOsg(myBody->GetCenterOfMassTransform().GetTranslation());
@@ -87,7 +92,20 @@ namespace MWPhysics
                     osg::Vec3f motion = Misc::Convert::toOsg(mMotion);
                     osg::Vec3f normal = (originA - originB);
                     normal.z() = 0;
-                    normal.normalize();
+                    if (normal.length2() < 1e-8f)
+                    {
+                        // Exactly coincident - there's no meaningful horizontal separation
+                        // direction to normalize. Use a deterministic tiebreak (body ID
+                        // ordering) so the two actors push apart in opposite directions
+                        // instead of both computing the same arbitrary axis (which would
+                        // leave them stuck together) or normalizing a zero-length vector.
+                        normal = osg::Vec3f(
+                            mMe.GetIndexAndSequenceNumber() < inResult.mBodyID2.GetIndexAndSequenceNumber() ? 1.0f
+                                                                                                             : -1.0f,
+                            0.0f, 0.0f);
+                    }
+                    else
+                        normal.normalize();
 
                     // only collide if horizontally moving towards the hit actor (note: the motion vector appears to be
                     // inverted)
