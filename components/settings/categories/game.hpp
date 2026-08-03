@@ -74,6 +74,16 @@ namespace Settings
         SettingValue<DetourNavigator::CollisionShapeType> mActorCollisionShapeType{ mIndex, "Game",
             "actor collision shape type" };
         SettingValue<bool> mPlayerMovementIgnoresAnimation{ mIndex, "Game", "player movement ignores animation" };
+        SettingValue<bool> mJiggleBoneDebug{ mIndex, "Game", "jiggle bone debug" };
+        // Damped-spring tuning for breast/butt jiggle-bone secondary motion.
+        SettingValue<float> mJiggleBoneStiffness{ mIndex, "Game", "jiggle bone stiffness",
+            makeClampSanitizerFloat(1.f, 1000.f) };
+        SettingValue<float> mJiggleBoneDamping{ mIndex, "Game", "jiggle bone damping",
+            makeClampSanitizerFloat(0.f, 100.f) };
+        SettingValue<float> mJiggleBoneMaxDisplacement{ mIndex, "Game", "jiggle bone max displacement",
+            makeClampSanitizerFloat(0.f, 50.f) };
+        SettingValue<float> mJiggleBoneIntensity{ mIndex, "Game", "jiggle bone intensity",
+            makeClampSanitizerFloat(0.f, 20.f) };
     };
 }
 
