@@ -176,17 +176,27 @@ namespace MWPhysics
         JPH::RayCastSettings settings;
         settings.SetBackFaceMode(JPH::EBackFaceMode::IgnoreBackFaces);
 
-        // Cast ray and return closest hit
+        // Cast ray and return closest hit. Jolt's CastRay reports hits to the collector in
+        // broadphase-traversal order, not sorted by distance - taking the first hit
+        // unconditionally (as this used to do) could return an arbitrary, possibly far-below
+        // hit (e.g. a floor several bodies down, or the sea floor under a dock), which is what
+        // caused actors reset via `resetactors`/`ra` and players teleported through doors to
+        // end up placed far below the intended surface. Comparing against the current best
+        // fraction and calling UpdateEarlyOutFraction (matching ContactCollectionCallback
+        // above) makes this a genuine closest-hit collector, like Bullet's
+        // ClosestRayResultCallback that this replaced.
         class TraceHitCollector : public JPH::CastRayCollector
         {
         public:
             virtual void AddHit(const JPH::RayCastResult& inResult) override
             {
+                if (inResult.mFraction >= mFraction)
+                    return;
                 mFraction = inResult.mFraction;
                 mSubShapeID2 = inResult.mSubShapeID2;
                 mBodyID = inResult.mBodyID;
                 mHit = true;
-                ForceEarlyOut(); // Only collect a single hit
+                UpdateEarlyOutFraction(mFraction);
             }
 
             bool mHit = false;
