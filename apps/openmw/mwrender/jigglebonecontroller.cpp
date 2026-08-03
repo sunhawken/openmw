@@ -1,6 +1,8 @@
 #include "jigglebonecontroller.hpp"
 
+#include <components/debug/debuglog.hpp>
 #include <components/nifosg/matrixtransform.hpp>
+#include <components/settings/values.hpp>
 
 #include <osg/MatrixTransform>
 #include <osg/NodeVisitor>
@@ -9,22 +11,16 @@ namespace MWRender
 {
     namespace
     {
-        // Tuning for the damped-spring model. Chosen to give a soft, slightly
-        // lagged bounce without excessive wobble.
-        constexpr float sStiffness = 100.0f; // higher = snappier/stiffer
-        constexpr float sDamping = 10.0f; // higher = settles faster, less bounce
-        constexpr float sMaxDisplacement = 3.0f; // clamp (game units) against runaway on a dt spike or teleport
-        constexpr double sMaxDeltaTime = 0.1; // clamp dt so a hitch/pause doesn't blow up the spring
-        // The raw spring displacement is subtle at this scale, so amplify the
-        // rendered offset a bit without affecting the underlying simulation.
-        constexpr float sVisualAmplification = 2.5f;
+        // dt is clamped regardless of settings, so a hitch/pause doesn't blow up the spring.
+        constexpr double sMaxDeltaTime = 0.1;
     }
 
-    JiggleBoneController::JiggleBoneController()
+    JiggleBoneController::JiggleBoneController(bool debug)
         : mSimWorldPos(0, 0, 0)
         , mVelocity(0, 0, 0)
         , mInitialized(false)
         , mLastSimTime(-1.0)
+        , mDebug(debug)
     {
     }
 
@@ -75,23 +71,38 @@ namespace MWRender
             dt = sMaxDeltaTime;
         const float fdt = static_cast<float>(dt);
 
+        const float stiffness = Settings::game().mJiggleBoneStiffness;
+        const float damping = Settings::game().mJiggleBoneDamping;
+        const float maxDisplacement = Settings::game().mJiggleBoneMaxDisplacement;
+        const float intensity = Settings::game().mJiggleBoneIntensity;
+
         osg::Vec3f displacement = mSimWorldPos - restWorldPos;
-        const osg::Vec3f acceleration = (displacement * -sStiffness) + (mVelocity * -sDamping);
+        const osg::Vec3f acceleration = (displacement * -stiffness) + (mVelocity * -damping);
         mVelocity += acceleration * fdt;
         mSimWorldPos += mVelocity * fdt;
 
         displacement = mSimWorldPos - restWorldPos;
-        if (displacement.length2() > sMaxDisplacement * sMaxDisplacement)
+        if (displacement.length2() > maxDisplacement * maxDisplacement)
         {
             displacement.normalize();
-            displacement *= sMaxDisplacement;
+            displacement *= maxDisplacement;
             mSimWorldPos = restWorldPos + displacement;
         }
 
-        const osg::Vec3f visualWorldPos = restWorldPos + displacement * sVisualAmplification;
+        const osg::Vec3f visualWorldPos = restWorldPos + displacement * intensity;
 
         const osg::Matrix parentWorldInverse = osg::Matrix::inverse(parentWorldMatrix);
         const osg::Vec3f newLocalTranslation = visualWorldPos * parentWorldInverse;
+
+        if (mDebug && (mDebugCounter++ % 60) == 0)
+        {
+            Log(Debug::Warning) << "Jiggle bone debug: node=" << node->getName() << " dt=" << dt
+                                 << " restWorldPos=" << restWorldPos.x() << "," << restWorldPos.y() << ","
+                                 << restWorldPos.z() << " simWorldPos=" << mSimWorldPos.x() << "," << mSimWorldPos.y()
+                                 << "," << mSimWorldPos.z() << " displacementLen=" << displacement.length()
+                                 << " newLocalTranslation=" << newLocalTranslation.x() << "," << newLocalTranslation.y()
+                                 << "," << newLocalTranslation.z();
+        }
 
         if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
             nifTransform->setTranslation(newLocalTranslation);
