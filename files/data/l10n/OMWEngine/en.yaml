@@ -253,6 +253,10 @@ JiggleDampingHigh: "Settled"
 JiggleMaxDisplacementValue: "Jiggle Max Displacement ({value, number, ::.0})"
 JiggleMaxDisplacementLow: "Subtle"
 JiggleMaxDisplacementHigh: "Extreme"
+MaxActorsInCombatValue: "Max Actors In Combat With Player ({value})"
+MaxActorsInCombatOff: "Off"
+MaxActorsInCombatMax: "50"
+MaxAlliesInCombatValue: "Max Allies In Combat ({value})"
 
 # Controller button names
 

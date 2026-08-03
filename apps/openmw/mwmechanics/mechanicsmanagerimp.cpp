@@ -14,6 +14,7 @@
 #include <components/esm3/stolenitems.hpp>
 
 #include <components/sceneutil/positionattitudetransform.hpp>
+#include <components/settings/values.hpp>
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -1682,6 +1683,44 @@ namespace MWMechanics
         return Misc::Rng::roll0to99(prng) >= target;
     }
 
+    namespace
+    {
+        // How many actors currently have `target` as an active combat opponent.
+        // Only meaningful as a throttle for a single target (the player) - actors
+        // fighting each other are not counted or affected.
+        int countActorsInCombatWith(Actors& actors, const MWWorld::Ptr& target)
+        {
+            int count = 0;
+            for (const Actor& actor : actors)
+            {
+                if (actor.isInvalid())
+                    continue;
+                const MWWorld::Ptr& actorPtr = actor.getPtr();
+                if (actorPtr.getClass().getCreatureStats(actorPtr).getAiSequence().isInCombat(target))
+                    ++count;
+            }
+            return count;
+        }
+
+        // How many actors are in combat with something other than `player` - the
+        // "ally" side of a fight (guards/companions/etc piling onto an enemy),
+        // as opposed to enemies piling onto the player.
+        int countActorsInCombatNotWith(Actors& actors, const MWWorld::Ptr& player)
+        {
+            int count = 0;
+            for (const Actor& actor : actors)
+            {
+                if (actor.isInvalid())
+                    continue;
+                const MWWorld::Ptr& actorPtr = actor.getPtr();
+                auto& actorStats = actorPtr.getClass().getCreatureStats(actorPtr);
+                if (actorStats.getAiSequence().isInCombat() && !actorStats.getAiSequence().isInCombat(player))
+                    ++count;
+            }
+            return count;
+        }
+    }
+
     void MechanicsManager::startCombat(
         const MWWorld::Ptr& ptr, const MWWorld::Ptr& target, const std::set<MWWorld::Ptr>* targetAllies)
     {
@@ -1689,6 +1728,20 @@ namespace MWMechanics
 
         // Don't add duplicate packages nor add packages to dead actors.
         if (stats.isDead() || stats.getAiSequence().isInCombat(target))
+            return;
+
+        // Throttle how many enemies can newly pile onto the player at once. Actors
+        // already fighting the player, actors fighting each other, and allies
+        // engaging a non-player target are all unaffected.
+        const int maxVsPlayer = Settings::game().mMaxActorsInCombatWithPlayer;
+        if (maxVsPlayer > 0 && target == getPlayer() && countActorsInCombatWith(mActors, target) >= maxVsPlayer)
+            return;
+
+        // Separately throttle how many allies can newly join a fight against
+        // something that isn't the player (guards/companions piling onto an
+        // enemy). Independent of the enemy-side cap above.
+        const int maxAllies = Settings::game().mMaxAlliesInCombat;
+        if (maxAllies > 0 && target != getPlayer() && countActorsInCombatNotWith(mActors, getPlayer()) >= maxAllies)
             return;
 
         // The target is somehow the same as the actor. Early-out.
@@ -1736,8 +1789,14 @@ namespace MWMechanics
                 const ESM::RefNum playerNum = target.getCellRef().getRefNum();
                 // Stops guard from ending combat if player is unreachable
                 stats.setHitAttemptActor(playerNum);
+                // This can convert several pursuing guards to combat in one call, which
+                // could blow past the cap in a single shot if left unchecked - re-count
+                // and stop converting more once the limit is reached.
+                int vsPlayerCount = maxVsPlayer > 0 ? countActorsInCombatWith(mActors, target) : 0;
                 for (const Actor& actor : mActors)
                 {
+                    if (maxVsPlayer > 0 && vsPlayerCount >= maxVsPlayer)
+                        break;
                     if (actor.isInvalid())
                         continue;
                     if (actor.getPtr().getClass().isClass(actor.getPtr(), "Guard"))
@@ -1748,6 +1807,7 @@ namespace MWMechanics
                         {
                             aiSeq.stopPursuit();
                             aiSeq.stack(MWMechanics::AiCombat(target), ptr);
+                            ++vsPlayerCount;
                             // Stops guard from ending combat if player is unreachable
                             actor.getPtr().getClass().getCreatureStats(actor.getPtr()).setHitAttemptActor(playerNum);
                         }
