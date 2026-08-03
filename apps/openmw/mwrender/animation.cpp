@@ -1678,13 +1678,20 @@ namespace MWRender
             "bip01 l butt",
             "bip01 r butt",
         };
+        const bool debug = Settings::game().mJiggleBoneDebug;
         for (std::string_view bone : boneNames)
         {
             auto iter = getNodeMap().find(bone);
             if (iter == getNodeMap().end())
+            {
+                if (debug)
+                    Log(Debug::Warning) << "Jiggle bone debug: not found: " << bone;
                 continue;
+            }
             osg::MatrixTransform* node = iter->second;
-            node->addUpdateCallback(new JiggleBoneController);
+            if (debug)
+                Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node;
+            node->addUpdateCallback(new JiggleBoneController(debug));
         }
     }
 
