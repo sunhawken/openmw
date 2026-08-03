@@ -84,6 +84,17 @@ namespace Settings
             makeClampSanitizerFloat(0.f, 50.f) };
         SettingValue<float> mJiggleBoneIntensity{ mIndex, "Game", "jiggle bone intensity",
             makeClampSanitizerFloat(0.f, 20.f) };
+        // Caps how many enemies can newly enter combat against the player at once (0 = no
+        // cap). Only throttles new enemies engaging the player - actors already fighting
+        // each other are unaffected, and this does not apply to allies (see below).
+        SettingValue<int> mMaxActorsInCombatWithPlayer{ mIndex, "Game", "max actors in combat with player",
+            makeClampSanitizerInt(0, 50) };
+        // Caps how many actors can newly enter combat against a target that ISN'T the player
+        // (0 = no cap) - i.e. allies/guards/companions piling onto something to help the
+        // player, as opposed to enemies piling onto the player. Independent of the setting
+        // above.
+        SettingValue<int> mMaxAlliesInCombat{ mIndex, "Game", "max allies in combat",
+            makeClampSanitizerInt(0, 50) };
     };
 }
 
