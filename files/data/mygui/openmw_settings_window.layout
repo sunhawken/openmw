@@ -976,6 +976,43 @@
                     <Property key="Caption" value="#{OMWEngine:JiggleMaxDisplacementHigh}"/>
                     <Property key="TextAlign" value="Right"/>
                 </Widget>
+
+                <!-- Combat AI throttle -->
+                <Widget type="TextBox" skin="NormalText" position="4 352 352 18" align="Left Top" name="MaxActorsInCombatText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 372 352 18" align="HStretch Top" name="MaxActorsInCombatSlider">
+                    <Property key="Range" value="51"/>
+                    <Property key="Page" value="1"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Game"/>
+                    <UserString key="SettingName" value="max actors in combat with player"/>
+                    <UserString key="SettingValueType" value="Integer"/>
+                    <UserString key="SettingMin" value="0"/>
+                    <UserString key="SettingMax" value="50"/>
+                    <UserString key="SettingLabelWidget" value="MaxActorsInCombatText"/>
+                    <UserString key="SettingLabelCaption" value="MaxActorsInCombatValue"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 392 352 16" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:MaxActorsInCombatOff}"/>
+                    <Property key="TextAlign" value="Left"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 392 352 16" align="Right Top">
+                    <Property key="Caption" value="#{OMWEngine:MaxActorsInCombatMax}"/>
+                    <Property key="TextAlign" value="Right"/>
+                </Widget>
+
+                <Widget type="TextBox" skin="NormalText" position="4 408 352 16" align="Left Top" name="MaxAlliesInCombatText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 426 352 16" align="HStretch Top" name="MaxAlliesInCombatSlider">
+                    <Property key="Range" value="51"/>
+                    <Property key="Page" value="1"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Game"/>
+                    <UserString key="SettingName" value="max allies in combat"/>
+                    <UserString key="SettingValueType" value="Integer"/>
+                    <UserString key="SettingMin" value="0"/>
+                    <UserString key="SettingMax" value="50"/>
+                    <UserString key="SettingLabelWidget" value="MaxAlliesInCombatText"/>
+                    <UserString key="SettingLabelCaption" value="MaxAlliesInCombatValue"/>
+                </Widget>
             </Widget>
         </Widget>
         <Widget type="AutoSizedButton" skin="MW_Button" position="320 420 56 24" align="Right Bottom" name="OkButton">
