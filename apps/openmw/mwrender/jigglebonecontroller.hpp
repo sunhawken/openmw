@@ -27,7 +27,9 @@ namespace MWRender
     class JiggleBoneController : public SceneUtil::NodeCallback<JiggleBoneController, osg::MatrixTransform*>
     {
     public:
-        JiggleBoneController();
+        /// @param debug when true, logs bone-lookup and per-frame displacement info
+        /// (throttled). Controlled by the "jiggle bone debug" setting in [Game].
+        explicit JiggleBoneController(bool debug = false);
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
@@ -37,6 +39,8 @@ namespace MWRender
         osg::Matrix mRestLocalMatrix;
         bool mInitialized;
         double mLastSimTime;
+        bool mDebug;
+        int mDebugCounter = 0;
     };
 }
 

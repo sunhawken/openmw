@@ -243,6 +243,16 @@ EnableRagdollTooltip: |-
     Enable ragdoll physics for dead actors.
     When enabled, dead actors will ragdoll instead of playing a static death animation.
     Note: This feature is experimental and may cause instability.
+JiggleBoneNote: "Breast/butt jiggle physics settings."
+JiggleStiffnessValue: "Jiggle Stiffness ({value, number, ::.0})"
+JiggleStiffnessLow: "Loose"
+JiggleStiffnessHigh: "Stiff"
+JiggleDampingValue: "Jiggle Damping ({value, number, ::.0})"
+JiggleDampingLow: "Bouncy"
+JiggleDampingHigh: "Settled"
+JiggleMaxDisplacementValue: "Jiggle Max Displacement ({value, number, ::.0})"
+JiggleMaxDisplacementLow: "Subtle"
+JiggleMaxDisplacementHigh: "Extreme"
 
 # Controller button names
 
