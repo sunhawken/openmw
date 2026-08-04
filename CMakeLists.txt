@@ -37,6 +37,7 @@ option(BUILD_ESSIMPORTER        "Build ESS (Morrowind save game) importer" ON)
 option(BUILD_BSATOOL            "Build BSA extractor" ON)
 option(BUILD_ESMTOOL            "Build ESM inspector" ON)
 option(BUILD_NIFTEST            "Build nif file tester" ON)
+option(BUILD_RESUMELAUNCHER     "Build ResumeLauncher (Windows-only: launches openmw.exe straight into the most recent save)" ON)
 option(BUILD_DOCS               "Build documentation." OFF )
 option(BUILD_WITH_CODE_COVERAGE "Enable code coverage with gconv" OFF)
 option(BUILD_UNITTESTS          "Enable Unittests with Google C++ Unittest" OFF)
@@ -670,6 +671,10 @@ endif()
 if (BUILD_NIFTEST)
     add_subdirectory(apps/niftest)
 endif(BUILD_NIFTEST)
+
+if (WIN32 AND BUILD_RESUMELAUNCHER)
+    add_subdirectory(apps/resumelauncher)
+endif()
 
 # UnitTests
 if (BUILD_UNITTESTS)
