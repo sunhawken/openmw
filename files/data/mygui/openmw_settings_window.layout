@@ -977,9 +977,53 @@
                     <Property key="TextAlign" value="Right"/>
                 </Widget>
 
+                <Widget type="TextBox" skin="NormalText" position="4 352 352 18" align="Left Top" name="JiggleBreastZOffsetText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 372 352 18" align="HStretch Top" name="JiggleBreastZOffsetSlider">
+                    <Property key="Range" value="1000"/>
+                    <Property key="Page" value="50"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Game"/>
+                    <UserString key="SettingName" value="jiggle bone breast z offset"/>
+                    <UserString key="SettingValueType" value="Float"/>
+                    <UserString key="SettingMin" value="-50"/>
+                    <UserString key="SettingMax" value="50"/>
+                    <UserString key="SettingLabelWidget" value="JiggleBreastZOffsetText"/>
+                    <UserString key="SettingLabelCaption" value="JiggleBreastZOffsetValue"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 392 352 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:JiggleBreastZOffsetLow}"/>
+                    <Property key="TextAlign" value="Left"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 392 352 18" align="Right Top">
+                    <Property key="Caption" value="#{OMWEngine:JiggleBreastZOffsetHigh}"/>
+                    <Property key="TextAlign" value="Right"/>
+                </Widget>
+
+                <Widget type="TextBox" skin="NormalText" position="4 418 352 18" align="Left Top" name="JiggleButtZOffsetText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 438 352 18" align="HStretch Top" name="JiggleButtZOffsetSlider">
+                    <Property key="Range" value="1000"/>
+                    <Property key="Page" value="50"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Game"/>
+                    <UserString key="SettingName" value="jiggle bone butt z offset"/>
+                    <UserString key="SettingValueType" value="Float"/>
+                    <UserString key="SettingMin" value="-50"/>
+                    <UserString key="SettingMax" value="50"/>
+                    <UserString key="SettingLabelWidget" value="JiggleButtZOffsetText"/>
+                    <UserString key="SettingLabelCaption" value="JiggleButtZOffsetValue"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 458 352 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:JiggleButtZOffsetLow}"/>
+                    <Property key="TextAlign" value="Left"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 458 352 18" align="Right Top">
+                    <Property key="Caption" value="#{OMWEngine:JiggleButtZOffsetHigh}"/>
+                    <Property key="TextAlign" value="Right"/>
+                </Widget>
+
                 <!-- Combat AI throttle -->
-                <Widget type="TextBox" skin="NormalText" position="4 352 352 18" align="Left Top" name="MaxActorsInCombatText"/>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="4 372 352 18" align="HStretch Top" name="MaxActorsInCombatSlider">
+                <Widget type="TextBox" skin="NormalText" position="4 484 352 18" align="Left Top" name="MaxActorsInCombatText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 504 352 18" align="HStretch Top" name="MaxActorsInCombatSlider">
                     <Property key="Range" value="51"/>
                     <Property key="Page" value="1"/>
                     <UserString key="SettingType" value="Slider"/>
@@ -991,17 +1035,17 @@
                     <UserString key="SettingLabelWidget" value="MaxActorsInCombatText"/>
                     <UserString key="SettingLabelCaption" value="MaxActorsInCombatValue"/>
                 </Widget>
-                <Widget type="TextBox" skin="SandText" position="4 392 352 16" align="Left Top">
+                <Widget type="TextBox" skin="SandText" position="4 524 352 16" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:MaxActorsInCombatOff}"/>
                     <Property key="TextAlign" value="Left"/>
                 </Widget>
-                <Widget type="TextBox" skin="SandText" position="4 392 352 16" align="Right Top">
+                <Widget type="TextBox" skin="SandText" position="4 524 352 16" align="Right Top">
                     <Property key="Caption" value="#{OMWEngine:MaxActorsInCombatMax}"/>
                     <Property key="TextAlign" value="Right"/>
                 </Widget>
 
-                <Widget type="TextBox" skin="NormalText" position="4 408 352 16" align="Left Top" name="MaxAlliesInCombatText"/>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="4 426 352 16" align="HStretch Top" name="MaxAlliesInCombatSlider">
+                <Widget type="TextBox" skin="NormalText" position="4 540 352 16" align="Left Top" name="MaxAlliesInCombatText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 558 352 16" align="HStretch Top" name="MaxAlliesInCombatSlider">
                     <Property key="Range" value="51"/>
                     <Property key="Page" value="1"/>
                     <UserString key="SettingType" value="Slider"/>
