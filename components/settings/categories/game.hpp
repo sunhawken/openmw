@@ -84,6 +84,13 @@ namespace Settings
             makeClampSanitizerFloat(0.f, 50.f) };
         SettingValue<float> mJiggleBoneIntensity{ mIndex, "Game", "jiggle bone intensity",
             makeClampSanitizerFloat(0.f, 20.f) };
+        // Extra static Z (up/down) offset applied to the breast/butt jiggle bones' rest
+        // position on top of whatever bind pose their NIF already has - lets a rigged
+        // mesh's bulge placement be nudged live without re-rigging/re-exporting the NIF.
+        SettingValue<float> mJiggleBoneBreastZOffset{ mIndex, "Game", "jiggle bone breast z offset",
+            makeClampSanitizerFloat(-50.f, 50.f) };
+        SettingValue<float> mJiggleBoneButtZOffset{ mIndex, "Game", "jiggle bone butt z offset",
+            makeClampSanitizerFloat(-50.f, 50.f) };
         // Caps how many enemies can newly enter combat against the player at once (0 = no
         // cap). Only throttles new enemies engaging the player - actors already fighting
         // each other are unaffected, and this does not apply to allies (see below).

@@ -7,12 +7,27 @@
 #include <osg/MatrixTransform>
 #include <osg/NodeVisitor>
 
+#include <string>
+
 namespace MWRender
 {
     namespace
     {
         // dt is clamped regardless of settings, so a hitch/pause doesn't blow up the spring.
         constexpr double sMaxDeltaTime = 0.1;
+
+        // Extra static world-space Z (up/down) nudge for this bone's rest position,
+        // read from the live-tunable settings sliders (Physics tab) rather than baked
+        // into the NIF - identified by bone name since a single controller instance
+        // doesn't otherwise know if it's on a breast or butt bone.
+        float manualZOffsetFor(const std::string& boneName)
+        {
+            if (boneName.find("Breast") != std::string::npos)
+                return Settings::game().mJiggleBoneBreastZOffset;
+            if (boneName.find("Butt") != std::string::npos)
+                return Settings::game().mJiggleBoneButtZOffset;
+            return 0.f;
+        }
     }
 
     JiggleBoneController::JiggleBoneController(bool debug)
@@ -48,7 +63,8 @@ namespace MWRender
             // mean "rest" drifts to wherever the spring last left off, collapsing
             // the restoring force to ~0 after the very first frame.
             mRestLocalMatrix = node->getMatrix();
-            const osg::Vec3f restWorldPos = mRestLocalMatrix.getTrans() * parentWorldMatrix;
+            osg::Vec3f restWorldPos = mRestLocalMatrix.getTrans() * parentWorldMatrix;
+            restWorldPos.z() += manualZOffsetFor(node->getName());
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
             mInitialized = true;
@@ -58,7 +74,8 @@ namespace MWRender
         }
 
         const osg::Vec3f restTranslation = mRestLocalMatrix.getTrans();
-        const osg::Vec3f restWorldPos = restTranslation * parentWorldMatrix;
+        osg::Vec3f restWorldPos = restTranslation * parentWorldMatrix;
+        restWorldPos.z() += manualZOffsetFor(node->getName());
 
         double dt = simTime - mLastSimTime;
         mLastSimTime = simTime;
