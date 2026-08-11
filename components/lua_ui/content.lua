@@ -124,17 +124,18 @@ end
 M.__tostring = function(self)
     return ('UiContent{%d layouts}'):format(#self)
 end
-local function next(self, index)
-    local v = rawget(self, index)
-    if v then
-        return index + 1, v
-    else
-        return nil, nil
-    end
-end
-
 M.__pairs = function(self)
-    return next, self, 1
+    -- Must yield (index, value), not (index + 1, value): callers index back into
+    -- the Content with the key they were handed. Note this metamethod is only
+    -- honoured by a LuaJIT built with LUAJIT_ENABLE_LUA52COMPAT.
+    local index = 0
+    return function()
+        index = index + 1
+        local v = rawget(self, index)
+        if v ~= nil then
+            return index, v
+        end
+    end
 end
 M.__ipairs = M.__pairs
 M.__metatable = false
