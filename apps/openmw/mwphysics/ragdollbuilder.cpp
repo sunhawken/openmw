@@ -415,18 +415,18 @@ namespace MWPhysics
             osg::MatrixTransform* boneNode = nodeIt->second;
             std::string parentName = getPhysicsParent(boneName);
 
+            // Creature skeletons often omit one or more of the intermediate
+            // humanoid spine bones.  For example, the Alit connects its neck
+            // and clavicles through Bip01 Spine and has no Spine1 or Spine2.
+            // Walk up the anatomical hierarchy until an available parent is
+            // found so those branches do not get discarded as orphans.
+            while (!parentName.empty() && !boneToJoltIndex.contains(parentName))
+                parentName = getPhysicsParent(parentName);
+
             // Get Jolt parent index
             int parentJoltIndex = -1;
             if (!parentName.empty())
-            {
-                auto parentIt = boneToJoltIndex.find(parentName);
-                if (parentIt == boneToJoltIndex.end())
-                {
-                    Log(Debug::Warning) << "RagdollSettingsBuilder: Parent not processed: " << parentName;
-                    continue;
-                }
-                parentJoltIndex = parentIt->second;
-            }
+                parentJoltIndex = boneToJoltIndex.at(parentName);
 
             // Create Jolt joint
             int joltIndex = (parentJoltIndex >= 0)
