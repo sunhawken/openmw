@@ -1,6 +1,11 @@
 set(RESUMELAUNCHER
     resumelauncher.cpp
 )
+
+if (WIN32)
+    list(APPEND RESUMELAUNCHER ${CMAKE_SOURCE_DIR}/files/windows/resumelauncher.rc)
+endif()
+
 source_group(apps\\resumelauncher FILES ${RESUMELAUNCHER})
 
 # GUI app (WIN32) - no console window, shows a message box on error instead
