@@ -138,6 +138,7 @@ namespace MWGui
 
         void onOkClicked(MyGUI::Widget* sender);
         void onBackClicked(MyGUI::Widget* sender);
+        void onRerollClicked(MyGUI::Widget* sender);
 
     private:
         void updateClasses();
