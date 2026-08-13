@@ -774,13 +774,29 @@ namespace MWVR
             { "LoadingScreen", loadingScreenConfig },
         };
 
-        Stereo::Pose defaultUiPose = {};
-        defaultUiPose.position = Stereo::Position::fromMeters(0.f, 0.66f, -.25f);
-       
+        mDefaultUiPose = {};
+        mDefaultUiPose.position = Stereo::Position::fromMeters(0.f, 0.66f, -.25f);
+
         for (auto& config : mDefaultLayerConfigs)
         {
             getLayer(config.first)->setConfig(config.second);
-            getLayer(config.first)->mPose = defaultUiPose;
+            getLayer(config.first)->mPose = mDefaultUiPose;
+        }
+
+        // Modal dialogs (the Yes/No/Copy prompts used for e.g. missing-content or savegame
+        // version warnings) are meant to always be clickable, on top of whatever they're shown
+        // over -- most commonly the main menu, when loading a save fails. Every layer above just
+        // got the *identical* mDefaultUiPose, so a modal dialog and the layer behind it sit at
+        // exactly the same depth. updatePose()'s priority-based nudge (scaled by 1/10000) is far
+        // too subtle to reliably separate two full-size overlapping quads at that same depth for
+        // pointer raycasting -- the ray can end up hitting whichever layer it happens to be
+        // tested against first, which silently swallows every click on the dialog's buttons since
+        // the pointer never registers it as focused. Pull Modal noticeably closer to the player
+        // instead, guaranteeing its raycast always wins.
+        {
+            Stereo::Pose modalPose = mDefaultUiPose;
+            modalPose.position.mY -= Stereo::Unit::fromMeters(0.05f);
+            getLayer("Modal")->mPose = modalPose;
         }
     }
 
@@ -928,7 +944,6 @@ namespace MWVR
 
     VRGUILayer* VRGUIManager::getLayer(const std::string& name)
     {
-        // TODO: insert return statement here
         auto it = mLayers.find(name);
         if (it != mLayers.end())
             return it->second;
@@ -937,8 +952,23 @@ namespace MWVR
         auto layer = osg::ref_ptr<VRGUILayer>(new VRGUILayer(mGeometries, mGUICameras, name, this));
         mLayers[name] = layer;
         auto defaultConfig = mDefaultLayerConfigs.find(name);
+        bool isFallback = defaultConfig == mDefaultLayerConfigs.end();
+        if (isFallback)
+            // Custom layer name we've never seen before -- most commonly a Lua mod's own UI layer
+            // (e.g. registerLuaElement() below, which is exactly how mod-created windows reach
+            // this code). Without a config a layer never gets a 3D pose at all (see mConfig checks
+            // throughout this file), so it would otherwise be silently invisible and unpickable in
+            // VR forever. Falling back to "DefaultConfig" (and the same default pose known layers
+            // get in readConfig()) gives it a sane VR placement out of the box, matching how any
+            // of the engine's own known windows behave, without requiring every mod author to
+            // know this system exists.
+            defaultConfig = mDefaultLayerConfigs.find("DefaultConfig");
         if (defaultConfig != mDefaultLayerConfigs.end())
+        {
             layer->setConfig(defaultConfig->second);
+            if (isFallback)
+                layer->mPose = mDefaultUiPose;
+        }
         return layer;
     }
 

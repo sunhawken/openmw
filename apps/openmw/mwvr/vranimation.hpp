@@ -8,12 +8,13 @@
 #include <components/vr/space.hpp>
 
 #include <osg/MatrixTransform>
+#include <osg/Vec2f>
 
 namespace MWVR
 {
     class HandController;
     class FingerController;
-    class TrackingController;
+    class ArmIKController;
     class Crosshair;
     class XrSpaceTransform;
 
@@ -71,6 +72,8 @@ namespace MWVR
         void updateCrosshairs() override;
 
         void updateCharHeight();
+        void updateBodyLean();
+        void updateBodyOffset();
 
         void recenter();
         void onRecenter() override { recenter(); }
@@ -88,7 +91,7 @@ namespace MWVR
             XrPath topLevelPath;
             std::string spaceName;
             std::string forearmBone;
-            std::unique_ptr<TrackingController> forearmController;
+            std::unique_ptr<ArmIKController> armController;
             std::string handBone;
             osg::ref_ptr<HandController> handController;
             std::string indexFingerBone[2];
@@ -111,6 +114,11 @@ namespace MWVR
         Stereo::Pose mHeadPoseInLocalSpace;
         Stereo::Pose mCharLocalSpacePose;
         float mCharacterYaw = 0.f;
+        // Facing-relative (right, forward) displacement from physically walking around the play
+        // space this frame, computed in updateSpace() and consumed (and reset) by
+        // modifyMovement() -- see updateBodyLean()'s comment on the difference between this and
+        // the lean/tilt signal for why this needs its own delta rather than reusing that offset.
+        osg::Vec2f mPhysicalMovementDelta;
         std::unique_ptr<MWVR::Crosshair> mCrosshairAmmo;
         std::unique_ptr<MWVR::Crosshair> mCrosshairThrown;
         std::unique_ptr<MWVR::Crosshair> mCrosshairSpell;

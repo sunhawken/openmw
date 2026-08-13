@@ -3,6 +3,8 @@
 #include "vrgui.hpp"
 #include "vrpointer.hpp"
 
+#include <cmath>
+
 #include <osg/BlendFunc>
 #include <osg/CullFace>
 #include <osg/FrontFace>
@@ -289,12 +291,25 @@ namespace MWVR
         traverse(node, nv);
     }
 
-    class TrackingController
+    /// Tracks one arm's forearm to a VR controller pose. This is the original single-bone
+    /// TrackingController, unchanged and renamed: it sets the forearm's absolute world pose
+    /// directly from the tracked controller pose (a formula worked out by trial and error against
+    /// the game's meshes), and the hand rides along as the forearm's fixed-offset child.
+    ///
+    /// A separate, existing HandController callback overwrites the hand's *local* rotation each
+    /// frame with a small weapon-grip adjustment, replacing whatever's there rather than composing
+    /// with it -- so the hand's final world rotation is really "forearm's world rotation + that
+    /// small adjustment", and the forearm's rotation has to directly carry the tracked orientation
+    /// for the hand to end up correctly oriented. That ruled out repurposing the forearm as a free
+    /// IK target aiming anywhere else (e.g. towards an elbow bend position): it has to stay
+    /// exactly this. The upper arm is deliberately left unlinked from the forearm -- it's not
+    /// driven by anything here and just plays whatever the normal walk/idle/equip animation has
+    /// it doing, same as the rest of the (now visible) body.
+    class ArmIKController
     {
     public:
-        TrackingController(std::shared_ptr<VR::Space> space, osg::Vec3 baseOffset, bool left, bool mirror)
+        ArmIKController(std::shared_ptr<VR::Space> space, osg::Vec3 baseOffset, bool left, bool mirror)
             : mSpace(space)
-            , mTransform(nullptr)
             , mBaseOffset(baseOffset)
             , mBaseOrientation(osg::PI_2, osg::Vec3f(0, 0, 1))
             , mLeft(left)
@@ -304,7 +319,7 @@ namespace MWVR
                 mBaseOrientation = osg::Quat(osg::PI, osg::Vec3f(1, 0, 0)) * mBaseOrientation;
         }
 
-        void update(osg::MatrixTransform& transform)
+        void update()
         {
             if (!mTransform)
                 return;
@@ -341,7 +356,8 @@ namespace MWVR
             mTransform->setMatrix(scale * localToWorld * worldToLocal * mTransform->getMatrix());
         }
 
-        void setTransform(osg::MatrixTransform* transform) {
+        void setTransform(osg::MatrixTransform* transform)
+        {
             if (mTransform)
                 mTransform->setCullingActive(true);
             mTransform = transform;
@@ -400,7 +416,7 @@ namespace MWVR
             else
                 ctx.spaceName = i == 0 ? OpenXRInput::LeftHandAim : OpenXRInput::RightHandAim;
             ctx.forearmBone = i == 0 ? "bip01 l forearm" : "bip01 r forearm";
-            ctx.forearmController = std::make_unique<TrackingController>(
+            ctx.armController = std::make_unique<ArmIKController>(
                 xrInput.getSpace(ctx.spaceName), offset, i == 0, VR::getLeftHandedMode());
             ctx.handBone = i == 0 ? "Bip01 L Hand" : "Bip01 R Hand";
             ctx.handController = new HandController;
@@ -431,30 +447,21 @@ namespace MWVR
 
         if (mViewMode == VM_VRFirstPerson)
         {
-            // Hide everything other than hands
+            // Hide the head and hair (and, transitively, any worn helmet, which occupies the same
+            // PRT_Head part slot): the camera sits inside the head, so this mesh would otherwise
+            // clip across the view. Everything else -- torso, upper arms, forearm/wrist/hand,
+            // legs, feet -- stays visible for a full-body presence (matching how e.g. SkyrimVR's
+            // VRIK handles first-person body visibility).
+            //
+            // Note: the upper arm is rigidly attached to the shoulder and follows the ordinary
+            // walk/idle animation, while the forearm below the elbow is completely unlinked from
+            // it and tracks the controller on its own -- if Morrowind's NPC meshes blend skin
+            // weights across the elbow seam, showing both at once can stretch the skin between
+            // wherever the animated upper arm ends and wherever the controller has sent the
+            // forearm. If that shows up as a visible smear, hiding PRT_LUpperarm/PRT_RUpperarm
+            // here is the fix.
             removeIndividualPart(ESM::PartReferenceType::PRT_Hair);
             removeIndividualPart(ESM::PartReferenceType::PRT_Head);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LForearm);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LUpperarm);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LWrist);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RForearm);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RUpperarm);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RWrist);
-            removeIndividualPart(ESM::PartReferenceType::PRT_Cuirass);
-            removeIndividualPart(ESM::PartReferenceType::PRT_Groin);
-            removeIndividualPart(ESM::PartReferenceType::PRT_Neck);
-            removeIndividualPart(ESM::PartReferenceType::PRT_Skirt);
-            removeIndividualPart(ESM::PartReferenceType::PRT_Tail);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LLeg);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RLeg);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LAnkle);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RAnkle);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LKnee);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RKnee);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LFoot);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RFoot);
-            removeIndividualPart(ESM::PartReferenceType::PRT_LPauldron);
-            removeIndividualPart(ESM::PartReferenceType::PRT_RPauldron);
         }
         else
         {
@@ -652,6 +659,21 @@ namespace MWVR
         float roll = 0.f;
         Misc::getEulerAngles(mHeadPoseInLocalSpace.orientation, oldYaw, pitch, roll);
         Misc::getEulerAngles(pose.orientation, newYaw, pitch, roll);
+
+        // Room-scale locomotion: how far the headset physically moved this frame, expressed
+        // relative to the direction it's currently facing (self-referential, so it doesn't need
+        // to reason about any accumulated offset between tracking space and the game world).
+        // Consumed by modifyMovement(), which adds it on top of stick/animation-driven movement.
+        // Suppressed on a recenter frame below, since that's a calibration jump, not real
+        // walking.
+        if (Settings::vr().mPhysicalMovement)
+        {
+            osg::Vec3 rawDelta
+                = pose.position.asMWUnits() - mHeadPoseInLocalSpace.position.asMWUnits();
+            osg::Vec3 facingRelative = pose.orientation.inverse() * rawDelta;
+            mPhysicalMovementDelta += osg::Vec2f(facingRelative.x(), facingRelative.y());
+        }
+
         mHeadPoseInLocalSpace = pose;
         float characterYaw = mPtr.getRefData().getPosition().rot[2];
         float characterYawDiff = characterYaw - mCharacterYaw;
@@ -664,6 +686,10 @@ namespace MWVR
         {
             Log(Debug::Verbose) << "VRAnimation: Recenter( vertical=" << VR::getShouldRecenterZ() << ", horizontal=" << VR::getShouldRecenterXY() << ")";
 
+            // A recenter jump is a calibration event, not real walking -- discard whatever the
+            // physical-movement delta above just picked up from it.
+            mPhysicalMovementDelta = osg::Vec2f(0.f, 0.f);
+
             mRecenter = false;
         }
         // else
@@ -673,16 +699,15 @@ namespace MWVR
                 = osg::Quat(characterYawDiff, osg::Vec3d(0, 0, -1)) * mCharLocalSpacePose.orientation;
         }
         updateLocalSpaceWorldPose();
+        updateBodyLean();
+        updateBodyOffset();
 
         for (auto& it : mVrControllers)
         {
             if (!it.second.enabled)
                 continue;
 
-            if (auto* bone = getBoneByName(it.second.forearmBone))
-            {
-                it.second.forearmController->update(*bone->asTransform()->asMatrixTransform());
-            }
+            it.second.armController->update();
         }
         if (mSkeleton)
         {
@@ -713,8 +738,98 @@ namespace MWVR
         VR::Session::instance().setMovementAngleOffset(offset);
     }
 
-    void VRAnimation::modifyMovement(osg::Vec3& movement) 
+    void VRAnimation::updateBodyLean()
     {
+        auto spine = getBoneByName("bip01 spine1");
+        if (!spine)
+            return;
+        auto* spineTransform = spine->asTransform() ? spine->asTransform()->asMatrixTransform() : nullptr;
+        if (!spineTransform || spineTransform->getNumChildren() == 0)
+            return;
+        auto* childTransform = spineTransform->getChild(0)->asTransform()
+            ? spineTransform->getChild(0)->asTransform()->asMatrixTransform()
+            : nullptr;
+        if (!childTransform)
+            return;
+
+        // How far the head has physically moved, horizontally, from the local-space pose that
+        // corresponds to the character's neutral/centered stance (maintained by
+        // updateLocalSpaceWorldPose() above). This is the same signal used to reproject VR space
+        // onto the game world, so it stays correct across recentering and character rotation.
+        osg::Vec3 headLocal = mHeadPoseInLocalSpace.position.asMWUnits();
+        osg::Vec3 neutralLocal = mCharLocalSpacePose.position.asMWUnits();
+        osg::Vec2f lean(headLocal.x() - neutralLocal.x(), headLocal.y() - neutralLocal.y());
+        constexpr float maxLean = 20.f;
+        float leanLen = lean.length();
+        if (leanLen > maxLean)
+            lean *= maxLean / leanLen;
+
+        // Translate the physical lean into a small torso tilt -- leaning forward pitches the
+        // spine forward, leaning sideways rolls it -- applied as a delta rotation from the
+        // spine's current (animated) direction toward its child, exactly like the arm IK above,
+        // so no assumption about the bone's own rest-axis convention is needed.
+        constexpr float leanToTilt = 0.03f;
+        osg::Matrix parentWorld = osg::computeLocalToWorld(spineTransform->getParentalNodePaths()[0]);
+        osg::Matrix spineWorld = spineTransform->getMatrix() * parentWorld;
+        osg::Matrix childWorld = childTransform->getMatrix() * spineWorld;
+
+        osg::Vec3 spineOrigin = spineWorld.getTrans();
+        osg::Vec3 oldDir = childWorld.getTrans() - spineOrigin;
+        if (oldDir.length2() < 1e-6f)
+            return;
+        oldDir.normalize();
+
+        osg::Vec3 newDir = oldDir + osg::Vec3(lean.x(), lean.y(), 0.f) * leanToTilt;
+        newDir.normalize();
+
+        osg::Quat delta;
+        delta.makeRotate(oldDir, newDir);
+        osg::Quat newWorldRotation = spineWorld.getRotate() * delta;
+
+        osg::Matrix worldToParent = osg::Matrix::inverse(parentWorld);
+        osg::Matrix newLocal = osg::Matrix::rotate(newWorldRotation) * osg::Matrix::translate(spineOrigin) * worldToParent;
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j)
+                if (!std::isfinite(newLocal(i, j)))
+                    return;
+        spineTransform->setMatrix(newLocal);
+    }
+
+    void VRAnimation::updateBodyOffset()
+    {
+        // Manual calibration offset for the visible first-person body, same idea and same 0-1
+        // scale as the hands offset sliders above (0.5 = centred/no offset). Applied to the root
+        // bone so it shifts the whole body together. The underlying walk/idle animation drives
+        // this bone's matrix fresh every frame before this runs (the same assumption
+        // updateBodyLean() above relies on), so simply adding the offset to whatever's currently
+        // there is safe and doesn't accumulate across frames.
+        osg::Vec3 offset((Settings::vr().mBodyOffsetX - 0.5f) * Constants::UnitsPerMeter,
+            (Settings::vr().mBodyOffsetY - 0.5f) * Constants::UnitsPerMeter,
+            (Settings::vr().mBodyOffsetZ - 0.5f) * Constants::UnitsPerMeter);
+        if (offset.length2() < 1e-6f)
+            return;
+
+        auto root = getBoneByName("bip01");
+        if (!root)
+            return;
+        auto* rootTransform = root->asTransform() ? root->asTransform()->asMatrixTransform() : nullptr;
+        if (!rootTransform)
+            return;
+
+        osg::Matrix matrix = rootTransform->getMatrix();
+        matrix.setTrans(matrix.getTrans() + offset);
+        rootTransform->setMatrix(matrix);
+    }
+
+    void VRAnimation::modifyMovement(osg::Vec3& movement)
+    {
+        // Room-scale locomotion: add however far the player physically walked this frame on top
+        // of whatever stick/animation-driven movement was already decided above. Consumed once
+        // and reset so it's never applied twice if this is called more than once per updateSpace()
+        // tick.
+        movement.x() += mPhysicalMovementDelta.x();
+        movement.y() += mPhysicalMovementDelta.y();
+        mPhysicalMovementDelta = osg::Vec2f(0.f, 0.f);
     }
 
     void VRAnimation::addControllers()
@@ -754,7 +869,7 @@ namespace MWVR
         auto forearm = mNodeMap.find(ctx.forearmBone);
         if (forearm != mNodeMap.end())
         {
-            ctx.forearmController->setTransform(forearm->second);
+            ctx.armController->setTransform(forearm->second);
         }
 
         auto hand = mNodeMap.find(ctx.handBone);
@@ -781,7 +896,7 @@ namespace MWVR
 
     void VRAnimation::disableTracking(XrPath path) {
         auto& ctx = mVrControllers[path];
-        ctx.forearmController->setTransform(nullptr);
+        ctx.armController->setTransform(nullptr);
         auto forearm = mNodeMap.find(ctx.forearmBone);
         if (forearm != mNodeMap.end())
         {
