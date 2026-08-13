@@ -17,6 +17,7 @@
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadnpc.hpp>
 #include <components/misc/resourcehelpers.hpp>
+#include <components/misc/rng.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/settings/values.hpp>
 #include <components/vfs/manager.hpp>
@@ -141,6 +142,10 @@ namespace MWGui
 
         getWidget(mClassImage, "ClassImage");
 
+        MyGUI::Button* rerollButton;
+        getWidget(rerollButton, "RerollButton");
+        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &PickClassDialog::onRerollClicked);
+
         getWidget(mBackButton, "BackButton");
         mBackButton->eventMouseButtonClick += MyGUI::newDelegate(this, &PickClassDialog::onBackClicked);
 
@@ -225,6 +230,15 @@ namespace MWGui
     void PickClassDialog::onBackClicked(MyGUI::Widget* /*sender*/)
     {
         eventBack();
+    }
+
+    void PickClassDialog::onRerollClicked(MyGUI::Widget* /*sender*/)
+    {
+        size_t count = mClassList->getItemCount();
+        if (count == 0)
+            return;
+        size_t index = Misc::Rng::rollDice(count);
+        setClassId(*mClassList->getItemDataAt<ESM::RefId>(index));
     }
 
     void PickClassDialog::onAccept(MyGUI::ListBox* sender, size_t index)
