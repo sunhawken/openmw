@@ -74,6 +74,9 @@
 
         <!-- Dialog buttons -->
         <Widget type="HBox" position="0 276 475 28">
+            <Widget type="AutoSizedButton" skin="MW_Button" name="RerollButton">
+                <Property key="Caption" value="Reroll"/>
+            </Widget>
             <Widget type="Spacer"/>
             <Widget type="AutoSizedButton" skin="MW_Button" name="BackButton">
                 <Property key="Caption" value="#{sBack}"/>
