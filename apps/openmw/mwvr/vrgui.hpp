@@ -218,6 +218,7 @@ namespace MWVR
         osg::ref_ptr<VRGUILayer> mFocusLayer = nullptr;
         MyGUI::Widget* mFocusWidget = nullptr;
         std::map<std::string, LayerConfig> mDefaultLayerConfigs;
+        Stereo::Pose mDefaultUiPose;
 
         std::shared_ptr<VR::Session::Listener> mSessionListener;
         std::mutex mMutex;

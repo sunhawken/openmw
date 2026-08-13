@@ -1,8 +1,8 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <MyGUI type="Layout" version="3.2.0">
-    <Widget type="Window" skin="MW_Window" position="0 0 400 485" layer="Settings" name="_Main">
-        <Property key="MinSize" value="640 550"/>
-        <Widget type="TabControl" skin="TabControl" position="8 8 368 405" align="Stretch" name="SettingsTab">
+    <Widget type="Window" skin="MW_Window" position="0 0 400 585" layer="Settings" name="_Main">
+        <Property key="MinSize" value="640 650"/>
+        <Widget type="TabControl" skin="TabControl" position="8 8 368 505" align="Stretch" name="SettingsTab">
             <Property key="ButtonAutoWidth" value="true"/>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Preferences} "/>
@@ -882,6 +882,16 @@
                 <Widget type="HBox" skin="" position="14 84 260 24">
                     <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
                         <UserString key="SettingCategory" value="VR"/>
+                        <UserString key="SettingName" value="physical movement"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 71 16" align="Left Top">
+                        <Property key="Caption" value="Physical movement"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" skin="" position="14 114 260 24">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
+                        <UserString key="SettingCategory" value="VR"/>
                         <UserString key="SettingName" value="show 3D crosshairs"/>
                         <UserString key="SettingType" value="CheckButton"/>
                     </Widget>
@@ -890,7 +900,7 @@
                     </Widget>
                 </Widget>
                 
-                <Widget type="HBox" skin="" position="14 114 260 24">
+                <Widget type="HBox" skin="" position="14 144 260 24">
                     <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
                         <UserString key="SettingCategory" value="VR"/>
                         <UserString key="SettingName" value="mirror texture"/>
@@ -900,7 +910,7 @@
                         <Property key="Caption" value="Show mirror texture"/>
                     </Widget>
                 </Widget>
-                <Widget type="Widget" skin="" position="34 144 300 230">
+                <Widget type="Widget" skin="" position="34 174 300 230">
                     <Widget type="HBox" skin="" position="4 0 350 24">
                         <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 85 24" align="Left Top" name="VRMirrorTextureEye">
                             <Property key="AddItem" value="Left"/>
@@ -923,10 +933,10 @@
                     </Widget>
                 </Widget>
                 
-                <Widget type="TextBox" skin="NormalText" position="14 214 352 18" align="Left Top">
+                <Widget type="TextBox" skin="NormalText" position="14 244 352 18" align="Left Top">
                     <Property key="Caption" value="Hands offset"/>
                 </Widget>
-                <Widget type="HBox" skin="" position="42 244 900 24">
+                <Widget type="HBox" skin="" position="42 274 900 24">
                     <Widget type="TextBox" skin="NormalText" position="0 0 64 13" name="HandsOffsetX">
                         <Property key="Caption" value=""/>
                     </Widget>
@@ -941,7 +951,7 @@
                         <UserString key="SettingLabelCaption" value="x (%s)"/>
                     </Widget>
                 </Widget>
-                <Widget type="HBox" skin="" position="42 274 900 24">
+                <Widget type="HBox" skin="" position="42 304 900 24">
                     <Widget type="TextBox" skin="NormalText" position="0 0 64 13" name="HandsOffsetY">
                         <Property key="Caption" value=""/>
                     </Widget>
@@ -956,7 +966,7 @@
                         <UserString key="SettingLabelCaption" value="y (%s)"/>
                     </Widget>
                 </Widget>
-                <Widget type="HBox" skin="" position="42 304 900 24">
+                <Widget type="HBox" skin="" position="42 334 900 24">
                     <Widget type="TextBox" skin="NormalText" position="0 0 64 13" name="HandsOffsetZ">
                         <Property key="Caption" value=""/>
                     </Widget>
@@ -968,6 +978,55 @@
                         <UserString key="SettingName" value="hands offset z"/>
                         <UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingLabelWidget" value="HandsOffsetZ"/>
+                        <UserString key="SettingLabelCaption" value="z (%s)"/>
+                    </Widget>
+                </Widget>
+
+                <Widget type="TextBox" skin="NormalText" position="14 364 352 18" align="Left Top">
+                    <Property key="Caption" value="Body offset"/>
+                </Widget>
+                <Widget type="HBox" skin="" position="42 394 900 24">
+                    <Widget type="TextBox" skin="NormalText" position="0 0 64 13" name="BodyOffsetX">
+                        <Property key="Caption" value=""/>
+                    </Widget>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="64 0 256 13" name="BodyOffsetXSlider">
+                        <Property key="Range" value="201"/>
+                        <Property key="Page" value="1"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="VR"/>
+                        <UserString key="SettingName" value="body offset x"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingLabelWidget" value="BodyOffsetX"/>
+                        <UserString key="SettingLabelCaption" value="x (%s)"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" skin="" position="42 424 900 24">
+                    <Widget type="TextBox" skin="NormalText" position="0 0 64 13" name="BodyOffsetY">
+                        <Property key="Caption" value=""/>
+                    </Widget>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="64 0 256 13" name="BodyOffsetYSlider">
+                        <Property key="Range" value="201"/>
+                        <Property key="Page" value="1"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="VR"/>
+                        <UserString key="SettingName" value="body offset y"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingLabelWidget" value="BodyOffsetY"/>
+                        <UserString key="SettingLabelCaption" value="y (%s)"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" skin="" position="42 454 900 24">
+                    <Widget type="TextBox" skin="NormalText" position="0 0 64 13" name="BodyOffsetZ">
+                        <Property key="Caption" value=""/>
+                    </Widget>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="64 0 256 13" name="BodyOffsetZSlider">
+                        <Property key="Range" value="201"/>
+                        <Property key="Page" value="1"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="VR"/>
+                        <UserString key="SettingName" value="body offset z"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingLabelWidget" value="BodyOffsetZ"/>
                         <UserString key="SettingLabelCaption" value="z (%s)"/>
                     </Widget>
                 </Widget>
