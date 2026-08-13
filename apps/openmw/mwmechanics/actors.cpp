@@ -1831,13 +1831,25 @@ namespace MWMechanics
                     osg::Vec3f hitImpulse(0, 0, -500);  // Gravity impulse to start falling
                     MWBase::Environment::get().getWorld()->activateActorRagdoll(actor.getPtr(), hitImpulse);
 
-                    // Mark death animation as finished since ragdoll is taking over
-                    // This ensures the game logic continues (loot becomes available, etc.)
-                    stats.setDeathAnimationFinished(true);
-                    notifyDied(actor.getPtr());
+                    // activateActorRagdoll() itself already no-ops when "enable ragdoll" is off
+                    // (Settings::physics().mEnableRagdoll), so checking hasRagdoll() here confirms
+                    // whether it actually took over rather than assuming it always does. Skipping
+                    // this when it's off is essential: without it, the death animation was being
+                    // marked finished and collision disabled on the very first frame of death -
+                    // before the animation had even started - which shortcuts past the normal
+                    // Result_DeathAnimPlaying -> Result_DeathAnimJustFinished state machine below
+                    // and leaves the actor frozen in its last live pose with no collision (walk-
+                    // through) instead of playing the vanilla death animation and settling normally.
+                    if (MWBase::Environment::get().getWorld()->hasRagdoll(actor.getPtr()))
+                    {
+                        // Mark death animation as finished since ragdoll is taking over
+                        // This ensures the game logic continues (loot becomes available, etc.)
+                        stats.setDeathAnimationFinished(true);
+                        notifyDied(actor.getPtr());
 
-                    // Disable actor collision now that ragdoll is active
-                    MWBase::Environment::get().getWorld()->enableActorCollision(actor.getPtr(), false);
+                        // Disable actor collision now that ragdoll is active
+                        MWBase::Environment::get().getWorld()->enableActorCollision(actor.getPtr(), false);
+                    }
                 }
             }
             else if (killResult == CharacterController::Result_DeathAnimJustFinished)
