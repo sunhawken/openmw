@@ -22,7 +22,11 @@
             <Widget type="Button" skin="MW_ArrowLeft" position="2 2 10 10" align="Left VStretch" name="PrevGenderButton"/>
         </Widget>
 
-        <Widget type="TextBox" skin="HeaderText" position="25 294 205 18" name="GenderChoiceT"/>
+        <Widget type="TextBox" skin="HeaderText" position="25 294 140 18" name="GenderChoiceT"/>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" position="167 295 65 16" name="RerollGenderButton">
+            <Property key="Caption" value="Reroll"/>
+        </Widget>
 
         <Widget type="Widget" skin="MW_Box" position="234 298 15 14">
             <Widget type="Button" skin="MW_ArrowRight" position="2 2 10 10" align="Right VStretch" name="NextGenderButton"/>
@@ -34,7 +38,11 @@
             <Widget type="Button" skin="MW_ArrowLeft" position="2 2 10 10" align="Left VStretch" name="PrevFaceButton"/>
         </Widget>
 
-        <Widget type="TextBox" skin="HeaderText" position="25 316 205 18" name="FaceChoiceT"/>
+        <Widget type="TextBox" skin="HeaderText" position="25 316 140 18" name="FaceChoiceT"/>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" position="167 317 65 16" name="RerollFaceButton">
+            <Property key="Caption" value="Reroll"/>
+        </Widget>
 
         <Widget type="Widget" skin="MW_Box" position="234 320 15 14">
             <Widget type="Button" skin="MW_ArrowRight" position="2 2 10 10" align="Right VStretch" name="NextFaceButton"/>
@@ -46,7 +54,11 @@
             <Widget type="Button" skin="MW_ArrowLeft" position="2 2 10 10" align="Left VStretch" name="PrevHairButton"/>
         </Widget>
 
-        <Widget type="TextBox" skin="HeaderText" position="25 338 205 18" name="HairChoiceT"/>
+        <Widget type="TextBox" skin="HeaderText" position="25 338 140 18" name="HairChoiceT"/>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" position="167 339 65 16" name="RerollHairButton">
+            <Property key="Caption" value="Reroll"/>
+        </Widget>
 
         <Widget type="Widget" skin="MW_Box" position="234 342 15 14">
             <Widget type="Button" skin="MW_ArrowRight" position="2 2 10 10" align="Right VStretch" name="NextHairButton"/>
@@ -76,6 +88,10 @@
 
         <!-- Dialog buttons -->
         <Widget type="HBox" position="0 393 626 28">
+            <Widget type="AutoSizedButton" skin="MW_Button" name="RerollAllButton">
+                <Property key="Caption" value="Reroll All"/>
+            </Widget>
+
             <Widget type="Spacer"/>
 
             <Widget type="AutoSizedButton" skin="MW_Button" position="471 397 53 23" name="BackButton">

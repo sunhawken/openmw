@@ -108,6 +108,10 @@ namespace MWMechanics
     bool AiCombat::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, AiState& state, float duration)
     {
+        // Safety check: actor must be valid and in a cell
+        if (actor.isEmpty() || !actor.isInCell())
+            return true;
+
         // Get or create temporary storage
         AiCombatStorage& storage = state.get<AiCombatStorage>();
 
@@ -593,8 +597,11 @@ namespace MWMechanics
             if (MWBase::Environment::get().getWorld()->isUnderwater(MWWorld::ConstPtr(actor), 0.5f))
                 return;
 
-            int mask
-                = MWPhysics::CollisionType_World | MWPhysics::CollisionType_HeightMap | MWPhysics::CollisionType_Door;
+            int mask = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR;
+
+            // Safety check: getBaseNode() can be null during cell transitions
+            if (!actor.getRefData().getBaseNode())
+                return;
 
             // Actor can not back up if there is no free space behind
             // Currently we take the 35% of actor's height from the ground as vector height.

@@ -106,4 +106,5 @@ namespace MWLua
             { "openmw.content", initContentPackage(context) },
         };
     }
+
 }
