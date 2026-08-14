@@ -1537,11 +1537,15 @@ namespace MWMechanics
             }
             const int actorsProcessingRange = Settings::game().mActorsProcessingRange;
 
+            int actorIndex = 0;
             // AI and magic effects update
             for (Actor& actor : mActors)
             {
                 if (actor.isInvalid())
+                {
+                    actorIndex++;
                     continue;
+                }
                 const bool isPlayer = actor.getPtr() == player;
                 CharacterController& ctrl = actor.getCharacterController();
                 MWBase::LuaManager::ActorControls* luaControls
@@ -1567,10 +1571,13 @@ namespace MWMechanics
                 const Misc::TimerStatus engageCombatTimerStatus = actor.updateEngageCombatTimer(duration);
 
                 // For dead actors we need to update looping spell particles
-                if (actor.getPtr().getClass().getCreatureStats(actor.getPtr()).isDead())
+                const MWWorld::Ptr& actorPtrRef = actor.getPtr();
+                const MWWorld::Class& actorClass = actorPtrRef.getClass();
+                MWMechanics::CreatureStats& creatureStats = actorClass.getCreatureStats(actorPtrRef);
+                if (creatureStats.isDead())
                 {
                     // They can be added during the death animation
-                    if (!actor.getPtr().getClass().getCreatureStats(actor.getPtr()).isDeathAnimationFinished())
+                    if (!creatureStats.isDeathAnimationFinished())
                         adjustMagicEffects(actor.getPtr(), duration);
                     ctrl.updateContinuousVfx();
                 }
@@ -1594,6 +1601,7 @@ namespace MWMechanics
                         return; // for now abort update of the old cell when cell changes by teleportation magic effect
                                 // a better solution might be to apply cell changes at the end of the frame
                     }
+
                     if (aiActive && inProcessingRange)
                     {
                         if (engageCombatTimerStatus == Misc::TimerStatus::Elapsed)
@@ -1664,6 +1672,7 @@ namespace MWMechanics
             {
                 if (actor.isInvalid())
                     continue;
+
                 const float dist = (playerPos - actor.getPtr().getRefData().getPosition().asVec3()).length();
                 const bool isPlayer = actor.getPtr() == player;
                 CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
@@ -1684,7 +1693,8 @@ namespace MWMechanics
 
                 if (!inRange)
                 {
-                    actor.getPtr().getRefData().getBaseNode()->setNodeMask(0);
+                    if (osg::Group* baseNode = actor.getPtr().getRefData().getBaseNode())
+                        baseNode->setNodeMask(0);
                     world->setActorActive(actor.getPtr(), false);
                     continue;
                 }
@@ -1703,7 +1713,11 @@ namespace MWMechanics
                     continue;
                 }
 
-                actor.getPtr().getRefData().getBaseNode()->setNodeMask(MWRender::Mask_Actor);
+                if (osg::Group* baseNode = actor.getPtr().getRefData().getBaseNode())
+                    baseNode->setNodeMask(MWRender::Mask_Actor);
+                else
+                    continue; // Skip actors with null baseNode (can happen during cell transitions)
+
                 world->setActorCollisionMode(actor.getPtr(), true,
                     !actor.getPtr().getClass().getCreatureStats(actor.getPtr()).isDeathAnimationFinished());
 
@@ -1810,6 +1824,39 @@ namespace MWMechanics
 
                 if (cls.isEssential(actor.getPtr()))
                     MWBase::Environment::get().getWindowManager()->messageBox("#{sKilledEssential}");
+
+                // Activate ragdoll physics for NPCs (not player)
+                const bool isPlayer = actor.getPtr() == getPlayer();
+                // Mannequin mods conventionally use SkipAnim to keep dead NPCs posed. Do not
+                // replace their deliberately frozen animation pose with a physics ragdoll.
+                const bool isMannequin = actor.getCharacterController().skippedAnimationLastUpdate();
+                if (!isPlayer && !isMannequin)
+                {
+                    // Calculate initial impulse based on last hit direction (if available)
+                    // For now, just use a small downward impulse
+                    osg::Vec3f hitImpulse(0, 0, -500);  // Gravity impulse to start falling
+                    MWBase::Environment::get().getWorld()->activateActorRagdoll(actor.getPtr(), hitImpulse);
+
+                    // activateActorRagdoll() itself already no-ops when "enable ragdoll" is off
+                    // (Settings::physics().mEnableRagdoll), so checking hasRagdoll() here confirms
+                    // whether it actually took over rather than assuming it always does. Skipping
+                    // this when it's off is essential: without it, the death animation was being
+                    // marked finished and collision disabled on the very first frame of death -
+                    // before the animation had even started - which shortcuts past the normal
+                    // Result_DeathAnimPlaying -> Result_DeathAnimJustFinished state machine below
+                    // and leaves the actor frozen in its last live pose with no collision (walk-
+                    // through) instead of playing the vanilla death animation and settling normally.
+                    if (MWBase::Environment::get().getWorld()->hasRagdoll(actor.getPtr()))
+                    {
+                        // Mark death animation as finished since ragdoll is taking over
+                        // This ensures the game logic continues (loot becomes available, etc.)
+                        stats.setDeathAnimationFinished(true);
+                        notifyDied(actor.getPtr());
+
+                        // Disable actor collision now that ragdoll is active
+                        MWBase::Environment::get().getWorld()->enableActorCollision(actor.getPtr(), false);
+                    }
+                }
             }
             else if (killResult == CharacterController::Result_DeathAnimJustFinished)
             {

@@ -243,6 +243,15 @@ namespace MWRender
 
         osg::ref_ptr<RotateController> addRotateController(std::string_view bone);
 
+        /// Scans this actor's skeleton for known jiggle-bone names (breast/butt
+        /// secondary-motion bones added by some body-replacer meshes) and attaches
+        /// a JiggleBoneController directly to each one found. Unlike
+        /// addRotateController()/addControllers(), these are not tracked in
+        /// mActiveControllers - they must persist across animation-group changes,
+        /// not be reset by them. Cleanup is automatic: the controllers live on
+        /// nodes owned by mObjectRoot, so they're destroyed with it.
+        void attachJiggleBoneControllers();
+
         bool mHasMagicEffects;
 
         osg::ref_ptr<SceneUtil::LightSource> mGlowLight;
@@ -294,7 +303,8 @@ namespace MWRender
          *      (useful for NPCs, where only the skeleton is needed for the root, and the actual NPC parts are then
          * assembled from separate files).
          */
-        void setObjectRoot(const std::string& model, bool forceskeleton, bool baseonly, bool isCreature);
+        void setObjectRoot(
+            const std::string& model, bool forceskeleton, bool baseonly, bool isCreature, bool enableJiggleBones = false);
 
         void loadAdditionalAnimations(VFS::Path::NormalizedView model, const std::string& baseModel);
 
@@ -349,6 +359,9 @@ namespace MWRender
         osg::Group* getOrCreateObjectRoot();
 
         osg::Group* getObjectRoot();
+
+        /// Get the skeleton for this animation, may be nullptr
+        SceneUtil::Skeleton* getSkeleton() { return mSkeleton; }
 
         /**
          * @brief Add an effect mesh attached to a bone or the insert scene node
@@ -445,6 +458,11 @@ namespace MWRender
          * \param groupname Animation group to disable.
          */
         void disable(std::string_view groupname);
+
+        /** Disables all currently playing animations.
+         * Used when ragdoll takes over bone control.
+         */
+        void disableAllAnimations();
 
         /** Retrieves the velocity (in units per second) that the animation will move. */
         float getVelocity(std::string_view groupname) const;

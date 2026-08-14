@@ -3,13 +3,13 @@
 
 #include <osg/ref_ptr>
 
-#include <LinearMath/btScalar.h>
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Body/BodyManager.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 
 #include <memory>
 #include <vector>
-
-class btCollisionObject;
-class btHeightfieldTerrainShape;
 
 namespace osg
 {
@@ -27,17 +27,23 @@ namespace MWPhysics
             const osg::Object* holdObject, PhysicsTaskScheduler* scheduler);
         ~HeightField();
 
-        btCollisionObject* getCollisionObject();
-        const btCollisionObject* getCollisionObject() const;
-        const btHeightfieldTerrainShape* getShape() const;
+        const osg::Vec3f& getOrigin() const { return mWorldOrigin; }
+
+        JPH::BodyID getPhysicsBody() const
+        {
+            if (mPhysicsBody == nullptr)
+                return JPH::BodyID();
+            return mPhysicsBody->GetID();
+        }
+
+        // Mark body as already removed (used by batch removal to prevent double-free)
+        void markBodyRemoved() { mPhysicsBody = nullptr; }
 
     private:
-        std::unique_ptr<btHeightfieldTerrainShape> mShape;
-        std::unique_ptr<btCollisionObject> mCollisionObject;
+        JPH::Body* mPhysicsBody = nullptr; // NOTE: memory is managed by Jolt!
+        JPH::ShapeRefC mShapeReference;
+        osg::Vec3f mWorldOrigin;
         osg::ref_ptr<const osg::Object> mHoldObject;
-#if BT_BULLET_VERSION < 310
-        std::vector<btScalar> mHeights;
-#endif
 
         PhysicsTaskScheduler* mTaskScheduler;
 

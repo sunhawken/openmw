@@ -326,8 +326,6 @@ namespace MWBase
         ///< Queues movement for \a ptr (in local space), to be applied in the next call to
         /// doPhysics.
 
-        virtual void updateAnimatedCollisionShape(const MWWorld::Ptr& ptr) = 0;
-
         virtual const MWPhysics::RayCastingInterface* getRayCasting() const = 0;
 
         virtual bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
@@ -435,6 +433,14 @@ namespace MWBase
 
         virtual void enableActorCollision(const MWWorld::Ptr& actor, bool enable) = 0;
 
+        /// Activate ragdoll physics for a dead actor
+        /// @param actor The dead actor
+        /// @param hitImpulse Optional impulse from the killing blow
+        virtual void activateActorRagdoll(const MWWorld::Ptr& actor, const osg::Vec3f& hitImpulse = osg::Vec3f()) = 0;
+
+        /// Check if an actor has an active ragdoll
+        virtual bool hasRagdoll(const MWWorld::ConstPtr& actor) const = 0;
+
         enum RestFlags
         {
             Rest_PlayerIsUnderwater = 1,
@@ -512,6 +518,25 @@ namespace MWBase
         virtual float getSunPercentage() const = 0;
 
         virtual float getPhysicsFrameRateDt() const = 0;
+
+        /// Apply melee hit impulse to dynamic objects in a cone from origin in direction
+        virtual void applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+            float reach, float attackStrength) = 0;
+
+        // Oblivion/Skyrim style object grabbing
+        /// Attempt to grab a dynamic object in front of the player
+        /// @return true if successfully grabbed an object
+        virtual bool grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance) = 0;
+        /// Release the currently grabbed object with optional throw velocity
+        virtual void releaseGrabbedObject(const osg::Vec3f& throwVelocity = osg::Vec3f()) = 0;
+        /// Update the grabbed object's target position (call every frame while holding)
+        virtual void updateGrabbedObject(const osg::Vec3f& targetPosition) = 0;
+        /// Check if currently grabbing an object
+        virtual bool isGrabbingObject() const = 0;
+        /// Get the currently grabbed object
+        virtual MWWorld::Ptr getGrabbedObject() const = 0;
+        /// Get the grab hold distance from camera
+        virtual float getGrabDistance() const = 0;
 
         virtual bool findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result) = 0;
 

@@ -95,25 +95,18 @@ modules:
         url: https://github.com/openmw/osg/archive/76e061739610bc9a3420a59e7c9395e742ce2f97.zip
         sha256: fa1100362eae260192819d65d90b29ec0b88fdf80e30cee677730b7a0d68637e
 
-  - name: bullet
-    # The cmake + ninja buildsystem doesn't install the required binaries correctly
+  - name: jolt
     buildsystem: cmake
     config-opts:
-      - "-DBUILD_BULLET2_DEMOS=0"
-      - "-DBUILD_BULLET3=0"
-      - "-DBUILD_CPU_DEMOS=0"
-      - "-DBUILD_EXTRAS=0"
-      - "-DBUILD_OPENGL3_DEMOS=0"
-      - "-DBUILD_UNIT_TESTS=0"
+      - "-DDOUBLE_PRECISION=1"
+      - "-DCROSS_PLATFORM_DETERMINISTIC=0"
+      - "-DJPH_DEBUG_RENDERER=1"
+      - "-DFLOATING_POINT_EXCEPTIONS_ENABLED=0"
       - "-DCMAKE_BUILD_TYPE=Release"
-      - "-DUSE_GLUT=0"
-      - "-DUSE_GRAPHICAL_BENCHMARK=0"
-      - "-DUSE_DOUBLE_PRECISION=on"
-      - "-DBULLET2_MULTITHREADING=on"
     sources:
       - type: archive
-        url: https://github.com/bulletphysics/bullet3/archive/93be7e644024e92df13b454a4a0b0fcd02b21b10.zip
-        sha256: 82968fbf20a92c51bc71ac9ee8f6381ecf3420c7cbb881ffb7bb633fa13b27f9
+        url: https://github.com/jrouwe/JoltPhysics/archive/b8012e1ac1f3f2a859127ef05c097ee5f6194dcd.zip
+        sha256: 3f22e7d8bd6498c6283a278d35b9354e6500e5b844cf3572db2b085b41df9998
 
   - name: mygui
     buildsystem: cmake-ninja
