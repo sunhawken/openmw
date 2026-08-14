@@ -515,7 +515,7 @@ namespace MWRender
             smodel = Misc::ResourceHelpers::correctActorModelPath(model, mResourceSystem->getVFS());
         }
 
-        setObjectRoot(smodel, true, true, false);
+        setObjectRoot(smodel, true, true, false, true);
 
         updateParts();
 

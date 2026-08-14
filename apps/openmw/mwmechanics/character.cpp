@@ -2515,6 +2515,9 @@ namespace MWMechanics
             world->queueMovement(mPtr, movement);
         }
 
+        // Keep the value available until the next update. Mannequin mods conventionally call
+        // SkipAnim every frame to keep a dead NPC posed, and death handling runs after this reset.
+        mSkippedAnimationLastUpdate = mSkipAnim;
         mSkipAnim = false;
 
         mAnimation->enableHeadAnimation(cls.isActor() && !cls.getCreatureStats(mPtr).isDead());
