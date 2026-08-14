@@ -1824,7 +1824,10 @@ namespace MWMechanics
 
                 // Activate ragdoll physics for NPCs (not player)
                 const bool isPlayer = actor.getPtr() == getPlayer();
-                if (!isPlayer)
+                // Mannequin mods conventionally use SkipAnim to keep dead NPCs posed. Do not
+                // replace their deliberately frozen animation pose with a physics ragdoll.
+                const bool isMannequin = actor.getCharacterController().skippedAnimationLastUpdate();
+                if (!isPlayer && !isMannequin)
                 {
                     // Calculate initial impulse based on last hit direction (if available)
                     // For now, just use a small downward impulse

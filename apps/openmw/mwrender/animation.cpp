@@ -1555,7 +1555,8 @@ namespace MWRender
         }
     }
 
-    void Animation::setObjectRoot(const std::string& model, bool forceskeleton, bool baseonly, bool isCreature)
+    void Animation::setObjectRoot(
+        const std::string& model, bool forceskeleton, bool baseonly, bool isCreature, bool enableJiggleBones)
     {
         osg::ref_ptr<osg::StateSet> previousStateset;
         if (mObjectRoot)
@@ -1667,7 +1668,10 @@ namespace MWRender
         if (mTransparencyUpdater)
             mObjectRoot->addCullCallback(mTransparencyUpdater);
 
-        attachJiggleBoneControllers();
+        // Jiggle bones are character-body behavior. Keep them off generic animated
+        // objects and creatures; NpcAnimation opts in for both NPCs and the player.
+        if (enableJiggleBones)
+            attachJiggleBoneControllers();
     }
 
     void Animation::attachJiggleBoneControllers()
