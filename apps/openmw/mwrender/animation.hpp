@@ -292,7 +292,8 @@ namespace MWRender
          *      (useful for NPCs, where only the skeleton is needed for the root, and the actual NPC parts are then
          * assembled from separate files).
          */
-        void setObjectRoot(const std::string& model, bool forceskeleton, bool baseonly, bool isCreature);
+        void setObjectRoot(
+            const std::string& model, bool forceskeleton, bool baseonly, bool isCreature, bool enableJiggleBones = false);
 
         void loadAdditionalAnimations(VFS::Path::NormalizedView model, const std::string& baseModel);
 
