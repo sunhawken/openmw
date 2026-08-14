@@ -11,6 +11,7 @@
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadbody.hpp>
 #include <components/esm3/loadrace.hpp>
+#include <components/misc/rng.hpp>
 #include <components/myguiplatform/myguitexture.hpp>
 #include <components/settings/values.hpp>
 
@@ -90,6 +91,16 @@ namespace MWGui
         mRaceList->setScrollVisible(true);
         mRaceList->eventListSelectAccept += MyGUI::newDelegate(this, &RaceDialog::onAccept);
         mRaceList->eventListChangePosition += MyGUI::newDelegate(this, &RaceDialog::onSelectRace);
+
+        MyGUI::Button* rerollButton;
+        getWidget(rerollButton, "RerollGenderButton");
+        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollGender);
+        getWidget(rerollButton, "RerollFaceButton");
+        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollFace);
+        getWidget(rerollButton, "RerollHairButton");
+        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollHair);
+        getWidget(rerollButton, "RerollAllButton");
+        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollAll);
 
         setText("SkillsT",
             MWBase::Environment::get().getWindowManager()->getGameSettingString("sBonusSkillTitle", "Skill Bonus"));
@@ -232,6 +243,50 @@ namespace MWGui
     void RaceDialog::onBackClicked(MyGUI::Widget* /*sender*/)
     {
         eventBack();
+    }
+
+    void RaceDialog::onRerollGender(MyGUI::Widget* /*sender*/)
+    {
+        mGenderIndex = Misc::Rng::rollDice(2);
+        recountParts();
+        updatePreview();
+    }
+
+    void RaceDialog::onRerollFace(MyGUI::Widget* /*sender*/)
+    {
+        if (mAvailableHeads.empty())
+            return;
+        mFaceIndex = Misc::Rng::rollDice(mAvailableHeads.size());
+        updatePreview();
+    }
+
+    void RaceDialog::onRerollHair(MyGUI::Widget* /*sender*/)
+    {
+        if (mAvailableHairs.empty())
+            return;
+        mHairIndex = Misc::Rng::rollDice(mAvailableHairs.size());
+        updatePreview();
+    }
+
+    void RaceDialog::onRerollAll(MyGUI::Widget* /*sender*/)
+    {
+        size_t count = mRaceList->getItemCount();
+        if (count == 0)
+            return;
+        size_t index = Misc::Rng::rollDice(count);
+        mCurrentRaceId = *mRaceList->getItemDataAt<ESM::RefId>(index);
+        mRaceList->setIndexSelected(index);
+
+        mGenderIndex = Misc::Rng::rollDice(2);
+        recountParts();
+        if (!mAvailableHeads.empty())
+            mFaceIndex = Misc::Rng::rollDice(mAvailableHeads.size());
+        if (!mAvailableHairs.empty())
+            mHairIndex = Misc::Rng::rollDice(mAvailableHairs.size());
+
+        updatePreview();
+        updateSkills();
+        updateSpellPowers();
     }
 
     void RaceDialog::onPreviewScroll(MyGUI::Widget*, int delta)

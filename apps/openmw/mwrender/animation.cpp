@@ -61,6 +61,7 @@
 #include "../mwmechanics/weapontype.hpp"
 
 #include "actorutil.hpp"
+#include "jigglebonecontroller.hpp"
 #include "rotatecontroller.hpp"
 #include "util.hpp"
 #include "vismask.hpp"
@@ -1299,6 +1300,11 @@ namespace MWRender
         resetActiveGroups();
     }
 
+    void Animation::disableAllAnimations()
+    {
+        resetActiveGroups();
+    }
+
     float Animation::getVelocity(std::string_view groupname) const
     {
         if (!mAccumRoot)
@@ -1578,7 +1584,8 @@ namespace MWRender
         }
     }
 
-    void Animation::setObjectRoot(const std::string& model, bool forceskeleton, bool baseonly, bool isCreature)
+    void Animation::setObjectRoot(
+        const std::string& model, bool forceskeleton, bool baseonly, bool isCreature, bool enableJiggleBones)
     {
         osg::ref_ptr<osg::StateSet> previousStateset;
         if (mObjectRoot)
@@ -1689,6 +1696,36 @@ namespace MWRender
         mObjectRoot->addCullCallback(mLightListCallback);
         if (mTransparencyUpdater)
             mObjectRoot->addCullCallback(mTransparencyUpdater);
+
+        // Jiggle bones are character-body behavior. Keep them off generic animated
+        // objects and creatures; NpcAnimation opts in for both NPCs and the player.
+        if (enableJiggleBones)
+            attachJiggleBoneControllers();
+    }
+
+    void Animation::attachJiggleBoneControllers()
+    {
+        static constexpr std::string_view boneNames[] = {
+            "bip01 l breast",
+            "bip01 r breast",
+            "bip01 l butt",
+            "bip01 r butt",
+        };
+        const bool debug = Settings::game().mJiggleBoneDebug;
+        for (std::string_view bone : boneNames)
+        {
+            auto iter = getNodeMap().find(bone);
+            if (iter == getNodeMap().end())
+            {
+                if (debug)
+                    Log(Debug::Warning) << "Jiggle bone debug: not found: " << bone;
+                continue;
+            }
+            osg::MatrixTransform* node = iter->second;
+            if (debug)
+                Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node;
+            node->addUpdateCallback(new JiggleBoneController(debug));
+        }
     }
 
     osg::Group* Animation::getObjectRoot()

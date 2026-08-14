@@ -1,6 +1,7 @@
 #include "physicssystem.hpp"
 
 #include <algorithm>
+#include <cstdarg>
 #include <memory>
 #include <vector>
 
@@ -8,24 +9,35 @@
 #include <osg/Stats>
 #include <osg/Timer>
 
-#include <BulletCollision/BroadphaseCollision/btDbvtBroadphase.h>
-#include <BulletCollision/CollisionDispatch/btCollisionObject.h>
-#include <BulletCollision/CollisionDispatch/btCollisionWorld.h>
-#include <BulletCollision/CollisionDispatch/btDefaultCollisionConfiguration.h>
-#include <BulletCollision/CollisionShapes/btConeShape.h>
-#include <BulletCollision/CollisionShapes/btSphereShape.h>
-#include <BulletCollision/CollisionShapes/btStaticPlaneShape.h>
+// IMPORTANT: Jolt/Jolt.h must be included first before any other Jolt headers
+// It defines critical macros that other headers depend on
+#include <Jolt/Jolt.h>
 
-#include <LinearMath/btQuickprof.h>
-#include <LinearMath/btVector3.h>
+#include <Jolt/Core/Factory.h>
+#include <Jolt/Core/JobSystemSingleThreaded.h>
+#include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Core/TempAllocator.h>
+#include <Jolt/Physics/Body/BodyActivationListener.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
+#include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/Collision/ShapeFilter.h>
+#include <Jolt/Physics/PhysicsSettings.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/RegisterTypes.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadgmst.hpp>
 #include <components/esm3/loadmgef.hpp>
+#include <components/misc/constants.hpp>
 #include <components/misc/convert.hpp>
+#include <components/misc/mathutil.hpp>
 #include <components/misc/resourcehelpers.hpp>
 #include <components/misc/strings/conversion.hpp>
-#include <components/resource/bulletshapemanager.hpp>
+#include <components/resource/physicsshapemanager.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/settings/values.hpp>
 
@@ -40,22 +52,56 @@
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/player.hpp"
 
-#include "../mwrender/bulletdebugdraw.hpp"
+#include "../mwrender/joltdebugdraw.hpp"
 
 #include "../mwworld/class.hpp"
 
 #include "actor.hpp"
-#include "collisiontype.hpp"
+#include "collisionshapeconfig.hpp"
+#include "dynamicobject.hpp"
+#include "joltlayers.hpp"
+#include "ragdollwrapper.hpp"
 
-#include "closestnotmerayresultcallback.hpp"
-#include "contacttestresultcallback.hpp"
-#include "deepestnotmecontacttestresultcallback.hpp"
-#include "hasspherecollisioncallback.hpp"
 #include "heightfield.hpp"
 #include "movementsolver.hpp"
 #include "mtphysics.hpp"
 #include "object.hpp"
 #include "projectile.hpp"
+#include "water.hpp"
+
+#include "joltcallbacks.hpp"
+#include "joltfilters.hpp"
+#include "joltlisteners.hpp"
+
+using namespace JPH;
+
+// Callback for traces
+static void TraceImpl(const char* inFMT, ...)
+{
+    // Format the message
+    va_list list;
+    va_start(list, inFMT);
+    char buffer[1024];
+    vsnprintf(buffer, sizeof(buffer), inFMT, list);
+    va_end(list);
+
+    Log(Debug::Info) << "Jolt Trace: " << buffer;
+}
+
+#ifdef JPH_ENABLE_ASSERTS
+
+// Callback for Jolt asserts
+static bool AssertFailedImpl(const char* inExpression, const char* inMessage, const char* inFile, uint inLine)
+{
+    Log(Debug::Error) << "Jolt Assert: " << inFile << ":" << inLine << ": (" << inExpression << ") "
+                      << (inMessage != nullptr ? inMessage : "");
+
+    // Prevent breakpoint, better to log than exit/crash in debug mode usually
+    // Jolt has a tendancy to complain about alot of things even if they work fine
+    return true;
+}
+
+#endif
 
 namespace
 {
@@ -93,32 +139,85 @@ namespace
 
 namespace MWPhysics
 {
+    // If you take larger steps than 1 / 60th of a second you need to do multiple collision steps in order to keep the
+    // simulation stable. Do 1 collision step per 1 / 60th of a second (round up).
+    static const int cCollisionSteps = 1;
+
+    // This is the max amount of rigid bodies that you can add to the physics system
+    static const unsigned int cMaxBodies = 65536;
+
+    // This determines how many mutexes to allocate to protect rigid bodies from concurrent access. Set it to 0 for the
+    // default settings.
+    static const unsigned int cNumBodyMutexes = 0;
+
+    // This is the max amount of body pairs that can be queued at any time (the broad phase will detect overlapping
+    // body pairs based on their bounding boxes and will insert them into a queue for the narrowphase). If you make this
+    // buffer too small the queue will fill up and the broad phase jobs will start to do narrow phase work. This is
+    // slightly less efficient.
+    static const unsigned int cMaxBodyPairs = 65536;
+
+    // This is the maximum size of the contact constraint buffer. If more contacts (collisions between bodies) are
+    // detected than this number then these contacts will be ignored and bodies will start interpenetrating / fall
+    // through the world.
+    static const unsigned int cMaxContactConstraints = 10240;
+
+    namespace
+    {
+        LockingPolicy detectLockingPolicy()
+        {
+            if (Settings::physics().mAsyncNumThreads < 1)
+                return LockingPolicy::NoLocks;
+
+            return LockingPolicy::AllowSharedLocks;
+        }
+
+        unsigned getNumThreads(LockingPolicy lockingPolicy)
+        {
+            switch (lockingPolicy)
+            {
+                case LockingPolicy::NoLocks:
+                    return 0;
+                case LockingPolicy::AllowSharedLocks:
+                    return static_cast<unsigned>(
+                        std::clamp<int>(Settings::physics().mAsyncNumThreads, 0, std::thread::hardware_concurrency()));
+            }
+
+            throw std::runtime_error("Unsupported LockingPolicy: "
+                + std::to_string(static_cast<std::underlying_type_t<LockingPolicy>>(lockingPolicy)));
+        }
+    }
+
     PhysicsSystem::PhysicsSystem(Resource::ResourceSystem* resourceSystem, osg::ref_ptr<osg::Group> parentNode)
-        : mPhysicsDt(1.f / 60.f)
-        , mShapeManager(std::make_unique<Resource::BulletShapeManager>(resourceSystem->getVFS(),
-              resourceSystem->getSceneManager(), resourceSystem->getNifFileManager(),
-              Settings::cells().mCacheExpiryDelay))
-        , mResourceSystem(resourceSystem)
+        : mResourceSystem(resourceSystem)
         , mDebugDrawEnabled(false)
         , mTimeAccum(0.0f)
         , mProjectileId(0)
         , mWaterHeight(0)
         , mWaterEnabled(false)
         , mParentNode(std::move(parentNode))
+        , mPhysicsDt(1.f / 60.f)
     {
+        // NOTE: Jolt initialization (RegisterDefaultAllocator, Factory, RegisterTypes) is done
+        // in main() before any other code runs, because Jolt types like JPH::Ref<> are used
+        // in headers that get included early.
+
+        // Set up trace and assert callbacks
+        JPH::Trace = TraceImpl;
+        JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = AssertFailedImpl;)
+
+        // Create Jolt filter/listener objects
+        mContactListener = std::make_unique<JoltContactListener>();
+        mBPLayerInterface = std::make_unique<JoltBPLayerInterface>();
+        mObjectVsBPLayerFilter = std::make_unique<JoltObjectVsBroadPhaseLayerFilter>();
+        mObjectVsObjectLayerFilter = std::make_unique<JoltObjectLayerPairFilter>();
+
+        // Now we can safely create the shape manager (it uses Jolt types internally)
+        mShapeManager = std::make_unique<Resource::PhysicsShapeManager>(resourceSystem->getVFS(),
+            resourceSystem->getSceneManager(), resourceSystem->getNifFileManager(), Settings::cells().mCacheExpiryDelay);
         mResourceSystem->addResourceManager(mShapeManager.get());
 
-        mCollisionConfiguration = std::make_unique<btDefaultCollisionConfiguration>();
-        mDispatcher = std::make_unique<btCollisionDispatcher>(mCollisionConfiguration.get());
-        mBroadphase = std::make_unique<btDbvtBroadphase>();
-
-        mCollisionWorld
-            = std::make_unique<btCollisionWorld>(mDispatcher.get(), mBroadphase.get(), mCollisionConfiguration.get());
-
-        // Don't update AABBs of all objects every frame. Most objects in MW are static, so we don't need this.
-        // Should a "static" object ever be moved, we have to update its AABB manually using
-        // DynamicsWorld::updateSingleAabb.
-        mCollisionWorld->setForceUpdateAllAabbs(false);
+        // Mark this as main thread for profiling
+        JPH_PROFILE_START("Main");
 
         // Check if a user decided to override a physics system FPS
         if (const char* env = getenv("OPENMW_PHYSICS_FPS"))
@@ -131,25 +230,68 @@ namespace MWPhysics
             }
         }
 
-        mDebugDrawer = std::make_unique<MWRender::DebugDrawer>(mParentNode, mCollisionWorld.get(), mDebugDrawEnabled);
-        mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(mPhysicsDt, mCollisionWorld.get(), mDebugDrawer.get());
+        // We need a temp allocator for temporary allocations during the physics update.
+        // Pre-allocating 25 MB to avoid having to do allocations during the physics update.
+        mMemoryAllocator = std::make_unique<JPH::TempAllocatorImpl>(25 * 1024 * 1024);
+
+        // Now we can create the actual physics system.
+        // NOTE: Must be created after RegisterTypes() is called, hence unique_ptr
+        mPhysicsSystem = std::make_unique<JPH::PhysicsSystem>();
+        mPhysicsSystem->Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints, *mBPLayerInterface,
+            *mObjectVsBPLayerFilter, *mObjectVsObjectLayerFilter);
+        mPhysicsSystem->SetContactListener(mContactListener.get());
+        mPhysicsSystem->SetGravity(JPH::Vec3(0, 0, -Constants::GravityConst * Constants::UnitsPerMeter));
+
+        // Debug helper
+        mJoltDebugDrawer = std::make_unique<MWRender::JoltDebugDrawer>(mParentNode, mPhysicsSystem.get(), mDebugDrawEnabled);
+
+        // Detect number of wanted async threads, if 0 then use single threaded job system
+        unsigned numThreads = getNumThreads(detectLockingPolicy());
+        if (numThreads > 0)
+        {
+            mPhysicsJobSystem
+                = std::make_unique<JPH::JobSystemThreadPool>(cMaxPhysicsJobs, cMaxPhysicsBarriers, numThreads);
+        }
+        else
+        {
+            mPhysicsJobSystem = std::make_unique<JPH::JobSystemSingleThreaded>(cMaxPhysicsJobs);
+        }
+
+        // Create a job scheduler responsible for simulating the game world (actors etc)
+        mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(
+            mPhysicsDt, mPhysicsSystem.get(), mJoltDebugDrawer.get(), mPhysicsJobSystem.get());
+
+        // Load collision shape configuration for dynamic objects
+        mCollisionShapeConfig = std::make_unique<CollisionShapeConfig>();
+        mCollisionShapeConfig->load(resourceSystem->getVFS(), "collision-shapes.yaml");
     }
 
     PhysicsSystem::~PhysicsSystem()
     {
         mResourceSystem->removeResourceManager(mShapeManager.get());
-
-        if (mWaterCollisionObject)
-            mTaskScheduler->removeCollisionObject(mWaterCollisionObject.get());
-
+        mWaterInstance.reset();
         mTaskScheduler->releaseSharedStates();
+        mRagdolls.clear();
+        mDynamicObjects.clear();
         mHeightFields.clear();
         mObjects.clear();
         mActors.clear();
         mProjectiles.clear();
+
+        // Pre-emptive end jobs system
+        mPhysicsJobSystem.reset();
+
+        // Signal to end profiling
+        JPH_PROFILE_END();
+
+        // NOTE: We do NOT call UnregisterTypes() or delete Factory::sInstance here.
+        // The Jolt global state (allocator, factory, types) is initialized in main()
+        // and should persist for the entire application lifetime. Destroying it here
+        // would cause crashes if any Jolt-related cleanup happens after PhysicsSystem
+        // is destroyed (e.g., during exception handling or in other destructors).
     }
 
-    Resource::BulletShapeManager* PhysicsSystem::getShapeManager()
+    Resource::PhysicsShapeManager* PhysicsSystem::getShapeManager()
     {
         return mShapeManager.get();
     }
@@ -158,8 +300,7 @@ namespace MWPhysics
     {
         mDebugDrawEnabled = !mDebugDrawEnabled;
 
-        mCollisionWorld->setDebugDrawer(mDebugDrawEnabled ? mDebugDrawer.get() : nullptr);
-        mDebugDrawer->setDebugMode(mDebugDrawEnabled);
+        mJoltDebugDrawer->setDebugMode(mDebugDrawEnabled);
         return mDebugDrawEnabled;
     }
 
@@ -197,57 +338,31 @@ namespace MWPhysics
     std::pair<MWWorld::Ptr, osg::Vec3f> PhysicsSystem::getHitContact(const MWWorld::ConstPtr& actor,
         const osg::Vec3f& origin, const osg::Quat& orient, float queryDistance)
     {
-        // First of all, try to hit where you aim to
-        int hitmask = CollisionType_World | CollisionType_Door | CollisionType_HeightMap | CollisionType_Actor;
-        RayCastingResult result = castRay(origin, origin + (orient * osg::Vec3f(0.0f, queryDistance, 0.0f)), { actor },
-            {}, hitmask, CollisionType_Actor);
-
-        if (result.mHit)
-        {
-            reportCollision(Misc::Convert::toBullet(result.mHitPos), Misc::Convert::toBullet(result.mHitNormal));
-            return std::make_pair(result.mHitObject, result.mHitPos);
-        }
-
-        // Use cone shape as fallback
+        const int hitmask = Layers::WORLD | Layers::DOOR | Layers::HEIGHTMAP | Layers::ACTOR;
         const MWWorld::Store<ESM::GameSetting>& store
             = MWBase::Environment::get().getWorld()->getStore().get<ESM::GameSetting>();
+        const float halfXY = osg::DegreesToRadians(store.find("fCombatAngleXY")->mValue.getFloat() * 0.5f);
+        const float halfZ = osg::DegreesToRadians(store.find("fCombatAngleZ")->mValue.getFloat() * 0.5f);
+        const std::array<std::pair<float, float>, 9> samples{ { { 0.f, 0.f }, { -halfXY, 0.f },
+            { halfXY, 0.f }, { 0.f, -halfZ }, { 0.f, halfZ }, { -halfXY, -halfZ }, { -halfXY, halfZ },
+            { halfXY, -halfZ }, { halfXY, halfZ } } };
 
-        btConeShape shape(osg::DegreesToRadians(store.find("fCombatAngleXY")->mValue.getFloat() / 2.0f), queryDistance);
-        shape.setLocalScaling(btVector3(
-            1, 1, osg::DegreesToRadians(store.find("fCombatAngleZ")->mValue.getFloat() / 2.0f) / shape.getRadius()));
-
-        // The shape origin is its center, so we have to move it forward by half the length. The
-        // real origin will be provided to getFilteredContact to find the closest.
-        osg::Vec3f center = origin + (orient * osg::Vec3f(0.0f, queryDistance * 0.5f, 0.0f));
-
-        btCollisionObject object;
-        object.setCollisionShape(&shape);
-        object.setWorldTransform(btTransform(Misc::Convert::toBullet(orient), Misc::Convert::toBullet(center)));
-
-        const btCollisionObject* me = nullptr;
-        std::vector<const btCollisionObject*> targetCollisionObjects;
-
-        const Actor* physactor = getActor(actor);
-        if (physactor)
-            me = physactor->getCollisionObject();
-
-        DeepestNotMeContactTestResultCallback resultCallback(
-            me, targetCollisionObjects, Misc::Convert::toBullet(origin));
-        resultCallback.m_collisionFilterGroup = CollisionType_Actor;
-        resultCallback.m_collisionFilterMask
-            = CollisionType_World | CollisionType_Door | CollisionType_HeightMap | CollisionType_Actor;
-        mTaskScheduler->contactTest(&object, resultCallback);
-
-        if (resultCallback.mObject)
+        RayCastingResult closest;
+        for (const auto& [yaw, pitch] : samples)
         {
-            PtrHolder* holder = static_cast<PtrHolder*>(resultCallback.mObject->getUserPointer());
-            if (holder)
-            {
-                reportCollision(resultCallback.mContactPoint, resultCallback.mContactNormal);
-                return std::make_pair(holder->getPtr(), Misc::Convert::toOsg(resultCallback.mContactPoint));
-            }
+            const osg::Quat spread
+                = osg::Quat(yaw, osg::Vec3(0.f, 0.f, 1.f)) * osg::Quat(pitch, osg::Vec3(1.f, 0.f, 0.f));
+            const osg::Vec3f endpoint = origin + orient * spread * osg::Vec3f(0.f, queryDistance, 0.f);
+            RayCastingResult result = castRay(origin, endpoint, { actor }, {}, hitmask, Layers::ACTOR);
+            const float distance = (result.mHitPos - origin).length2();
+            if (result.mHit && (!closest.mHit || distance < (closest.mHitPos - origin).length2()))
+                closest = result;
         }
-        return std::make_pair(MWWorld::Ptr(), osg::Vec3f());
+
+        if (!closest.mHit)
+            return { MWWorld::Ptr(), osg::Vec3f() };
+        reportCollision(closest.mHitPos, closest.mHitNormal);
+        return { closest.mHitObject, closest.mHitPos };
     }
     // ## VR_PATCH END
 
@@ -261,11 +376,8 @@ namespace MWPhysics
             result.mHit = false;
             return result;
         }
-        btVector3 btFrom = Misc::Convert::toBullet(from);
-        btVector3 btTo = Misc::Convert::toBullet(to);
 
-        std::vector<const btCollisionObject*> ignoreList;
-        std::vector<const btCollisionObject*> targetCollisionObjects;
+        JoltTargetBodiesFilter bodyFilter;
 
         for (const auto& ptr : ignore)
         {
@@ -273,12 +385,12 @@ namespace MWPhysics
             {
                 const Actor* actor = getActor(ptr);
                 if (actor)
-                    ignoreList.push_back(actor->getCollisionObject());
+                    bodyFilter.IgnoreBody(actor->getPhysicsBody());
                 else
                 {
                     const Object* object = getObject(ptr);
                     if (object)
-                        ignoreList.push_back(object->getCollisionObject());
+                        bodyFilter.IgnoreBody(object->getPhysicsBody());
                 }
             }
         }
@@ -289,24 +401,47 @@ namespace MWPhysics
             {
                 const Actor* actor = getActor(target);
                 if (actor)
-                    targetCollisionObjects.push_back(actor->getCollisionObject());
+                    bodyFilter.PushTarget(actor->getPhysicsBody());
             }
         }
 
-        ClosestNotMeRayResultCallback resultCallback(ignoreList, targetCollisionObjects, btFrom, btTo);
-        resultCallback.m_collisionFilterGroup = group;
-        resultCallback.m_collisionFilterMask = mask;
+        JPH::RVec3 rayOrigin = Misc::Convert::toJolt<JPH::RVec3>(from);
+        auto diff = to - from;
+        JPH::RRayCast ray(rayOrigin, Misc::Convert::toJolt<JPH::Vec3>(diff));
 
-        mTaskScheduler->rayTest(btFrom, btTo, resultCallback);
+        // Filter out layers
+        // TODO: restore collision group (if group == 0xff then all layers?)
+        // callback.m_collisionFilterGroup = group;
+        JPH::BroadPhaseLayerFilter broadphaseLayerFilter;
+        MaskedObjectLayerFilter objectLayerFilter(mask);
+
+        // Cast ray and return closest hit
+        JPH::RayCastResult ioHit;
+        const bool didRayHit = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(
+            ray, ioHit, broadphaseLayerFilter, objectLayerFilter, bodyFilter);
 
         RayCastingResult result;
-        result.mHit = resultCallback.hasHit();
-        if (resultCallback.hasHit())
+        result.mHit = didRayHit;
+        if (result.mHit)
         {
-            result.mHitPos = Misc::Convert::toOsg(resultCallback.m_hitPointWorld);
-            result.mHitNormal = Misc::Convert::toOsg(resultCallback.m_hitNormalWorld);
-            if (PtrHolder* ptrHolder = static_cast<PtrHolder*>(resultCallback.m_collisionObject->getUserPointer()))
-                result.mHitObject = ptrHolder->getPtr();
+            auto outPosition = ray.GetPointOnRay(ioHit.mFraction);
+            result.mHitPos = Misc::Convert::toOsg(outPosition);
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), ioHit.mBodyID);
+            if (lock.Succeeded())
+            {
+                const JPH::Body& hitBody = lock.GetBody();
+                result.mHitNormal
+                    = Misc::Convert::toOsg(hitBody.GetWorldSpaceSurfaceNormal(ioHit.mSubShapeID2, outPosition));
+
+                // Check UserData is non-zero before converting (it's set to 0 when object is being destroyed)
+                uintptr_t userData = hitBody.GetUserData();
+                if (userData != 0)
+                {
+                    PtrHolder* ptrHolder = Misc::Convert::toPointerFromUserData<PtrHolder>(userData);
+                    if (ptrHolder)
+                        result.mHitObject = ptrHolder->getPtr();
+                }
+            }
         }
         return result;
     }
@@ -314,24 +449,37 @@ namespace MWPhysics
     RayCastingResult PhysicsSystem::castSphere(
         const osg::Vec3f& from, const osg::Vec3f& to, float radius, int mask, int group) const
     {
-        btCollisionWorld::ClosestConvexResultCallback callback(
-            Misc::Convert::toBullet(from), Misc::Convert::toBullet(to));
-        callback.m_collisionFilterGroup = group;
-        callback.m_collisionFilterMask = mask;
+        JPH::SphereShape sphere(radius);
+        sphere.SetEmbedded();
 
-        btSphereShape shape(radius);
-        const btQuaternion btrot = btQuaternion::getIdentity();
+        JPH::RMat44 transFrom = JPH::RMat44::sIdentity();
+        transFrom.SetTranslation(Misc::Convert::toJolt<JPH::RVec3>(from));
 
-        mTaskScheduler->convexSweepTest(&shape, btTransform(btrot, Misc::Convert::toBullet(from)),
-            btTransform(btrot, Misc::Convert::toBullet(to)), callback);
+        JPH::ShapeCastSettings settings;
+        settings.mUseShrunkenShapeAndConvexRadius = true;
+        settings.mBackFaceModeTriangles = JPH::EBackFaceMode::IgnoreBackFaces;
+        settings.mBackFaceModeConvex = JPH::EBackFaceMode::IgnoreBackFaces;
+
+        JPH::Vec3 scale = JPH::Vec3::sReplicate(1.0f);
+        JPH::RShapeCast shapeCast(&sphere, scale, transFrom, Misc::Convert::toJolt<JPH::Vec3>(to - from));
+
+        // Filter out layers
+        // TODO: restore - collision group (if group == 0xff then all layers?)
+        // callback.m_collisionFilterGroup = group;
+        JPH::BroadPhaseLayerFilter broadphaseLayerFilter;
+        MaskedObjectLayerFilter objectLayerFilter(mask);
+
+        ClosestConvexResultCallback callback(transFrom.GetTranslation());
+        mPhysicsSystem->GetNarrowPhaseQuery().CastShape(
+            shapeCast, settings, transFrom.GetTranslation(), callback, broadphaseLayerFilter, objectLayerFilter);
 
         RayCastingResult result;
         result.mHit = callback.hasHit();
         if (result.mHit)
         {
-            result.mHitPos = Misc::Convert::toOsg(callback.m_hitPointWorld);
-            result.mHitNormal = Misc::Convert::toOsg(callback.m_hitNormalWorld);
-            if (auto* ptrHolder = static_cast<PtrHolder*>(callback.m_hitCollisionObject->getUserPointer()))
+            result.mHitPos = Misc::Convert::toOsg(callback.mHitPointWorld);
+            result.mHitNormal = Misc::Convert::toOsg(callback.mHitNormalWorld);
+            if (auto* ptrHolder = static_cast<PtrHolder*>(mTaskScheduler->getUserPointer(callback.mHitCollisionObject)))
                 result.mHitObject = ptrHolder->getPtr();
         }
         return result;
@@ -359,7 +507,7 @@ namespace MWPhysics
     bool PhysicsSystem::canMoveToWaterSurface(const MWWorld::ConstPtr& actor, const float waterlevel)
     {
         const auto* physactor = getActor(actor);
-        return physactor && physactor->canMoveToWaterSurface(waterlevel, mCollisionWorld.get());
+        return physactor && physactor->canMoveToWaterSurface(waterlevel, mPhysicsSystem.get());
     }
 
     osg::Vec3f PhysicsSystem::getHalfExtents(const MWWorld::ConstPtr& actor) const
@@ -393,9 +541,26 @@ namespace MWPhysics
         const Object* physobject = getObject(object);
         if (!physobject)
             return osg::BoundingBox();
-        btVector3 min, max;
-        mTaskScheduler->getAabb(physobject->getCollisionObject(), min, max);
-        return osg::BoundingBox(Misc::Convert::toOsg(min), Misc::Convert::toOsg(max));
+
+        JPH::BodyID bodyId = physobject->getPhysicsBody();
+        if (bodyId.IsInvalid())
+            return osg::BoundingBox();
+
+        JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), bodyId);
+        if (!lock.Succeeded())
+            return osg::BoundingBox();
+
+        const JPH::Body& body = lock.GetBody();
+
+        // Get body world space translation + shape local space bound
+        osg::Vec3f translation = Misc::Convert::toOsg(body.GetCenterOfMassTransform().GetTranslation());
+        JPH::AABox bounds = body.GetShape()->GetLocalBounds();
+
+        // Convert local space bounds to world space
+        osg::Vec3f min = osg::Vec3f(bounds.mMin.GetX(), bounds.mMin.GetY(), bounds.mMin.GetZ()) + translation;
+        osg::Vec3f max = osg::Vec3f(bounds.mMax.GetX(), bounds.mMax.GetY(), bounds.mMax.GetZ()) + translation;
+
+        return osg::BoundingBox(min, max);
     }
 
     osg::Vec3f PhysicsSystem::getCollisionObjectPosition(const MWWorld::ConstPtr& actor) const
@@ -410,18 +575,49 @@ namespace MWPhysics
     std::vector<ContactPoint> PhysicsSystem::getCollisionsPoints(
         const MWWorld::ConstPtr& ptr, int collisionGroup, int collisionMask) const
     {
-        btCollisionObject* me = nullptr;
+        JPH::BodyID me;
 
         auto found = mObjects.find(ptr.mRef);
         if (found != mObjects.end())
-            me = found->second->getCollisionObject();
+            me = found->second->getPhysicsBody();
         else
             return {};
 
-        ContactTestResultCallback resultCallback(me);
-        resultCallback.m_collisionFilterGroup = collisionGroup;
-        resultCallback.m_collisionFilterMask = collisionMask;
-        mTaskScheduler->contactTest(me, resultCallback);
+        if (me.IsInvalid())
+            return {};
+
+        JPH::ShapeRefC shape;
+        JPH::RMat44 transform;
+
+        // Scoped lock so we can read then discard
+        {
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), me);
+            if (!lock.Succeeded())
+                return {};
+
+            const JPH::Body& body = lock.GetBody();
+            transform = body.GetCenterOfMassTransform();
+            shape = body.GetShape();
+        }
+
+        // This sets layer filters to avoid collisions with static geometry in those cases, and allows with
+        // actors->actors etc if needed this is important to prevent Jolt comlaining that two triangle mesh shapes
+        // cannot collide
+        JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
+            = mPhysicsSystem->GetDefaultBroadPhaseLayerFilter(collisionGroup);
+        MaskedObjectLayerFilter objectLayerFilter(collisionMask);
+
+        JPH::CollideShapeSettings settings;
+        settings.mActiveEdgeMode = JPH::EActiveEdgeMode::CollideWithAll;
+        settings.mBackFaceMode = JPH::EBackFaceMode::IgnoreBackFaces;
+        settings.mCollectFacesMode = JPH::ECollectFacesMode::NoFaces;
+
+        // WARNING: you cannot collide mesh->mesh shapes in Jolt, so this should filter to avoid that (only collide with
+        // actors etc)
+        auto scale = JPH::Vec3::sReplicate(1.0f);
+        ContactTestResultCallback resultCallback(mPhysicsSystem.get(), me, transform.GetTranslation());
+        mPhysicsSystem->GetNarrowPhaseQuery().CollideShape(shape, scale, transform, settings, JPH::RVec3::sZero(),
+            resultCallback, broadphaseLayerFilter, objectLayerFilter);
         return resultCallback.mResult;
     }
 
@@ -439,7 +635,195 @@ namespace MWPhysics
         ActorMap::iterator found = mActors.find(ptr.mRef);
         if (found == mActors.end())
             return ptr.getRefData().getPosition().asVec3();
-        return MovementSolver::traceDown(ptr, position, found->second.get(), mCollisionWorld.get(), maxHeight);
+        return MovementSolver::traceDown(ptr, position, found->second.get(), mPhysicsSystem.get(), maxHeight);
+    }
+
+    void PhysicsSystem::optimize()
+    {
+        mTaskScheduler->optimizeBroadPhase();
+    }
+
+    void PhysicsSystem::beginBatchAdd()
+    {
+        mTaskScheduler->beginBatchAdd();
+    }
+
+    void PhysicsSystem::endBatchAdd()
+    {
+        mTaskScheduler->endBatchAdd();
+        // Optimize broadphase after batch additions for better query performance
+        mTaskScheduler->optimizeBroadPhase();
+    }
+
+    void PhysicsSystem::queueBodyRemoval(const MWWorld::Ptr& ptr)
+    {
+        // Queue the object for batch removal - the actual body removal and destruction
+        // happens when flushBodyRemovals() is called
+        if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
+        {
+            mAnimatedObjects.erase(foundObject->second.get());
+            mPendingObjectRemovals.push_back(ptr.mRef);
+        }
+        else if (auto foundDynamic = mDynamicObjects.find(ptr.mRef); foundDynamic != mDynamicObjects.end())
+        {
+            if (mGrabbedObject == foundDynamic->second.get())
+                mGrabbedObject = nullptr;
+            mPendingDynamicRemovals.push_back(ptr.mRef);
+        }
+        else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
+        {
+            mPendingActorRemovals.push_back(ptr.mRef);
+
+            // Also check for ragdoll associated with this actor and queue it for removal
+            // Ragdolls use the same key (LiveCellRefBase*) as actors
+            if (auto foundRagdoll = mRagdolls.find(ptr.mRef); foundRagdoll != mRagdolls.end())
+            {
+                // Release grabbed ragdoll if it's being removed
+                if (mGrabbedRagdoll == foundRagdoll->second.get())
+                {
+                    mGrabbedRagdoll = nullptr;
+                    mGrabbedRagdollBodyIndex = -1;
+                }
+                mPendingRagdollRemovals.push_back(ptr.mRef);
+            }
+        }
+    }
+
+    void PhysicsSystem::queueHeightFieldRemoval(int x, int y)
+    {
+        auto key = std::make_pair(x, y);
+        if (mHeightFields.find(key) != mHeightFields.end())
+        {
+            mPendingHeightFieldRemovals.push_back(key);
+        }
+    }
+
+    void PhysicsSystem::flushBodyRemovals()
+    {
+        if (mPendingObjectRemovals.empty() && mPendingDynamicRemovals.empty() && mPendingActorRemovals.empty()
+            && mPendingRagdollRemovals.empty() && mPendingHeightFieldRemovals.empty())
+            return;
+
+        // Fully synchronize physics simulation before removing bodies (see remove() for explanation)
+        mTaskScheduler->syncSimulation();
+
+        // Clear any actor's mStandingOnPtr that references objects being removed.
+        // After syncSimulation(), actors may have mStandingOnPtr set to these objects.
+        // We must clear these references before destroying the objects to avoid dangling pointers.
+        for (auto& [_, actor] : mActors)
+        {
+            MWWorld::Ptr standingOn = actor->getStandingOnPtr();
+            if (standingOn.isEmpty())
+                continue;
+            const auto* ref = standingOn.mRef;
+            bool isBeingRemoved = std::find(mPendingObjectRemovals.begin(), mPendingObjectRemovals.end(), ref)
+                    != mPendingObjectRemovals.end()
+                || std::find(mPendingDynamicRemovals.begin(), mPendingDynamicRemovals.end(), ref)
+                    != mPendingDynamicRemovals.end()
+                || std::find(mPendingActorRemovals.begin(), mPendingActorRemovals.end(), ref)
+                    != mPendingActorRemovals.end();
+            if (isBeingRemoved)
+                actor->setStandingOnPtr(MWWorld::Ptr());
+        }
+
+        // Collect all body IDs for batch removal
+        std::vector<JPH::BodyID> bodyIds;
+        bodyIds.reserve(mPendingObjectRemovals.size() + mPendingDynamicRemovals.size() + mPendingActorRemovals.size()
+            + mPendingHeightFieldRemovals.size());
+
+        for (const auto* ref : mPendingObjectRemovals)
+        {
+            if (auto it = mObjects.find(ref); it != mObjects.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+        for (const auto* ref : mPendingDynamicRemovals)
+        {
+            if (auto it = mDynamicObjects.find(ref); it != mDynamicObjects.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+        for (const auto* ref : mPendingActorRemovals)
+        {
+            if (auto it = mActors.find(ref); it != mActors.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+        for (const auto& key : mPendingHeightFieldRemovals)
+        {
+            if (auto it = mHeightFields.find(key); it != mHeightFields.end())
+            {
+                JPH::BodyID id = it->second->getPhysicsBody();
+                if (!id.IsInvalid())
+                    bodyIds.push_back(id);
+            }
+        }
+
+        // Batch remove bodies from physics system
+        if (!bodyIds.empty())
+        {
+            JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+            bodyInterface.RemoveBodies(bodyIds.data(), static_cast<int>(bodyIds.size()));
+
+            // Destroy bodies after removal
+            for (const JPH::BodyID& id : bodyIds)
+                bodyInterface.DestroyBody(id);
+        }
+
+        // Mark bodies as removed so destructors don't try to remove/destroy again
+        for (const auto* ref : mPendingObjectRemovals)
+        {
+            if (auto it = mObjects.find(ref); it != mObjects.end())
+                it->second->markBodyRemoved();
+        }
+        for (const auto* ref : mPendingDynamicRemovals)
+        {
+            if (auto it = mDynamicObjects.find(ref); it != mDynamicObjects.end())
+                it->second->markBodyRemoved();
+        }
+        for (const auto* ref : mPendingActorRemovals)
+        {
+            if (auto it = mActors.find(ref); it != mActors.end())
+                it->second->markBodyRemoved();
+        }
+        for (const auto& key : mPendingHeightFieldRemovals)
+        {
+            if (auto it = mHeightFields.find(key); it != mHeightFields.end())
+                it->second->markBodyRemoved();
+        }
+
+        // Now safely erase from maps (destructors won't try to remove/destroy again)
+        for (const auto* ref : mPendingObjectRemovals)
+            mObjects.erase(ref);
+        for (const auto* ref : mPendingDynamicRemovals)
+            mDynamicObjects.erase(ref);
+        for (const auto* ref : mPendingActorRemovals)
+            mActors.erase(ref);
+
+        // Remove ragdolls associated with removed actors
+        // Ragdoll bodies are managed by Jolt's Ragdoll class and removed in the destructor
+        // via RemoveFromPhysicsSystem(), so we just need to erase from the map
+        for (const auto* ref : mPendingRagdollRemovals)
+            mRagdolls.erase(ref);
+
+        // Erase heightfields
+        for (const auto& key : mPendingHeightFieldRemovals)
+            mHeightFields.erase(key);
+
+        mPendingObjectRemovals.clear();
+        mPendingDynamicRemovals.clear();
+        mPendingActorRemovals.clear();
+        mPendingRagdollRemovals.clear();
+        mPendingHeightFieldRemovals.clear();
     }
 
     void PhysicsSystem::addHeightField(
@@ -470,12 +854,14 @@ namespace MWPhysics
         if (ptr.mRef->mData.mPhysicsPostponed)
             return;
 
-        const VFS::Path::Normalized animationMesh = ptr.getClass().useAnim()
-            ? Misc::ResourceHelpers::correctActorModelPath(mesh, mResourceSystem->getVFS())
-            : VFS::Path::Normalized(mesh);
-        osg::ref_ptr<Resource::BulletShapeInstance> shapeInstance = mShapeManager->getInstance(animationMesh);
+        VFS::Path::Normalized animationMesh(mesh);
+        if (ptr.getClass().useAnim())
+            animationMesh = Misc::ResourceHelpers::correctActorModelPath(mesh, mResourceSystem->getVFS());
+        osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance = mShapeManager->getInstance(animationMesh);
         if (!shapeInstance || !shapeInstance->mCollisionShape)
+        {
             return;
+        }
 
         assert(!getObject(ptr));
 
@@ -485,10 +871,10 @@ namespace MWPhysics
             case Resource::VisualCollisionType::None:
                 break;
             case Resource::VisualCollisionType::Default:
-                collisionType = CollisionType_VisualOnly;
+                collisionType = Layers::VISUAL_ONLY;
                 break;
             case Resource::VisualCollisionType::Camera:
-                collisionType = CollisionType_CameraOnly;
+                collisionType = Layers::CAMERA_ONLY;
                 break;
         }
 
@@ -499,13 +885,90 @@ namespace MWPhysics
             mAnimatedObjects.emplace(obj.get(), false);
     }
 
+    void PhysicsSystem::addDynamicObject(
+        const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh, osg::Quat rotation, float mass)
+    {
+        if (ptr.mRef->mData.mPhysicsPostponed)
+            return;
+
+        osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance = mShapeManager->getInstance(mesh);
+        if (!shapeInstance || !shapeInstance->mCollisionShape)
+        {
+            Log(Debug::Warning) << "No collision shape for dynamic object: " << ptr.getCellRef().getRefId();
+            return;
+        }
+
+        assert(!getDynamicObject(ptr));
+
+        // Determine collision shape type from configuration
+        DynamicShapeType shapeType = DynamicShapeType::Box;
+        if (mCollisionShapeConfig && mCollisionShapeConfig->isLoaded())
+        {
+            std::string refId = ptr.getCellRef().getRefId().getRefIdString();
+            shapeType = mCollisionShapeConfig->getShapeType(refId);
+        }
+
+        auto obj = std::make_shared<DynamicObject>(ptr, shapeInstance, rotation, mass, mTaskScheduler.get(), this, shapeType);
+        mDynamicObjects.emplace(ptr.mRef, obj);
+
+        // Initialize water zone status for the new object
+        const MWWorld::CellStore* cell = ptr.getCell();
+        if (cell && cell->getCell())
+        {
+            float waterHeight = 0.0f;
+            bool hasWater = false;
+            if (cell->getCell()->isExterior() && mWaterEnabled)
+            {
+                waterHeight = mWaterHeight;
+                hasWater = true;
+            }
+            else if (!cell->getCell()->isExterior() && cell->getCell()->hasWater())
+            {
+                waterHeight = cell->getWaterLevel();
+                hasWater = true;
+            }
+
+            if (hasWater)
+            {
+                constexpr float waterZoneThreshold = 500.0f;
+                osg::Vec3f pos = obj->getSimulationPosition();
+                obj->setInWaterZone(pos.z() < (waterHeight + waterZoneThreshold));
+            }
+        }
+
+    }
+
     void PhysicsSystem::remove(const MWWorld::Ptr& ptr)
     {
+        // IMPORTANT: Must fully synchronize physics simulation before removing objects.
+        // This includes both waiting for the async job AND processing the simulation results.
+        // The simulation results (in mSimulations vector) contain BodyIDs (like mStandingOn)
+        // that reference bodies being removed. If we only wait for workers but don't process
+        // the results, the next syncSimulation() call would try to access destroyed bodies
+        // via getUserPointer() when processing those stale BodyIDs.
+        mTaskScheduler->syncSimulation();
+
+        // Clear any actor's mStandingOnPtr that references the object being removed.
+        // After syncSimulation(), actors may have mStandingOnPtr set to this object.
+        // We must clear these references before destroying the object to avoid dangling pointers.
+        for (auto& [_, actor] : mActors)
+        {
+            if (actor->getStandingOnPtr() == ptr)
+                actor->setStandingOnPtr(MWWorld::Ptr());
+        }
+
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             mAnimatedObjects.erase(foundObject->second.get());
-
             mObjects.erase(foundObject);
+        }
+        else if (auto foundDynamic = mDynamicObjects.find(ptr.mRef); foundDynamic != mDynamicObjects.end())
+        {
+            // Release if we're grabbing this object
+            if (mGrabbedObject == foundDynamic->second.get())
+                mGrabbedObject = nullptr;
+
+            mDynamicObjects.erase(foundDynamic);
         }
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
         {
@@ -524,6 +987,8 @@ namespace MWPhysics
     {
         if (auto foundObject = mObjects.find(old.mRef); foundObject != mObjects.end())
             foundObject->second->updatePtr(updated);
+        else if (auto foundDynamic = mDynamicObjects.find(old.mRef); foundDynamic != mDynamicObjects.end())
+            foundDynamic->second->updatePtr(updated);
         else if (auto foundActor = mActors.find(old.mRef); foundActor != mActors.end())
             foundActor->second->updatePtr(updated);
 
@@ -564,6 +1029,22 @@ namespace MWPhysics
         return nullptr;
     }
 
+    DynamicObject* PhysicsSystem::getDynamicObject(const MWWorld::Ptr& ptr)
+    {
+        DynamicObjectMap::iterator found = mDynamicObjects.find(ptr.mRef);
+        if (found != mDynamicObjects.end())
+            return found->second.get();
+        return nullptr;
+    }
+
+    const DynamicObject* PhysicsSystem::getDynamicObject(const MWWorld::ConstPtr& ptr) const
+    {
+        DynamicObjectMap::const_iterator found = mDynamicObjects.find(ptr.mRef);
+        if (found != mDynamicObjects.end())
+            return found->second.get();
+        return nullptr;
+    }
+
     Projectile* PhysicsSystem::getProjectile(int projectileId) const
     {
         ProjectileMap::const_iterator found = mProjectiles.find(projectileId);
@@ -578,12 +1059,10 @@ namespace MWPhysics
         {
             float scale = ptr.getCellRef().getScale();
             foundObject->second->setScale(scale);
-            mTaskScheduler->updateSingleAabb(foundObject->second);
         }
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
         {
             foundActor->second->updateScale();
-            mTaskScheduler->updateSingleAabb(foundActor->second);
         }
     }
 
@@ -592,14 +1071,12 @@ namespace MWPhysics
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             foundObject->second->setRotation(rotate);
-            mTaskScheduler->updateSingleAabb(foundObject->second);
         }
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
         {
             if (!foundActor->second->isRotationallyInvariant())
             {
                 foundActor->second->setRotation(rotate);
-                mTaskScheduler->updateSingleAabb(foundActor->second);
             }
         }
     }
@@ -609,20 +1086,18 @@ namespace MWPhysics
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             foundObject->second->updatePosition();
-            mTaskScheduler->updateSingleAabb(foundObject->second);
         }
         else if (auto foundActor = mActors.find(ptr.mRef); foundActor != mActors.end())
         {
             foundActor->second->updatePosition();
-            mTaskScheduler->updateSingleAabb(foundActor->second, true);
         }
     }
 
     void PhysicsSystem::addActor(const MWWorld::Ptr& ptr, VFS::Path::NormalizedView mesh)
     {
-        const VFS::Path::Normalized animationMesh
+        VFS::Path::Normalized animationMesh
             = Misc::ResourceHelpers::correctActorModelPath(mesh, mResourceSystem->getVFS());
-        osg::ref_ptr<const Resource::BulletShape> shape = mShapeManager->getShape(animationMesh);
+        osg::ref_ptr<const Resource::PhysicsShape> shape = mShapeManager->getShape(animationMesh);
 
         // Try to get shape from basic model as fallback for creatures
         if (!ptr.getClass().isNpc() && shape && shape->mCollisionBox.mExtents.length2() == 0)
@@ -649,7 +1124,7 @@ namespace MWPhysics
     int PhysicsSystem::addProjectile(
         const MWWorld::Ptr& caster, const osg::Vec3f& position, VFS::Path::NormalizedView mesh, bool computeRadius)
     {
-        osg::ref_ptr<Resource::BulletShapeInstance> shapeInstance = mShapeManager->getInstance(mesh);
+        osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance = mShapeManager->getInstance(mesh);
         assert(shapeInstance);
         float radius = computeRadius ? shapeInstance->mCollisionBox.mExtents.length() / 2.f : 1.f;
 
@@ -694,11 +1169,32 @@ namespace MWPhysics
 
     void PhysicsSystem::clearQueuedMovement()
     {
+        // First, sync any pending simulation to process remaining results
+        syncSimulation();
+
         for (const auto& [_, actor] : mActors)
         {
             actor->setVelocity(osg::Vec3f());
             actor->setInertialForce(osg::Vec3f());
         }
+
+        // Clear all simulation buffers to prevent stale body IDs from being used
+        // This is critical during cell transitions when bodies are destroyed and IDs may be recycled
+        for (auto& simBuffer : mSimulations)
+        {
+            simBuffer.clear();
+        }
+
+        // Also clear any standing-on references that may point to destroyed bodies
+        for (const auto& [_, actor] : mActors)
+        {
+            actor->setStandingOnPtr(MWWorld::Ptr());
+        }
+    }
+
+    void PhysicsSystem::syncSimulation()
+    {
+        mTaskScheduler->syncSimulation();
     }
 
     void PhysicsSystem::prepareSimulation(bool willSimulate, std::vector<Simulation>& simulations)
@@ -714,18 +1210,22 @@ namespace MWPhysics
             auto ptr = physicActor->getPtr();
             if (!ptr.getClass().isMobile(ptr))
                 continue;
+            float waterlevel = -std::numeric_limits<float>::max();
+            const MWWorld::CellStore* cell = ptr.getCell();
+            if (!cell || !cell->getCell())
+                continue;
+            if (cell->getCell()->hasWater())
+                waterlevel = cell->getWaterLevel();
 
-            const MWWorld::CellStore& cell = *ptr.getCell();
             const auto& stats = ptr.getClass().getCreatureStats(ptr);
             const MWMechanics::MagicEffects& effects = stats.getMagicEffects();
 
-            float waterlevel = -std::numeric_limits<float>::max();
             bool waterCollision = false;
-            if (cell.getCell()->hasWater())
+            if (cell->getCell()->hasWater() && effects.getOrDefault(ESM::MagicEffect::WaterWalking).getMagnitude())
             {
-                waterlevel = cell.getWaterLevel();
-                if (physicActor->getCollisionMode())
-                    waterCollision = effects.getOrDefault(ESM::MagicEffect::WaterWalking).getMagnitude();
+                if (physicActor->getCollisionMode()
+                    || !world->isUnderwater(ptr.getCell(), ptr.getRefData().getPosition().asVec3()))
+                    waterCollision = true;
             }
 
             physicActor->setCanWaterWalk(waterCollision);
@@ -745,49 +1245,127 @@ namespace MWPhysics
             if (willSimulate)
                 handleJump(ptr);
         }
-
-        for (const auto& [id, projectile] : mProjectiles)
-        {
-            simulations.emplace_back(ProjectileSimulation{ projectile, ProjectileFrameData{ *projectile } });
-        }
     }
 
     void PhysicsSystem::stepSimulation(
         float dt, bool skipSimulation, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
     {
-        for (auto& [animatedObject, changed] : mAnimatedObjects)
+        // We cannot modify shapes at runtime while there is a body query going on (such as actor collision)
+        // so we must update all animated objects first when we are guaranteed to not be having any physics queries
         {
-            if (animatedObject->animateCollisionShapes())
+            std::scoped_lock lock(mTaskScheduler->getSimulationMutex());
+            for (auto& [animatedObject, changed] : mAnimatedObjects)
             {
-                auto obj = mObjects.find(animatedObject->getPtr().mRef);
-                assert(obj != mObjects.end());
-                mTaskScheduler->updateSingleAabb(obj->second);
-                changed = true;
-            }
-            else
-            {
-                changed = false;
+                if (animatedObject->animateCollisionShapes())
+                {
+                    assert(mObjects.find(animatedObject->getPtr().mRef) != mObjects.end());
+                    changed = true;
+                }
+                else
+                {
+                    changed = false;
+                }
             }
         }
+
         for (auto& [_, object] : mObjects)
             object->resetCollisions();
 
-#ifndef BT_NO_PROFILE
-        CProfileManager::Reset();
-        CProfileManager::Increment_Frame_Counter();
-#endif
-
         mTimeAccum += dt;
+        mTimeAccumJolt += dt;
 
         if (skipSimulation)
+        {
             mTaskScheduler->resetSimulation(mActors);
+        }
         else
         {
             std::vector<Simulation>& simulations = mSimulations[mSimulationsCounter++ % mSimulations.size()];
             prepareSimulation(mTimeAccum >= mPhysicsDt, simulations);
-            // modifies mTimeAccum
+
+            // Runs world simulation for required steps, modifies mTimeAccum
             mTaskScheduler->applyQueuedMovements(mTimeAccum, simulations, frameStart, frameNumber, stats);
         }
+
+        // Synchronize/commit all transform updates for actors and objects
+        updatePtrHolders();
+
+        // Gravity constant for buoyancy calculations (used inside physics loop below)
+        const float gravity = Constants::GravityConst * Constants::UnitsPerMeter;
+
+        // Push dynamic objects that actors are walking into
+        pushDynamicObjectsFromActors();
+
+        // Run dynamic body sim, broadphase updates etc
+        // IMPORTANT: Buoyancy must be applied INSIDE this loop, once per physics substep,
+        // to ensure buoyancy and gravity are balanced correctly regardless of frame rate.
+        while (mTimeAccumJolt >= mPhysicsDt)
+        {
+            mTimeAccumJolt -= mPhysicsDt;
+
+            // Apply buoyancy forces before each physics step
+            // This ensures buoyancy is applied at the same rate as gravity
+            const bool buoyancyEnabled = Settings::physics().mEnableBuoyancy;
+            for (auto& [_, dynObj] : mDynamicObjects)
+            {
+                if (!buoyancyEnabled || !dynObj->isInWaterZone())
+                    continue;
+
+                MWWorld::Ptr ptr = dynObj->getPtr();
+                if (ptr.isEmpty())
+                    continue;
+
+                const MWWorld::CellStore* cell = ptr.getCell();
+                if (!cell || !cell->getCell())
+                    continue;
+
+                float waterHeight = 0.0f;
+                bool applyBuoyancy = false;
+
+                if (cell->getCell()->isExterior())
+                {
+                    if (mWaterEnabled)
+                    {
+                        waterHeight = mWaterHeight;
+                        applyBuoyancy = true;
+                    }
+                }
+                else
+                {
+                    if (cell->getCell()->hasWater())
+                    {
+                        waterHeight = cell->getWaterLevel();
+                        applyBuoyancy = true;
+                    }
+                }
+
+                if (applyBuoyancy)
+                {
+                    dynObj->updateBuoyancy(waterHeight, gravity, mPhysicsDt);
+                }
+            }
+
+            mPhysicsSystem->Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
+        }
+
+        // Update water zone tracking for dynamic objects (once per frame, not per substep)
+        // This updates which objects need buoyancy checks based on their current position
+        updateDynamicObjectWaterZones();
+
+#ifdef JPH_PROFILE_ENABLED
+        JPH_PROFILE_NEXTFRAME();
+#endif
+    }
+
+    void PhysicsSystem::updatePtrHolders()
+    {
+        for (auto& [_, object] : mObjects)
+            object->commitPositionChange();
+
+        // NOTE: disabled as last step in simulation sets actor positions if changed
+        // TODO: evaluate if this is needed at all, if not, remove
+        // for (auto& [_, actor] : mActors)
+        //     actor->updateCollisionObjectPosition();
     }
 
     void PhysicsSystem::moveActors()
@@ -795,8 +1373,15 @@ namespace MWPhysics
         auto* player = getActor(MWMechanics::getPlayer());
         const auto world = MWBase::Environment::get().getWorld();
 
-        // copy new ptr position in temporary vector. player is handled separately as its movement might change active
-        // cell.
+        // IMPORTANT: Move player FIRST, before collecting other actors.
+        // Player movement can trigger cell transitions which destroy actors from unloaded cells.
+        // If we collect actor Ptrs before moving the player, those Ptrs become dangling after
+        // the cell transition, causing crashes when we try to move them.
+        if (player != nullptr)
+            world->moveObject(player->getPtr(), player->getSimulationPosition(), false, false);
+
+        // Now collect and move other actors. After the player moved (and possibly triggered a
+        // cell transition), mActors contains only actors from currently active cells.
         mActorsPositions.clear();
         if (!mActors.empty())
             mActorsPositions.reserve(mActors.size() - 1);
@@ -809,17 +1394,22 @@ namespace MWPhysics
 
         for (const auto& [ptr, pos] : mActorsPositions)
             world->moveObject(ptr, pos, false, false);
-
-        if (player != nullptr)
-            world->moveObject(player->getPtr(), player->getSimulationPosition(), false, false);
     }
 
-    void PhysicsSystem::updateAnimatedCollisionShape(const MWWorld::Ptr& object)
+    void PhysicsSystem::moveDynamicObjects()
     {
-        ObjectMap::iterator found = mObjects.find(object.mRef);
-        if (found != mObjects.end())
-            if (found->second->animateCollisionShapes())
-                mTaskScheduler->updateSingleAabb(found->second);
+        const auto world = MWBase::Environment::get().getWorld();
+
+        for (const auto& [ptr, dynObj] : mDynamicObjects)
+        {
+            if (dynObj->isActive())
+            {
+                osg::Vec3f pos = dynObj->getSimulationPosition();
+                osg::Quat rot = dynObj->getSimulationRotation();
+                world->moveObject(dynObj->getPtr(), pos, false, false);
+                world->rotateObject(dynObj->getPtr(), Misc::toEulerAnglesZYX(rot), MWBase::RotationFlag_none);
+            }
+        }
     }
 
     void PhysicsSystem::debugDraw()
@@ -855,7 +1445,7 @@ namespace MWPhysics
 
     void PhysicsSystem::getActorsCollidingWith(const MWWorld::ConstPtr& object, std::vector<MWWorld::Ptr>& out) const
     {
-        std::vector<MWWorld::Ptr> collisions = getCollisions(object, CollisionType_World, CollisionType_Actor);
+        std::vector<MWWorld::Ptr> collisions = getCollisions(object, Layers::WORLD, Layers::ACTOR);
         out.insert(out.end(), collisions.begin(), collisions.end());
     }
 
@@ -889,63 +1479,154 @@ namespace MWPhysics
 
     void PhysicsSystem::updateWater()
     {
-        if (mWaterCollisionObject)
-        {
-            mTaskScheduler->removeCollisionObject(mWaterCollisionObject.get());
-        }
-
         if (!mWaterEnabled)
         {
-            mWaterCollisionObject.reset();
+            mWaterInstance.reset();
+            // Clear water zone flags for all dynamic objects
+            for (auto& [_, dynObj] : mDynamicObjects)
+                dynObj->setInWaterZone(false);
             return;
         }
 
-        mWaterCollisionObject = std::make_unique<btCollisionObject>();
-        mWaterCollisionShape = std::make_unique<btStaticPlaneShape>(btVector3(0, 0, 1), mWaterHeight);
-        mWaterCollisionObject->setCollisionShape(mWaterCollisionShape.get());
-        mTaskScheduler->addCollisionObject(
-            mWaterCollisionObject.get(), CollisionType_Water, CollisionType_Actor | CollisionType_Projectile);
+        mWaterInstance = std::make_unique<MWWater>(mTaskScheduler.get(), mWaterHeight);
+
+        // Update water zone flags for all dynamic objects
+        updateDynamicObjectWaterZones();
+    }
+
+    void PhysicsSystem::updateDynamicObjectWaterZones()
+    {
+        // Water zone threshold: objects within this distance above water get buoyancy checks
+        // This ensures objects falling toward water start buoyancy before fully submerging
+        constexpr float waterZoneThreshold = 500.0f;
+
+        for (auto& [_, dynObj] : mDynamicObjects)
+        {
+            MWWorld::Ptr ptr = dynObj->getPtr();
+            if (ptr.isEmpty())
+            {
+                dynObj->setInWaterZone(false);
+                continue;
+            }
+
+            const MWWorld::CellStore* cell = ptr.getCell();
+            if (!cell || !cell->getCell())
+            {
+                dynObj->setInWaterZone(false);
+                continue;
+            }
+
+            float waterHeight = 0.0f;
+            bool hasWater = false;
+
+            if (cell->getCell()->isExterior())
+            {
+                if (mWaterEnabled)
+                {
+                    waterHeight = mWaterHeight;
+                    hasWater = true;
+                }
+            }
+            else
+            {
+                if (cell->getCell()->hasWater())
+                {
+                    waterHeight = cell->getWaterLevel();
+                    hasWater = true;
+                }
+            }
+
+            if (!hasWater)
+            {
+                dynObj->setInWaterZone(false);
+                continue;
+            }
+
+            // Check if object is near water (below water + threshold above)
+            osg::Vec3f pos = dynObj->getSimulationPosition();
+            bool inZone = pos.z() < (waterHeight + waterZoneThreshold);
+            dynObj->setInWaterZone(inZone);
+        }
     }
 
     bool PhysicsSystem::isAreaOccupiedByOtherActor(
-        const MWWorld::LiveCellRefBase* actor, const osg::Vec3f& position, const float radius) const
+        const MWWorld::LiveCellRefBase* actor, const osg::Vec3f& position, float radius) const
     {
-        const btCollisionObject* ignoredObject = nullptr;
-        if (const auto it = mActors.find(actor); it != mActors.end())
-            ignoredObject = it->second->getCollisionObject();
-        const btVector3 bulletPosition = Misc::Convert::toBullet(position);
-        const btVector3 aabbMin = bulletPosition - btVector3(radius, radius, radius);
-        const btVector3 aabbMax = bulletPosition + btVector3(radius, radius, radius);
-        const int mask = MWPhysics::CollisionType_Actor;
-        const int group = MWPhysics::CollisionType_AnyPhysical;
-        HasSphereCollisionCallback callback(bulletPosition, radius, mask, group, ignoredObject);
-        mTaskScheduler->aabbTest(aabbMin, aabbMax, callback);
-        return callback.getResult();
+        // Build ignored body ID for the actor
+        JPH::BodyID ignoredBody;
+        if (actor != nullptr)
+        {
+            if (const auto it = mActors.find(actor); it != mActors.end())
+                ignoredBody = it->second->getPhysicsBody();
+        }
+
+        // Define a tiny private class here as its not used anywhere else
+        class AreaActorCollector : public JPH::CollideShapeBodyCollector
+        {
+        public:
+            AreaActorCollector(JPH::BodyID ignoredBody)
+                : mIgnoredBody(ignoredBody)
+            {
+            }
+
+            virtual void AddHit(const JPH::BodyID& inBodyID) override
+            {
+                // Check if we should ignore this body
+                if (inBodyID == mIgnoredBody)
+                    return;
+
+                mHasHit = true;
+            }
+
+            bool hasHit() { return mHasHit; }
+
+        private:
+            JPH::BodyID mIgnoredBody;
+            bool mHasHit = false;
+        };
+
+        // Setup collector and collide body AABBs by the input sphere
+        AreaActorCollector collector(ignoredBody);
+        JPH::DefaultBroadPhaseLayerFilter broadphaseLayerFilter
+            = mPhysicsSystem->GetDefaultBroadPhaseLayerFilter(Layers::ACTOR);
+        mPhysicsSystem->GetBroadPhaseQuery().CollideSphere(Misc::Convert::toJolt<JPH::Vec3>(position), radius, collector,
+            broadphaseLayerFilter, JPH::SpecifiedObjectLayerFilter(Layers::ACTOR));
+
+        return collector.hasHit();
     }
 
     void PhysicsSystem::reportStats(unsigned int frameNumber, osg::Stats& stats) const
     {
-        stats.setAttribute(frameNumber, "Physics Actors", static_cast<double>(mActors.size()));
-        stats.setAttribute(frameNumber, "Physics Objects", static_cast<double>(mObjects.size()));
-        stats.setAttribute(frameNumber, "Physics Projectiles", static_cast<double>(mProjectiles.size()));
-        stats.setAttribute(frameNumber, "Physics HeightFields", static_cast<double>(mHeightFields.size()));
+        stats.setAttribute(frameNumber, "Physics Actors", mActors.size());
+        stats.setAttribute(frameNumber, "Physics Objects", mObjects.size());
+        stats.setAttribute(frameNumber, "Physics Projectiles", mProjectiles.size());
+        stats.setAttribute(frameNumber, "Physics HeightFields", mHeightFields.size());
     }
 
-    void PhysicsSystem::reportCollision(const btVector3& position, const btVector3& normal)
+    void PhysicsSystem::reportCollision(const osg::Vec3f& position, const osg::Vec3f& normal)
     {
         if (mDebugDrawEnabled)
-            mDebugDrawer->addCollision(position, normal);
+            mJoltDebugDrawer->addCollision(position, normal);
+    }
+
+    const JPH::BodyLockInterfaceLocking& PhysicsSystem::getBodyLockInterface() const
+    {
+        return mPhysicsSystem->GetBodyLockInterface();
+    }
+
+    const JPH::BodyInterface& PhysicsSystem::getBodyInterface() const
+    {
+        return mPhysicsSystem->GetBodyInterface();
     }
 
     ActorFrameData::ActorFrameData(
         Actor& actor, bool inert, bool waterCollision, float slowFall, float waterlevel, bool isPlayer)
         : mPosition()
-        , mStandingOn(nullptr)
         , mIsOnGround(actor.getOnGround())
         , mIsOnSlope(actor.getOnSlope())
         , mWalkingOnWater(false)
         , mInert(inert)
-        , mCollisionObject(actor.getCollisionObject())
+        , mPhysicsBody(actor.getPhysicsBody())
         , mSwimLevel(waterlevel
               - (actor.getRenderingHalfExtents().z() * 2
                   * MWBase::Environment::get()
@@ -966,15 +1647,7 @@ namespace MWPhysics
         , mWaterCollision(waterCollision)
         , mSkipCollisionDetection(!actor.getCollisionMode())
         , mIsPlayer(isPlayer)
-    {
-    }
-
-    ProjectileFrameData::ProjectileFrameData(Projectile& projectile)
-        : mPosition(projectile.getPosition())
-        , mMovement(projectile.velocity())
-        , mCaster(projectile.getCasterCollisionObject())
-        , mCollisionObject(projectile.getCollisionObject())
-        , mProjectile(&projectile)
+        , mCollisionMask(actor.getCollisionMask())
     {
     }
 
@@ -1010,5 +1683,561 @@ namespace MWPhysics
     bool operator==(const LOSRequest& lhs, const LOSRequest& rhs) noexcept
     {
         return lhs.mRawActors == rhs.mRawActors;
+    }
+
+    bool PhysicsSystem::grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance)
+    {
+        // Release any currently held object
+        if (mGrabbedObject)
+            releaseGrabbedObject();
+
+        // Cast ray to find a dynamic object
+        osg::Vec3f rayEnd = rayStart + rayDir * maxDistance;
+
+        JPH::RVec3 rayOrigin = Misc::Convert::toJolt<JPH::RVec3>(rayStart);
+        JPH::Vec3 rayDirection = Misc::Convert::toJolt<JPH::Vec3>(rayEnd - rayStart);
+        JPH::RRayCast ray(rayOrigin, rayDirection);
+
+        // Only collide with dynamic objects
+        JPH::SpecifiedBroadPhaseLayerFilter broadphaseLayerFilter(BroadPhaseLayers::MOVING);
+        JPH::SpecifiedObjectLayerFilter objectLayerFilter(Layers::DYNAMIC_WORLD);
+
+        JPH::RayCastResult hit;
+        bool didHit = mPhysicsSystem->GetNarrowPhaseQuery().CastRay(
+            ray, hit, broadphaseLayerFilter, objectLayerFilter);
+
+        if (!didHit)
+            return false;
+
+        // Get the body and verify it's a dynamic object
+        DynamicObject* dynObj = nullptr;
+        {
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), hit.mBodyID);
+            if (!lock.Succeeded())
+                return false;
+
+            const JPH::Body& body = lock.GetBody();
+            if (body.GetObjectLayer() != Layers::DYNAMIC_WORLD)
+                return false;
+
+            // Get the DynamicObject from user data
+            uintptr_t userData = body.GetUserData();
+            if (userData == 0)
+                return false;
+
+            dynObj = reinterpret_cast<DynamicObject*>(userData);
+            if (!dynObj)
+                return false;
+
+            // Verify the dynamic object is still valid by checking its ptr is not empty
+            // The ptr becomes empty when the object is removed from the world
+            if (dynObj->getPtr().isEmpty())
+            {
+                Log(Debug::Warning) << "Attempted to grab invalid dynamic object (empty ptr)";
+                return false;
+            }
+        }
+        // Lock is now released
+
+        // Calculate grab distance (distance from ray start to hit point)
+        osg::Vec3f hitPoint = rayStart + rayDir * (hit.mFraction * maxDistance);
+        mGrabDistance = (hitPoint - rayStart).length();
+
+        // Clamp grab distance to reasonable range
+        mGrabDistance = std::clamp(mGrabDistance, 50.0f, maxDistance);
+
+        mGrabbedObject = dynObj;
+        mGrabTargetPosition = hitPoint;
+
+        // Wake up the object (must be outside the body lock to avoid deadlock)
+        dynObj->activate();
+
+        Log(Debug::Verbose) << "Grabbed object: " << dynObj->getPtr().getCellRef().getRefId();
+
+        return true;
+    }
+
+    void PhysicsSystem::releaseGrabbedObject(const osg::Vec3f& throwVelocity)
+    {
+        if (!mGrabbedObject)
+            return;
+
+        // Apply throw velocity if provided
+        if (throwVelocity.length2() > 0.01f)
+        {
+            mGrabbedObject->setLinearVelocity(throwVelocity);
+        }
+
+        Log(Debug::Verbose) << "Released object: " << mGrabbedObject->getPtr().getCellRef().getRefId();
+
+        mGrabbedObject = nullptr;
+    }
+
+    void PhysicsSystem::updateGrabbedObject(const osg::Vec3f& targetPosition)
+    {
+        if (!mGrabbedObject)
+            return;
+
+        // Validate grabbed object is still valid (could have been removed during cell transition)
+        JPH::BodyID bodyId = mGrabbedObject->getPhysicsBody();
+        if (bodyId.IsInvalid())
+        {
+            Log(Debug::Warning) << "Grabbed object body is invalid, releasing";
+            mGrabbedObject = nullptr;
+            return;
+        }
+
+        // Verify the body still exists in the physics system
+        // Use a separate scope for the lock to avoid holding it during physics operations
+        {
+            JPH::BodyLockRead lock(mPhysicsSystem->GetBodyLockInterface(), bodyId);
+            if (!lock.Succeeded())
+            {
+                Log(Debug::Warning) << "Grabbed object body lock failed, releasing";
+                mGrabbedObject = nullptr;
+                return;
+            }
+        }
+        // Lock is now released - safe to call physics operations
+
+        mGrabTargetPosition = targetPosition;
+
+        // Get current position
+        osg::Vec3f currentPos = mGrabbedObject->getSimulationPosition();
+
+        // Calculate displacement to target
+        osg::Vec3f displacement = mGrabTargetPosition - currentPos;
+        float distance = displacement.length();
+
+        // Movement parameters - tuned for smooth, responsive Oblivion/Skyrim feel
+        // Higher values = snappier movement, lower = more floaty
+        constexpr float moveSpeed = 15.0f;      // How fast the object moves toward target (units per second per unit distance)
+        constexpr float maxSpeed = 1500.0f;     // Maximum velocity to prevent extreme speeds
+        constexpr float snapDistance = 1.0f;    // Distance at which we consider the object "arrived"
+
+        osg::Vec3f targetVelocity;
+
+        if (distance < snapDistance)
+        {
+            // Very close - slow down proportionally to avoid overshoot
+            targetVelocity = displacement * moveSpeed * 0.5f;
+        }
+        else
+        {
+            // Move toward target at speed proportional to distance
+            // This creates smooth acceleration/deceleration
+            osg::Vec3f direction = displacement / distance;
+            float speed = std::min(distance * moveSpeed, maxSpeed);
+            targetVelocity = direction * speed;
+        }
+
+        // Directly set velocity for responsive, smooth movement
+        // This bypasses physics simulation lag and gives immediate response
+        mGrabbedObject->setLinearVelocity(targetVelocity);
+
+        // Zero out angular velocity to prevent spinning while held
+        mGrabbedObject->setAngularVelocity(osg::Vec3f(0, 0, 0));
+
+        // Keep the object active
+        mGrabbedObject->activate();
+    }
+
+    MWWorld::Ptr PhysicsSystem::getGrabbedObject() const
+    {
+        if (mGrabbedObject)
+            return mGrabbedObject->getPtr();
+        return MWWorld::Ptr();
+    }
+
+    void PhysicsSystem::pushDynamicObjectsFromActors()
+    {
+        // For each actor, check if they're overlapping with dynamic objects
+        // and push those objects based on the actor's velocity
+        for (const auto& [_, actor] : mActors)
+        {
+            if (!actor->isActive())
+                continue;
+
+            osg::Vec3f actorPos = actor->getSimulationPosition();
+            osg::Vec3f actorVelocity = actor->getInertialForce();
+
+            // Also consider movement velocity
+            // The actor's velocity is stored before being consumed
+            float actorSpeed = actorVelocity.length();
+            if (actorSpeed < 10.0f)
+                continue;  // Actor not moving fast enough to push
+
+            osg::Vec3f actorHalfExtents = actor->getHalfExtents();
+            float actorRadius = std::max(actorHalfExtents.x(), actorHalfExtents.y()) + 20.0f;  // Add margin
+
+            for (auto& [_, dynObj] : mDynamicObjects)
+            {
+                // Don't push grabbed object
+                if (dynObj.get() == mGrabbedObject)
+                    continue;
+
+                osg::Vec3f objPos = dynObj->getSimulationPosition();
+                osg::Vec3f toObject = objPos - actorPos;
+
+                // Quick distance check (XY plane primarily)
+                float distXY = std::sqrt(toObject.x() * toObject.x() + toObject.y() * toObject.y());
+                float distZ = std::abs(toObject.z());
+
+                // Check if within actor's collision cylinder
+                if (distXY > actorRadius || distZ > actorHalfExtents.z() + 30.0f)
+                    continue;
+
+                // Calculate push direction (away from actor center, mostly horizontal)
+                osg::Vec3f pushDir = toObject;
+                pushDir.z() *= 0.3f;  // Reduce vertical component
+                float pushDist = pushDir.length();
+                if (pushDist < 0.1f)
+                    pushDir = osg::Vec3f(1.0f, 0.0f, 0.0f);  // Default push direction
+                else
+                    pushDir /= pushDist;
+
+                // Impulse strength based on actor speed and proximity
+                float proximityFactor = 1.0f - (distXY / actorRadius);
+                proximityFactor = std::max(proximityFactor, 0.2f);
+
+                constexpr float basePushStrength = 100.0f;
+                float impulseMagnitude = basePushStrength * proximityFactor * (actorSpeed / 100.0f);
+
+                osg::Vec3f impulse = pushDir * impulseMagnitude;
+                impulse.z() += impulseMagnitude * 0.3f;  // Add upward kick
+
+                dynObj->activate();
+                dynObj->applyImpulse(impulse);
+            }
+        }
+    }
+
+    void PhysicsSystem::applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+        float reach, float attackStrength)
+    {
+        Log(Debug::Verbose) << "applyMeleeHitToDynamicObjects called: origin=" << origin.x() << "," << origin.y() << "," << origin.z()
+                            << " reach=" << reach << " strength=" << attackStrength
+                            << " dynamicObjects=" << mDynamicObjects.size();
+
+        // Cone check parameters - realistic weapon swing arc
+        constexpr float coneAngleCos = 0.707f;  // ~45 degree half-angle cone
+
+        osg::Vec3f normalizedDir = direction;
+        normalizedDir.normalize();
+
+        for (auto& [_, dynObj] : mDynamicObjects)
+        {
+            // Don't hit the grabbed object
+            if (dynObj.get() == mGrabbedObject)
+                continue;
+
+            osg::Vec3f objPos = dynObj->getSimulationPosition();
+            osg::Vec3f toObject = objPos - origin;
+            float distance = toObject.length();
+
+            // Check if within reach (exact reach distance)
+            if (distance > reach || distance < 0.1f)
+                continue;
+
+            toObject.normalize();
+
+            // Check if within cone angle
+            float dot = toObject * normalizedDir;
+            if (dot < coneAngleCos)
+                continue;
+
+            // Calculate impulse based on attack strength and distance
+            // Closer objects get hit harder
+            float distanceFactor = 1.0f - (distance / reach);
+            distanceFactor = std::max(distanceFactor, 0.2f);  // Minimum 20% power
+
+            // Base impulse scaled by attack strength
+            float mass = dynObj->getMass();
+            constexpr float baseImpulse = 500.0f;
+            float impulseMagnitude = baseImpulse * attackStrength * distanceFactor * std::max(1.0f, mass * 0.5f);
+
+            // Apply impulse in the swing direction with slight upward component
+            osg::Vec3f impulse = normalizedDir * impulseMagnitude;
+            impulse.z() += impulseMagnitude * 0.3f;  // Slight upward kick
+
+            // IMPORTANT: Activate the body BEFORE applying impulse
+            // Otherwise sleeping bodies may ignore the impulse
+            dynObj->activate();
+            dynObj->applyImpulse(impulse);
+
+            Log(Debug::Info) << "Melee hit dynamic object: " << dynObj->getPtr().getCellRef().getRefId()
+                             << " impulse=" << impulseMagnitude << " mass=" << mass << " dist=" << distance;
+        }
+    }
+
+    void PhysicsSystem::activateRagdoll(const MWWorld::Ptr& ptr, SceneUtil::Skeleton* skeleton,
+        const osg::Vec3f& hitImpulse)
+    {
+        // Check if ragdoll physics is enabled in settings
+        if (!Settings::physics().mEnableRagdoll)
+            return;
+
+        if (!ptr.getClass().isActor())
+            return;
+
+        const MWWorld::LiveCellRefBase* key = ptr.getBase();
+
+        // Check if ragdoll already exists
+        if (mRagdolls.find(key) != mRagdolls.end())
+            return;
+
+        // Remove the actor's kinematic physics body first
+        auto actorIt = mActors.find(key);
+        if (actorIt != mActors.end())
+        {
+            // Disable external collision so other actors don't interact with the old body
+            actorIt->second->enableCollisionBody(false);
+        }
+
+        // Enforce max ragdoll limit - remove oldest/farthest if at limit
+        if (static_cast<int>(mRagdolls.size()) >= sMaxActiveRagdolls)
+        {
+            // Find ragdoll that's been at rest the longest
+            const MWWorld::LiveCellRefBase* toRemove = nullptr;
+            for (const auto& [ragdollKey, ragdoll] : mRagdolls)
+            {
+                if (ragdoll->isAtRest())
+                {
+                    toRemove = ragdollKey;
+                    break;
+                }
+            }
+
+            // If none at rest, remove the first one
+            if (!toRemove && !mRagdolls.empty())
+            {
+                toRemove = mRagdolls.begin()->first;
+            }
+
+            if (toRemove)
+            {
+                mRagdolls.erase(toRemove);
+                Log(Debug::Verbose) << "Ragdoll limit reached, removed oldest ragdoll";
+            }
+        }
+
+        // Get actor transform
+        osg::Vec3f position = ptr.getRefData().getPosition().asVec3();
+        osg::Quat rotation = Misc::Convert::makeOsgQuat(ptr.getRefData().getPosition());
+        float scale = ptr.getCellRef().getScale();
+
+        // Create the ragdoll using the new wrapper
+        auto ragdoll = std::make_shared<RagdollWrapper>(
+            ptr, skeleton, position, rotation, scale,
+            mPhysicsSystem.get(), mTaskScheduler.get());
+
+        if (!ragdoll->isValid())
+        {
+            Log(Debug::Warning) << "Failed to create ragdoll for " << ptr.getCellRef().getRefId();
+            return;
+        }
+
+        // Apply initial impulse from the killing blow
+        if (hitImpulse.length2() > 0)
+        {
+            ragdoll->applyRootImpulse(hitImpulse);
+        }
+
+        mRagdolls[key] = ragdoll;
+
+        Log(Debug::Info) << "Activated ragdoll for " << ptr.getCellRef().getRefId();
+    }
+
+    void PhysicsSystem::removeRagdoll(const MWWorld::Ptr& ptr)
+    {
+        const MWWorld::LiveCellRefBase* key = ptr.getBase();
+        auto it = mRagdolls.find(key);
+        if (it != mRagdolls.end())
+        {
+            mRagdolls.erase(it);
+            Log(Debug::Verbose) << "Removed ragdoll for " << ptr.getCellRef().getRefId();
+        }
+    }
+
+    RagdollWrapper* PhysicsSystem::getRagdoll(const MWWorld::Ptr& ptr)
+    {
+        auto it = mRagdolls.find(ptr.getBase());
+        if (it != mRagdolls.end())
+            return it->second.get();
+        return nullptr;
+    }
+
+    const RagdollWrapper* PhysicsSystem::getRagdoll(const MWWorld::ConstPtr& ptr) const
+    {
+        auto it = mRagdolls.find(ptr.getBase());
+        if (it != mRagdolls.end())
+            return it->second.get();
+        return nullptr;
+    }
+
+    void PhysicsSystem::updateRagdolls()
+    {
+        for (auto& [key, ragdoll] : mRagdolls)
+        {
+            ragdoll->updateBoneTransforms();
+        }
+    }
+
+    bool PhysicsSystem::hasRagdoll(const MWWorld::ConstPtr& ptr) const
+    {
+        return mRagdolls.find(ptr.getBase()) != mRagdolls.end();
+    }
+
+    bool PhysicsSystem::grabRagdoll(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance)
+    {
+        // Release any currently held object/ragdoll
+        if (mGrabbedObject)
+            releaseGrabbedObject();
+        if (mGrabbedRagdoll)
+            releaseGrabbedRagdoll();
+
+        // Calculate ray endpoint
+        osg::Vec3f rayEnd = rayStart + rayDir * maxDistance;
+
+        // Find the closest ragdoll body to the ray
+        RagdollWrapper* closestRagdoll = nullptr;
+        int closestBodyIndex = -1;
+        float closestDistance = maxDistance;
+        osg::Vec3f closestHitPoint;
+
+        // For each ragdoll, check each body's distance to the ray
+        for (auto& [key, ragdoll] : mRagdolls)
+        {
+            if (!ragdoll || !ragdoll->isValid())
+                continue;
+
+            int bodyCount = ragdoll->getBodyCount();
+            for (int i = 0; i < bodyCount; ++i)
+            {
+                osg::Vec3f bodyPos = ragdoll->getBodyPosition(i);
+
+                // Calculate closest point on ray to body center
+                osg::Vec3f rayVec = rayEnd - rayStart;
+                float rayLength = rayVec.length();
+                if (rayLength < 0.001f)
+                    continue;
+
+                osg::Vec3f rayNorm = rayVec / rayLength;
+                osg::Vec3f toBody = bodyPos - rayStart;
+                float t = toBody * rayNorm;
+
+                // Clamp t to ray segment
+                t = std::clamp(t, 0.0f, rayLength);
+
+                // Closest point on ray
+                osg::Vec3f closestPointOnRay = rayStart + rayNorm * t;
+                float distToRay = (bodyPos - closestPointOnRay).length();
+
+                // Check if this body is close enough to the ray (within ~30 units)
+                constexpr float grabRadius = 30.0f;
+                if (distToRay < grabRadius && t < closestDistance)
+                {
+                    closestDistance = t;
+                    closestRagdoll = ragdoll.get();
+                    closestBodyIndex = i;
+                    closestHitPoint = closestPointOnRay;
+                }
+            }
+        }
+
+        if (!closestRagdoll || closestBodyIndex < 0)
+            return false;
+
+        // Set up the grab
+        mGrabbedRagdoll = closestRagdoll;
+        mGrabbedRagdollBodyIndex = closestBodyIndex;
+        mGrabDistance = closestDistance;
+        mGrabTargetPosition = closestHitPoint;
+
+        // Activate the ragdoll
+        closestRagdoll->activate();
+
+        Log(Debug::Verbose) << "Grabbed ragdoll body " << closestBodyIndex
+                            << " of " << closestRagdoll->getPtr().getCellRef().getRefId()
+                            << " at distance " << closestDistance;
+
+        return true;
+    }
+
+    void PhysicsSystem::releaseGrabbedRagdoll(const osg::Vec3f& throwVelocity)
+    {
+        if (!mGrabbedRagdoll)
+            return;
+
+        // Apply throw velocity if provided
+        if (throwVelocity.length2() > 0.01f && mGrabbedRagdollBodyIndex >= 0)
+        {
+            mGrabbedRagdoll->setBodyVelocity(mGrabbedRagdollBodyIndex, throwVelocity);
+        }
+
+        Log(Debug::Verbose) << "Released ragdoll: " << mGrabbedRagdoll->getPtr().getCellRef().getRefId();
+
+        mGrabbedRagdoll = nullptr;
+        mGrabbedRagdollBodyIndex = -1;
+    }
+
+    void PhysicsSystem::updateGrabbedRagdoll(const osg::Vec3f& targetPosition)
+    {
+        if (!mGrabbedRagdoll || mGrabbedRagdollBodyIndex < 0)
+            return;
+
+        // Verify ragdoll is still valid
+        if (!mGrabbedRagdoll->isValid())
+        {
+            Log(Debug::Warning) << "Grabbed ragdoll is invalid, releasing";
+            mGrabbedRagdoll = nullptr;
+            mGrabbedRagdollBodyIndex = -1;
+            return;
+        }
+
+        mGrabTargetPosition = targetPosition;
+
+        // Get current position of the grabbed body
+        osg::Vec3f currentPos = mGrabbedRagdoll->getBodyPosition(mGrabbedRagdollBodyIndex);
+
+        // Calculate displacement to target
+        osg::Vec3f displacement = mGrabTargetPosition - currentPos;
+        float distance = displacement.length();
+
+        // Movement parameters - slightly softer than dynamic objects for ragdoll feel
+        constexpr float moveSpeed = 12.0f;      // How fast the body moves toward target
+        constexpr float maxSpeed = 1200.0f;     // Maximum velocity
+        constexpr float snapDistance = 1.0f;    // Distance at which we consider arrived
+
+        osg::Vec3f targetVelocity;
+
+        if (distance < snapDistance)
+        {
+            // Very close - slow down
+            targetVelocity = displacement * moveSpeed * 0.5f;
+        }
+        else
+        {
+            // Move toward target
+            osg::Vec3f direction = displacement / distance;
+            float speed = std::min(distance * moveSpeed, maxSpeed);
+            targetVelocity = direction * speed;
+        }
+
+        // Set velocity on the grabbed body
+        mGrabbedRagdoll->setBodyVelocity(mGrabbedRagdollBodyIndex, targetVelocity);
+
+        // Reduce angular velocity to prevent spinning
+        mGrabbedRagdoll->setBodyAngularVelocity(mGrabbedRagdollBodyIndex, osg::Vec3f(0, 0, 0));
+
+        // Keep the ragdoll active
+        mGrabbedRagdoll->activate();
+    }
+
+    MWWorld::Ptr PhysicsSystem::getGrabbedRagdollPtr() const
+    {
+        if (mGrabbedRagdoll)
+            return mGrabbedRagdoll->getPtr();
+        return MWWorld::Ptr();
     }
 }

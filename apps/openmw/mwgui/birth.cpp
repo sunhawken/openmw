@@ -9,6 +9,7 @@
 #include <components/esm3/loadbsgn.hpp>
 #include <components/esm3/loadspel.hpp>
 #include <components/misc/resourcehelpers.hpp>
+#include <components/misc/rng.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/settings/values.hpp>
 
@@ -49,6 +50,10 @@ namespace MWGui
         mBirthList->setScrollVisible(true);
         mBirthList->eventListSelectAccept += MyGUI::newDelegate(this, &BirthDialog::onAccept);
         mBirthList->eventListChangePosition += MyGUI::newDelegate(this, &BirthDialog::onSelectBirth);
+
+        MyGUI::Button* rerollButton;
+        getWidget(rerollButton, "RerollButton");
+        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &BirthDialog::onRerollClicked);
 
         getWidget(mBackButton, "BackButton");
         mBackButton->eventMouseButtonClick += MyGUI::newDelegate(this, &BirthDialog::onBackClicked);
@@ -142,6 +147,15 @@ namespace MWGui
     void BirthDialog::onBackClicked(MyGUI::Widget* /*sender*/)
     {
         eventBack();
+    }
+
+    void BirthDialog::onRerollClicked(MyGUI::Widget* /*sender*/)
+    {
+        size_t count = mBirthList->getItemCount();
+        if (count == 0)
+            return;
+        size_t index = Misc::Rng::rollDice(count);
+        setBirthId(*mBirthList->getItemDataAt<ESM::RefId>(index));
     }
 
     void BirthDialog::onSelectBirth(MyGUI::ListBox* /*sender*/, size_t index)

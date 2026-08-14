@@ -282,6 +282,14 @@ namespace MWInput
         mActionManager->executeAction(action);
     }
 
+    void InputManager::executeActionRelease(int action)
+    {
+        // VR keeps its established press-driven activation behavior. The Jolt fork adds
+        // release dispatch for its optional desktop object-grab controls, so satisfy the
+        // shared interface without triggering a second VR action on button release.
+        (void)action;
+    }
+
     void InputManager::injectEscapeKey() 
     {
         SDL_KeyboardEvent arg = {};

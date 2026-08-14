@@ -1,50 +1,65 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-set_directory_properties(PROPERTIES EXCLUDE_FROM_ALL on)
 set(CMAKE_CXX_CLANG_TIDY "")
 
-if(NOT OPENMW_USE_SYSTEM_BULLET)
+# Like `FetchContent_MakeAvailable` but passes EXCLUDE_FROM_ALL to `add_subdirectory`.
+macro(FetchContent_MakeAvailableExcludeFromAll)
+    foreach(contentName IN ITEMS ${ARGV})
+        string(TOLOWER ${contentName} contentNameLower)
+        FetchContent_GetProperties(${contentName})
+        if(NOT ${contentNameLower}_POPULATED)
+            FetchContent_Populate(${contentName})
+            if(EXISTS ${${contentNameLower}_SOURCE_DIR}/CMakeLists.txt)
+                add_subdirectory(${${contentNameLower}_SOURCE_DIR}
+                    ${${contentNameLower}_BINARY_DIR} EXCLUDE_FROM_ALL)
+            elseif(EXISTS ${${contentNameLower}_SOURCE_DIR}/Build/CMakeLists.txt)
+                add_subdirectory(${${contentNameLower}_SOURCE_DIR}/Build
+                    ${${contentNameLower}_BINARY_DIR} EXCLUDE_FROM_ALL)
+            endif()
+        endif()
+    endforeach()
+endmacro()
 
-    set(BUILD_BULLET3 OFF CACHE BOOL "")
-    set(BUILD_EXTRAS OFF CACHE BOOL "")
-    set(BUILD_OPENGL3_DEMOS OFF CACHE BOOL "")
-    set(BUILD_UNIT_TESTS OFF CACHE BOOL "")
-    set(BUILD_BULLET2_DEMOS OFF CACHE BOOL "")
-    set(BUILD_CLSOCKET OFF CACHE BOOL "")
-    set(BUILD_ENET OFF CACHE BOOL "")
-    set(BUILD_CPU_DEMOS OFF CACHE BOOL "")
-    set(BUILD_EGL OFF CACHE BOOL "")
+if(NOT OPENMW_USE_SYSTEM_JOLT)
+    set(JPH_DEBUG_RENDERER ON CACHE BOOL "")
+    set(JPH_PROFILE_ENABLED OFF CACHE BOOL "")
+    add_definitions(-DJPH_DEBUG_RENDERER=1)
 
-    set(USE_DOUBLE_PRECISION ON CACHE BOOL "")
-    set(BULLET2_MULTITHREADING ON CACHE BOOL "")
+    # Use dynamic MSVC runtime library (/MD) to match OpenMW
+    set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF)
 
-    if(BULLET_STATIC)
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    else()
-        set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
-    endif()
+    # Turn RTTI on for Jolt
+    set(CPP_RTTI_ENABLED ON)
 
-    if(MSVC)
-        # this setting is badly named - having it off forces the static runtime library,
-        # but having it on does nothing, letting the defaults get used.
-        # OpenMW uses the defaults, and you can't mix and match.
-        set(USE_MSVC_RUNTIME_LIBRARY_DLL ON CACHE BOOL "" FORCE)
-    endif()
+    # When turning this option on, the library will be compiled using doubles for positions. This allows for much bigger worlds.
+    set(DOUBLE_PRECISION ON)
 
-    # May 7, 2021
+    # When turning this option on, the library will be compiled in such a way to attempt to keep the simulation deterministic across platforms
+    set(CROSS_PLATFORM_DETERMINISTIC OFF)
+
+    # When turning this option on, the library will be compiled with interprocedural optimizations enabled, also known as link-time optimizations or link-time code generation.
+    # Note that if you turn this on you need to use SET_INTERPROCEDURAL_OPTIMIZATION() or set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON) to enable LTO specificly for your own project as well.
+    # If you don't do this you may get an error: /usr/bin/ld: libJolt.a: error adding symbols: file format not recognized
+    set(INTERPROCEDURAL_OPTIMIZATION OFF)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
+
+    # When turning this on, in Debug and Release mode, the library will emit extra code to ensure that the 4th component of a 3-vector is kept the same as the 3rd component 
+    # and will enable floating point exceptions during simulation to detect divisions by zero. 
+    set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF)
+
     include(FetchContent)
-    FetchContent_Declare(bullet
-        URL https://github.com/bulletphysics/bullet3/archive/refs/tags/3.17.tar.gz
-        URL_HASH SHA512=a5105bf5f1dd365a64a350755c7d2c97942f74897a18dcdb3651e6732fd55cc1030a096f5808cf50575281f05e3ac09aa50a48d271a47b94cd61f5167a72b7cc
-        SOURCE_DIR fetched/bullet
+    FetchContent_Declare(joltphysics
+        URL https://github.com/jrouwe/JoltPhysics/archive/refs/tags/v5.3.0.zip
+        URL_HASH SHA512=fd13fb560c503bc4717d0f5b7ae1f523d3fd45d5220354a062f9a1a0324cc1349e7ebf0f5a85db872e10b81a8211c514ce4e1ff17ee6e71a0f83154b8510353d
+        SOURCE_DIR fetched/joltphysics
     )
-    FetchContent_MakeAvailable(bullet)
+    FetchContent_MakeAvailableExcludeFromAll(joltphysics)
+    if (MSVC)
+        target_compile_options(Jolt PRIVATE /wd4865)
+    endif()
 
-    set(BULLET_INCLUDE_DIRS ${bullet_SOURCE_DIR}/src PARENT_SCOPE)
-
-    # The order here is important to work around a bug in Bullet:
-    # https://github.com/bulletphysics/bullet3/issues/3233
-    set(BULLET_LIBRARIES BulletCollision LinearMath PARENT_SCOPE)
+    set(JOLT_INCLUDE_DIRS ${joltphysics_SOURCE_DIR} PARENT_SCOPE)
+    set(JOLT_LIBRARIES Jolt PARENT_SCOPE)
 endif()
 
 if(NOT OPENMW_USE_SYSTEM_MYGUI)
@@ -68,7 +83,7 @@ if(NOT OPENMW_USE_SYSTEM_MYGUI)
         URL_HASH SHA512=c804ef665e786076582367f171082cd2181fdbd214300ddcca4a4245c5a0f45e62e72778ee2d96ec46b393e22477dd729f9bb3006e6eecbf536674e34a057721
         SOURCE_DIR fetched/mygui
     )
-    FetchContent_MakeAvailable(mygui)
+    FetchContent_MakeAvailableExcludeFromAll(mygui)
 
     set(MyGUI_INCLUDE_DIRS ${mygui_SOURCE_DIR}/MyGUIEngine/include PARENT_SCOPE)
     set(MyGUI_LIBRARIES MyGUIEngine PARENT_SCOPE)
@@ -134,7 +149,7 @@ if(NOT OPENMW_USE_SYSTEM_OSG)
         URL_HASH SHA512=9b0a94c1c1d99c767f1857629d43c7a53bfcb74ef760993a121567831e168a1ebbfc10b0c67d7f2241c7b6c6dab2d0e6b876d9f17aca0fabe1a8c86b2279f956
         SOURCE_DIR fetched/osg
     )
-    FetchContent_MakeAvailable(osg)
+    FetchContent_MakeAvailableExcludeFromAll(osg)
 
     set(OPENSCENEGRAPH_INCLUDE_DIRS ${osg_SOURCE_DIR}/include ${osg_BINARY_DIR}/include PARENT_SCOPE)
     set(OSG_LIBRARIES OpenThreads osg PARENT_SCOPE)
@@ -165,7 +180,7 @@ if(NOT OPENMW_USE_SYSTEM_RECASTNAVIGATION)
         URL_HASH SHA512=63db2ac90904764d7f1466d3c95994ec51d777cddd870b70f8ef674c09ed166b3d16ffc4ac1d18d0eab865fda4bf51b6ea17049025b66a338d3cadd0f48dc712
         SOURCE_DIR fetched/recastnavigation
     )
-    FetchContent_MakeAvailable(recastnavigation)
+    FetchContent_MakeAvailableExcludeFromAll(recastnavigation)
 endif()
 
 if (NOT OPENMW_USE_SYSTEM_SQLITE3)
@@ -175,7 +190,7 @@ if (NOT OPENMW_USE_SYSTEM_SQLITE3)
         URL_HASH SHA512=7de291709e88fffc693cf24ac675950cfc35c1bf7631cfea95167105720a05cf37fb943c57c5c985db2eeaa57b31894b3c0df98a7bd2939b5746fc5a24b5ae87
         SOURCE_DIR fetched/sqlite3
     )
-    FetchContent_MakeAvailable(sqlite3)
+    FetchContent_MakeAvailableExcludeFromAll(sqlite3)
 
     add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
     target_include_directories(sqlite3 INTERFACE ${sqlite3_SOURCE_DIR}/)
@@ -193,7 +208,6 @@ if (BUILD_BENCHMARKS AND NOT OPENMW_USE_SYSTEM_BENCHMARK)
     set(BENCHMARK_ENABLE_TESTING OFF)
     set(BENCHMARK_ENABLE_INSTALL OFF)
     set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
-    set(BENCHMARK_ENABLE_WERROR OFF)
 
     include(FetchContent)
     FetchContent_Declare(benchmark
@@ -201,7 +215,7 @@ if (BUILD_BENCHMARKS AND NOT OPENMW_USE_SYSTEM_BENCHMARK)
         URL_HASH SHA512=d73587ad9c49338749e1d117a6f8c7ff9c603a91a2ffa91a7355c7df7dea82710b9a810d34ddfef20973ecdc77092ec10fb2b4e4cc8d2e7810cbed79617b3828
         SOURCE_DIR fetched/benchmark
     )
-    FetchContent_MakeAvailable(benchmark)
+    FetchContent_MakeAvailableExcludeFromAll(benchmark)
 endif()
 
 if (NOT OPENMW_USE_SYSTEM_YAML_CPP)
@@ -218,7 +232,7 @@ if (NOT OPENMW_USE_SYSTEM_YAML_CPP)
         URL_HASH SHA512=9eb328e37ff547e7f681d64e3a8f268a8a5645cb1c258106d1d9f959eec498dfc7c466690c56f210ad7d5fb95b806a30c87ccbb019cccf5c3c6135cfc3c13fe1
         SOURCE_DIR fetched/yaml-cpp
     )
-    FetchContent_MakeAvailable(yaml-cpp)
+    FetchContent_MakeAvailableExcludeFromAll(yaml-cpp)
 
     if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
         target_precompile_headers(yaml-cpp PRIVATE <algorithm>)
@@ -280,7 +294,7 @@ if (NOT OPENMW_USE_SYSTEM_ICU)
     set(ICU_LIBRARIES ICU::i18n ICU::uc ICU::data PARENT_SCOPE)
 endif()
 
-if ((BUILD_COMPONENTS_TESTS OR BUILD_OPENCS_TESTS OR BUILD_OPENMW_TESTS) AND NOT OPENMW_USE_SYSTEM_GOOGLETEST)
+if ((BUILD_UNITTESTS OR BUILD_OPENCS_TESTS) AND NOT OPENMW_USE_SYSTEM_GOOGLETEST)
 
     include(FetchContent)
     FetchContent_Declare(googletest
@@ -291,7 +305,7 @@ if ((BUILD_COMPONENTS_TESTS OR BUILD_OPENCS_TESTS OR BUILD_OPENMW_TESTS) AND NOT
     if (MSVC)
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     endif()
-    FetchContent_MakeAvailable(googletest)
+    FetchContent_MakeAvailableExcludeFromAll(googletest)
 
     add_library(GTest::GTest ALIAS gtest)
     add_library(GMock::GMock ALIAS gmock)
