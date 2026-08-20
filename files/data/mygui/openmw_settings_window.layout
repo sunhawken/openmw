@@ -138,6 +138,56 @@
                         <Property key="Caption" value="#{OMWEngine:Crosshair}"/>
                     </Widget>
                 </Widget>
+
+                <!-- Local (in-game GUI) map zoom/resolution - these already worked via
+                     settings.cfg but had no in-game slider, which was the actual source
+                     of confusion in reports of "adding these lines does nothing" (the
+                     working key is "local map widget size", not "local map hud widget
+                     size" - no such setting exists, easily confused with the unrelated
+                     "local map hud fog of war"). -->
+                <Widget type="TextBox" skin="NormalText" position="4 372 352 18" align="Left Top" name="LocalMapWidgetSizeText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 392 352 18" align="HStretch Top" name="LocalMapWidgetSizeSlider">
+                    <Property key="Range" value="1000"/>
+                    <Property key="Page" value="50"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Map"/>
+                    <UserString key="SettingName" value="local map widget size"/>
+                    <UserString key="SettingValueType" value="Integer"/>
+                    <UserString key="SettingMin" value="128"/>
+                    <UserString key="SettingMax" value="1024"/>
+                    <UserString key="SettingLabelWidget" value="LocalMapWidgetSizeText"/>
+                    <UserString key="SettingLabelCaption" value="LocalMapWidgetSizeValue"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 412 352 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:LocalMapWidgetSizeLow}"/>
+                    <Property key="TextAlign" value="Left"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 412 352 18" align="Right Top">
+                    <Property key="Caption" value="#{OMWEngine:LocalMapWidgetSizeHigh}"/>
+                    <Property key="TextAlign" value="Right"/>
+                </Widget>
+
+                <Widget type="TextBox" skin="NormalText" position="4 438 352 18" align="Left Top" name="LocalMapResolutionText"/>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 458 352 18" align="HStretch Top" name="LocalMapResolutionSlider">
+                    <Property key="Range" value="1000"/>
+                    <Property key="Page" value="50"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Map"/>
+                    <UserString key="SettingName" value="local map resolution"/>
+                    <UserString key="SettingValueType" value="Integer"/>
+                    <UserString key="SettingMin" value="64"/>
+                    <UserString key="SettingMax" value="1024"/>
+                    <UserString key="SettingLabelWidget" value="LocalMapResolutionText"/>
+                    <UserString key="SettingLabelCaption" value="LocalMapResolutionValue"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 478 352 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:LocalMapResolutionLow}"/>
+                    <Property key="TextAlign" value="Left"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 478 352 18" align="Right Top">
+                    <Property key="Caption" value="#{OMWEngine:LocalMapResolutionHigh}"/>
+                    <Property key="TextAlign" value="Right"/>
+                </Widget>
             </Widget>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Audio} "/>
