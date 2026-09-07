@@ -22,6 +22,21 @@ local layersForArrangement = {
     'DialogueWindow', 'MapWindow', 'SpellWindow', 'InventoryWindow', 'StatsWindow', 'InventoryCompanionWindow', 'Windows'
 }
 
+--- Layers of the windows the player can pin open, and nothing else. Any other layer that
+--- happens to still be rendering while the world runs is a transient (loading, a mode
+--- change, a mod's own window) and must be left exactly where it has always been placed.
+local pinnableWindowLayers = {
+    MapWindow = true,
+    InventoryWindow = true,
+    SpellWindow = true,
+    StatsWindow = true,
+}
+
+--- A layer has to keep rendering during gameplay for this many VR frames before it counts
+--- as pinned. Entering the world briefly leaves windows registered while the world is
+--- already running, and moving those would flash them in front of the player for no reason.
+local pinStableFrames = 30
+
 local function getAllLayers()
     local layers = {}
     for _, v in pairs(ui.layers) do
@@ -32,11 +47,16 @@ local function getAllLayers()
 end
 
 local function createDerivedSpaces()
+    -- Where menu windows are placed, relative to the view. Sat slightly left and well below
+    -- the sight line rather than dead centre, so an open window is something the player
+    -- glances down at instead of a panel parked in the middle of their face. The window is
+    -- yawed back towards the player by updateWindowRelativePoses(), and the exact spot can
+    -- be moved in Settings -> OpenMW VR UI settings -> Space Offsets -> DefaultWindowOffset.
     I.vrspaces.createDerivedSpace(
         'DefaultWindow',
         I.vrspaces.referenceSpaces.View,
         {
-            position = util.vector3(0, 1, -0.25) * I.vrspaces.unitsPerMeter,
+            position = util.vector3(-0.18, 1, -0.55) * I.vrspaces.unitsPerMeter,
             orientation = util.transform.identity,
         }
     )
@@ -45,6 +65,19 @@ local function createDerivedSpaces()
         I.vrspaces.referenceSpaces.View,
         {
             position = util.vector3(0, 1, -0.45) * I.vrspaces.unitsPerMeter,
+            orientation = util.transform.identity,
+        }
+    )
+
+    -- Where a window that stays on screen during gameplay (a pinned map, or a mod window
+    -- that keeps drawing while the world is running) is placed. Unlike DefaultWindow this
+    -- space is actively tracked, so the window travels with the player instead of being
+    -- left standing in the world where it happened to be opened.
+    I.vrspaces.createDerivedSpace(
+        'PinnedWindow',
+        I.vrspaces.referenceSpaces.View,
+        {
+            position = util.vector3(-0.45, 1.0, -0.35) * I.vrspaces.unitsPerMeter,
             orientation = util.transform.identity,
         }
     )
@@ -153,6 +186,26 @@ local HUDSpaces = {
     'HUDBottomRight',
 }
 
+--- Placements offered for windows that stay visible while the world is running. The wrist
+--- entries mount the window on the hand the same way the 3D HUD is mounted, so it travels
+--- with the player and can be brought up to the face or dropped out of sight by arm alone.
+--- 'World' keeps the old behaviour: the window is left wherever it was placed.
+local PinnedWindowSpaces = {
+    'LeftWristTop',
+    'LeftWristInner',
+    'RightWristTop',
+    'RightWristInner',
+    'PinnedWindow',
+    'HUDTopLeft',
+    'HUDTopRight',
+    'HUDBottomLeft',
+    'HUDBottomRight',
+    'World',
+}
+
+--- Pixels per meter of a normal menu window, from createDefaultConfig() below.
+local defaultPixelsPerMeter = 1024
+
 -- Wrist spaces do not work in KBM mouse
 local WristSpaceAliases = {
     LeftWristInner = 'HUDTopLeft',
@@ -177,6 +230,20 @@ local function createDefaultConfig(backgroundOpacity, autosize)
 end
 
 local layerConfigOverridden = {}
+
+--- Space that pinned windows are currently tracking, or nil to leave them in the world.
+local pinnedSpace = nil
+--- Size of a pinned window as a fraction of its normal menu size. A full size window
+--- mounted on the wrist would be a billboard strapped to the player's arm.
+local pinnedScale = 1
+--- Layers currently placed in that space, so we only reconfigure a layer when it changes.
+local pinnedLayers = {}
+--- How long each candidate has been rendering during gameplay, in VR frames.
+local pinCandidateFrames = {}
+local neutralPose = {
+    position = util.vector3(0, 0, 0),
+    orientation = util.transform.identity,
+}
 
 local spaceForMode = {
     Default = 'DefaultWindow',
@@ -240,6 +307,17 @@ local function selectSetting(key, items, default)
     }
 end
 
+local function numberSetting(key, default, argument)
+    return {
+        key = key,
+        renderer = 'number',
+        name = key,
+        description = key .. 'Description',
+        default = default,
+        argument = argument,
+    }
+end
+
 local function spaceOffsetSettingKey(space)
     return space..'Offset'
 end
@@ -268,6 +346,8 @@ local function registerSettingsGroup()
         settings = {
             selectSetting('HUDSpace', HUDSpaces),
             selectSetting('TooltipSpace', HUDSpaces),
+            selectSetting('PinnedWindowSpace', PinnedWindowSpaces),
+            numberSetting('PinnedWindowScale', 0.35, { min = 0.1, max = 1 }),
             boolSetting('DialogueSpace', true),
         },
     })
@@ -282,7 +362,8 @@ local function registerSettingsGroup()
         },
     })
     local spaceOffsetSettings = {
-        spaceOffsetSetting('DefaultWindow')
+        spaceOffsetSetting('DefaultWindow'),
+        spaceOffsetSetting('PinnedWindow'),
     }
     for _, v in ipairs(HUDSpaces) do
         spaceOffsetSettings[#spaceOffsetSettings+1] = spaceOffsetSetting(v, false)
@@ -336,10 +417,28 @@ local function updateSpacesSettings()
         spaceForMode.Dialogue = nil
     end
 
+    pinnedSpace = common.spacesSection:get('PinnedWindowSpace')
+    if pinnedSpace == 'World' then
+        pinnedSpace = nil
+    end
+    pinnedScale = tonumber(common.spacesSection:get('PinnedWindowScale')) or 1
+    if pinnedScale < 0.1 then pinnedScale = 0.1 end
+    if pinnedScale > 1 then pinnedScale = 1 end
+
     -- Wrist spaces do not work in KBM mouse
     if I.vrinputs and I.vrinputs.isKBMouseMode() then
         configHUD3D.space = WristSpaceAliases[configHUD3D.space]
         configTooltip.space = WristSpaceAliases[configTooltip.space]
+        if pinnedSpace then
+            pinnedSpace = WristSpaceAliases[pinnedSpace] or pinnedSpace
+        end
+    end
+
+    -- A layer pointed at a space that does not exist gets no tracking at all, which would
+    -- drop the window at the world origin. Leave those windows in the world instead.
+    if pinnedSpace and not vr._spaceExists(pinnedSpace) then
+        print('VR UI: pinned window space "'..tostring(pinnedSpace)..'" is unavailable, leaving pinned windows in the world')
+        pinnedSpace = nil
     end
 
     setLayerConfigIfNotOverridden('HUD_3D', configHUD3D)
@@ -347,6 +446,7 @@ local function updateSpacesSettings()
 
     for _, space in ipairs(HUDSpaces) do
         local disabled = (space ~= configHUD3D.space) and (space ~= configTooltip.space)
+            and (space ~= pinnedSpace)
         I.Settings.updateRendererArgument(common.
             spaceOffsetGroupKey,
             spaceOffsetSettingKey(space),
@@ -433,12 +533,61 @@ local function updateLayerArrangement()
     end
 end
 
+--- Windows that keep rendering while the world is running are pinned: the player closed
+--- the menu but asked to keep looking at the window. Placing those in a tracked space
+--- hands their pose to the engine, so they follow the player every frame instead of being
+--- world locked at the spot the menu happened to be opened in, and they stop being shoved
+--- back into the player's face by the arrangement pass every time some other layer appears.
+--- Returns true when a layer changed state, so the caller knows to push the new configs.
+local function updatePinnedLayers(isPaused)
+    local changed = false
+
+    for layer in pairs(pinnableWindowLayers) do
+        local config = layerConfig[layer]
+        if config and not layerConfigOverridden[layer] then
+            local candidate = (not isPaused) and pinnedSpace ~= nil and vr._isLayerRendering(layer)
+            if candidate then
+                pinCandidateFrames[layer] = (pinCandidateFrames[layer] or 0) + 1
+            else
+                pinCandidateFrames[layer] = nil
+            end
+
+            -- Unpin the moment the window goes away, but only pin once it has stayed put.
+            local pin = candidate and pinCandidateFrames[layer] >= pinStableFrames
+            -- Mounted on the wrist or tucked into a corner, a window is drawn smaller than
+            -- the same window opened as a menu.
+            local wantedPixelsPerMeter = pin and (defaultPixelsPerMeter / pinnedScale) or defaultPixelsPerMeter
+            local wantedSpace = pin and pinnedSpace or nil
+
+            if pin ~= (pinnedLayers[layer] == true) then
+                pinnedLayers[layer] = pin or nil
+                config.space = wantedSpace
+                config.pixelsPerMeter = wantedPixelsPerMeter
+                if pin then
+                    -- A tracked layer's own pose is applied on top of its space,
+                    -- so it has to be neutral while the space does the placing.
+                    setLayerPoseIfNotOverridden(layer, neutralPose)
+                end
+                changed = true
+            elseif pin and (config.space ~= wantedSpace or config.pixelsPerMeter ~= wantedPixelsPerMeter) then
+                -- The player changed the placement or the size while a window was pinned.
+                config.space = wantedSpace
+                config.pixelsPerMeter = wantedPixelsPerMeter
+                changed = true
+            end
+        end
+    end
+
+    return changed
+end
+
 local function updateVisibleLayers()
     local old = visibleLayersForArrangement
     visibleLayersForArrangement = {}
 
     for _, layer in ipairs(layersForArrangement) do
-        if vr._isLayerRendering(layer) then
+        -- Pinned layers are placed by their space, so they take no part in the arrangement.
+        if vr._isLayerRendering(layer) and not pinnedLayers[layer] then
             visibleLayersForArrangement[#visibleLayersForArrangement + 1] = layer
         end
     end
@@ -488,6 +637,11 @@ end
 
 local function overrideLayerConfig(layer, v)
     layerConfigOverridden[layer] = v
+    if v then
+        -- The mod owns this layer now, so forget our pinning state for it. If the
+        -- override is lifted later, the next frame re-evaluates it from scratch.
+        pinnedLayers[layer] = nil
+    end
 end
 
 createDerivedSpaces()
@@ -531,7 +685,11 @@ local function onVRFrame()
     -- We only want to update the reference poses when the user enters GUI mode. Otherwise, the windows will be actively tracking
     -- them which is weird, uncomfortable, and impractical.
     local isPaused = core.isWorldPaused()
-    if (isPaused and not wasPaused) or updateVisibleLayers() then
+    -- Both of these keep their own state and have to run every frame, so neither may be
+    -- skipped by short circuiting the condition below.
+    local pinningChanged = updatePinnedLayers(isPaused)
+    local arrangementChanged = updateVisibleLayers()
+    if (isPaused and not wasPaused) or pinningChanged or arrangementChanged then
         update()
     end
 

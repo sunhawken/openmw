@@ -25,6 +25,7 @@ end
 
 local rightHanded = true
 local pointerRight = false
+local bPressedWhileMenuOpen = false
 local pointerLeft = false
 local physicalSneak = false
 local physicalSneakMessage = true
@@ -56,6 +57,18 @@ input.registerTriggerHandler('MenuBack', async:callback(function()
 end))
 
 common.setOnInputChangedBoolean(function(path, action)
+    -- Keep B's normal Inventory binding in gameplay, but make the same
+    -- physical button act as Back whenever an inventory/menu is open.
+    -- Boolean triggers fire on release, matching the rest of the VR input UI.
+    if path == '/user/hand/right/input/b/click' then
+        if action.valueBoolean then
+            bPressedWhileMenuOpen = I.UI.getMode() ~= nil or core.isWorldPaused()
+        elseif bPressedWhileMenuOpen then
+            bPressedWhileMenuOpen = false
+            ui._menuBack()
+            return
+        end
+    end
     if not action.valueBoolean then
         if not controlsAllowed() then
             -- The settingsrenderer script doesn't process inputs itself, so we need to send
