@@ -684,10 +684,6 @@ namespace MWRender
 
         if (wasArrowAttached)
             attachArrow();
-
-        // Equipment/body just changed: rebuild the jiggle seam-weld map so rigid
-        // meshes worn over jiggle bodies can have their boundary vertices welded.
-        mSeamWelder.build(mObjectRoot.get());
     }
 
     PartHolderPtr NpcAnimation::insertBoundedPart(VFS::Path::NormalizedView model, std::string_view bonename,
