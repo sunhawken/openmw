@@ -269,8 +269,14 @@ namespace MWLua
         api["removeVfx"] = [context](const SelfObject& object, std::string_view effectId) {
             context.mLuaManager->addAction(
                 [object = Object(object), effectId = std::string(effectId)] {
-                    MWRender::Animation* anim = getMutableAnimationOrThrow(object);
-                    anim->removeEffect(effectId);
+                    // VFX removal is deferred until after Lua returns.  An actor can
+                    // legitimately lose its render animation in that interval (for
+                    // example on death, unload, or an armature swap).  Removal is
+                    // then already unnecessary; do not turn that benign race into a
+                    // logged DelayedAction error every frame.
+                    auto world = MWBase::Environment::get().getWorld();
+                    if (MWRender::Animation* anim = world->getAnimation(object.ptr()))
+                        anim->removeEffect(effectId);
                 },
                 "removeVfxAction");
         };
@@ -278,8 +284,9 @@ namespace MWLua
         api["removeAllVfx"] = [context](const SelfObject& object) {
             context.mLuaManager->addAction(
                 [object = Object(object)] {
-                    MWRender::Animation* anim = getMutableAnimationOrThrow(object);
-                    anim->removeEffects();
+                    auto world = MWBase::Environment::get().getWorld();
+                    if (MWRender::Animation* anim = world->getAnimation(object.ptr()))
+                        anim->removeEffects();
                 },
                 "removeVfxAction");
         };
