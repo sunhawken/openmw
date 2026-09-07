@@ -17,8 +17,6 @@
 #include "luamanagerimp.hpp"
 #include "objectlists.hpp"
 
-#include <vector>
-
 namespace
 {
     template <class T = MWWorld::Ptr>
@@ -26,27 +24,18 @@ namespace
     {
         std::vector<T> ignore;
 
-        if (const auto& ignoreObj = options.get<sol::optional<sol::object>>("ignore"))
+        if (const auto& ignoreObj = options.get<sol::optional<MWLua::LObject>>("ignore"))
         {
-            if (ignoreObj->is<MWLua::LObject>())
-                ignore.push_back(ignoreObj->as<MWLua::LObject>().ptr());
-            else if (ignoreObj->is<MWLua::LObjectList>())
-            {
-                for (const MWLua::ObjectId& id : *ignoreObj->as<MWLua::LObjectList>().mIds)
+            ignore.push_back(ignoreObj->ptr());
+        }
+        else if (const auto& ignoreTable = options.get<sol::optional<sol::table>>("ignore"))
+        {
+            ignoreTable->for_each([&](const auto& _, const sol::object& value) {
+                if (value.is<MWLua::LObject>())
                 {
-                    ignore.push_back(MWLua::LObject(id).ptr());
+                    ignore.push_back(value.as<MWLua::LObject>().ptr());
                 }
-            }
-            else
-            {
-                // ignoreObj->as throws if the type doesn't match, but an unchecked value.as crashes...
-                ignoreObj->as<sol::lua_table>().for_each([&](sol::object _, sol::object value) {
-                    if (value.is<MWLua::LObject>())
-                        ignore.push_back(value.as<MWLua::LObject>().ptr());
-                    else
-                        throw std::runtime_error("Table value is not a GameObject");
-                });
-            }
+            });
         }
 
         return ignore;
@@ -94,24 +83,23 @@ namespace MWLua
                       return LObject(getId(r.mHitObject));
               });
 
-        api["COLLISION_TYPE"]
-            = LuaUtil::makeStrictReadOnly(LuaUtil::tableFromPairs<std::string_view, MWPhysics::CollisionType>(lua,
-                {
-                    { "World", MWPhysics::CollisionType_World },
-                    { "Door", MWPhysics::CollisionType_Door },
-                    { "Actor", MWPhysics::CollisionType_Actor },
-                    { "HeightMap", MWPhysics::CollisionType_HeightMap },
-                    { "Projectile", MWPhysics::CollisionType_Projectile },
-                    { "Water", MWPhysics::CollisionType_Water },
-                    { "Default", MWPhysics::CollisionType_Default },
-                    { "AnyPhysical", MWPhysics::CollisionType_AnyPhysical },
-                    { "Camera", MWPhysics::CollisionType_CameraOnly },
-                    { "VisualOnly", MWPhysics::CollisionType_VisualOnly },
-                }));
+        api["COLLISION_TYPE"] = LuaUtil::makeStrictReadOnly(LuaUtil::tableFromPairs<std::string_view, uint16_t>(lua,
+            {
+                { "World", MWPhysics::Layers::WORLD },
+                { "Door", MWPhysics::Layers::DOOR },
+                { "Actor", MWPhysics::Layers::ACTOR },
+                { "HeightMap", MWPhysics::Layers::HEIGHTMAP },
+                { "Projectile", MWPhysics::Layers::PROJECTILE },
+                { "Water", MWPhysics::Layers::WATER },
+                { "Default", MWPhysics::CollisionMask_Default },
+                { "AnyPhysical", MWPhysics::CollisionMask_AnyPhysical },
+                { "Camera", MWPhysics::Layers::CAMERA_ONLY },
+                { "VisualOnly", MWPhysics::Layers::VISUAL_ONLY },
+            }));
 
         api["castRay"] = [](const osg::Vec3f& from, const osg::Vec3f& to, sol::optional<sol::table> options) {
             std::vector<MWWorld::ConstPtr> ignore;
-            int collisionType = MWPhysics::CollisionType_Default;
+            int collisionType = MWPhysics::CollisionMask_Default;
             float radius = 0;
             if (options)
             {

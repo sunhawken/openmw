@@ -133,7 +133,7 @@ namespace MWMechanics
 
         static const int iBlockMaxChance = gmst.find("iBlockMaxChance")->mValue.getInteger();
         static const int iBlockMinChance = gmst.find("iBlockMinChance")->mValue.getInteger();
-        int x = std::clamp<int>(blockerTerm - attackerTerm, iBlockMinChance, iBlockMaxChance);
+        int x = std::clamp(static_cast<int>(blockerTerm - attackerTerm), iBlockMinChance, iBlockMaxChance);
 
         auto& prng = MWBase::Environment::get().getWorld()->getPrng();
         if (Misc::Rng::roll0to99(prng) < x)
@@ -239,7 +239,7 @@ namespace MWMechanics
             if (attacker == getPlayer())
                 MWBase::Environment::get().getWindowManager()->setEnemy(victim);
 
-            int skillValue = attacker.getClass().getSkill(attacker, weaponSkill);
+            int skillValue = static_cast<int>(attacker.getClass().getSkill(attacker, weaponSkill));
 
             if (Misc::Rng::roll0to99(world->getPrng()) >= getHitChance(attacker, victim, skillValue))
             {
@@ -350,12 +350,14 @@ namespace MWMechanics
         if (godmode)
             return;
         auto& prng = MWBase::Environment::get().getWorld()->getPrng();
-        for (int i = 0; i < 3; ++i)
+        static const std::array<ESM::RefId, 3> elementalShieldEffects{ ESM::MagicEffect::FireShield,
+            ESM::MagicEffect::LightningShield, ESM::MagicEffect::FrostShield };
+        for (const auto elementalShieldEffect : elementalShieldEffects)
         {
             float magnitude = victim.getClass()
                                   .getCreatureStats(victim)
                                   .getMagicEffects()
-                                  .getOrDefault(ESM::MagicEffect::FireShield + i)
+                                  .getOrDefault(elementalShieldEffect)
                                   .getMagnitude();
 
             if (!magnitude)
@@ -375,10 +377,10 @@ namespace MWMechanics
 
             float x = std::max(0.f, saveTerm - Misc::Rng::roll0to99(prng));
 
-            int element = ESM::MagicEffect::FireDamage;
-            if (i == 1)
+            ESM::RefId element = ESM::MagicEffect::FireDamage;
+            if (elementalShieldEffect == ESM::MagicEffect::LightningShield)
                 element = ESM::MagicEffect::ShockDamage;
-            if (i == 2)
+            if (elementalShieldEffect == ESM::MagicEffect::FrostShield)
                 element = ESM::MagicEffect::FrostDamage;
 
             float elementResistance
@@ -633,7 +635,7 @@ namespace MWMechanics
             actor.getClass().getCreatureStats(actor).getAiSequence().getCombatTargets(targets);
         else
             MWBase::Environment::get().getMechanicsManager()->getActorsInRange(
-                actorPos, Settings::game().mActorsProcessingRange, targets);
+                actorPos, static_cast<float>(Settings::game().mActorsProcessingRange), targets);
 
         for (MWWorld::Ptr& target : targets)
         {

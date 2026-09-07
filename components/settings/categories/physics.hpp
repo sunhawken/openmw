@@ -21,6 +21,9 @@ namespace Settings
         SettingValue<int> mAsyncNumThreads{ mIndex, "Physics", "async num threads", makeMaxSanitizerInt(0) };
         SettingValue<int> mLineofsightKeepInactiveCache{ mIndex, "Physics", "lineofsight keep inactive cache",
             makeMaxSanitizerInt(-1) };
+        SettingValue<bool> mEnableDynamicObjects{ mIndex, "Physics", "enable dynamic objects" };
+        SettingValue<bool> mEnableBuoyancy{ mIndex, "Physics", "enable buoyancy" };
+        SettingValue<bool> mEnableRagdoll{ mIndex, "Physics", "enable ragdoll" };
     };
 }
 

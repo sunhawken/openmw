@@ -83,6 +83,11 @@ namespace MWGui
         void onOkClicked(MyGUI::Widget* sender);
         void onBackClicked(MyGUI::Widget* sender);
 
+        void onRerollGender(MyGUI::Widget* sender);
+        void onRerollFace(MyGUI::Widget* sender);
+        void onRerollHair(MyGUI::Widget* sender);
+        void onRerollAll(MyGUI::Widget* sender);
+
     private:
         void updateRaces();
         void updateSkills();
@@ -110,7 +115,7 @@ namespace MWGui
         MyGUI::Widget* mSpellPowerList;
         std::vector<MyGUI::Widget*> mSpellPowerItems;
 
-        int mGenderIndex, mFaceIndex, mHairIndex;
+        size_t mGenderIndex, mFaceIndex, mHairIndex;
 
         ESM::RefId mCurrentRaceId;
 

@@ -120,7 +120,7 @@ namespace MWBase
 
         World() {}
 
-        virtual ~World() {}
+        virtual ~World() = default;
 
         virtual void setRandomSeed(uint32_t seed) = 0;
         ///< \param seed The seed used when starting a new game.
@@ -130,8 +130,8 @@ namespace MWBase
 
         virtual void clear() = 0;
 
-        virtual int countSavedGameRecords() const = 0;
-        virtual int countSavedGameCells() const = 0;
+        virtual size_t countSavedGameRecords() const = 0;
+        virtual size_t countSavedGameCells() const = 0;
 
         virtual void write(ESM::ESMWriter& writer, Loading::Listener& listener) const = 0;
 
@@ -195,9 +195,6 @@ namespace MWBase
         virtual MWWorld::Ptr searchPtr(const ESM::RefId& name, bool activeOnly, bool searchInContainers = true) = 0;
         ///< Return a pointer to a liveCellRef with the given name.
         /// \param activeOnly do non search inactive cells.
-
-        virtual MWWorld::Ptr searchPtrViaActorId(int actorId) = 0;
-        ///< Search is limited to the active cells.
 
         virtual MWWorld::Ptr findContainer(const MWWorld::ConstPtr& ptr) = 0;
         ///< Return a pointer to a liveCellRef which contains \a ptr.
@@ -311,8 +308,6 @@ namespace MWBase
         ///< Queues movement for \a ptr (in local space), to be applied in the next call to
         /// doPhysics.
 
-        virtual void updateAnimatedCollisionShape(const MWWorld::Ptr& ptr) = 0;
-
         virtual const MWPhysics::RayCastingInterface* getRayCasting() const = 0;
 
         virtual bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
@@ -375,7 +370,7 @@ namespace MWBase
         virtual void applyDeferredPreviewRotationToPlayer(float dt) = 0;
         virtual void disableDeferredPreviewRotation() = 0;
 
-        virtual void saveLoaded() = 0;
+        virtual void saveLoaded(const ESM::ESMReader& reader) = 0;
 
         virtual void setupPlayer() = 0;
         virtual void renderPlayer() = 0;
@@ -419,6 +414,14 @@ namespace MWBase
             = 0;
 
         virtual void enableActorCollision(const MWWorld::Ptr& actor, bool enable) = 0;
+
+        /// Activate ragdoll physics for a dead actor
+        /// @param actor The dead actor
+        /// @param hitImpulse Optional impulse from the killing blow
+        virtual void activateActorRagdoll(const MWWorld::Ptr& actor, const osg::Vec3f& hitImpulse = osg::Vec3f()) = 0;
+
+        /// Check if an actor has an active ragdoll
+        virtual bool hasRagdoll(const MWWorld::ConstPtr& actor) const = 0;
 
         enum RestFlags
         {
@@ -498,6 +501,25 @@ namespace MWBase
 
         virtual float getPhysicsFrameRateDt() const = 0;
 
+        /// Apply melee hit impulse to dynamic objects in a cone from origin in direction
+        virtual void applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+            float reach, float attackStrength) = 0;
+
+        // Oblivion/Skyrim style object grabbing
+        /// Attempt to grab a dynamic object in front of the player
+        /// @return true if successfully grabbed an object
+        virtual bool grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance) = 0;
+        /// Release the currently grabbed object with optional throw velocity
+        virtual void releaseGrabbedObject(const osg::Vec3f& throwVelocity = osg::Vec3f()) = 0;
+        /// Update the grabbed object's target position (call every frame while holding)
+        virtual void updateGrabbedObject(const osg::Vec3f& targetPosition) = 0;
+        /// Check if currently grabbing an object
+        virtual bool isGrabbingObject() const = 0;
+        /// Get the currently grabbed object
+        virtual MWWorld::Ptr getGrabbedObject() const = 0;
+        /// Get the grab hold distance from camera
+        virtual float getGrabDistance() const = 0;
+
         virtual bool findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result) = 0;
 
         /// Teleports \a ptr to the closest reference of \a id (e.g. DivineMarker, PrisonMarker, TempleMarker)
@@ -529,8 +551,11 @@ namespace MWBase
         virtual void spawnRandomCreature(const ESM::RefId& creatureList) = 0;
 
         virtual void spawnEffect(VFS::Path::NormalizedView model, const std::string& textureOverride,
-            const osg::Vec3f& worldPos, float scale = 1.f, bool isMagicVFX = true, bool useAmbientLight = true)
+            const osg::Vec3f& worldPos, float scale = 1.f, bool isMagicVFX = true, bool useAmbientLight = true,
+            std::string_view effectId = {}, bool loop = false)
             = 0;
+
+        virtual void removeEffect(std::string_view effectId) = 0;
 
         /// @see MWWorld::WeatherManager::isInStorm
         virtual bool isInStorm() const = 0;

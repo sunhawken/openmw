@@ -126,11 +126,12 @@ namespace MWLua
         };
         api["content"] = LuaUi::loadContentConstructor(context.mLua);
 
-        api["create"] = [luaManager = context.mLuaManager, menu](const sol::table& layout) {
-            auto element = LuaUi::Element::make(layout, menu);
-            luaManager->addAction([element] { element->create(); }, "Create UI");
-            return element;
-        };
+        api["create"]
+            = [luaManager = context.mLuaManager, menu](const sol::table& layout, sol::optional<sol::table> options) {
+                  auto element = LuaUi::Element::make(layout, menu, options);
+                  luaManager->addAction([element] { element->create(); }, "Create UI");
+                  return element;
+              };
 
         api["updateAll"] = [luaManager = context.mLuaManager, menu]() {
             LuaUi::Element::forEach(menu, [](LuaUi::Element* e) {
@@ -217,7 +218,7 @@ namespace MWLua
             LuaUi::TextureData data;
             sol::object path = LuaUtil::getFieldOrNil(options, "path");
             if (path.is<std::string>())
-                data.mPath = path.as<std::string>();
+                data.mPath = VFS::Path::Normalized(path.as<std::string>());
             if (data.mPath.empty())
                 throw std::logic_error("Invalid texture path");
             sol::object offset = LuaUtil::getFieldOrNil(options, "offset");
@@ -229,7 +230,10 @@ namespace MWLua
             return luaManager->uiResourceManager()->registerTexture(std::move(data));
         };
 
-        api["screenSize"] = []() { return osg::Vec2f(Settings::video().mResolutionX, Settings::video().mResolutionY); };
+        api["screenSize"] = []() {
+            return osg::Vec2f(
+                static_cast<float>(Settings::video().mResolutionX), static_cast<float>(Settings::video().mResolutionY));
+        };
 
         api["_getAllUiModes"] = [](sol::this_state thisState) {
             sol::table res(thisState, sol::create);
@@ -255,16 +259,16 @@ namespace MWLua
                           if (arg.has_value())
                               ptr = arg->ptr();
                           const std::vector<MWGui::GuiMode>& stack = windowManager->getGuiModeStack();
-                          unsigned common = 0;
+                          size_t common = 0;
                           while (common < std::min(stack.size(), newStack.size()) && stack[common] == newStack[common])
                               common++;
                           // TODO: Maybe disallow opening/closing special modes (main menu, settings, loading screen)
                           // from player scripts. Add new Lua context "menu" that can do it.
-                          for (unsigned i = stack.size() - common; i > 0; i--)
+                          for (size_t i = stack.size() - common; i > 0; i--)
                               windowManager->popGuiMode(true);
                           if (common == newStack.size() && !newStack.empty() && arg.has_value())
                               windowManager->pushGuiMode(newStack.back(), ptr);
-                          for (unsigned i = common; i < newStack.size(); ++i)
+                          for (size_t i = common; i < newStack.size(); ++i)
                               windowManager->pushGuiMode(newStack[i], ptr);
                       },
                       "Set UI modes");
@@ -312,14 +316,14 @@ namespace MWLua
             uiElement["update"] = [luaManager = context.mLuaManager](const std::shared_ptr<LuaUi::Element>& element) {
                 if (element->mState != LuaUi::Element::Created)
                     return;
-                element->mState = LuaUi::Element::Update;
                 luaManager->addAction([element] { element->update(); }, "Update UI");
+                element->mState = LuaUi::Element::Update;
             };
             uiElement["destroy"] = [luaManager = context.mLuaManager](const std::shared_ptr<LuaUi::Element>& element) {
                 if (element->mState == LuaUi::Element::Destroyed)
                     return;
-                element->mState = LuaUi::Element::Destroy;
                 luaManager->addAction([element] { LuaUi::Element::erase(element.get()); }, "Destroy UI");
+                element->mState = LuaUi::Element::Destroy;
             };
 
             auto uiLayer = context.sol().new_usertype<LuaUi::Layer>("UiLayer");
