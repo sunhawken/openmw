@@ -1,6 +1,15 @@
 #include "riggeometry.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <string_view>
+#include <unordered_map>
+
 #include <osg/MatrixTransform>
+#include <osg/TriangleIndexFunctor>
 
 #include <osgUtil/CullVisitor>
 
@@ -140,6 +149,129 @@ namespace SceneUtil
         mSkinToSkelMatrix = nullptr;
         mLastFrameNumber = 0;
         mBoundsFirstFrame = true;
+    }
+
+    void RigGeometry::applyJiggleSeamFeather(float distance)
+    {
+        if (distance <= 0.f || !mData || !mSourceGeometry)
+            return;
+
+        static const std::array<std::string_view, 4> jiggleBones
+            = { "bip01 l breast", "bip01 r breast", "bip01 l butt", "bip01 r butt" };
+
+        std::vector<bool> isJiggle(mData->mBones.size(), false);
+        bool anyJiggle = false;
+        for (std::size_t b = 0; b < mData->mBones.size(); ++b)
+        {
+            for (std::string_view name : jiggleBones)
+            {
+                if (mData->mBones[b].mName == name)
+                {
+                    isJiggle[b] = true;
+                    anyJiggle = true;
+                    break;
+                }
+            }
+        }
+        if (!anyJiggle)
+            return;
+
+        const osg::Vec3Array* verts = dynamic_cast<const osg::Vec3Array*>(mSourceGeometry->getVertexArray());
+        if (!verts || verts->empty())
+            return;
+        const std::size_t nv = verts->size();
+
+        // Open-edge (seam) boundary vertices: edges used by exactly one triangle.
+        struct EdgeCounter
+        {
+            std::unordered_map<std::uint64_t, int>* edges = nullptr;
+            void add(unsigned a, unsigned b)
+            {
+                if (a > b)
+                    std::swap(a, b);
+                (*edges)[(static_cast<std::uint64_t>(a) << 32) | b]++;
+            }
+            void operator()(unsigned i1, unsigned i2, unsigned i3)
+            {
+                add(i1, i2);
+                add(i2, i3);
+                add(i3, i1);
+            }
+        };
+        std::unordered_map<std::uint64_t, int> edges;
+        osg::TriangleIndexFunctor<EdgeCounter> collect;
+        collect.edges = &edges;
+        mSourceGeometry->accept(collect);
+
+        std::vector<osg::Vec3f> boundary;
+        for (const auto& [key, count] : edges)
+        {
+            if (count != 1)
+                continue;
+            const unsigned a = static_cast<unsigned>(key >> 32);
+            const unsigned b = static_cast<unsigned>(key & 0xffffffffu);
+            if (a < nv)
+                boundary.push_back((*verts)[a]);
+            if (b < nv)
+                boundary.push_back((*verts)[b]);
+        }
+        if (boundary.empty())
+            return;
+
+        // Expand the grouped influence data to per-vertex, feather jiggle weights, renormalize.
+        std::vector<BoneWeights> perVertex(nv);
+        for (const auto& influence : mData->mInfluences)
+            for (unsigned short v : influence.second)
+                if (v < nv)
+                    perVertex[v] = influence.first;
+
+        const float invDist = 1.f / distance;
+        for (std::size_t v = 0; v < nv; ++v)
+        {
+            float best = std::numeric_limits<float>::max();
+            const osg::Vec3f& p = (*verts)[v];
+            for (const osg::Vec3f& bp : boundary)
+            {
+                const float d2 = (p - bp).length2();
+                if (d2 < best)
+                    best = d2;
+            }
+            const float factor = std::min(1.f, std::sqrt(best) * invDist);
+            if (factor >= 0.999f)
+                continue;
+
+            BoneWeights& weights = perVertex[v];
+            float jiggleTotal = 0.f;
+            float nonJiggleTotal = 0.f;
+            for (auto& [bone, weight] : weights)
+            {
+                if (bone < isJiggle.size() && isJiggle[bone])
+                    weight *= factor;
+                if (bone < isJiggle.size() && isJiggle[bone])
+                    jiggleTotal += weight;
+                else
+                    nonJiggleTotal += weight;
+            }
+            const float remaining = std::max(0.f, 1.f - jiggleTotal);
+            if (nonJiggleTotal > 1e-6f)
+            {
+                const float s = remaining / nonJiggleTotal;
+                for (auto& [bone, weight] : weights)
+                    if (!(bone < isJiggle.size() && isJiggle[bone]))
+                        weight *= s;
+            }
+            else if (jiggleTotal > 1e-6f)
+            {
+                const float s = 1.f / jiggleTotal;
+                for (auto& [bone, weight] : weights)
+                    weight *= s;
+            }
+            weights.erase(std::remove_if(weights.begin(), weights.end(),
+                              [](const BoneWeight& bw) { return bw.second < 1e-5f; }),
+                weights.end());
+        }
+
+        setInfluences(perVertex);
     }
 
     bool RigGeometry::initFromParentSkeleton(osg::NodeVisitor* nv)
