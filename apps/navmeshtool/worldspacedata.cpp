@@ -171,7 +171,7 @@ namespace NavMeshTool
                     case ESM::REC_CONT:
                     case ESM::REC_DOOR:
                     case ESM::REC_STAT:
-                        f(PhysicsObject(std::move(shapeInstance), cellRef.mPos, cellRef.mScale));
+                        f(PhysicsObject(std::move(shapeInstance), cellRef.mPos, cellRef.mScale), cellRef);
                         break;
                     default:
                         break;
@@ -342,9 +342,8 @@ namespace NavMeshTool
         mAabb.mMax = JPH::Vec3(0, 0, 0);
     }
 
-    WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
-        const VFS::Manager& vfs, Resource::PhysicsShapeManager& physicsShapeManager, const EsmLoader::EsmData& esmData,
-        bool processInteriorCells, bool writeBinaryLog)
+    std::unordered_map<ESM::RefId, std::vector<std::size_t>> collectWorldspaceCells(
+        const EsmLoader::EsmData& esmData, bool processInteriorCells, const std::regex& worldspaceFilter)
     {
         Log(Debug::Info) << "Collecting worldspaces from " << esmData.mCells.size() << " cells...";
 
@@ -385,7 +384,7 @@ namespace NavMeshTool
     }
 
     WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
-        const VFS::Manager& vfs, Resource::BulletShapeManager& bulletShapeManager, const EsmLoader::EsmData& esmData,
+        const VFS::Manager& vfs, Resource::PhysicsShapeManager& physicsShapeManager, const EsmLoader::EsmData& esmData,
         bool writeBinaryLog, ESM::RefId worldspace, std::span<const std::size_t> cells)
     {
         Log(Debug::Info) << "Processing " << cells.size() << " cells from worldspace " << worldspace << "...";
@@ -434,52 +433,42 @@ namespace NavMeshTool
                     manager.addWater(cellPosition, std::numeric_limits<int>::max(), cell.mWater, guard.get());
             }
 
-            forEachObject(cell, esmData, vfs, physicsShapeManager, readers, [&](PhysicsObject object) {
+            forEachObject(cell, esmData, vfs, physicsShapeManager, readers, [&](PhysicsObject object, const CellRef& cellRef) {
                 if (object.getShapeInstance()->mVisualCollisionType != Resource::VisualCollisionType::None)
                     return;
 
                 const JPH::Shape& collisionShape = object.getShape();
                 const auto& transform = object.getWorldTransform();
                 const JPH::AABox aabb = PhysicsSystemHelpers::getAabb(collisionShape, transform);
-                mergeOrAssign(aabb, navMeshInput.mAabb, navMeshInput.mAabbInitialized);
+                mergeOrAssign(aabb, data.mAabb, data.mAabbInitialized);
                 if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.GetPtr())
-                    navMeshInput.mAabb.Encapsulate(PhysicsSystemHelpers::getAabb(*avoid, transform));
+                    data.mAabb.Encapsulate(PhysicsSystemHelpers::getAabb(*avoid, transform));
 
                 const ObjectId objectId(++objectsCounter);
                 const CollisionShape shape(object.getShapeInstance(), collisionShape, object.getObjectTransform());
 
-                if (!navMeshInput.mTileCachedRecastMeshManager.addObject(
-                        objectId, shape, transform, DetourNavigator::AreaType_ground, guard.get()))
+                if (!manager.addObject(objectId, shape, transform, DetourNavigator::AreaType_ground, guard.get()))
                     throw std::logic_error(
                         makeAddObjectErrorMessage(objectId, DetourNavigator::AreaType_ground, shape));
+
+                addedCellRefs.push_back(AddedCellRef{
+                    .mCell = cell.getDescription(),
+                    .mCellRef = cellRef,
+                    .mRange = makeTilesPositionsRange(shape.getShape(), transform, settings.mRecast),
+                });
 
                 if (const JPH::Shape* avoid = object.getShapeInstance()->mAvoidCollisionShape.GetPtr())
                 {
                     const ObjectId avoidObjectId(++objectsCounter);
                     const CollisionShape avoidShape(object.getShapeInstance(), *avoid, object.getObjectTransform());
-                    if (!navMeshInput.mTileCachedRecastMeshManager.addObject(
+                    if (!manager.addObject(
                             avoidObjectId, avoidShape, transform, DetourNavigator::AreaType_null, guard.get()))
                         throw std::logic_error(
-                            makeAddObjectErrorMessage(objectId, DetourNavigator::AreaType_ground, shape));
+                            makeAddObjectErrorMessage(avoidObjectId, DetourNavigator::AreaType_null, avoidShape));
+                }
 
-                    addedCellRefs.push_back(AddedCellRef{
-                        .mCell = cell.getDescription(),
-                        .mCellRef = cellRef,
-                        .mRange = makeTilesPositionsRange(shape.getShape(), transform, settings.mRecast),
-                    });
-
-                    if (const btCollisionShape* avoid = object.getShapeInstance()->mAvoidCollisionShape.get())
-                    {
-                        const ObjectId avoidObjectId(++objectsCounter);
-                        const CollisionShape avoidShape(object.getShapeInstance(), *avoid, object.getObjectTransform());
-                        if (!manager.addObject(
-                                avoidObjectId, avoidShape, transform, DetourNavigator::AreaType_null, guard.get()))
-                            throw std::logic_error(
-                                makeAddObjectErrorMessage(avoidObjectId, DetourNavigator::AreaType_null, avoidShape));
-                    }
-
-                    data.mTilesData->mObjects.emplace_back(std::move(object));
-                });
+                data.mTilesData->mObjects.emplace_back(std::move(object));
+            });
 
             if (writeBinaryLog)
                 serializeToStderr(ProcessedCells{ static_cast<std::uint64_t>(i + 1) });
