@@ -23,21 +23,21 @@ local function deepToString(val, level, prefix)
 end
 
 ---
--- Works like `tostring` but shows also content of tables.
+-- Works like `tostring` but also shows the content of tables.
 -- @function [parent=#util] deepToString
--- @param #any value The value to convert to string
--- @param #number maxDepth Max depth of tables unpacking (optional, 1 by default)
+-- @param #any value The value to convert to a string
+-- @param #number maxDepth Max depth of table unpacking (optional, 1 by default)
 function aux_util.deepToString(value, maxDepth)
     return deepToString(value, maxDepth, '')
 end
 
 ---
--- Finds the element the minimizes `scoreFn`.
+-- Finds the element in the array given the lowest score by `scoreFn`.
 -- @function [parent=#util] findMinScore
 -- @param #table array Any array
 -- @param #function scoreFn Function that returns either nil/false or a number for each element of the array
--- @return element The element the minimizes `scoreFn`
--- @return #number score The output of `scoreFn(element)`
+-- @return element The element given the lowest score
+-- @return #number score The score given to the chosen element by `scoreFn`
 -- @return #number index The index of the chosen element in the array
 -- @usage -- Find the nearest NPC
 -- local nearestNPC, distToNPC = aux_util.findMinScore(
@@ -141,6 +141,19 @@ function aux_util.callMultipleEventHandlers(handlers, ...)
         end
     end
     return false
+end
+
+---
+-- Copies all key-value pairs from the input table to a new table.
+-- @function [parent=#util] shallowCopy
+-- @param #table table The table to copy
+-- @return #table A shallow copy of the input table
+function aux_util.shallowCopy(table)
+    local copy = {}
+    for key, value in pairs(table) do
+        copy[key] = value
+    end
+    return copy
 end
 
 return aux_util

@@ -5,6 +5,7 @@
 
 #include <components/esm3/loadingr.hpp>
 #include <components/esm3/loadnpc.hpp>
+#include <components/settings/values.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/windowmanager.hpp"
@@ -20,6 +21,10 @@
 
 #include "../mwrender/objects.hpp"
 #include "../mwrender/renderinginterface.hpp"
+
+#include "../mwphysics/physicssystem.hpp"
+
+#include <components/vfs/pathutil.hpp>
 
 #include "classmodel.hpp"
 #include "nameorid.hpp"
@@ -37,6 +42,35 @@ namespace MWClass
         if (!model.empty())
         {
             renderingInterface.getObjects().insertModel(ptr, model);
+        }
+    }
+
+    void Ingredient::insertObject(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        insertObjectPhysics(ptr, model, rotation, physics);
+    }
+
+    void Ingredient::insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        if (model.empty())
+            return;
+
+        // Check if dynamic object physics is enabled
+        if (Settings::physics().mEnableDynamicObjects)
+        {
+            // Get the weight of the item to calculate mass
+            float mass = getWeight(ptr);
+            if (mass <= 0.0f)
+                mass = 1.0f; // Minimum mass for very light items
+
+            physics.addDynamicObject(ptr, VFS::Path::toNormalized(model), rotation, mass);
+        }
+        else
+        {
+            // Fall back to static object physics
+            physics.addObject(ptr, VFS::Path::toNormalized(model), rotation, MWPhysics::Layers::WORLD);
         }
     }
 
@@ -71,7 +105,7 @@ namespace MWClass
 
     std::unique_ptr<MWWorld::Action> Ingredient::use(const MWWorld::Ptr& ptr, bool force) const
     {
-        if (ptr.get<ESM::Ingredient>()->mBase->mData.mEffectID[0] < 0)
+        if (ptr.get<ESM::Ingredient>()->mBase->mData.mEffectID[0].empty())
             return std::make_unique<MWWorld::NullAction>();
         std::unique_ptr<MWWorld::Action> action = std::make_unique<MWWorld::ActionEat>(ptr);
 
@@ -131,12 +165,12 @@ namespace MWClass
         MWGui::Widgets::SpellEffectList list;
         for (int i = 0; i < 4; ++i)
         {
-            if (ref->mBase->mData.mEffectID[i] < 0)
+            if (ref->mBase->mData.mEffectID[i].empty())
                 continue;
             MWGui::Widgets::SpellEffectParams params;
             params.mEffectID = ref->mBase->mData.mEffectID[i];
-            params.mAttribute = ESM::Attribute::indexToRefId(ref->mBase->mData.mAttributes[i]);
-            params.mSkill = ESM::Skill::indexToRefId(ref->mBase->mData.mSkills[i]);
+            params.mAttribute = ref->mBase->mData.mAttributes[i];
+            params.mSkill = ref->mBase->mData.mSkills[i];
             params.mKnown = alchemySkill >= fWortChanceValue * (i + 1);
 
             list.push_back(params);

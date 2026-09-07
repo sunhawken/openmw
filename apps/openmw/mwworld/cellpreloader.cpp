@@ -15,7 +15,7 @@
 #include <components/misc/resourcehelpers.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/strings/lower.hpp>
-#include <components/resource/bulletshapemanager.hpp>
+#include <components/resource/physicsshapemanager.hpp>
 #include <components/resource/keyframemanager.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
@@ -68,13 +68,13 @@ namespace MWWorld
     public:
         /// Constructor to be called from the main thread.
         explicit PreloadItem(MWWorld::CellStore* cell, Resource::SceneManager* sceneManager,
-            Resource::BulletShapeManager* bulletShapeManager, Resource::KeyframeManager* keyframeManager,
+            Resource::PhysicsShapeManager* physicsShapeManager, Resource::KeyframeManager* keyframeManager,
             Terrain::World* terrain, MWRender::LandManager* landManager, bool preloadInstances)
             : mIsExterior(cell->getCell()->isExterior())
             , mCellLocation(cell->getCell()->getExteriorCellLocation())
             , mCellId(cell->getCell()->getId())
             , mSceneManager(sceneManager)
-            , mBulletShapeManager(bulletShapeManager)
+            , mPhysicsShapeManager(physicsShapeManager)
             , mKeyframeManager(keyframeManager)
             , mTerrain(terrain)
             , mLandManager(landManager)
@@ -122,19 +122,21 @@ namespace MWWorld
                     if (!vfs.exists(mesh))
                         continue;
 
-                    if (Misc::getFileName(mesh).starts_with('x') && Misc::getFileExtension(mesh) == "nif")
+                    constexpr VFS::Path::ExtensionView nif("nif");
+                    if (Misc::getFileName(mesh).starts_with('x') && mesh.extension() == nif)
                     {
                         kfname = mesh;
-                        kfname.changeExtension("kf");
+                        constexpr VFS::Path::ExtensionView kf("kf");
+                        kfname.changeExtension(kf);
                         if (vfs.exists(kfname))
                             mPreloadedObjects.insert(mKeyframeManager->get(kfname));
                     }
 
                     mPreloadedObjects.insert(mSceneManager->getTemplate(mesh));
                     if (mPreloadInstances)
-                        mPreloadedObjects.insert(mBulletShapeManager->cacheInstance(mesh));
+                        mPreloadedObjects.insert(mPhysicsShapeManager->cacheInstance(mesh));
                     else
-                        mPreloadedObjects.insert(mBulletShapeManager->getShape(mesh));
+                        mPreloadedObjects.insert(mPhysicsShapeManager->getShape(mesh));
                 }
                 catch (const std::exception& e)
                 {
@@ -150,7 +152,7 @@ namespace MWWorld
         ESM::RefId mCellId;
         std::vector<std::string_view> mMeshes;
         Resource::SceneManager* mSceneManager;
-        Resource::BulletShapeManager* mBulletShapeManager;
+        Resource::PhysicsShapeManager* mPhysicsShapeManager;
         Resource::KeyframeManager* mKeyframeManager;
         Terrain::World* mTerrain;
         MWRender::LandManager* mLandManager;
@@ -217,9 +219,9 @@ namespace MWWorld
     };
 
     CellPreloader::CellPreloader(Resource::ResourceSystem* resourceSystem,
-        Resource::BulletShapeManager* bulletShapeManager, Terrain::World* terrain, MWRender::LandManager* landManager)
+        Resource::PhysicsShapeManager* physicsShapeManager, Terrain::World* terrain, MWRender::LandManager* landManager)
         : mResourceSystem(resourceSystem)
-        , mBulletShapeManager(bulletShapeManager)
+        , mPhysicsShapeManager(physicsShapeManager)
         , mTerrain(terrain)
         , mLandManager(landManager)
         , mExpiryDelay(0.0)
@@ -280,7 +282,7 @@ namespace MWWorld
                 return;
         }
 
-        osg::ref_ptr<PreloadItem> item(new PreloadItem(&cell, mResourceSystem->getSceneManager(), mBulletShapeManager,
+        osg::ref_ptr<PreloadItem> item(new PreloadItem(&cell, mResourceSystem->getSceneManager(), mPhysicsShapeManager,
             mResourceSystem->getKeyframeManager(), mTerrain, mLandManager, mPreloadInstances));
         mWorkQueue->addWorkItem(item);
 
@@ -402,7 +404,7 @@ namespace MWWorld
                 mTerrainViews.resize(positions.size());
             else if (mTerrainViews.size() < positions.size())
             {
-                for (unsigned int i = mTerrainViews.size(); i < positions.size(); ++i)
+                for (size_t i = mTerrainViews.size(); i < positions.size(); ++i)
                     mTerrainViews.emplace_back(mTerrain->createView());
             }
 
@@ -456,10 +458,10 @@ namespace MWWorld
 
     void CellPreloader::reportStats(unsigned int frameNumber, osg::Stats& stats) const
     {
-        stats.setAttribute(frameNumber, "CellPreloader Count", mPreloadCells.size());
-        stats.setAttribute(frameNumber, "CellPreloader Added", mAdded);
-        stats.setAttribute(frameNumber, "CellPreloader Evicted", mEvicted);
-        stats.setAttribute(frameNumber, "CellPreloader Loaded", mLoaded);
-        stats.setAttribute(frameNumber, "CellPreloader Expired", mExpired);
+        stats.setAttribute(frameNumber, "CellPreloader Count", static_cast<double>(mPreloadCells.size()));
+        stats.setAttribute(frameNumber, "CellPreloader Added", static_cast<double>(mAdded));
+        stats.setAttribute(frameNumber, "CellPreloader Evicted", static_cast<double>(mEvicted));
+        stats.setAttribute(frameNumber, "CellPreloader Loaded", static_cast<double>(mLoaded));
+        stats.setAttribute(frameNumber, "CellPreloader Expired", static_cast<double>(mExpired));
     }
 }

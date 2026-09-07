@@ -167,7 +167,9 @@ namespace MWRender
 
             std::string mGroupname;
             std::string mStartKey;
+            std::string mStopKey;
 
+            float getCompletion() const;
             float getTime() const { return *mTime; }
             void setTime(float time) { *mTime = time; }
             bool blendMaskContains(size_t blendMask) const { return (mBlendMask & (1 << blendMask)); }
@@ -230,6 +232,15 @@ namespace MWRender
 
         osg::ref_ptr<RotateController> addRotateController(std::string_view bone);
 
+        /// Scans this actor's skeleton for known jiggle-bone names (breast/butt
+        /// secondary-motion bones added by some body-replacer meshes) and attaches
+        /// a JiggleBoneController directly to each one found. Unlike
+        /// addRotateController()/addControllers(), these are not tracked in
+        /// mActiveControllers - they must persist across animation-group changes,
+        /// not be reset by them. Cleanup is automatic: the controllers live on
+        /// nodes owned by mObjectRoot, so they're destroyed with it.
+        void attachJiggleBoneControllers();
+
         bool mHasMagicEffects;
 
         osg::ref_ptr<SceneUtil::LightSource> mGlowLight;
@@ -281,7 +292,8 @@ namespace MWRender
          *      (useful for NPCs, where only the skeleton is needed for the root, and the actual NPC parts are then
          * assembled from separate files).
          */
-        void setObjectRoot(const std::string& model, bool forceskeleton, bool baseonly, bool isCreature);
+        void setObjectRoot(
+            const std::string& model, bool forceskeleton, bool baseonly, bool isCreature, bool enableJiggleBones = false);
 
         void loadAdditionalAnimations(VFS::Path::NormalizedView model, const std::string& baseModel);
 
@@ -315,6 +327,8 @@ namespace MWRender
             const AnimBlendStateData& stateData, const osg::ref_ptr<const SceneUtil::AnimBlendRules>& blendRules,
             const AnimState& active);
 
+        void animationEnded(AnimState& state) const;
+
     public:
         Animation(
             const MWWorld::Ptr& ptr, osg::ref_ptr<osg::Group> parentNode, Resource::ResourceSystem* resourceSystem);
@@ -334,6 +348,9 @@ namespace MWRender
         osg::Group* getOrCreateObjectRoot();
 
         osg::Group* getObjectRoot();
+
+        /// Get the skeleton for this animation, may be nullptr
+        SceneUtil::Skeleton* getSkeleton() { return mSkeleton; }
 
         /**
          * @brief Add an effect mesh attached to a bone or the insert scene node
@@ -411,7 +428,7 @@ namespace MWRender
          * \return True if the animation is active, false otherwise.
          */
         bool getInfo(std::string_view groupname, float* complete = nullptr, float* speedmult = nullptr,
-            size_t* loopcount = nullptr) const;
+            uint32_t* loopcount = nullptr) const;
 
         /// Returns the group name of the animation currently active on that bone group.
         std::string_view getActiveGroup(BoneGroup boneGroup) const;
@@ -430,6 +447,11 @@ namespace MWRender
          * \param groupname Animation group to disable.
          */
         void disable(std::string_view groupname);
+
+        /** Disables all currently playing animations.
+         * Used when ragdoll takes over bone control.
+         */
+        void disableAllAnimations();
 
         /** Retrieves the velocity (in units per second) that the animation will move. */
         float getVelocity(std::string_view groupname) const;

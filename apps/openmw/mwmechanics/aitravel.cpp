@@ -73,12 +73,16 @@ namespace MWMechanics
     bool AiTravel::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, AiState& state, float duration)
     {
+        // Safety check: actor must be valid and in a cell
+        if (actor.isEmpty() || !actor.isInCell())
+            return true;
+
         MWBase::MechanicsManager* mechMgr = MWBase::Environment::get().getMechanicsManager();
         auto& stats = actor.getClass().getCreatureStats(actor);
 
         if (!stats.getMovementFlag(CreatureStats::Flag_ForceJump)
             && !stats.getMovementFlag(CreatureStats::Flag_ForceSneak)
-            && (mechMgr->isTurningToPlayer(actor) || mechMgr->getGreetingState(actor) == GreetingState::InProgress))
+            && mechMgr->getGreetingState(actor) == GreetingState::InProgress)
             return false;
 
         const osg::Vec3f actorPos(actor.getRefData().getPosition().asVec3());

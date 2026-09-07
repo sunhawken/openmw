@@ -95,7 +95,7 @@ namespace MWInput
         std::string getControllerButtonIcon(int button) override;
         std::string getControllerAxisIcon(int axis) override;
 
-        int countSavedGameRecords() const override;
+        size_t countSavedGameRecords() const override;
         void write(ESM::ESMWriter& writer, Loading::Listener& progress) override;
         void readRecord(ESM::ESMReader& reader, uint32_t type) override;
 
@@ -103,6 +103,7 @@ namespace MWInput
         bool isIdle() const override;
 
         void executeAction(int action) override;
+        void executeActionRelease(int action) override;
 
         bool controlsDisabled() override { return mControlsDisabled; }
 

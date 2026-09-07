@@ -20,6 +20,7 @@
 #include "../mwworld/worldmodel.hpp"
 
 #include "../mwgui/tooltips.hpp"
+#include "../mwphysics/physicssystem.hpp"
 
 #include "../mwrender/objects.hpp"
 #include "../mwrender/renderinginterface.hpp"
@@ -47,6 +48,40 @@ namespace MWClass
         if (!model.empty())
         {
             renderingInterface.getObjects().insertModel(ptr, model);
+        }
+    }
+
+    void Miscellaneous::insertObject(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        insertObjectPhysics(ptr, model, rotation, physics);
+    }
+
+    void Miscellaneous::insertObjectPhysics(const MWWorld::Ptr& ptr, const std::string& model, const osg::Quat& rotation,
+        MWPhysics::PhysicsSystem& physics) const
+    {
+        if (model.empty())
+            return;
+
+        // Don't add physics for gold (it's handled specially)
+        if (isGold(ptr))
+            return;
+
+        // Check if dynamic object physics is enabled
+        if (Settings::physics().mEnableDynamicObjects)
+        {
+            // Get the weight of the item to calculate mass
+            // Using weight directly as mass (in game units)
+            float mass = getWeight(ptr);
+            if (mass <= 0.0f)
+                mass = 1.0f; // Minimum mass for very light items
+
+            physics.addDynamicObject(ptr, VFS::Path::toNormalized(model), rotation, mass);
+        }
+        else
+        {
+            // Fall back to static object physics
+            physics.addObject(ptr, VFS::Path::toNormalized(model), rotation, MWPhysics::Layers::WORLD);
         }
     }
 
@@ -90,13 +125,13 @@ namespace MWClass
                 if (Settings::game().mRebalanceSoulGemValues)
                 {
                     // use the 'soul gem value rebalance' formula from the Morrowind Code Patch
-                    float soulValue = 0.0001 * pow(soul, 3) + 2 * soul;
+                    double soulValue = 0.0001 * std::pow(soul, 3) + 2 * soul;
 
                     // for Azura's star add the unfilled value
                     if (ptr.getCellRef().getRefId() == "Misc_SoulGem_Azura")
-                        value += soulValue;
+                        value += static_cast<int>(soulValue);
                     else
-                        value = soulValue;
+                        value = static_cast<int>(soulValue);
                 }
                 else
                     value *= soul;
@@ -195,7 +230,10 @@ namespace MWClass
     {
         MWWorld::Ptr newPtr;
         if (isGold(ptr))
+        {
             newPtr = createGold(cell, getValue(ptr) * count);
+            newPtr.getRefData() = ptr.getRefData();
+        }
         else
         {
             const MWWorld::LiveCellRef<ESM::Miscellaneous>* ref = ptr.get<ESM::Miscellaneous>();

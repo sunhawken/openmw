@@ -104,6 +104,7 @@ add_component_dir (settings
     settingvalue
     shadermanager
     values
+    screenshotsettings
     windowmode
     )
 
@@ -115,11 +116,10 @@ add_component_dir (bsa
     bsafile compressedbsafile ba2gnrlfile ba2dx10file ba2file memorystream
     )
 
-add_component_dir (bullethelpers
+add_component_dir (physicshelpers
     collisionobject
     heightfield
     operators
-    processtrianglecallback
     transformboundingbox
     )
 
@@ -128,8 +128,8 @@ add_component_dir (vfs
     )
 
 add_component_dir (resource
-    scenemanager keyframemanager imagemanager animblendrulesmanager bulletshapemanager bulletshape niffilemanager objectcache multiobjectcache resourcesystem
-    resourcemanager stats animation foreachbulletobject errormarker selectionmarker cachestats bgsmfilemanager
+    scenemanager keyframemanager imagemanager animblendrulesmanager physicsshapemanager physicsshape niffilemanager objectcache multiobjectcache resourcesystem
+    resourcemanager stats animation foreachphysicsobject errormarker cachestats bgsmfilemanager
     )
 
 add_component_dir (shader
@@ -137,7 +137,7 @@ add_component_dir (shader
     )
 
 add_component_dir (sceneutil
-    clone attach visitor util statesetupdater controller skeleton riggeometry morphgeometry lightcontroller
+    clone attach visitor util statesetupdater stateupdater controller skeleton riggeometry morphgeometry lightcontroller
     lightmanager lightutil positionattitudetransform workqueue pathgridutil waterutil writescene serialize optimizer
     detourdebugdraw navmesh agentpath animblendrules shadow mwshadowtechnique recastmesh shadowsbin osgacontroller rtt
     screencapture depth color riggeometryosgaextension extradata unrefqueue lightcommon lightingmethod clearcolor
@@ -152,8 +152,8 @@ add_component_dir (nifosg
     nifloader controller particle matrixtransform fog
     )
 
-add_component_dir (nifbullet
-    bulletnifloader
+add_component_dir (nifjolt
+    joltnifloader
     )
 
 add_component_dir (toutf8
@@ -169,9 +169,6 @@ add_component_dir(esm attr common defs esmcommon records util luascripts format 
     indexrefid
     serializerefid
     esm3exteriorcellrefid
-    quaternion
-    vector3
-    exteriorcelllocation
     )
 
 add_component_dir(fx pass technique lexer lexertypes parseconstants widgets stateupdater)
@@ -189,7 +186,7 @@ add_component_dir (esm3
     weatherstate quickkeys fogstate spellstate activespells creaturelevliststate doorstate projectilestate debugprofile
     aisequence magiceffects custommarkerstate stolenitems transport animationstate controlsstate mappings readerscache
     infoorder timestamp formatversion landrecorddata selectiongroup dialoguecondition
-    refnum
+    refnum actoridconverter
     )
 
 add_component_dir (esmterrain
@@ -313,20 +310,15 @@ add_component_dir (debug
     debugging debuglog gldebug debugdraw writeflags
     )
 
-add_definitions(-DMYGUI_DONT_USE_OBSOLETE=ON)
 IF(NOT WIN32 AND NOT APPLE)
-    add_definitions(-DGLOBAL_DATA_PATH="${GLOBAL_DATA_PATH}")
-    add_definitions(-DGLOBAL_CONFIG_PATH="${GLOBAL_CONFIG_PATH}")
+    add_compile_definitions(GLOBAL_DATA_PATH="${GLOBAL_DATA_PATH}")
+    add_compile_definitions(GLOBAL_CONFIG_PATH="${GLOBAL_CONFIG_PATH}")
 ENDIF()
 add_component_dir (files
     linuxpath androidpath windowspath macospath fixedpath multidircollection collections configurationmanager
     constrainedfilestream memorystream hash configfileparser openfile constrainedfilestreambuf conversion
-    istreamptr streamwithbuffer utils
+    istreamptr streamwithbuffer
     )
-
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    set_source_files_properties(files/configfileparser.cpp PROPERTIES COMPILE_FLAGS -Wno-shadow)
-endif()
 
 add_component_dir (compiler
     context controlparser errorhandler exception exprparser extensions fileparser generator
@@ -367,7 +359,7 @@ add_component_dir (fontloader
 
 add_component_dir (sdlutil
     events
-    gl4esinit
+    gl4es_init
     imagetosurface
     sdlcursormanager
     sdlgraphicswindow
@@ -396,9 +388,9 @@ copy_resource_file("lua_ui/content.lua" "${OPENMW_RESOURCES_ROOT}" "resources/lu
 if(WIN32)
     add_component_dir (crashcatcher
         windowscrashcatcher
-        windowscrashdumppathhelpers
         windowscrashmonitor
         windowscrashshm
+        windowscrashdumppathhelpers
     )
 elseif(NOT ANDROID)
     add_component_dir (crashcatcher
@@ -408,10 +400,10 @@ endif()
 
 add_component_dir(detournavigator
     agentbounds
+    heightfieldmeshbuilder
     areatype
     asyncnavmeshupdater
     bounds
-    cellgridbounds
     changetype
     collisionshapetype
     commulativeaabb
@@ -518,10 +510,8 @@ else ()
         )
 endif()
 
-add_component_dir(testing
-    expecterror
-    util
-)
+set (ESM_UI ${CMAKE_CURRENT_SOURCE_DIR}/contentselector/contentselector.ui
+    )
 
 if (USE_QT)
     add_component_qt_dir (contentselector
@@ -561,16 +551,42 @@ if (USE_QT)
         qtconversion
         )
 
+    QT_WRAP_UI(ESM_UI_HDR ${ESM_UI})
 endif()
 
-include_directories(${BULLET_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+if (MSVC)
+    # these TUs take a lot of memory for codegen
+    # in CI, they often go over the 8GB memory limit if another cl.exe is running at the same time
+    # this option (make sure you're not looking at the docs for the identically-named linker option) stops four codegen threads being spun off
+    # it hurts build time ~33% to enable this unnecessarily, though, so target it to the hungriest boys
+    set_source_files_properties(
+        detournavigator/tilecachedrecastmeshmanager.cpp
+        lua/utilpackage.cpp
+        PROPERTIES
+        COMPILE_OPTIONS /cgthreads1
+    )
+endif()
 
-find_package(SQLite3 REQUIRED)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+if (OPENMW_USE_SYSTEM_SQLITE3)
+    find_package(SQLite3 REQUIRED)
+    if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
+        add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+    endif()
+endif()
 
 add_library(components STATIC ${COMPONENT_FILES})
 
+target_include_directories(components PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(components SYSTEM BEFORE PUBLIC ${JOLT_INCLUDE_DIRS})
+
 if (ANDROID)
     set_property(TARGET components PROPERTY POSITION_INDEPENDENT_CODE ON)
+endif()
+
+if (APPLE)
+    target_compile_definitions(components PUBLIC GL_SILENCE_DEPRECATION=1)
 endif()
 
 target_link_libraries(components
@@ -605,10 +621,12 @@ target_link_libraries(components
     RecastNavigation::Recast
 
     Base64
-    SQLite::SQLite3
+    SQLite3::SQLite3
     smhasher
     ${ICU_LIBRARIES}
     ZLIB::ZLIB
+
+    ${JOLT_LIBRARIES}
     )
 
 if(yaml-cpp_VERSION VERSION_GREATER_EQUAL 0.8.0)
@@ -617,10 +635,8 @@ else()
     target_link_libraries(components yaml-cpp)
 endif()
 
-target_link_libraries(components ${BULLET_LIBRARIES})
-
 if (USE_QT)
-    add_library(components_qt STATIC ${COMPONENT_QT_FILES})
+    add_library(components_qt STATIC ${COMPONENT_QT_FILES} ${ESM_UI_HDR})
     target_link_libraries(components_qt components Qt::Widgets Qt::Core)
 
     if (BUILD_LAUNCHER OR BUILD_WIZARD)
@@ -660,7 +676,10 @@ endif()
 # Make the variable accessible for other subdirectories
 set(COMPONENT_FILES ${COMPONENT_FILES} PARENT_SCOPE)
 
-target_compile_definitions(components PUBLIC BT_USE_DOUBLE_PRECISION)
+target_compile_definitions(components PUBLIC
+    DOUBLE_PRECISION
+    MYGUI_DONT_USE_OBSOLETE=ON
+)
 target_compile_definitions(components PRIVATE OPENMW_DOC_BASEURL="${OPENMW_DOC_BASEURL}")
 
 if(OSG_STATIC)
@@ -693,8 +712,6 @@ endif(OSG_STATIC)
 
 if(USE_QT)
     set_property(TARGET components_qt PROPERTY AUTOMOC ON)
-    set_property(TARGET components_qt PROPERTY AUTOUIC ON)
-    set_property(TARGET components_qt PROPERTY AUTOUIC_SEARCH_PATHS contentselector)
 endif(USE_QT)
 
 if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)

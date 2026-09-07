@@ -8,7 +8,10 @@
 
 #include "base.hpp"
 
-class btCollisionShape;
+namespace JPH
+{
+    class MeshShapeSettings;
+}
 
 namespace Nif
 {
@@ -149,7 +152,7 @@ namespace Nif
         void read(NIFStream* nif) override;
         void post(Reader& nif) override;
 
-        virtual std::unique_ptr<btCollisionShape> getCollisionShape() const
+        virtual std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const
         {
             throw std::runtime_error("NiGeometry::getCollisionShape() called on base class");
         }
@@ -162,7 +165,7 @@ namespace Nif
 
     struct NiTriShape : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct BSSegmentedTriShape : NiTriShape
@@ -183,17 +186,17 @@ namespace Nif
 
     struct NiTriStrips : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct NiLines : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct NiParticles : NiGeometry
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct BSLODTriShape : NiTriShape
@@ -232,6 +235,8 @@ namespace Nif
         {
             float mMinRange;
             float mMaxRange;
+
+            void read(NIFStream* nif);
         };
 
         osg::Vec3f mLODCenter;
@@ -383,6 +388,7 @@ namespace Nif
         NiAlphaPropertyPtr mAlphaProperty;
         BSVertexDesc mVertDesc;
         uint32_t mDataSize;
+        uint16_t mNumVertices;
         std::vector<BSVertexData> mVertData;
         std::vector<unsigned short> mTriangles;
         uint32_t mParticleDataSize;

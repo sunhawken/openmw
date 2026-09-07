@@ -181,7 +181,6 @@ namespace MWWorld
             Loading::Listener* listener);
 
         float feetToGameUnits(float feet);
-        float getActivationDistancePlusTelekinesis();
 
         MWWorld::ConstPtr getClosestMarker(const MWWorld::ConstPtr& ptr, const ESM::RefId& id);
         MWWorld::ConstPtr getClosestMarkerFromExteriorPosition(const osg::Vec3f& worldPos, const ESM::RefId& id);
@@ -214,8 +213,8 @@ namespace MWWorld
 
         void clear() override;
 
-        int countSavedGameRecords() const override;
-        int countSavedGameCells() const override;
+        size_t countSavedGameRecords() const override;
+        size_t countSavedGameCells() const override;
 
         void write(ESM::ESMWriter& writer, Loading::Listener& progress) const override;
 
@@ -287,9 +286,6 @@ namespace MWWorld
         Ptr searchPtr(const ESM::RefId& name, bool activeOnly, bool searchInContainers = false) override;
         ///< Return a pointer to a liveCellRef with the given name.
         /// \param activeOnly do not search inactive cells.
-
-        Ptr searchPtrViaActorId(int actorId) override;
-        ///< Search is limited to the active cells.
 
         MWWorld::Ptr findContainer(const MWWorld::ConstPtr& ptr) override;
         ///< Return a pointer to a liveCellRef which contains \a ptr.
@@ -396,8 +392,6 @@ namespace MWWorld
         ///< Queues movement for \a ptr (in local space), to be applied in the next call to
         /// doPhysics.
 
-        void updateAnimatedCollisionShape(const Ptr& ptr) override;
-
         const MWPhysics::RayCastingInterface* getRayCasting() const override;
 
         bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
@@ -467,7 +461,7 @@ namespace MWWorld
         void applyDeferredPreviewRotationToPlayer(float dt) override;
         void disableDeferredPreviewRotation() override;
 
-        void saveLoaded() override;
+        void saveLoaded(const ESM::ESMReader& reader) override;
 
         void setupPlayer() override;
         void renderPlayer() override;
@@ -512,11 +506,15 @@ namespace MWWorld
 
         void enableActorCollision(const MWWorld::Ptr& actor, bool enable) override;
 
+        void activateActorRagdoll(const MWWorld::Ptr& actor, const osg::Vec3f& hitImpulse = osg::Vec3f()) override;
+
+        bool hasRagdoll(const MWWorld::ConstPtr& actor) const override;
+
         int canRest() const override;
         ///< check if the player is allowed to rest
 
         void rest(double hours) override;
-        void rechargeItems(double duration, bool activeOnly);
+        void rechargeItems(float duration, bool activeOnly);
 
         /// \todo Probably shouldn't be here
         MWRender::Animation* getAnimation(const MWWorld::Ptr& ptr) override;
@@ -586,6 +584,17 @@ namespace MWWorld
 
         float getPhysicsFrameRateDt() const override;
 
+        void applyMeleeHitToDynamicObjects(const osg::Vec3f& origin, const osg::Vec3f& direction,
+            float reach, float attackStrength) override;
+
+        // Oblivion/Skyrim style object grabbing
+        bool grabObject(const osg::Vec3f& rayStart, const osg::Vec3f& rayDir, float maxDistance) override;
+        void releaseGrabbedObject(const osg::Vec3f& throwVelocity = osg::Vec3f()) override;
+        void updateGrabbedObject(const osg::Vec3f& targetPosition) override;
+        bool isGrabbingObject() const override;
+        MWWorld::Ptr getGrabbedObject() const override;
+        float getGrabDistance() const override;
+
         bool findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result) override;
 
         /// Teleports \a ptr to the closest reference of \a id (e.g. DivineMarker, PrisonMarker, TempleMarker)
@@ -611,8 +620,10 @@ namespace MWWorld
         void spawnRandomCreature(const ESM::RefId& creatureList) override;
 
         void spawnEffect(VFS::Path::NormalizedView model, const std::string& textureOverride,
-            const osg::Vec3f& worldPos, float scale = 1.f, bool isMagicVFX = true,
-            bool useAmbientLight = true) override;
+            const osg::Vec3f& worldPos, float scale = 1.f, bool isMagicVFX = true, bool useAmbientLight = true,
+            std::string_view effectId = {}, bool loop = false) override;
+
+        void removeEffect(std::string_view effectId) override;
 
         /// @see MWWorld::WeatherManager::isInStorm
         bool isInStorm() const override;

@@ -205,15 +205,10 @@ namespace LuaUtil
                 using T = std::decay_t<decltype(variant)>;
                 if constexpr (std::is_same_v<T, UnloadedData>)
                 {
-                    const auto& conf = mLua.getConfiguration();
-                    if (scriptId >= 0 && static_cast<size_t>(scriptId) < conf.size())
+                    for (const ESM::LuaScript& script : variant.mScripts)
                     {
-                        const auto& path = conf[scriptId].mScriptPath;
-                        for (const ESM::LuaScript& script : variant.mScripts)
-                        {
-                            if (script.mScriptPath == path)
-                                return true;
-                        }
+                        if (script.mScriptId == scriptId)
+                            return true;
                     }
                     return false;
                 }
@@ -334,8 +329,8 @@ namespace LuaUtil
 
     void ScriptsContainer::insertHandler(std::vector<Handler>& list, int scriptId, sol::function fn)
     {
+        size_t pos = list.size();
         list.emplace_back();
-        int pos = list.size() - 1;
         while (pos > 0 && list[pos - 1].mScriptId > scriptId)
         {
             list[pos] = std::move(list[pos - 1]);
@@ -370,9 +365,9 @@ namespace LuaUtil
                 return;
             }
             EventHandlerList& list = it->second;
-            for (int i = list.size() - 1; i >= 0; --i)
+            for (size_t i = list.size(); i > 0; --i)
             {
-                const Handler& h = list[i];
+                const Handler& h = list[i - 1];
                 try
                 {
                     sol::object res = LuaUtil::call({ this, h.mScriptId }, h.mFn, object);
@@ -443,9 +438,7 @@ namespace LuaUtil
         for (auto& [scriptId, script] : loadedData.mScripts)
         {
             ESM::LuaScript savedScript;
-            // Note: We can not use `scriptPath(scriptId)` here because `save` can be called during
-            // evaluating "reloadlua" command when ScriptsConfiguration is already changed.
-            savedScript.mScriptPath = script.mPath;
+            savedScript.mScriptId = scriptId;
             if (script.mOnSave)
             {
                 try
@@ -475,10 +468,10 @@ namespace LuaUtil
             scripts[scriptId] = { initData, nullptr };
         for (const ESM::LuaScript& s : data.mScripts)
         {
-            std::optional<int> scriptId = cfg.findId(s.mScriptPath);
+            std::optional<int> scriptId = cfg.mapId(s.mScriptId);
             if (!scriptId)
             {
-                Log(Debug::Verbose) << "Ignoring " << mNamePrefix << "[" << s.mScriptPath << "]; script not registered";
+                Log(Debug::Verbose) << "Ignoring " << mNamePrefix << "[" << s.mScriptId << "]; script not registered";
                 continue;
             }
             auto it = scripts.find(*scriptId);
@@ -487,7 +480,7 @@ namespace LuaUtil
             else if (cfg.isCustomScript(*scriptId))
                 scripts[*scriptId] = { cfg[*scriptId].mInitializationData, &s };
             else
-                Log(Debug::Verbose) << "Ignoring " << mNamePrefix << "[" << s.mScriptPath
+                Log(Debug::Verbose) << "Ignoring " << mNamePrefix << "[" << cfg[*scriptId].mScriptPath
                                     << "]; this script is not allowed here";
         }
 
@@ -499,6 +492,7 @@ namespace LuaUtil
                 if (scriptInfo.mSavedData == nullptr)
                     continue;
                 ESM::LuaScript& script = container.mScripts.emplace_back(*scriptInfo.mSavedData);
+                script.mScriptId = scriptId;
                 if (!script.mData.empty())
                 {
                     try
@@ -549,12 +543,11 @@ namespace LuaUtil
             scripts[scriptId] = { initData, nullptr };
         for (const ESM::LuaScript& s : savedScripts)
         {
-            std::optional<int> scriptId = cfg.findId(s.mScriptPath);
-            auto it = scripts.find(*scriptId);
+            auto it = scripts.find(s.mScriptId);
             if (it != scripts.end())
                 it->second.mSavedData = &s;
-            else if (cfg.isCustomScript(*scriptId))
-                scripts[*scriptId] = { cfg[*scriptId].mInitializationData, &s };
+            else if (cfg.isCustomScript(s.mScriptId))
+                scripts[s.mScriptId] = { cfg[s.mScriptId].mInitializationData, &s };
         }
 
         mLua.protectedCall([&](LuaView& view) {
@@ -836,6 +829,11 @@ namespace LuaUtil
         }
         for (auto& [id, mem] : mRemovedScriptsMemoryUsage)
             stats[id].mMemoryUsage += mem;
+    }
+
+    ScriptsContainerWeakPtr ScriptsContainer::getWeakPointer() const
+    {
+        return ScriptsContainerWeakPtr(mThis);
     }
 
     ScriptsContainer::Script::~Script()
