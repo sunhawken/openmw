@@ -986,7 +986,7 @@ namespace MWGui
                 break;
             case MWGui::GM_Inventory:
             default:
-                mControllerButtons.mA = "#{Interface:Equip}";
+                mControllerButtons.mA = "#{Interface:Take}";
                 mControllerButtons.mB = "#{Interface:Back}";
                 mControllerButtons.mX = "#{Interface:Drop}";
                 mControllerButtons.mR2.clear();
@@ -1005,9 +1005,10 @@ namespace MWGui
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
-            if (mGuiMode == MWGui::GM_Inventory)
-                mPendingControllerAction = ControllerAction::Use;
-            else if (mGuiMode == MWGui::GM_Companion || mGuiMode == MWGui::GM_Container)
+            // In the inventory, leave the action as None so pressing A behaves like a left mouse
+            // click: pick the item up into a drag (and drop it again on the next press) instead of
+            // instantly using/equipping it. Equipping is done by dragging onto the avatar paperdoll.
+            if (mGuiMode == MWGui::GM_Companion || mGuiMode == MWGui::GM_Container)
                 mPendingControllerAction = ControllerAction::Transfer;
             else if (mGuiMode == MWGui::GM_Barter)
                 mPendingControllerAction = ControllerAction::Sell;

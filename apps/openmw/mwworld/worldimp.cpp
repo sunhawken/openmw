@@ -903,26 +903,33 @@ namespace MWWorld
 
     MWWorld::Ptr World::getFocusObject()
     {
-        MWWorld::Ptr facedObject;
-
         if (MWBase::Environment::get().getStateManager()->getState() == MWBase::StateManager::State_NoGame)
-            return facedObject;
+            return {};
 
-        if (MWBase::Environment::get().getWindowManager()->isGuiMode()
-            && MWBase::Environment::get().getWindowManager()->isConsoleMode())
-            facedObject = getFocusObject(getMaxActivationDistance() * 50, false);
-        else
+        float maxDistance;
+        const bool inGui = MWBase::Environment::get().getWindowManager()->isGuiMode();
+        if (inGui)
         {
-            float activationDistance = getActivationDistancePlusTelekinesis();
-
-            facedObject = getFocusObject(activationDistance, true);
-
-            if (!facedObject.isEmpty() && !facedObject.getClass().allowTelekinesis(facedObject)
-                && mDistanceToFocusObject > getMaxActivationDistance()
-                && !MWBase::Environment::get().getWindowManager()->isGuiMode())
-                return nullptr;
+            if (MWBase::Environment::get().getWindowManager()->isConsoleMode())
+                return getFocusObject(getMaxActivationDistance() * 50, false);
+            static const int iMaxInfoDist = mStore.get<ESM::GameSetting>().find("iMaxInfoDist")->mValue.getInteger();
+            maxDistance = static_cast<float>(iMaxInfoDist);
         }
-        return facedObject;
+        else
+            maxDistance = getMaxActivationDistance();
+
+        const MWWorld::Ptr player = mPlayer->getPlayer();
+        const float telekinesisMagnitude = player.getClass()
+                                               .getCreatureStats(player)
+                                               .getMagicEffects()
+                                               .getOrDefault(ESM::MagicEffect::Telekinesis)
+                                               .getMagnitude();
+        MWWorld::Ptr focusObject = getFocusObject(maxDistance + feetToGameUnits(telekinesisMagnitude), true);
+
+        if (!focusObject.isEmpty() && mDistanceToFocusObject > maxDistance
+            && !focusObject.getClass().allowTelekinesis(focusObject) && !inGui)
+            return {};
+        return focusObject;
     }
 
     float World::getDistanceToFocusObject()

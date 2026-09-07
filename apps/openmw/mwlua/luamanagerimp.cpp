@@ -151,8 +151,6 @@ namespace MWLua
             Context menuContext = globalContext;
             menuContext.mType = Context::Menu;
 
-            for (const auto& [name, package] : initCommonPackages(globalContext))
-                mLua.addCommonPackage(name, package);
             for (const auto& [name, package] : initGlobalPackages(globalContext))
                 mGlobalScripts.addPackage(name, package);
             for (const auto& [name, package] : initMenuPackages(menuContext))
@@ -163,7 +161,6 @@ namespace MWLua
             mPlayerPackages = initPlayerPackages(localContext);
             mPlayerPackages.insert(mLocalPackages.begin(), mLocalPackages.end());
 
-            LuaUtil::LuaStorage::initLuaBindings(view);
             mGlobalScripts.addPackage("openmw.storage", LuaUtil::LuaStorage::initGlobalPackage(view, &mGlobalStorage));
             mMenuScripts.addPackage(
                 "openmw.storage", LuaUtil::LuaStorage::initMenuPackage(view, &mGlobalStorage, &mPlayerStorage));
@@ -174,7 +171,6 @@ namespace MWLua
             mPlayerStorage.setActive(true);
             mGlobalStorage.setActive(false);
 
-            initConfiguration();
             mInitialized = true;
             mMenuScripts.addAutoStartedScripts();
         });
