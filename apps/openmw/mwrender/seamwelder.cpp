@@ -3,8 +3,10 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 #include <osg/Array>
 #include <osg/Geometry>
@@ -139,6 +141,16 @@ namespace MWRender
         mReferenced.clear();
     }
 
+    namespace
+    {
+        // Cached rest-pose skin data for a jiggle mesh (read once, reused per rigid vertex).
+        struct JiggleMeshData
+        {
+            std::vector<SceneUtil::RigGeometry::BoneInfo> mBones;
+            std::vector<SceneUtil::RigGeometry::BoneWeights> mPerVertex;
+        };
+    }
+
     void SeamWelder::build(osg::Group* objectRoot)
     {
         clear();
@@ -169,44 +181,98 @@ namespace MWRender
         if (jiggleMeshes.empty() || rigidMeshes.empty())
             return;
 
-        // Index all jiggle-mesh rest-pose vertices into a spatial grid.
+        // Index all jiggle-mesh rest-pose vertices into a spatial grid, and cache their skin data.
         VertexGrid grid(threshold);
+        std::unordered_map<SceneUtil::RigGeometry*, JiggleMeshData> jiggleData;
         for (SceneUtil::RigGeometry* rig : jiggleMeshes)
         {
             const osg::Vec3Array* verts = sourceVertices(*rig);
-            if (!verts)
+            if (!verts || verts->empty())
                 continue;
+            JiggleMeshData& data = jiggleData[rig];
+            data.mBones = rig->getBoneInfoList();
+            data.mPerVertex = rig->getPerVertexInfluences(verts->size());
             for (std::size_t i = 0; i < verts->size(); ++i)
                 grid.insert((*verts)[i], rig, i);
         }
 
-        // For each rigid-mesh vertex, weld it to the coincident jiggle-mesh vertex.
-        std::unordered_map<SceneUtil::RigGeometry*, bool> referenced;
+        std::size_t totalWelded = 0;
+        // For each rigid mesh, transplant the coincident jiggle vertex's bone weights onto each
+        // boundary vertex, so ordinary skinning makes it move with the jiggle mesh (no crack).
         for (SceneUtil::RigGeometry* rig : rigidMeshes)
         {
             const osg::Vec3Array* verts = sourceVertices(*rig);
-            if (!verts)
+            if (!verts || verts->empty())
                 continue;
-            std::size_t meshPairs = 0;
+
+            std::vector<SceneUtil::RigGeometry::BoneInfo> bones = rig->getBoneInfoList();
+            std::vector<SceneUtil::RigGeometry::BoneWeights> perVertex = rig->getPerVertexInfluences(verts->size());
+
+            // Bone name -> index in this rigid mesh's (growing) bone table.
+            std::unordered_map<std::string, std::size_t> boneIndex;
+            for (std::size_t b = 0; b < bones.size(); ++b)
+                boneIndex.emplace(bones[b].mName, b);
+
+            std::size_t meshWelded = 0;
             for (std::size_t i = 0; i < verts->size(); ++i)
             {
                 const VertexGrid::Entry* match = grid.nearest((*verts)[i], threshold);
                 if (!match)
                     continue;
+
+                auto dataIt = jiggleData.find(match->mRig);
+                if (dataIt == jiggleData.end())
+                    continue;
+                const JiggleMeshData& src = dataIt->second;
+                if (match->mIndex >= src.mPerVertex.size())
+                    continue;
+                const SceneUtil::RigGeometry::BoneWeights& srcWeights = src.mPerVertex[match->mIndex];
+                if (srcWeights.empty())
+                    continue;
+
+                // Translate the jiggle vertex's weights into this rigid mesh's bone table,
+                // adding any bones (e.g. the jiggle bones) it doesn't already have.
+                SceneUtil::RigGeometry::BoneWeights newWeights;
+                newWeights.reserve(srcWeights.size());
+                for (const auto& [srcBone, weight] : srcWeights)
+                {
+                    if (srcBone >= src.mBones.size())
+                        continue;
+                    const SceneUtil::RigGeometry::BoneInfo& info = src.mBones[srcBone];
+                    auto found = boneIndex.find(info.mName);
+                    std::size_t idx;
+                    if (found != boneIndex.end())
+                        idx = found->second;
+                    else
+                    {
+                        idx = bones.size();
+                        bones.push_back(info);
+                        boneIndex.emplace(info.mName, idx);
+                    }
+                    newWeights.emplace_back(idx, weight);
+                }
+                if (newWeights.empty())
+                    continue;
+
+                perVertex[i] = std::move(newWeights);
                 mPairs.push_back(WeldPair{ rig, i, match->mRig, match->mIndex });
-                referenced[rig] = true;
-                referenced[match->mRig] = true;
-                ++meshPairs;
+                ++meshWelded;
             }
-            if (debug && meshPairs > 0)
-                Log(Debug::Warning) << "Seam welder: rigid mesh welded " << meshPairs << " vertices";
+
+            if (meshWelded > 0)
+            {
+                rig->setBoneInfo(std::move(bones));
+                rig->setInfluences(perVertex);
+                rig->reinitialize();
+                mReferenced.emplace_back(rig);
+                totalWelded += meshWelded;
+                if (debug)
+                    Log(Debug::Warning) << "Seam welder: welded " << meshWelded << " vertices on a rigid mesh";
+            }
         }
 
-        for (auto& [rig, _] : referenced)
-            mReferenced.emplace_back(rig);
-
         if (debug)
-            Log(Debug::Warning) << "Seam welder: built " << mPairs.size() << " weld pairs across "
+            Log(Debug::Warning) << "Seam welder: welded " << totalWelded << " vertices across "
                                 << mReferenced.size() << " meshes";
     }
 }

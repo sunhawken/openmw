@@ -4,6 +4,7 @@
 #include <osg/Geometry>
 #include <osg/Matrixf>
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -67,6 +68,18 @@ namespace SceneUtil
         /// Names of the bones that influence this geometry (empty if not yet initialized).
         /// Used to classify a mesh as jiggle-driven vs. rigid for the seam welder.
         std::vector<std::string> getInfluenceBoneNames() const;
+
+        /// The bone table (name / bind / bounds) this geometry skins against. Empty if unset.
+        std::vector<BoneInfo> getBoneInfoList() const;
+
+        /// Per-vertex bone weights (indices into the bone table), expanded from the internal
+        /// grouped representation. Vertices with no influence get an empty list.
+        std::vector<BoneWeights> getPerVertexInfluences(std::size_t vertexCount) const;
+
+        /// Forget the resolved skeleton/bone pointers so they are re-resolved from the current
+        /// bone table on the next cull. Call after mutating the bone table / influences (e.g.
+        /// the seam welder transplanting jiggle weights) on a geometry that may already be live.
+        void reinitialize();
 
         void accept(osg::NodeVisitor& nv) override;
         bool supports(const osg::PrimitiveFunctor&) const override { return true; }
