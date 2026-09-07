@@ -97,6 +97,18 @@ namespace SceneUtil
         return mSourceGeometry;
     }
 
+    std::vector<std::string> RigGeometry::getInfluenceBoneNames() const
+    {
+        std::vector<std::string> names;
+        if (mData)
+        {
+            names.reserve(mData->mBones.size());
+            for (const BoneInfo& info : mData->mBones)
+                names.push_back(info.mName);
+        }
+        return names;
+    }
+
     bool RigGeometry::initFromParentSkeleton(osg::NodeVisitor* nv)
     {
         const osg::NodePath& path = nv->getNodePath();

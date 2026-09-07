@@ -91,6 +91,17 @@ namespace Settings
             makeClampSanitizerFloat(-50.f, 50.f) };
         SettingValue<float> mJiggleBoneButtZOffset{ mIndex, "Game", "jiggle bone butt z offset",
             makeClampSanitizerFloat(-50.f, 50.f) };
+        // Auto seam welder: runtime-welds boundary vertices of rigid meshes (armor/clothing
+        // that lack jiggle bones) onto the moving jiggle-mesh vertices they were coincident
+        // with at rest pose, closing the visual cracks jiggle otherwise opens at those seams.
+        SettingValue<bool> mJiggleSeamWelding{ mIndex, "Game", "jiggle seam welding" };
+        // Log detection/correspondence details for the seam welder (bone classification and
+        // welded-vertex counts). Throttled.
+        SettingValue<bool> mJiggleSeamWeldDebug{ mIndex, "Game", "jiggle seam weld debug" };
+        // Two vertices from different meshes are treated as the same seam point when their
+        // rest-pose (bind) positions are within this distance, in world units.
+        SettingValue<float> mJiggleSeamWeldThreshold{ mIndex, "Game", "jiggle seam weld threshold",
+            makeClampSanitizerFloat(0.01f, 10.f) };
         // Caps how many enemies can newly enter combat against the player at once (0 = no
         // cap). Only throttles new enemies engaging the player - actors already fighting
         // each other are unaffected, and this does not apply to allies (see below).
