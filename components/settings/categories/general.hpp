@@ -36,6 +36,17 @@ namespace Settings
         // (ported concept from CRDW), especially over a virtual filesystem overlay like MO2. The
         // cache auto-rebuilds when a data directory's modification time changes.
         SettingValue<bool> mVfsDirectoryCache{ mIndex, "General", "vfs directory cache" };
+        // Cap the resolution of mipmapped textures at load time by skipping the top mip level(s)
+        // (no resampling), to save VRAM (ported concept from TextureDownscaler). Max width/height
+        // in pixels; 0 disables.
+        SettingValue<int> mTextureDownscale{ mIndex, "General", "texture downscale",
+            makeClampSanitizerInt(0, 16384) };
+        // Separate cap for normal maps (filenames ending _n, _nm, _msn, _normal). 0 = use the
+        // general "texture downscale" value.
+        SettingValue<int> mTextureDownscaleNormalMaps{ mIndex, "General", "texture downscale normal maps",
+            makeClampSanitizerInt(0, 16384) };
+        // Log each texture that gets downscaled (throttled to Debug::Verbose).
+        SettingValue<bool> mTextureDownscaleDebug{ mIndex, "General", "texture downscale debug" };
     };
 }
 
