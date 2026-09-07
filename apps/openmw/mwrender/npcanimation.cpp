@@ -515,7 +515,9 @@ namespace MWRender
             smodel = Misc::ResourceHelpers::correctActorModelPath(model, mResourceSystem->getVFS());
         }
 
-        setObjectRoot(smodel, true, true, false, true);
+        // Jiggle physics is female-only: attach the jiggle-bone controllers just for female
+        // NPCs and the female player. Male characters get no jiggle at all.
+        setObjectRoot(smodel, true, true, false, isFemale);
 
         updateParts();
 
