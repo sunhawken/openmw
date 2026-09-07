@@ -36,6 +36,10 @@ namespace Settings
         // (ported concept from CRDW), especially over a virtual filesystem overlay like MO2. The
         // cache auto-rebuilds when a data directory's modification time changes.
         SettingValue<bool> mVfsDirectoryCache{ mIndex, "General", "vfs directory cache" };
+        // Memory-map BSA archives and serve their (uncompressed) entries from the demand-paged
+        // mapping instead of buffered file reads, cutting per-asset read latency (ported concept
+        // from Faster-File-Copy's uncompressed path).
+        SettingValue<bool> mBsaMemoryMapping{ mIndex, "General", "bsa memory mapping" };
         // Cap the resolution of mipmapped textures at load time by skipping the top mip level(s)
         // (no resampling), to save VRAM (ported concept from TextureDownscaler). Max width/height
         // in pixels; 0 disables.
