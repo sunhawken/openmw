@@ -49,7 +49,7 @@ local function bindingLabel(isRecording, binding, id)
     return res
 end
 
-local bindingsVersion = 4
+local bindingsVersion = 5
 local bindingsVersionMinSupported = 4
 local bindingSection = common.bindingSection
 local userBindingsSection = common.userBindingsSection
