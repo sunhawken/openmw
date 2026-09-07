@@ -11,6 +11,7 @@
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 
+#include <components/detournavigator/settings.hpp>
 #include <components/detournavigator/tilecachedrecastmeshmanager.hpp>
 #include <components/esm3/loadland.hpp>
 #include <components/misc/convert.hpp>
@@ -44,16 +45,6 @@ namespace NavMeshTool
     using DetourNavigator::RecastSettings;
     using DetourNavigator::TileCachedRecastMeshManager;
 
-    struct WorldspaceNavMeshInput
-    {
-        ESM::RefId mWorldspace;
-        TileCachedRecastMeshManager mTileCachedRecastMeshManager;
-        JPH::AABox mAabb;
-        bool mAabbInitialized = false;
-
-        explicit WorldspaceNavMeshInput(ESM::RefId worldspace, const DetourNavigator::RecastSettings& settings);
-    };
-
     class PhysicsObject
     {
     public:
@@ -80,7 +71,8 @@ namespace NavMeshTool
 
     struct TilesData
     {
-        std::vector<std::unique_ptr<WorldspaceNavMeshInput>> mNavMeshInputs;
+        const RecastSettings mSettings;
+        TileCachedRecastMeshManager mTileCachedRecastMeshManager;
         std::vector<PhysicsObject> mObjects;
         std::vector<std::unique_ptr<ESM::Land::LandData>> mLandData;
         std::vector<std::vector<float>> mHeightfields;
@@ -95,7 +87,7 @@ namespace NavMeshTool
     struct WorldspaceData
     {
         ESM::RefId mWorldspace;
-        btAABB mAabb;
+        JPH::AABox mAabb;
         bool mAabbInitialized = false;
         std::vector<DetourNavigator::TilePosition> mTiles;
         std::shared_ptr<TilesData> mTilesData;
@@ -108,7 +100,7 @@ namespace NavMeshTool
 
     WorldspaceData gatherWorldspaceData(const DetourNavigator::Settings& settings, ESM::ReadersCache& readers,
         const VFS::Manager& vfs, Resource::PhysicsShapeManager& physicsShapeManager, const EsmLoader::EsmData& esmData,
-        bool processInteriorCells, bool writeBinaryLog);
+        bool writeBinaryLog, ESM::RefId worldspace, std::span<const std::size_t> cells);
 }
 
 #endif
