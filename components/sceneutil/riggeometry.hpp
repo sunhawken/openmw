@@ -4,7 +4,9 @@
 #include <osg/Geometry>
 #include <osg/Matrixf>
 
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace SceneUtil
 {
@@ -61,6 +63,10 @@ namespace SceneUtil
         void setRootBone(std::string_view name);
 
         osg::ref_ptr<osg::Geometry> getSourceGeometry() const;
+
+        /// Names of the bones that influence this geometry (empty if not yet initialized).
+        /// Used to classify a mesh as jiggle-driven vs. rigid for the seam welder.
+        std::vector<std::string> getInfluenceBoneNames() const;
 
         void accept(osg::NodeVisitor& nv) override;
         bool supports(const osg::PrimitiveFunctor&) const override { return true; }
