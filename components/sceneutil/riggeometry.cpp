@@ -109,6 +109,39 @@ namespace SceneUtil
         return names;
     }
 
+    std::vector<RigGeometry::BoneInfo> RigGeometry::getBoneInfoList() const
+    {
+        if (mData)
+            return mData->mBones;
+        return {};
+    }
+
+    std::vector<RigGeometry::BoneWeights> RigGeometry::getPerVertexInfluences(std::size_t vertexCount) const
+    {
+        std::vector<BoneWeights> perVertex(vertexCount);
+        if (mData)
+        {
+            for (const auto& influence : mData->mInfluences)
+            {
+                for (unsigned short vertex : influence.second)
+                {
+                    if (vertex < vertexCount)
+                        perVertex[vertex] = influence.first;
+                }
+            }
+        }
+        return perVertex;
+    }
+
+    void RigGeometry::reinitialize()
+    {
+        mSkeleton = nullptr;
+        mNodes.clear();
+        mSkinToSkelMatrix = nullptr;
+        mLastFrameNumber = 0;
+        mBoundsFirstFrame = true;
+    }
+
     bool RigGeometry::initFromParentSkeleton(osg::NodeVisitor* nv)
     {
         const osg::NodePath& path = nv->getNodePath();
