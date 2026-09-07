@@ -13,6 +13,32 @@ TooltipSpace: "Tooltip Space"
 TooltipSpaceDescription: |
     Where in space tooltips should appear. Note that all Wrist options require motion controllers, and do not work in KB+Mouse or gamepad mode.
     
+PinnedWindowSpace: "Pinned window space"
+PinnedWindowSpaceDescription: |
+    Where a window you pin open should sit while you play. The wrist options mount it on your hand the same way the 3D HUD is mounted, so you raise your arm to read it and drop it out of sight again.
+    Any option other than World keeps the window with you as you walk. World leaves it standing where it was opened, which is the old behaviour.
+    Note that all Wrist options require motion controllers, and do not work in KB+Mouse or gamepad mode.
+
+PinnedWindowScale: "Pinned window size"
+PinnedWindowScaleDescription: |
+    How large a pinned window is drawn, as a fraction of its normal size when opened as a menu. Wrist mounted windows need to be small; 1 is full menu size.
+
+PinnedWindow: "In front, lower left"
+World: "World (stays where opened)"
+
+LeftWristTop: "Left wrist, top"
+LeftWristInner: "Left wrist, inner"
+RightWristTop: "Right wrist, top"
+RightWristInner: "Right wrist, inner"
+HUDTopLeft: "View, top left"
+HUDTopRight: "View, top right"
+HUDBottomLeft: "View, bottom left"
+HUDBottomRight: "View, bottom right"
+
+PinnedWindowOffset: "Pinned window position"
+PinnedWindowOffsetDescription: |
+    Adjust exactly where a pinned window sits relative to your view.
+
 DialogueSpace: "Lower dialogue window"
 DialogueSpaceDescription: |
     Lower the dialogue window somewhat to avoid blocking the view of the NPC's head. Can improve immersion, especially with some mods that make the scene less static during dialogue.
