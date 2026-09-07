@@ -1057,6 +1057,37 @@
                     <UserString key="SettingLabelWidget" value="MaxAlliesInCombatText"/>
                     <UserString key="SettingLabelCaption" value="MaxAlliesInCombatValue"/>
                 </Widget>
+
+                <!-- Jiggle feature toggles -->
+                <Widget type="AutoSizedTextBox" skin="NormalText" position="4 582 400 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:JiggleTogglesNote}"/>
+                </Widget>
+                <Widget type="HBox" position="4 604 500 28">
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle auto rig"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText">
+                        <Property key="Caption" value="#{OMWEngine:JiggleAutoRig}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="TextToolTip"/>
+                        <UserString key="Caption_Text" value="#{OMWEngine:JiggleAutoRigTooltip}"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" position="4 634 500 28">
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle seam welding"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText">
+                        <Property key="Caption" value="#{OMWEngine:JiggleSeamWelding}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="TextToolTip"/>
+                        <UserString key="Caption_Text" value="#{OMWEngine:JiggleSeamWeldingTooltip}"/>
+                    </Widget>
+                </Widget>
             </Widget>
         </Widget>
         <Widget type="AutoSizedButton" skin="MW_Button" position="320 420 56 24" align="Right Bottom" name="OkButton">

@@ -13,8 +13,11 @@ namespace MWRender
     /// meshes don't already carry them, so pre-rigging with the .bat tool is optional.
     ///
     /// The caller (NpcAnimation) invokes this only for female actors, after the body
-    /// parts have been attached under @p objectRoot. It no-ops when the feature is off
-    /// or when the body already has jiggle bones (rigged externally by the .bat).
+    /// parts have been attached under @p objectRoot - including on every equip/unequip,
+    /// so it doubles as a resync: it is idempotent (won't re-create existing bones or
+    /// re-paint meshes that already carry them) and paints any newly attached part that
+    /// lacks jiggle bones (e.g. armor equipped over the body). It no-ops when the feature
+    /// is off, or leaves the actor alone if it was rigged externally by the .bat.
     ///
     /// It detects breast/butt anchors from the mesh geometry (autorig.py's band + protrusion
     /// heuristic), injects a jiggle bone as an identity child of the weighted parent bone

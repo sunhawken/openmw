@@ -80,6 +80,23 @@ namespace MWRender
         osg::Vec3f restWorldPos = restTranslation * parentWorldMatrix;
         restWorldPos.z() += manualZOffsetFor(node->getName());
 
+        // Live master off-switch: the "jiggle auto rig" toggle also freezes all jiggle motion.
+        // While off, pin the bone to its rest pose and keep the sim parked at rest (tracking the
+        // parent as it moves) and the clock current - so flipping it back on resumes seamlessly
+        // in-game with no reload and no spring "kick". mInitialized stays true throughout.
+        if (!Settings::game().mJiggleAutoRig)
+        {
+            mSimWorldPos = restWorldPos;
+            mVelocity = osg::Vec3f(0, 0, 0);
+            mLastSimTime = simTime;
+            if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
+                nifTransform->setTranslation(restTranslation);
+            else
+                node->setMatrix(mRestLocalMatrix);
+            traverse(node, nv);
+            return;
+        }
+
         double dt = simTime - mLastSimTime;
         mLastSimTime = simTime;
         if (dt <= 0.0)
