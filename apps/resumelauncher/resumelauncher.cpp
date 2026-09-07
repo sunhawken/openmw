@@ -3,12 +3,13 @@
 // Finds the most recently modified .omwsave file under the user's
 // "Documents\My Games\OpenMW\saves" folder (searched recursively, since
 // saves are organized in one subfolder per character) and launches
-// openmw.exe (expected to sit right next to this .exe) straight into that
+// openmw_vr.exe (expected to sit right next to this .exe) straight into that
 // save via --skip-menu --load-savegame, instead of going through the main
 // menu. All other settings (data paths, mods, graphics) come from the same
 // openmw.cfg/settings.cfg openmw.exe always reads - this doesn't touch or
 // duplicate any of that, it only picks the save file and adds two
-// command-line flags.
+// command-line flags. This VR launcher is intentionally independent from the
+// desktop OpenMW launcher and never falls back to openmw.exe.
 //
 // Windows subsystem app (no console window). Shows a message box on error
 // instead of writing to a console nobody would see.
@@ -100,11 +101,11 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     }
     fs::path selfDir = fs::path(exePathBuf).parent_path();
 
-    fs::path openmwExe = selfDir / L"openmw.exe";
+    fs::path openmwExe = selfDir / L"openmw_vr.exe";
     if (!fs::exists(openmwExe))
     {
-        showError(L"openmw.exe was not found next to ResumeLauncher.exe:\n" + openmwExe.wstring()
-            + L"\n\nPlace ResumeLauncher.exe in the same folder as openmw.exe.");
+        showError(L"openmw_vr.exe was not found next to the OpenMW-VR ResumeLauncher.exe:\n" + openmwExe.wstring()
+            + L"\n\nPlace this VR ResumeLauncher.exe in the same folder as openmw_vr.exe.");
         return 1;
     }
 
@@ -138,7 +139,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     if (!ok)
     {
         DWORD err = GetLastError();
-        showError(L"Failed to launch openmw.exe (error " + std::to_wstring(err) + L").");
+        showError(L"Failed to launch openmw_vr.exe (error " + std::to_wstring(err) + L").");
         return 1;
     }
 
