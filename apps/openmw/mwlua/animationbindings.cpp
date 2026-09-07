@@ -269,8 +269,11 @@ namespace MWLua
         api["removeVfx"] = [context](const SelfObject& object, std::string_view effectId) {
             context.mLuaManager->addAction(
                 [object = Object(object), effectId = std::string(effectId)] {
-                    MWRender::Animation* anim = getMutableAnimationOrThrow(object);
-                    anim->removeEffect(effectId);
+                    // The target can have been disabled or had its animation detached between
+                    // the Lua call and this delayed renderer action. Cleanup is then a no-op.
+                    auto world = MWBase::Environment::get().getWorld();
+                    if (MWRender::Animation* anim = world->getAnimation(object.ptr()))
+                        anim->removeEffect(effectId);
                 },
                 "removeVfxAction");
         };
@@ -278,8 +281,10 @@ namespace MWLua
         api["removeAllVfx"] = [context](const SelfObject& object) {
             context.mLuaManager->addAction(
                 [object = Object(object)] {
-                    MWRender::Animation* anim = getMutableAnimationOrThrow(object);
-                    anim->removeEffects();
+                    // See removeVfx: an absent renderer animation needs no cleanup.
+                    auto world = MWBase::Environment::get().getWorld();
+                    if (MWRender::Animation* anim = world->getAnimation(object.ptr()))
+                        anim->removeEffects();
                 },
                 "removeVfxAction");
         };
