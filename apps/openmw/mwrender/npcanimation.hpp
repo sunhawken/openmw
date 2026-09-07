@@ -3,6 +3,7 @@
 
 #include "actoranimation.hpp"
 #include "animation.hpp"
+#include "seamwelder.hpp"
 #include "weaponanimation.hpp"
 
 #include <components/vfs/pathutil.hpp>
@@ -49,6 +50,9 @@ namespace MWRender
         // Bounded Parts
         PartHolderPtr mObjectParts[ESM::PRT_Count];
         std::array<MWSound::Sound*, ESM::PRT_Count> mSounds;
+
+        // Jiggle seam welder: rebuilt on equipment/body change (see updateParts).
+        SeamWelder mSeamWelder;
 
         const ESM::NPC* mNpc;
         VFS::Path::Normalized mHeadModel;
