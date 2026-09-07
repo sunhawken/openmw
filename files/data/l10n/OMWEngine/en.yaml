@@ -263,6 +263,15 @@ MaxActorsInCombatValue: "Max Actors In Combat With Player ({value})"
 MaxActorsInCombatOff: "Off"
 MaxActorsInCombatMax: "50"
 MaxAlliesInCombatValue: "Max Allies In Combat ({value})"
+JiggleTogglesNote: "Enable or disable the in-engine jiggle features."
+JiggleAutoRig: "In-Game Auto Jiggle"
+JiggleAutoRigTooltip: |-
+    Master switch for jiggle. When on, jiggle physics play and female bodies that lack jiggle bones are rigged automatically (so pre-rigging meshes with the Add Jiggle Bones tool is optional).
+    Turning it off freezes all jiggle instantly; turning it on resumes it. Auto-rigging of a body applies when it is next loaded (reload a save or re-equip).
+JiggleSeamWelding: "Jiggle Seam Fixer"
+JiggleSeamWeldingTooltip: |-
+    Feathers jiggle weights to zero at mesh seams so the cracks jiggle opens between body parts/clothing are closed.
+    Takes effect when a mesh is next loaded (reload a save or re-equip).
 
 # Controller button names
 

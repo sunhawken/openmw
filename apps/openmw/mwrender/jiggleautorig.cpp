@@ -14,8 +14,10 @@
 #include <osg/Group>
 #include <osg/MatrixTransform>
 #include <osg/NodeVisitor>
+#include <osg/ValueObject>
 
 #include <components/debug/debuglog.hpp>
+#include <components/misc/strings/algorithm.hpp>
 #include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/skeleton.hpp>
 #include <components/settings/values.hpp>
@@ -30,6 +32,10 @@ namespace MWRender
 
         constexpr std::array<std::string_view, 4> sJiggleBones
             = { "bip01 l breast", "bip01 r breast", "bip01 l butt", "bip01 r butt" };
+
+        // Marks a bone node we injected (an identity child of its parent), so on a resync we can
+        // tell it apart from an externally-rigged (.bat) jiggle bone that has its own bind offset.
+        constexpr const char* sAutoRigMarker = "openmw_autorig";
 
         // Mirrors autorig.py BREAST_CONFIG / BUTT_CONFIG (anchor band) + weight paint params.
         struct Config
@@ -208,35 +214,57 @@ namespace MWRender
         if (rc.mRigs.empty())
             return;
 
-        for (Rig* rig : rc.mRigs)
-            for (const std::string& name : rig->getInfluenceBoneNames())
-                for (std::string_view jb : sJiggleBones)
-                    if (name == jb)
-                    {
-                        if (debug)
-                            Log(Debug::Warning) << "Jiggle auto-rig: body already rigged; skipping";
-                        return;
-                    }
-
         SkeletonFinder sf;
         objectRoot->accept(sf);
         if (!sf.mSkeleton)
             return;
         SceneUtil::Skeleton* skeleton = sf.mSkeleton;
 
-        // 1) Create the jiggle bone nodes (identity children of their weighted parent bone) and
-        //    attach the spring controller. Anchors are computed for weight painting only.
+        // Detect only the jiggle bones WE injected on an earlier pass (marked identity children of
+        // the parent bone) so a resync doesn't recreate them. Pre-existing skeleton jiggle bone
+        // nodes - e.g. from a jiggle-bones-skeleton mod - are not ours; we ignore them and drive the
+        // body with our own identity-child bones, whose bind pose we control. A mesh that already
+        // carries jiggle WEIGHTS (rigged by the .bat) is skipped per-mesh further below.
+        std::array<bool, 4> haveOurBone = { false, false, false, false };
+        for (std::size_t t = 0; t < sTargets.size(); ++t)
+        {
+            SceneUtil::Bone* parent = skeleton->getBone(std::string(sTargets[t].mConfig.mParent));
+            if (!parent || !parent->mNode)
+                continue;
+            osg::Group* parentNode = parent->mNode;
+            for (unsigned int c = 0; c < parentNode->getNumChildren(); ++c)
+            {
+                osg::Node* child = parentNode->getChild(c);
+                if (!Misc::StringUtils::ciEqual(child->getName(), std::string(sTargets[t].mBoneNode)))
+                    continue;
+                bool ours = false;
+                child->getUserValue(sAutoRigMarker, ours);
+                if (ours)
+                {
+                    haveOurBone[t] = true;
+                    break;
+                }
+            }
+        }
+
+        // Anchors are recomputed each pass from whatever meshes are currently attached, so a piece
+        // equipped later (e.g. armor covering the chest) is painted from its own geometry.
         std::array<std::optional<osg::Vec3f>, 4> anchors;
+        for (std::size_t t = 0; t < sTargets.size(); ++t)
+        {
+            const auto lz = landmarkZ(rc.mRigs, sTargets[t].mConfig.mLandmark);
+            if (lz)
+                anchors[t] = findAnchor(rc.mRigs, sTargets[t].mConfig, sTargets[t].mLeft, *lz);
+        }
+
+        // 1) Create any jiggle bone nodes that don't exist yet (identity children of their weighted
+        //    parent bone) and attach the spring controller. Idempotent across equip/unequip resyncs.
         bool addedAny = false;
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
+            if (haveOurBone[t] || !anchors[t])
+                continue;
             const Target& tgt = sTargets[t];
-            const auto lz = landmarkZ(rc.mRigs, tgt.mConfig.mLandmark);
-            if (!lz)
-                continue;
-            anchors[t] = findAnchor(rc.mRigs, tgt.mConfig, tgt.mLeft, *lz);
-            if (!anchors[t])
-                continue;
 
             SceneUtil::Bone* parent = skeleton->getBone(std::string(tgt.mConfig.mParent));
             if (!parent || !parent->mNode)
@@ -251,35 +279,49 @@ namespace MWRender
             osg::ref_ptr<osg::MatrixTransform> boneNode = new osg::MatrixTransform(osg::Matrix::identity());
             boneNode->setName(std::string(tgt.mBoneNode));
             boneNode->setDataVariance(osg::Object::DYNAMIC);
+            boneNode->setUserValue(sAutoRigMarker, true);
             parent->mNode->addChild(boneNode);
             boneNode->addUpdateCallback(new JiggleBoneController(debug));
+            haveOurBone[t] = true;
             addedAny = true;
             if (debug)
                 Log(Debug::Warning) << "Jiggle auto-rig: added bone " << tgt.mBoneNode << " under "
                                     << tgt.mConfig.mParent << " anchor " << anchors[t]->x() << "," << anchors[t]->y()
                                     << "," << anchors[t]->z();
         }
-        if (!addedAny)
-            return;
 
-        // Rebuild the bone cache/hierarchy so the new bones resolve by name.
-        skeleton->markDirty();
+        // Rebuild the bone cache/hierarchy so newly added bones resolve by name. (Adding a child deep
+        // in the bone tree doesn't trigger Skeleton::childInserted, so invalidate the cache manually.)
+        if (addedAny)
+            skeleton->markDirty();
 
-        // 2) Paint weights: for each body mesh that weights a target's parent, add the jiggle bone
-        //    (using that mesh's own parent inverse-bind, so the rest pose is exact) + cone weights.
+        // 2) Paint weights: for each attached mesh that doesn't already carry jiggle bones and weights
+        //    a target's parent, add the jiggle bone (reusing that mesh's parent inverse-bind so the
+        //    rest pose is exact) + cone weights. Meshes already carrying jiggle bones (rigged by the
+        //    .bat, or painted on an earlier pass) are skipped, so a resync only touches new parts.
+        int paintedMeshes = 0;
         for (Rig* rig : rc.mRigs)
         {
             const osg::Vec3Array* verts = sourceVerts(*rig);
             if (!verts || verts->empty())
                 continue;
             std::vector<std::string> names = rig->getInfluenceBoneNames();
+
+            bool alreadyRigged = false;
+            for (const std::string& name : names)
+                for (std::string_view jb : sJiggleBones)
+                    if (name == jb)
+                        alreadyRigged = true;
+            if (alreadyRigged)
+                continue;
+
             std::vector<Rig::BoneInfo> bones = rig->getBoneInfoList();
             std::vector<Rig::BoneWeights> perVertex = rig->getPerVertexInfluences(verts->size());
 
             bool rigChanged = false;
             for (std::size_t t = 0; t < sTargets.size(); ++t)
             {
-                if (!anchors[t])
+                if (!haveOurBone[t] || !anchors[t])
                     continue;
                 const Target& tgt = sTargets[t];
                 const int parentIdx = boneIndex(names, tgt.mConfig.mParent);
@@ -316,10 +358,11 @@ namespace MWRender
                 rig->reinitialize();
                 if (Settings::game().mJiggleSeamWelding)
                     rig->applyJiggleSeamFeather(Settings::game().mJiggleSeamWeldThreshold);
+                ++paintedMeshes;
             }
         }
 
         if (debug)
-            Log(Debug::Warning) << "Jiggle auto-rig: done";
+            Log(Debug::Warning) << "Jiggle auto-rig: resync done, painted " << paintedMeshes << " mesh(es)";
     }
 }
