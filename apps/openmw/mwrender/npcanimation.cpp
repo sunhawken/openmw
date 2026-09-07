@@ -40,6 +40,7 @@
 #include "../mwbase/world.hpp"
 
 #include "actorutil.hpp"
+#include "jiggleautorig.hpp"
 #include "postprocessor.hpp"
 #include "renderbin.hpp"
 #include "renderingmanager.hpp"
@@ -686,6 +687,11 @@ namespace MWRender
 
         if (wasArrowAttached)
             attachArrow();
+
+        // In-engine auto jiggle rigger (female only): add breast/butt jiggle bones to a female
+        // body that doesn't already have them. Runs here so the body parts are present.
+        if (!mNpc->isMale())
+            JiggleAutoRig::run(mObjectRoot.get());
     }
 
     PartHolderPtr NpcAnimation::insertBoundedPart(VFS::Path::NormalizedView model, std::string_view bonename,

@@ -1,6 +1,7 @@
 #include "jigglebonecontroller.hpp"
 
 #include <components/debug/debuglog.hpp>
+#include <components/misc/strings/algorithm.hpp>
 #include <components/nifosg/matrixtransform.hpp>
 #include <components/settings/values.hpp>
 
@@ -22,9 +23,11 @@ namespace MWRender
         // doesn't otherwise know if it's on a breast or butt bone.
         float manualZOffsetFor(const std::string& boneName)
         {
-            if (boneName.find("Breast") != std::string::npos)
+            // Case-insensitive: auto-rigged bones are named "Bip01 L Breast" while some
+            // externally-rigged NIFs use lowercase "bip01 l breast".
+            if (Misc::StringUtils::ciFind(boneName, "breast") != std::string::npos)
                 return Settings::game().mJiggleBoneBreastZOffset;
-            if (boneName.find("Butt") != std::string::npos)
+            if (Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos)
                 return Settings::game().mJiggleBoneButtZOffset;
             return 0.f;
         }
