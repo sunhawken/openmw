@@ -202,6 +202,13 @@ namespace MWLua
         api["_setLayerPickable"] = [&guiManager = MWVR::VRGUIManager::instance()](const std::string& layer,
                                        bool pickable) { guiManager.setLayerPickable(layer, pickable); };
 
+        // True while the pointer is aimed at a GUI panel, false while it is aimed past every
+        // panel at the world. This is the same test the engine itself uses to decide whether
+        // a pointer press is a click on a window or an interaction with the world, so a mod
+        // that implements its own inventory can make that same distinction.
+        api["_pointerHasGuiFocus"]
+            = [&guiManager = MWVR::VRGUIManager::instance()]() -> bool { return guiManager.hasFocus(); };
+
         api["_setPointerLeft"] = [&inputManager = MWVR::VRInputManager::instance()](
                                      bool enabled) { inputManager.setPointerLeft(enabled); };
 

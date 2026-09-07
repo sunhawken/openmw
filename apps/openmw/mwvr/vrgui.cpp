@@ -260,13 +260,54 @@ namespace MWVR
         , mPickable()
         , mVrLayer()
     {
+        // Deliberately only the engine's own layers. A mod's full-screen "drag blocker"
+        // style layer must NOT become a pointer target: it would swallow the ray for the
+        // whole screen and stop the pointer ever reaching the world behind it.
         setPickable(defaultPickableLayers.contains(layerName));
     }
 
     void VRGUILayer::setConfig(const LayerConfig& config)
     {
+        // A dirty layer is torn down and rebuilt from scratch on the next update: RTT camera,
+        // swapchain/geometry, the lot. The UI scripts re-send every layer's config whenever
+        // anything at all changes (a window opening, entering menu mode, a settings change),
+        // so treating every call as a change made visible menus blink -- most obviously a
+        // pinned window during gameplay, which is re-sent while the player can see it.
+        // Only rebuild when the configuration genuinely differs, and even then only when the
+        // difference is one the built resources depend on. A window being pinned changes the
+        // space it tracks and how large it is drawn, and neither of those needs a rebuild --
+        // rebuilding would drop its rendered texture for a frame or two, which the player
+        // sees as a black panel hanging in front of them.
+        if (mConfig)
+        {
+            if (*mConfig == config)
+                return;
+
+            const bool rebuild = mConfig->needsRebuild(config);
+            const bool spaceChanged = mConfig->space != config.space;
+            mConfig = config;
+
+            if (rebuild)
+                mDirty = true;
+            else if (spaceChanged)
+                mSpaceDirty = true;
+            return;
+        }
+
         mDirty = true;
         mConfig = config;
+    }
+
+    void VRGUILayer::updateSpace()
+    {
+        mSpaceDirty = false;
+        mSpaceIsLost = false;
+        if (mConfig && !mConfig->space.empty())
+            mSpace = OpenXRInput::instance().getSpace(mConfig->space);
+        else
+            // A layer can also stop tracking a space, and must then fall back to its own
+            // pose instead of staying stuck to the space it used to follow.
+            mSpace = nullptr;
     }
 
     void VRGUILayer::clear()
@@ -488,6 +529,9 @@ namespace MWVR
 
         updateVisibility();
 
+        if (mSpaceDirty && !mDirty)
+            updateSpace();
+
         if (mDirty)
         {
             clear();
@@ -506,8 +550,7 @@ namespace MWVR
                 osg::Vec4(0, 0, 0, mConfig->opacity), mMyGUICamera);
             mGUIRTT = rttNode;
 
-            if (!mConfig->space.empty())
-                mSpace = OpenXRInput::instance().getSpace(mConfig->space);
+            updateSpace();
 
             if (mVrLayer)
             {
@@ -802,15 +845,19 @@ namespace MWVR
 
     void VRGUIManager::clear()
     {
+        std::scoped_lock lock(mMutex);
         mGeometries->removeChildren(0, mGeometries->getNumChildren());
         mGUICameras->removeChildren(0, mGUICameras->getNumChildren());
         setFocusLayer(nullptr);
         mLayers.clear();
+        mLuaElementLayers.clear();
     }
 
     void VRGUIManager::clearLua() {
+        std::scoped_lock lock(mMutex);
         for (auto& layer : mLayers)
             layer.second->clearLua();
+        mLuaElementLayers.clear();
     }
 
     static std::set<std::string> layerBlacklist = {
@@ -913,6 +960,11 @@ namespace MWVR
 
     void VRGUIManager::update(osg::NodeVisitor* nv)
     {
+        // Runs on the cull thread, walking both the layer map and each layer's list of Lua
+        // elements. The Lua thread adds and removes both, under this same mutex, so this
+        // traversal has to hold it too -- otherwise a layer can be read while it is being
+        // rewritten. None of the work below re-enters the manager, so this cannot deadlock.
+        std::scoped_lock lock(mMutex);
         for (auto& layer : mLayers)
             layer.second->update(nv);
     }
@@ -1101,6 +1153,12 @@ namespace MWVR
 
     void VRGUIManager::registerLuaElement(const LuaUi::Element* element)
     {
+        // An element that is re-registered may have moved to a different layer since last
+        // time. Drop the old registration first, or the layer it used to live on keeps a
+        // pointer that nothing will ever remove -- and that pointer is dereferenced every
+        // frame, long after the element is gone.
+        deregisterLuaElement(element);
+
         const auto& layer = element->mLayer;
         if (layer.empty())
         {
@@ -1108,21 +1166,23 @@ namespace MWVR
             return;
         }
 
-        auto* vrLayer = getLayer(layer);
-        vrLayer->addLuaElement(element);
+        std::scoped_lock lock(mMutex);
+        getLayer(layer)->addLuaElement(element);
+        mLuaElementLayers[element] = layer;
     }
 
     void VRGUIManager::deregisterLuaElement(const LuaUi::Element* element)
     {
-        const auto& layer = element->mLayer;
-        if (layer.empty())
-        {
-            // Don't know what to do with these
-            return;
-        }
+        std::scoped_lock lock(mMutex);
 
-        auto* vrLayer = getLayer(layer);
-        vrLayer->removeLuaElement(element);
+        // Deregister from the layer the element was actually registered on, which is not
+        // necessarily the one it names now.
+        auto it = mLuaElementLayers.find(element);
+        if (it == mLuaElementLayers.end())
+            return;
+
+        getLayer(it->second)->removeLuaElement(element);
+        mLuaElementLayers.erase(it);
     }
 
     bool VRGUIManager::isLayerRendering(const std::string& layer) {
