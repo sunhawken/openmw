@@ -1,10 +1,13 @@
 #include "registerarchives.hpp"
 
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <set>
 #include <stdexcept>
 
 #include <components/debug/debuglog.hpp>
+#include <components/files/conversion.hpp>
 
 #include <components/vfs/bsaarchive.hpp>
 #include <components/vfs/filesystemarchive.hpp>
@@ -12,9 +15,27 @@
 
 namespace VFS
 {
+    namespace
+    {
+        // Deterministic, collision-resistant cache file name for a data directory (FNV-1a of its path).
+        std::filesystem::path makeCacheFilePath(const std::filesystem::path& cacheDir, const std::filesystem::path& dataDir)
+        {
+            const std::string key = Files::pathToUnicodeString(dataDir);
+            std::uint64_t hash = 1469598103934665603ULL;
+            for (const unsigned char ch : key)
+            {
+                hash ^= ch;
+                hash *= 1099511628211ULL;
+            }
+            char name[32];
+            std::snprintf(name, sizeof(name), "%016llx.vfscache", static_cast<unsigned long long>(hash));
+            return cacheDir / name;
+        }
+    }
 
     void registerArchives(VFS::Manager* vfs, const Files::Collections& collections,
-        const std::vector<std::string>& archives, bool useLooseFiles, const ToUTF8::StatelessUtf8Encoder* encoder)
+        const std::vector<std::string>& archives, bool useLooseFiles, const ToUTF8::StatelessUtf8Encoder* encoder,
+        const std::filesystem::path& cacheDir)
     {
         const Files::PathContainer& dataDirs = collections.getPaths();
 
@@ -42,7 +63,10 @@ namespace VFS
                 {
                     Log(Debug::Info) << "Adding data directory " << dataDir;
                     // Last data dir has the highest priority
-                    vfs->addArchive(std::make_unique<FileSystemArchive>(dataDir));
+                    std::filesystem::path cacheFile;
+                    if (!cacheDir.empty())
+                        cacheFile = makeCacheFilePath(cacheDir, dataDir);
+                    vfs->addArchive(std::make_unique<FileSystemArchive>(dataDir, cacheFile));
                 }
                 else
                     Log(Debug::Info) << "Ignoring duplicate data directory " << dataDir;

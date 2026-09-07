@@ -32,6 +32,10 @@ namespace Settings
         SettingValue<bool> mGmstOverridesL10n{ mIndex, "General", "gmst overrides l10n" };
         SettingValue<std::size_t> mLogBufferSize{ mIndex, "General", "log buffer size" };
         SettingValue<std::size_t> mConsoleHistoryBufferSize{ mIndex, "General", "console history buffer size" };
+        // Cache each loose-file data directory's recursive directory walk to speed up startup
+        // (ported concept from CRDW), especially over a virtual filesystem overlay like MO2. The
+        // cache auto-rebuilds when a data directory's modification time changes.
+        SettingValue<bool> mVfsDirectoryCache{ mIndex, "General", "vfs directory cache" };
     };
 }
 
