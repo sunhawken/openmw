@@ -41,10 +41,24 @@ namespace Settings
         // in pixels; 0 disables.
         SettingValue<int> mTextureDownscale{ mIndex, "General", "texture downscale",
             makeClampSanitizerInt(0, 16384) };
-        // Separate cap for normal maps (filenames ending _n, _nm, _msn, _normal). 0 = use the
-        // general "texture downscale" value.
+        // Per-type caps identified by filename suffix. 0 = use the general "texture downscale" value.
+        // Normal maps: _n, _nm, _msn, _normal.
         SettingValue<int> mTextureDownscaleNormalMaps{ mIndex, "General", "texture downscale normal maps",
             makeClampSanitizerInt(0, 16384) };
+        // Glow/emissive maps: _g, _glow, _e, _em.
+        SettingValue<int> mTextureDownscaleGlowMaps{ mIndex, "General", "texture downscale glow maps",
+            makeClampSanitizerInt(0, 16384) };
+        // Parallax/height maps: _p, _h, _parallax, _height.
+        SettingValue<int> mTextureDownscaleParallaxMaps{ mIndex, "General", "texture downscale parallax maps",
+            makeClampSanitizerInt(0, 16384) };
+        // Material/specular maps: _rmaos, _m, _material, _s, _spec, _specular.
+        SettingValue<int> mTextureDownscaleMaterialMaps{ mIndex, "General", "texture downscale material maps",
+            makeClampSanitizerInt(0, 16384) };
+        // Per-folder overrides that take precedence over the type caps: a comma-separated list of
+        // "path prefix=maxpx" rules (e.g. "textures/tr/=2048, textures/ui/=0"). The longest matching
+        // prefix wins; a rule value of 0 leaves that folder's textures at full size.
+        SettingValue<std::vector<std::string>> mTextureDownscaleFolderRules{ mIndex, "General",
+            "texture downscale folder rules" };
         // Log each texture that gets downscaled (throttled to Debug::Verbose).
         SettingValue<bool> mTextureDownscaleDebug{ mIndex, "General", "texture downscale debug" };
     };
