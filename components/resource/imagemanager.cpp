@@ -2,13 +2,16 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <string_view>
 
 #include <osgDB/Registry>
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/pathhelpers.hpp>
+#include <components/misc/strings/lower.hpp>
 #include <components/sceneutil/glextensions.hpp>
 #include <components/settings/values.hpp>
 #include <components/vfs/manager.hpp>
@@ -78,24 +81,110 @@ namespace
         return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
     }
 
-    // Normal maps get their own size cap. VFS paths are normalized to lower case.
-    bool isNormalMap(std::string_view path)
+    bool startsWith(std::string_view str, std::string_view prefix)
+    {
+        return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    bool endsWithAny(std::string_view stem, std::initializer_list<std::string_view> suffixes)
+    {
+        for (std::string_view suffix : suffixes)
+            if (endsWith(stem, suffix))
+                return true;
+        return false;
+    }
+
+    // Classify a texture by filename suffix so it can get a type-specific cap. VFS paths are
+    // normalized to lower case. Order matters: more specific suffixes are checked first.
+    enum class TextureType
+    {
+        Diffuse,
+        Normal,
+        Glow,
+        Parallax,
+        Material,
+    };
+
+    TextureType classifyTexture(std::string_view path)
     {
         const std::size_t dot = path.rfind('.');
         const std::string_view stem = dot == std::string_view::npos ? path : path.substr(0, dot);
-        return endsWith(stem, "_n") || endsWith(stem, "_nm") || endsWith(stem, "_msn") || endsWith(stem, "_normal");
+        if (endsWithAny(stem, { "_n", "_nm", "_msn", "_normal" }))
+            return TextureType::Normal;
+        if (endsWithAny(stem, { "_g", "_glow", "_e", "_em" }))
+            return TextureType::Glow;
+        if (endsWithAny(stem, { "_p", "_h", "_parallax", "_height" }))
+            return TextureType::Parallax;
+        if (endsWithAny(stem, { "_rmaos", "_m", "_material", "_s", "_spec", "_specular" }))
+            return TextureType::Material;
+        return TextureType::Diffuse;
+    }
+
+    // The per-type cap, inheriting the general value when the type-specific one is 0.
+    int typeCapFor(TextureType type)
+    {
+        const auto& g = Settings::general();
+        const int general = g.mTextureDownscale;
+        int specific = 0;
+        switch (type)
+        {
+            case TextureType::Normal:
+                specific = g.mTextureDownscaleNormalMaps;
+                break;
+            case TextureType::Glow:
+                specific = g.mTextureDownscaleGlowMaps;
+                break;
+            case TextureType::Parallax:
+                specific = g.mTextureDownscaleParallaxMaps;
+                break;
+            case TextureType::Material:
+                specific = g.mTextureDownscaleMaterialMaps;
+                break;
+            case TextureType::Diffuse:
+                break;
+        }
+        return specific > 0 ? specific : general;
+    }
+
+    // A per-folder override, if any, for @p path: the longest matching "prefix=cap" rule. Returns
+    // true and sets @p outCap (which may be 0 = leave full size) when a folder rule applies.
+    bool folderRuleCapFor(std::string_view path, int& outCap)
+    {
+        const auto& rules = Settings::general().mTextureDownscaleFolderRules.get();
+        std::size_t bestLen = 0;
+        bool found = false;
+        for (const std::string& rule : rules)
+        {
+            const std::size_t eq = rule.rfind('=');
+            if (eq == std::string::npos)
+                continue;
+            std::string prefix = Misc::StringUtils::lowerCase(rule.substr(0, eq));
+            for (char& c : prefix)
+                if (c == '\\')
+                    c = '/';
+            std::size_t begin = prefix.find_first_not_of(" \t");
+            std::size_t end = prefix.find_last_not_of(" \t");
+            if (begin == std::string::npos)
+                continue;
+            const std::string_view trimmed(prefix.data() + begin, end - begin + 1);
+            if (trimmed.size() > bestLen && startsWith(path, trimmed))
+            {
+                bestLen = trimmed.size();
+                outCap = std::atoi(rule.c_str() + eq + 1);
+                found = true;
+            }
+        }
+        return found;
     }
 
     // The largest-dimension cap (in pixels) to apply to this texture, or 0 for "leave full size".
+    // Per-folder rules take precedence over per-type caps.
     int downscaleCapFor(std::string_view path)
     {
-        const int general = Settings::general().mTextureDownscale;
-        if (isNormalMap(path))
-        {
-            const int normal = Settings::general().mTextureDownscaleNormalMaps;
-            return normal > 0 ? normal : general;
-        }
-        return general;
+        int folderCap = 0;
+        if (folderRuleCapFor(path, folderCap))
+            return folderCap;
+        return typeCapFor(classifyTexture(path));
     }
 
     // Number of top mip levels to drop so the base dimension is <= cap, keeping at least one level.
