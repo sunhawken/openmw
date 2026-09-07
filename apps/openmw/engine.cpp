@@ -736,7 +736,13 @@ void OMW::Engine::prepareEngine()
 
     mVFS = std::make_unique<VFS::Manager>();
 
-    VFS::registerArchives(mVFS.get(), mFileCollections, mArchives, true, &mEncoder.get()->getStatelessEncoder());
+    // Optional: cache each loose-file data directory's recursive walk to speed up startup (ported
+    // concept from CRDW), especially over a virtual filesystem overlay like MO2. Opt-in setting.
+    std::filesystem::path vfsCacheDir;
+    if (Settings::general().mVfsDirectoryCache)
+        vfsCacheDir = mCfgMgr.getCachePath() / "vfs";
+    VFS::registerArchives(
+        mVFS.get(), mFileCollections, mArchives, true, &mEncoder.get()->getStatelessEncoder(), vfsCacheDir);
 
     mResourceSystem = std::make_unique<Resource::ResourceSystem>(
         mVFS.get(), Settings::cells().mCacheExpiryDelay, &mEncoder.get()->getStatelessEncoder());
