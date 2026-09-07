@@ -18,6 +18,7 @@
 #include <components/misc/strings/format.hpp>
 
 #include <components/vfs/manager.hpp>
+#include <components/bsa/bsafile.hpp>
 #include <components/vfs/registerarchives.hpp>
 
 #include <components/sdlutil/imagetosurface.hpp>
@@ -735,6 +736,10 @@ void OMW::Engine::prepareEngine()
     createWindow();
 
     mVFS = std::make_unique<VFS::Manager>();
+
+    // Optional: serve BSA entries from a read-only memory map instead of buffered reads (ported
+    // concept from Faster-File-Copy). Must be set before archives are opened below.
+    Bsa::BSAFile::setUseMemoryMapping(Settings::general().mBsaMemoryMapping);
 
     // Optional: cache each loose-file data directory's recursive walk to speed up startup (ported
     // concept from CRDW), especially over a virtual filesystem overlay like MO2. Opt-in setting.
