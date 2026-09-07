@@ -81,6 +81,14 @@ namespace SceneUtil
         /// the seam welder transplanting jiggle weights) on a geometry that may already be live.
         void reinitialize();
 
+        /// Jiggle seam fix: feather this mesh's jiggle-bone (breast/butt) influence weights to
+        /// zero within @p distance (world units) of the mesh's open-edge (seam) boundary, and
+        /// renormalize each affected vertex back to 1.0 via its other bones. This pins the seam-ring
+        /// vertices so they stay coincident with the neighbouring body-part/clothing piece when the
+        /// jiggle bone moves, closing the crack while keeping the jiggle in the mesh interior.
+        /// Called once at load, before skinning, so it is cheap and free of runtime/thread hazards.
+        void applyJiggleSeamFeather(float distance);
+
         void accept(osg::NodeVisitor& nv) override;
         bool supports(const osg::PrimitiveFunctor&) const override { return true; }
         void accept(osg::PrimitiveFunctor&) const override;
