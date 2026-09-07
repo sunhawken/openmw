@@ -554,7 +554,7 @@ namespace MWWorld
 
             if (cellVariant.isExterior())
             {
-                if (const auto heightField = mPhysics->getHeightField(cellX, cellY))
+                if (mPhysics->getHeightField(cellX, cellY))
                     mNavigator.addWater(
                         osg::Vec2i(cellX, cellY), ESM::Land::REAL_SIZE, waterLevel, navigatorUpdateGuard);
             }

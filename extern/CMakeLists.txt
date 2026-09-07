@@ -55,6 +55,14 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
     )
     FetchContent_MakeAvailableExcludeFromAll(joltphysics)
 
+    # Jolt builds with /Wall /WX. Newer Windows SDK headers (e.g. wingdi.h) emit
+    # C4865 (/Zc:enumTypes migration warning) which /WX turns into a fatal error.
+    # Disable warnings-as-errors for the Jolt target so system-header warnings
+    # don't break the build.
+    if(MSVC)
+        target_compile_options(Jolt PRIVATE /WX- /wd4865)
+    endif()
+
     set(JOLT_INCLUDE_DIRS ${joltphysics_SOURCE_DIR} PARENT_SCOPE)
     set(JOLT_LIBRARIES Jolt PARENT_SCOPE)
 endif()
