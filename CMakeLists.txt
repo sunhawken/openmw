@@ -217,6 +217,14 @@ if (MSVC)
 
     add_compile_options(/Zc:__cplusplus)
 
+    # Native CPU codegen: this fork targets modern x64 (AVX2-capable) CPUs.
+    # Enables AVX2/FMA auto-vectorization of the engine's hot paths for better performance.
+    # Disable (or set to SSE2) if you need to run on a CPU without AVX2 support.
+    option(OPENMW_ENABLE_AVX2 "Build with /arch:AVX2 (requires an AVX2-capable CPU)" ON)
+    if (OPENMW_ENABLE_AVX2 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_compile_options(/arch:AVX2)
+    endif()
+
     if (CMAKE_CXX_COMPILER_LAUNCHER OR CMAKE_C_COMPILER_LAUNCHER OR OPENMW_MSBUILD_COMPILER_OVERRIDE)
         if ((CMAKE_CXX_COMPILER_LAUNCHER OR CMAKE_C_COMPILER_LAUNCHER) AND CMAKE_GENERATOR MATCHES "Visual Studio")
             message(STATUS "A compiler launcher was specified, but will be unused by the current generator (${CMAKE_GENERATOR})")
