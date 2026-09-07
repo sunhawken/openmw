@@ -55,6 +55,27 @@ namespace MWVR
         osg::Vec2 myGUIViewSize; //!< Resizable elements are resized to this (fraction of full view)
         bool autoSize; //!< How to size the layer
         std::string space;
+
+        bool operator==(const LayerConfig& rhs) const
+        {
+            return opacity == rhs.opacity && center == rhs.center && extent == rhs.extent
+                && spatialResolution == rhs.spatialResolution && pixelResolution == rhs.pixelResolution
+                && myGUIViewSize == rhs.myGUIViewSize && autoSize == rhs.autoSize && space == rhs.space;
+        }
+        bool operator!=(const LayerConfig& rhs) const { return !(*this == rhs); }
+
+        /// True when the difference between these two configs invalidates what the layer has
+        /// already built (its RTT camera and quad geometry) and it has to be recreated.
+        /// \note Deliberately excludes `space`, which only picks what the layer tracks, and
+        /// `spatialResolution`, which is applied to the transform on every update anyway.
+        /// Rebuilding for either of those blanks the layer's texture for a frame, which the
+        /// player sees as a black panel.
+        bool needsRebuild(const LayerConfig& rhs) const
+        {
+            return opacity != rhs.opacity || center != rhs.center || extent != rhs.extent
+                || pixelResolution != rhs.pixelResolution || myGUIViewSize != rhs.myGUIViewSize
+                || autoSize != rhs.autoSize;
+        }
     };
 
     /// \brief A single VR GUI Quad.
@@ -97,6 +118,10 @@ namespace MWVR
 
         void setConfig(const LayerConfig& config);
 
+        /// Point the layer at the space named by its config, if any. Cheap, and unlike a
+        /// full rebuild it does not blank the layer's rendered texture.
+        void updateSpace();
+
         void clear();
 
         void addLuaElement(const LuaUi::Element* element);
@@ -122,6 +147,7 @@ namespace MWVR
         osg::ref_ptr<osg::Camera> mMyGUICamera{ nullptr };
         bool mVisible = false;
         bool mDirty = false;
+        bool mSpaceDirty = false;
         bool mSpaceIsLost = false;
         bool mForceVisible = false;
         bool mPickable = false;
@@ -213,6 +239,10 @@ namespace MWVR
         osg::ref_ptr<osg::Group> mGUICameras = new osg::Group;
 
         std::map<std::string, osg::ref_ptr<VRGUILayer>> mLayers;
+        /// Which layer each Lua element was registered on. An element can change layer
+        /// between registration and removal, and it must be removed from the one it is
+        /// actually in, not the one it currently names.
+        std::map<const LuaUi::Element*, std::string> mLuaElementLayers;
 
         osg::Vec2i mGuiCursor;
         osg::ref_ptr<VRGUILayer> mFocusLayer = nullptr;
