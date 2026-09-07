@@ -1559,10 +1559,10 @@ namespace MWMechanics
                         || !actor.getPtr().getClass().getCreatureStats(actor.getPtr()).getAiSequence().isInCombat()
                         || !inProcessingRange))
                 {
-                    actor.getPtr().getClass().getCreatureStats(actor.getPtr()).setHitAttemptActorId(-1);
-                    if (player.getClass().getCreatureStats(player).getHitAttemptActorId()
-                        == actor.getPtr().getClass().getCreatureStats(actor.getPtr()).getActorId())
-                        player.getClass().getCreatureStats(player).setHitAttemptActorId(-1);
+                    actor.getPtr().getClass().getCreatureStats(actor.getPtr()).setHitAttemptActor({});
+                    ESM::RefNum playerHitNum = player.getClass().getCreatureStats(player).getHitAttemptActor();
+                    if (playerHitNum.isSet() && playerHitNum == actor.getPtr().getCellRef().getRefNum())
+                        player.getClass().getCreatureStats(player).setHitAttemptActor({});
                 }
 
                 const Misc::TimerStatus engageCombatTimerStatus = actor.updateEngageCombatTimer(duration);

@@ -247,8 +247,8 @@ namespace NavMeshTool
             navigatorSettings.mRecast.mSwimHeightScale
                 = EsmLoader::getGameSetting(esmData.mGameSettings, "fSwimHeightScale").getFloat();
 
-            WorldspaceData cellsData = gatherWorldspaceData(
-                navigatorSettings, readers, vfs, physicsShapeManager, esmData, processInteriorCells, writeBinaryLog);
+            const std::unordered_map<ESM::RefId, std::vector<std::size_t>> worldspaceCells
+                = collectWorldspaceCells(esmData, processInteriorCells, worldspaceFilter);
 
             Status status = Status::Ok;
             std::size_t provided = 0;
@@ -266,7 +266,7 @@ namespace NavMeshTool
                 for (const auto& [worldspace, cells] : worldspaceCells)
                 {
                     const WorldspaceData worldspaceData = gatherWorldspaceData(navigatorSettings, readers, vfs,
-                        bulletShapeManager, esmData, writeBinaryLog, worldspace, cells);
+                        physicsShapeManager, esmData, writeBinaryLog, worldspace, cells);
 
                     const GenerateAllNavMeshTilesOptions generateAllNavMeshTilesOptions{
                         .mRemoveUnusedTiles = removeUnusedTiles,
