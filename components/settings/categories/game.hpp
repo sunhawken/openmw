@@ -91,6 +91,11 @@ namespace Settings
             makeClampSanitizerFloat(-50.f, 50.f) };
         SettingValue<float> mJiggleBoneButtZOffset{ mIndex, "Game", "jiggle bone butt z offset",
             makeClampSanitizerFloat(-50.f, 50.f) };
+        // In-engine auto jiggle rigger: procedurally add breast/butt jiggle bones + weights to
+        // female body meshes at load that don't already have them (so the .bat pre-rig is optional).
+        SettingValue<bool> mJiggleAutoRig{ mIndex, "Game", "jiggle auto rig" };
+        // Log auto-rigger anchor/weight detection (throttled).
+        SettingValue<bool> mJiggleAutoRigDebug{ mIndex, "Game", "jiggle auto rig debug" };
         // Auto seam welder: runtime-welds boundary vertices of rigid meshes (armor/clothing
         // that lack jiggle bones) onto the moving jiggle-mesh vertices they were coincident
         // with at rest pose, closing the visual cracks jiggle otherwise opens at those seams.
