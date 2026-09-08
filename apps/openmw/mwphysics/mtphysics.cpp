@@ -416,7 +416,22 @@ namespace MWPhysics
             assert(mSimulationBarrier == nullptr);
             mSimulationBarrier = mJobSystem->CreateBarrier();
             JPH::JobHandle handle = mJobSystem->CreateJob(
-                "MWSimulation", JPH::Color::sBlue, [this]() { doSimulation(); }, 0);
+                "MWSimulation", JPH::Color::sBlue,
+                [this]() {
+                    // Never let an exception (e.g. std::bad_alloc from an oversized physics
+                    // allocation) escape this worker-thread job: an uncaught throw here terminates
+                    // the whole process. Log it and skip the frame's remaining physics instead.
+                    try
+                    {
+                        doSimulation();
+                    }
+                    catch (const std::exception& e)
+                    {
+                        mRemainingSteps = 0;
+                        Log(Debug::Error) << "Physics simulation aborted this frame due to exception: " << e.what();
+                    }
+                },
+                0);
             mSimulationBarrier->AddJob(handle);
         }
     }
