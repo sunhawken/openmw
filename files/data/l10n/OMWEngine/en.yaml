@@ -272,6 +272,17 @@ JiggleSeamWelding: "Jiggle Seam Fixer"
 JiggleSeamWeldingTooltip: |-
     Feathers jiggle weights to zero at mesh seams so the cracks jiggle opens between body parts/clothing are closed.
     Takes effect when a mesh is next loaded (reload a save or re-equip).
+PerformanceNote: "Performance / VRAM options. Directory cache and BSA mapping apply on the next launch."
+TextureDownscaleValue: "Texture Downscale ({value} px)"
+TextureDownscaleOff: "0 = Off (full resolution)"
+VfsDirectoryCache: "Cache directory scan (faster startup)"
+VfsDirectoryCacheTooltip: |-
+    Caches each data directory's file listing so subsequent startups skip re-scanning them - helps most with large modlists over a virtual filesystem (MO2).
+    Takes effect on the next launch.
+BsaMemoryMapping: "Memory-map BSA archives"
+BsaMemoryMappingTooltip: |-
+    Serves BSA entries from a demand-paged memory map instead of buffered reads, reducing per-asset load latency.
+    Takes effect on the next launch.
 
 # Controller button names
 
