@@ -27,7 +27,10 @@ namespace MWRender
     /// Controlled by the "jiggle auto rig" setting; "jiggle auto rig debug" logs detection.
     namespace JiggleAutoRig
     {
-        void run(osg::Group* objectRoot);
+        /// @param isPlayer when true, the actor's body mesh is recorded as the "current player mesh"
+        /// and its saved per-mesh Z offset (if any) is pushed into the live breast/butt Z sliders,
+        /// so the sliders track whichever body mesh the player is currently using.
+        void run(osg::Group* objectRoot, bool isPlayer = false);
     }
 }
 

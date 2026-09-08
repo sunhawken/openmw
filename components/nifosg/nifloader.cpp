@@ -446,6 +446,9 @@ namespace NifOsg
                 created->getOrCreateUserDataContainer()->addUserObject(textkeys);
 
             created->setUserValue(Misc::OsgUserValues::sFileHash, nif.getHash());
+            // Record the source NIF path so downstream systems (e.g. the jiggle auto-rigger's
+            // per-mesh blacklist) can identify which mesh a loaded subtree came from.
+            created->setUserValue("meshFileName", std::string(nif.getFilename()));
 
             return created;
         }

@@ -691,7 +691,7 @@ namespace MWRender
         // In-engine auto jiggle rigger (female only): add breast/butt jiggle bones to a female
         // body that doesn't already have them. Runs here so the body parts are present.
         if (!mNpc->isMale())
-            JiggleAutoRig::run(mObjectRoot.get());
+            JiggleAutoRig::run(mObjectRoot.get(), mPtr == MWMechanics::getPlayer());
     }
 
     PartHolderPtr NpcAnimation::insertBoundedPart(VFS::Path::NormalizedView model, std::string_view bonename,

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Settings
 {
@@ -91,9 +92,16 @@ namespace Settings
             makeClampSanitizerFloat(-50.f, 50.f) };
         SettingValue<float> mJiggleBoneButtZOffset{ mIndex, "Game", "jiggle bone butt z offset",
             makeClampSanitizerFloat(-50.f, 50.f) };
+        // Per-body-mesh breast/butt Z offsets, saved from the in-game sliders and keyed by the
+        // player's body mesh so each mesh remembers its own tuning. Entries are "meshpath=breast,butt".
+        SettingValue<std::vector<std::string>> mJiggleMeshZOffsets{ mIndex, "Game", "jiggle mesh z offsets" };
         // In-engine auto jiggle rigger: procedurally add breast/butt jiggle bones + weights to
         // female body meshes at load that don't already have them (so the .bat pre-rig is optional).
         SettingValue<bool> mJiggleAutoRig{ mIndex, "Game", "jiggle auto rig" };
+        // NIF-filename substrings (lowercase, comma-separated) the auto-rigger must skip entirely:
+        // such meshes are excluded from both anchor detection and weight painting, so an odd armor
+        // can neither get bad jiggle nor pollute the shared body anchor.
+        SettingValue<std::vector<std::string>> mJiggleAutoRigBlacklist{ mIndex, "Game", "jiggle auto rig blacklist" };
         // Log auto-rigger anchor/weight detection (throttled).
         SettingValue<bool> mJiggleAutoRigDebug{ mIndex, "Game", "jiggle auto rig debug" };
         // Auto seam welder: runtime-welds boundary vertices of rigid meshes (armor/clothing
