@@ -1892,6 +1892,8 @@ namespace MWPhysics
         osg::Vec3f normalizedDir = direction;
         normalizedDir.normalize();
 
+        try
+        {
         for (auto& [_, dynObj] : mDynamicObjects)
         {
             // Don't hit the grabbed object
@@ -1934,6 +1936,11 @@ namespace MWPhysics
 
             Log(Debug::Info) << "Melee hit dynamic object: " << dynObj->getPtr().getCellRef().getRefId()
                              << " impulse=" << impulseMagnitude << " mass=" << mass << " dist=" << distance;
+        }
+        }
+        catch (const std::exception& e)
+        {
+            Log(Debug::Error) << "applyMeleeHitToDynamicObjects skipped due to exception: " << e.what();
         }
     }
 
