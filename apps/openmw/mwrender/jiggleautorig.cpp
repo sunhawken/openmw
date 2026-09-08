@@ -17,7 +17,9 @@
 #include <osg/ValueObject>
 
 #include <components/debug/debuglog.hpp>
+#include <components/misc/jigglezoffset.hpp>
 #include <components/misc/strings/algorithm.hpp>
+#include <components/misc/strings/lower.hpp>
 #include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/skeleton.hpp>
 #include <components/settings/values.hpp>
@@ -178,6 +180,32 @@ namespace MWRender
 
         // autorig.py Pass 1 cone: sqrt falloff within radius, vertical reach capped at z_radius,
         // same-side guard, returns vertex index -> weight.
+        // Walk up from a rig to the nearest ancestor tagged (by the NIF loader) with its source
+        // mesh file, so a rig can be matched against the auto-rig blacklist.
+        std::string meshFileFor(osg::Node* node)
+        {
+            while (node)
+            {
+                std::string file;
+                if (node->getUserValue("meshFileName", file) && !file.empty())
+                    return file;
+                node = node->getNumParents() > 0 ? node->getParent(0) : nullptr;
+            }
+            return {};
+        }
+
+        bool meshBlacklisted(const std::string& meshFile)
+        {
+            if (meshFile.empty())
+                return false;
+            for (const std::string& pattern : Settings::game().mJiggleAutoRigBlacklist.get())
+            {
+                if (!pattern.empty() && meshFile.find(Misc::StringUtils::lowerCase(pattern)) != std::string::npos)
+                    return true;
+            }
+            return false;
+        }
+
         std::unordered_map<std::size_t, float> coneWeights(
             const osg::Vec3Array& verts, const osg::Vec3f& anchor, const Config& cfg, bool left)
         {
@@ -203,7 +231,7 @@ namespace MWRender
         }
     }
 
-    void JiggleAutoRig::run(osg::Group* objectRoot)
+    void JiggleAutoRig::run(osg::Group* objectRoot, bool isPlayer)
     {
         if (!objectRoot || !Settings::game().mJiggleAutoRig)
             return;
@@ -213,6 +241,46 @@ namespace MWRender
         objectRoot->accept(rc);
         if (rc.mRigs.empty())
             return;
+
+        // Drop blacklisted meshes up front so they take part in neither anchor detection nor
+        // painting (an odd armor can't get bad jiggle nor drag the shared body anchor off).
+        std::vector<Rig*> rigs;
+        rigs.reserve(rc.mRigs.size());
+        std::string bodyMeshFile; // the chest/body part (weights spine2) - keys per-mesh Z offsets
+        for (Rig* rig : rc.mRigs)
+        {
+            osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
+            const std::string meshFile = meshFileFor(start);
+            if (meshBlacklisted(meshFile))
+            {
+                if (debug)
+                    Log(Debug::Warning) << "Jiggle auto-rig: skipping blacklisted mesh " << meshFile;
+                continue;
+            }
+            if (debug)
+                Log(Debug::Warning) << "Jiggle auto-rig: considering mesh " << meshFile;
+            if (bodyMeshFile.empty() && !meshFile.empty()
+                && boneIndex(rig->getInfluenceBoneNames(), sBreast.mParent) >= 0)
+                bodyMeshFile = meshFile;
+            rigs.push_back(rig);
+        }
+        if (rigs.empty())
+            return;
+
+        // For the player, remember which body mesh is in use and load its saved Z offset into the
+        // live sliders, so each body mesh keeps its own tuning (edited in-game via the sliders).
+        if (isPlayer && !bodyMeshFile.empty())
+        {
+            Misc::JiggleZOffset::currentPlayerMesh() = bodyMeshFile;
+            if (auto stored = Misc::JiggleZOffset::lookup(bodyMeshFile))
+            {
+                Settings::game().mJiggleBoneBreastZOffset.set(stored->first);
+                Settings::game().mJiggleBoneButtZOffset.set(stored->second);
+                if (debug)
+                    Log(Debug::Warning) << "Jiggle auto-rig: applied saved Z offsets for " << bodyMeshFile
+                                        << " breast=" << stored->first << " butt=" << stored->second;
+            }
+        }
 
         SkeletonFinder sf;
         objectRoot->accept(sf);
@@ -252,9 +320,9 @@ namespace MWRender
         std::array<std::optional<osg::Vec3f>, 4> anchors;
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
-            const auto lz = landmarkZ(rc.mRigs, sTargets[t].mConfig.mLandmark);
+            const auto lz = landmarkZ(rigs, sTargets[t].mConfig.mLandmark);
             if (lz)
-                anchors[t] = findAnchor(rc.mRigs, sTargets[t].mConfig, sTargets[t].mLeft, *lz);
+                anchors[t] = findAnchor(rigs, sTargets[t].mConfig, sTargets[t].mLeft, *lz);
         }
 
         // 1) Create any jiggle bone nodes that don't exist yet (identity children of their weighted
@@ -299,8 +367,10 @@ namespace MWRender
         //    a target's parent, add the jiggle bone (reusing that mesh's parent inverse-bind so the
         //    rest pose is exact) + cone weights. Meshes already carrying jiggle bones (rigged by the
         //    .bat, or painted on an earlier pass) are skipped, so a resync only touches new parts.
+        //    Blacklisted meshes were already filtered out of `rigs`, so they get no AUTO rig here -
+        //    but their load-time seam fix, .bat-rigged bones, controllers and z-offset still apply.
         int paintedMeshes = 0;
-        for (Rig* rig : rc.mRigs)
+        for (Rig* rig : rigs)
         {
             const osg::Vec3Array* verts = sourceVerts(*rig);
             if (!verts || verts->empty())
