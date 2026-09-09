@@ -1,11 +1,19 @@
 #include "imagemanager.hpp"
 
+#include <algorithm>
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
+#include <initializer_list>
+#include <string_view>
+
 #include <osgDB/Registry>
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/pathhelpers.hpp>
+#include <components/misc/strings/lower.hpp>
 #include <components/sceneutil/glextensions.hpp>
+#include <components/settings/values.hpp>
 #include <components/vfs/manager.hpp>
 #include <components/vfs/pathutil.hpp>
 
@@ -66,6 +74,191 @@ namespace
             return true;
 
         return SceneUtil::getGLExtensions().isTextureCompressionS3TCSupported;
+    }
+
+    bool endsWith(std::string_view str, std::string_view suffix)
+    {
+        return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+
+    bool startsWith(std::string_view str, std::string_view prefix)
+    {
+        return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    bool endsWithAny(std::string_view stem, std::initializer_list<std::string_view> suffixes)
+    {
+        for (std::string_view suffix : suffixes)
+            if (endsWith(stem, suffix))
+                return true;
+        return false;
+    }
+
+    // Classify a texture by filename suffix so it can get a type-specific cap. VFS paths are
+    // normalized to lower case. Order matters: more specific suffixes are checked first.
+    enum class TextureType
+    {
+        Diffuse,
+        Normal,
+        Glow,
+        Parallax,
+        Material,
+    };
+
+    TextureType classifyTexture(std::string_view path)
+    {
+        const std::size_t dot = path.rfind('.');
+        const std::string_view stem = dot == std::string_view::npos ? path : path.substr(0, dot);
+        if (endsWithAny(stem, { "_n", "_nm", "_msn", "_normal" }))
+            return TextureType::Normal;
+        if (endsWithAny(stem, { "_g", "_glow", "_e", "_em" }))
+            return TextureType::Glow;
+        if (endsWithAny(stem, { "_p", "_h", "_parallax", "_height" }))
+            return TextureType::Parallax;
+        if (endsWithAny(stem, { "_rmaos", "_m", "_material", "_s", "_spec", "_specular" }))
+            return TextureType::Material;
+        return TextureType::Diffuse;
+    }
+
+    // The per-type cap, inheriting the general value when the type-specific one is 0.
+    int typeCapFor(TextureType type)
+    {
+        const auto& g = Settings::general();
+        const int general = g.mTextureDownscale;
+        int specific = 0;
+        switch (type)
+        {
+            case TextureType::Normal:
+                specific = g.mTextureDownscaleNormalMaps;
+                break;
+            case TextureType::Glow:
+                specific = g.mTextureDownscaleGlowMaps;
+                break;
+            case TextureType::Parallax:
+                specific = g.mTextureDownscaleParallaxMaps;
+                break;
+            case TextureType::Material:
+                specific = g.mTextureDownscaleMaterialMaps;
+                break;
+            case TextureType::Diffuse:
+                break;
+        }
+        return specific > 0 ? specific : general;
+    }
+
+    // A per-folder override, if any, for @p path: the longest matching "prefix=cap" rule. Returns
+    // true and sets @p outCap (which may be 0 = leave full size) when a folder rule applies.
+    bool folderRuleCapFor(std::string_view path, int& outCap)
+    {
+        const auto& rules = Settings::general().mTextureDownscaleFolderRules.get();
+        std::size_t bestLen = 0;
+        bool found = false;
+        for (const std::string& rule : rules)
+        {
+            const std::size_t eq = rule.rfind('=');
+            if (eq == std::string::npos)
+                continue;
+            std::string prefix = Misc::StringUtils::lowerCase(rule.substr(0, eq));
+            for (char& c : prefix)
+                if (c == '\\')
+                    c = '/';
+            std::size_t begin = prefix.find_first_not_of(" \t");
+            std::size_t end = prefix.find_last_not_of(" \t");
+            if (begin == std::string::npos)
+                continue;
+            const std::string_view trimmed(prefix.data() + begin, end - begin + 1);
+            if (trimmed.size() > bestLen && startsWith(path, trimmed))
+            {
+                bestLen = trimmed.size();
+                outCap = std::atoi(rule.c_str() + eq + 1);
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    // The largest-dimension cap (in pixels) to apply to this texture, or 0 for "leave full size".
+    // Per-folder rules take precedence over per-type caps.
+    int downscaleCapFor(std::string_view path)
+    {
+        int folderCap = 0;
+        if (folderRuleCapFor(path, folderCap))
+            return folderCap;
+        return typeCapFor(classifyTexture(path));
+    }
+
+    // Number of top mip levels to drop so the base dimension is <= cap, keeping at least one level.
+    unsigned int mipsToSkip(int s, int t, unsigned int levels, int cap)
+    {
+        if (cap <= 0 || levels <= 1)
+            return 0;
+        unsigned int skip = 0;
+        int w = s;
+        int h = t;
+        while ((w > cap || h > cap) && skip + 1 < levels)
+        {
+            w = std::max(1, w >> 1);
+            h = std::max(1, h >> 1);
+            ++skip;
+        }
+        return skip;
+    }
+
+    // Build a copy of @p src that drops @p skip top mip levels: its base level becomes old level
+    // @p skip, with the remaining smaller mips kept. This is a plain byte copy of the mip stack from
+    // that level down, so it is valid for compressed (DXT/S3TC) images too - no resampling.
+    osg::ref_ptr<osg::Image> dropTopMips(const osg::Image& src, unsigned int skip)
+    {
+        const unsigned int levels = src.getNumMipmapLevels();
+        const unsigned char* data0 = src.getMipmapData(0);
+        const auto levelOffset = [&](unsigned int level) -> std::size_t {
+            return static_cast<std::size_t>(src.getMipmapData(level) - data0);
+        };
+
+        const std::size_t base = levelOffset(skip);
+        const std::size_t total = src.getTotalSizeInBytesIncludingMipmaps();
+        const std::size_t newSize = total - base;
+
+        unsigned char* newData = new unsigned char[newSize];
+        std::memcpy(newData, data0 + base, newSize);
+
+        const int ns = std::max(1, src.s() >> skip);
+        const int nt = std::max(1, src.t() >> skip);
+        const int nr = std::max(1, src.r() >> skip);
+
+        osg::ref_ptr<osg::Image> dst = new osg::Image;
+        dst->setFileName(src.getFileName());
+        dst->setOrigin(src.getOrigin());
+        dst->setImage(ns, nt, nr, src.getInternalTextureFormat(), src.getPixelFormat(), src.getDataType(), newData,
+            osg::Image::USE_NEW_DELETE, src.getPacking());
+
+        osg::Image::MipmapDataType mipmaps;
+        for (unsigned int level = skip + 1; level < levels; ++level)
+            mipmaps.push_back(static_cast<unsigned int>(levelOffset(level) - base));
+        dst->setMipmapLevels(mipmaps);
+
+        return dst;
+    }
+
+    // Cap a mipmapped texture's resolution at load time by handing the game a lower mip as the base
+    // level. Ported concept from TextureDownscaler: saves VRAM without resampling; textures without
+    // mipmaps are left untouched.
+    osg::ref_ptr<osg::Image> applyTextureDownscale(osg::ref_ptr<osg::Image> image, std::string_view path)
+    {
+        const int cap = downscaleCapFor(path);
+        if (cap <= 0)
+            return image;
+
+        const unsigned int levels = image->getNumMipmapLevels();
+        const unsigned int skip = mipsToSkip(image->s(), image->t(), levels, cap);
+        if (skip == 0)
+            return image;
+
+        osg::ref_ptr<osg::Image> scaled = dropTopMips(*image, skip);
+        if (Settings::general().mTextureDownscaleDebug)
+            Log(Debug::Verbose) << "Downscaled texture " << path << " from " << image->s() << "x" << image->t()
+                                << " to " << scaled->s() << "x" << scaled->t() << " (skipped " << skip << " mip level(s))";
+        return scaled;
     }
 
 }
@@ -204,6 +397,8 @@ namespace Resource
                 image->flipVertical();
                 image->setOrigin(osg::Image::TOP_LEFT);
             }
+
+            image = applyTextureDownscale(image, path.value());
 
             mCache->addEntryToObjectCache(path.value(), image);
             return image;
