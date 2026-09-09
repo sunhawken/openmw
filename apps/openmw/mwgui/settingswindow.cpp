@@ -21,6 +21,7 @@
 #include <components/lua_ui/scriptsettings.hpp>
 #include <components/misc/constants.hpp>
 #include <components/misc/display.hpp>
+#include <components/misc/jigglezoffset.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
@@ -785,6 +786,13 @@ namespace MWGui
                     Settings::get<float>(getSettingCategory(scroller), getSettingName(scroller)).set(value);
                     argNames.emplace_back("value");
                     args.emplace_back(value);
+
+                    // Persist the breast/butt jiggle Z offset per body mesh so each mesh remembers
+                    // its own tuning (keyed by the player's current body mesh).
+                    const std::string_view sname = getSettingName(scroller);
+                    if (sname == "jiggle bone breast z offset" || sname == "jiggle bone butt z offset")
+                        Misc::JiggleZOffset::save(Misc::JiggleZOffset::currentPlayerMesh(),
+                            Settings::game().mJiggleBoneBreastZOffset, Settings::game().mJiggleBoneButtZOffset);
                 }
                 else
                 {

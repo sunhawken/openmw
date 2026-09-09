@@ -31,13 +31,41 @@
 #include <format>
 #include <fstream>
 #include <istream>
+#include <memory>
 #include <system_error>
+#include <utility>
 
+#include <boost/iostreams/device/mapped_file.hpp>
+
+#include <components/debug/debuglog.hpp>
 #include <components/esm/fourcc.hpp>
 #include <components/files/constrainedfilestream.hpp>
+#include <components/files/memorystream.hpp>
 #include <components/files/utils.hpp>
 
 using namespace Bsa;
+
+bool BSAFile::sUseMemoryMapping = false;
+
+namespace
+{
+    // An istream over a slice of a memory-mapped archive that keeps the mapping alive for the
+    // stream's lifetime. No data is copied; reads are served from the demand-paged mapping.
+    class MappedArchiveStream : public Files::MemBuf, public std::istream
+    {
+    public:
+        MappedArchiveStream(
+            std::shared_ptr<boost::iostreams::mapped_file_source> mapping, const char* data, std::size_t size)
+            : Files::MemBuf(data, size)
+            , std::istream(static_cast<std::streambuf*>(this))
+            , mMapping(std::move(mapping))
+        {
+        }
+
+    private:
+        std::shared_ptr<boost::iostreams::mapped_file_source> mMapping;
+    };
+}
 
 /// Error handling
 [[noreturn]] void BSAFile::fail(const std::string& msg) const
@@ -268,6 +296,28 @@ void BSAFile::open(const std::filesystem::path& file)
         std::ifstream input(mFilepath, std::ios_base::binary);
         readHeader(input);
         mIsLoaded = true;
+
+        // Memory-map the whole archive read-only so getFile() can serve entries from the
+        // demand-paged mapping instead of buffered file IO. Mapping is lazy at the OS level
+        // (no eager read), and on any failure we simply fall back to the file-stream path.
+        if (sUseMemoryMapping)
+        {
+            try
+            {
+                auto mapping = std::make_shared<boost::iostreams::mapped_file_source>();
+                // boost::iostreams only accepts a narrow string/char* path here (its wide-string
+                // ctor is private). path::string() can throw for a path not representable in the
+                // native narrow encoding - that's caught below and we fall back to buffered reads.
+                mapping->open(mFilepath.string());
+                if (mapping->is_open())
+                    mMemoryMap = std::move(mapping);
+            }
+            catch (const std::exception& e)
+            {
+                Log(Debug::Warning) << "Failed to memory-map BSA archive " << Files::pathToUnicodeString(mFilepath)
+                                    << ": " << e.what() << " (falling back to buffered reads)";
+            }
+        }
     }
     else
     {
@@ -292,6 +342,15 @@ void Bsa::BSAFile::close()
 
 Files::IStreamPtr Bsa::BSAFile::getFile(const FileStruct* file)
 {
+    // Serve from the memory map when available (and the entry lies within it), otherwise fall
+    // back to a buffered constrained file stream. readHeader() already validated entry bounds.
+    if (mMemoryMap)
+    {
+        const std::size_t offset = file->mOffset;
+        const std::size_t size = file->mFileSize;
+        if (offset + size <= mMemoryMap->size())
+            return std::make_unique<MappedArchiveStream>(mMemoryMap, mMemoryMap->data() + offset, size);
+    }
     return Files::openConstrainedFileStream(mFilepath, file->mOffset, file->mFileSize);
 }
 

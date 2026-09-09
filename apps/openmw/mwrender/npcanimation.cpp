@@ -40,6 +40,7 @@
 #include "../mwbase/world.hpp"
 
 #include "actorutil.hpp"
+#include "jiggleautorig.hpp"
 #include "postprocessor.hpp"
 #include "renderbin.hpp"
 #include "renderingmanager.hpp"
@@ -684,6 +685,9 @@ namespace MWRender
 
         if (wasArrowAttached)
             attachArrow();
+
+        if (!mNpc->isMale())
+            JiggleAutoRig::run(mObjectRoot.get(), mPtr == MWMechanics::getPlayer());
     }
 
     PartHolderPtr NpcAnimation::insertBoundedPart(VFS::Path::NormalizedView model, std::string_view bonename,
