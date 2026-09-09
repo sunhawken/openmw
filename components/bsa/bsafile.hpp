@@ -27,11 +27,17 @@
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <components/files/conversion.hpp>
 #include <components/files/istreamptr.hpp>
+
+namespace boost::iostreams
+{
+    class mapped_file_source;
+}
 
 namespace Bsa
 {
@@ -92,6 +98,16 @@ namespace Bsa
         /// Used for error messages
         std::filesystem::path mFilepath;
 
+        /// Optional read-only memory map of the whole archive. When present, getFile() serves
+        /// entries directly from the demand-paged mapping instead of a buffered file stream,
+        /// cutting per-asset read latency (ported concept from Faster-File-Copy's uncompressed
+        /// path). Set up in open() when memory mapping is enabled; null means fall back to file IO.
+        std::shared_ptr<boost::iostreams::mapped_file_source> mMemoryMap;
+
+        /// Process-wide switch (set once at startup from the "bsa memory mapping" setting) that
+        /// controls whether open() memory-maps archives. Off for standalone tools by default.
+        static bool sUseMemoryMapping;
+
         /// Error handling
         [[noreturn]] void fail(const std::string& msg) const;
 
@@ -114,6 +130,9 @@ namespace Bsa
         void open(const std::filesystem::path& file);
 
         void close();
+
+        /// Enable/disable memory mapping of archives for all subsequently opened BSAFiles.
+        static void setUseMemoryMapping(bool enabled) { sUseMemoryMapping = enabled; }
 
         /* -----------------------------------
          * Archive file routines

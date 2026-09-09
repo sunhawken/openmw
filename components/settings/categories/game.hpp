@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Settings
 {
@@ -91,6 +92,14 @@ namespace Settings
             makeClampSanitizerFloat(-50.f, 50.f) };
         SettingValue<float> mJiggleBoneButtZOffset{ mIndex, "Game", "jiggle bone butt z offset",
             makeClampSanitizerFloat(-50.f, 50.f) };
+        SettingValue<std::vector<std::string>> mJiggleMeshZOffsets{ mIndex, "Game", "jiggle mesh z offsets" };
+        SettingValue<bool> mJiggleAutoRig{ mIndex, "Game", "jiggle auto rig" };
+        SettingValue<std::vector<std::string>> mJiggleAutoRigBlacklist{ mIndex, "Game", "jiggle auto rig blacklist" };
+        SettingValue<bool> mJiggleAutoRigDebug{ mIndex, "Game", "jiggle auto rig debug" };
+        SettingValue<bool> mJiggleSeamWelding{ mIndex, "Game", "jiggle seam welding" };
+        SettingValue<bool> mJiggleSeamWeldDebug{ mIndex, "Game", "jiggle seam weld debug" };
+        SettingValue<float> mJiggleSeamWeldThreshold{ mIndex, "Game", "jiggle seam weld threshold",
+            makeClampSanitizerFloat(0.01f, 10.f) };
         // Caps how many enemies can newly enter combat against the player at once (0 = no
         // cap). Only throttles new enemies engaging the player - actors already fighting
         // each other are unaffected, and this does not apply to allies (see below).

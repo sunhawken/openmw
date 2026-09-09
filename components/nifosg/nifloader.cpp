@@ -25,6 +25,7 @@
 #include <components/resource/bgsmfilemanager.hpp>
 #include <components/resource/imagemanager.hpp>
 #include <components/serialization/osgyaml.hpp>
+#include <components/settings/values.hpp>
 
 // particle
 #include <osgParticle/BoxPlacer>
@@ -445,6 +446,9 @@ namespace NifOsg
                 created->getOrCreateUserDataContainer()->addUserObject(textkeys);
 
             created->setUserValue(Misc::OsgUserValues::sFileHash, nif.getHash());
+            // Record the source NIF path so downstream systems (e.g. the jiggle auto-rigger's
+            // per-mesh blacklist) can identify which mesh a loaded subtree came from.
+            created->setUserValue("meshFileName", std::string(nif.getFilename()));
 
             return created;
         }
@@ -1627,6 +1631,11 @@ namespace NifOsg
                 if (const Nif::NiAVObject* rootBone = skin->mRoot.getPtr())
                     rig->setRootBone(rootBone->mName);
 
+                // Feather jiggle-bone weights to zero at mesh seams so the seam ring stays put
+                // and doesn't crack when the jiggle bone moves (in-game seam fix, no mesh edits).
+                if (Settings::game().mJiggleSeamWelding)
+                    rig->applyJiggleSeamFeather(Settings::game().mJiggleSeamWeldThreshold);
+
                 drawable = rig;
             }
 
@@ -1790,6 +1799,11 @@ namespace NifOsg
                 rig->setInfluences(influences);
                 if (const Nif::NiAVObject* rootBone = skin->mRoot.getPtr())
                     rig->setRootBone(rootBone->mName);
+
+                // Feather jiggle-bone weights to zero at mesh seams so the seam ring stays put
+                // and doesn't crack when the jiggle bone moves (in-game seam fix, no mesh edits).
+                if (Settings::game().mJiggleSeamWelding)
+                    rig->applyJiggleSeamFeather(Settings::game().mJiggleSeamWeldThreshold);
 
                 drawable = rig;
             }
