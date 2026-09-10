@@ -495,7 +495,7 @@
                                 <Property key="Caption" value="Seamless Interior / Exterior Transitions"/>
                                 <UserString key="ToolTipType" value="Layout"/>
                                 <UserString key="ToolTipLayout" value="TextToolTip"/>
-                                <UserString key="Caption_Text" value="Preloads nearby door destinations and removes the fade/loading overlay when entering or leaving interiors. Uses additional memory; an unprepared destination may still hitch briefly."/>
+                                <UserString key="Caption_Text" value="Keeps the interior/exterior transition preference enabled. The engine uses its safe synchronized handoff; use the standard cell-preload options to reduce loading time."/>
                             </Widget>
                         </Widget>
 
