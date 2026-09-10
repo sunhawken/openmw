@@ -129,7 +129,8 @@ namespace MWWorld
         void requestChangeCellGrid(const osg::Vec3f& position, const osg::Vec2i& cell, bool changeEvent = true);
 
         void preloadCells(float dt);
-        void preloadTeleportDoorDestinations(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos);
+        void preloadTeleportDoorDestinations(
+            const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos, bool interiorsOnly = false);
         void preloadExteriorGrid(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos);
         void preloadFastTravelDestinations(
             const osg::Vec3f& playerPos, std::vector<PositionCellGrid>& exteriorPositions);
