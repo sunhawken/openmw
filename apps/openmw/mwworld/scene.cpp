@@ -657,9 +657,8 @@ namespace MWWorld
     }
 
     void Scene::changeCellGrid(
-        const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent, bool showLoadingScreen)
+        const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent)
     {
-        mCellLoadIsSeamless = !showLoadingScreen;
         const int halfGridSize
             = isEsm4Ext(playerCellIndex.mWorldspace) ? Constants::ESM4CellGridRadius : Constants::CellGridRadius;
         auto navigatorUpdateGuard = mNavigator.makeUpdateGuard();
@@ -712,14 +711,10 @@ namespace MWWorld
             cellsPositionsToLoad.emplace_back(x, y);
         });
 
-        Loading::Listener* loadingListener
-            = showLoadingScreen ? MWBase::Environment::get().getWindowManager()->getLoadingScreen() : nullptr;
+        Loading::Listener* loadingListener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
         Loading::ScopedLoad load(loadingListener);
-        if (loadingListener != nullptr)
-        {
-            loadingListener->setLabel("#{OMWEngine:LoadingExterior}");
-            loadingListener->setProgressRange(refsToLoad);
-        }
+        loadingListener->setLabel("#{OMWEngine:LoadingExterior}");
+        loadingListener->setProgressRange(refsToLoad);
 
         sortCellsToLoad(playerCellX, playerCellY, cellsPositionsToLoad);
 
@@ -990,11 +985,6 @@ namespace MWWorld
         CellStore& cell = mWorld.getWorldModel().getInterior(cellName);
         const bool seamless = Settings::cells().mSeamlessCellTransitions && mCurrentCell != nullptr
             && mCurrentCell->isExterior();
-        // Door preloading makes this transition much shorter, but loading an
-        // interior still has to run through OpenMW's listener/fade handshake.
-        // Skipping that handshake lets scene, physics, and the renderer observe
-        // the cell set while it is being replaced.
-        mCellLoadIsSeamless = false;
         bool useFading = (mCurrentCell != nullptr);
         if (useFading)
             MWBase::Environment::get().getWindowManager()->fadeScreenOut(0.5);
@@ -1067,11 +1057,6 @@ namespace MWWorld
 
         const bool seamless = Settings::cells().mSeamlessCellTransitions && mCurrentCell != nullptr
             && !mCurrentCell->isExterior();
-        // The exterior grid creates and activates many renderer/physics objects.
-        // It must retain the normal loading listener and fade synchronization.
-        // The seamless option preloads the destination; it never bypasses this
-        // safety boundary.
-        mCellLoadIsSeamless = false;
         if (changeEvent)
             MWBase::Environment::get().getWindowManager()->fadeScreenOut(0.5);
         CellStore& current = mWorld.getWorldModel().getCell(extCellId);
@@ -1079,8 +1064,7 @@ namespace MWWorld
         const osg::Vec2i cellIndex(current.getCell()->getGridX(), current.getCell()->getGridY());
 
         changeCellGrid(position.asVec3(),
-            ESM::ExteriorCellLocation(cellIndex.x(), cellIndex.y(), current.getCell()->getWorldSpace()), changeEvent,
-            true);
+            ESM::ExteriorCellLocation(cellIndex.x(), cellIndex.y(), current.getCell()->getWorldSpace()), changeEvent);
 
         changePlayerCell(current, position, adjustPlayerPos);
 
@@ -1235,7 +1219,6 @@ namespace MWWorld
 
         mLastPlayerPos = playerPos;
 
-        const bool seamless = Settings::cells().mSeamlessCellTransitions;
         if (mPreloadEnabled)
         {
             if (mPreloadDoors)
@@ -1245,20 +1228,13 @@ namespace MWWorld
             if (mPreloadFastTravel)
                 preloadFastTravelDestinations(playerPos, exteriorPositions);
         }
-        else if (seamless)
-        {
-            // An interior can be preloaded as one self-contained cell.  An exterior door target
-            // expands into an entire grid and can still be loading when the foreground handoff
-            // starts; that overlap is unsafe for scene/physics objects in this build.  Exterior
-            // transitions therefore retain the normal synchronous grid load.
-            preloadTeleportDoorDestinations(playerPos, predictedPos, true);
-        }
+        // Do not add ad-hoc background work here. The preloader owns cell and
+        // physics resources and must not race a door handoff.
 
         mPreloader->setTerrainPreloadPositions(exteriorPositions);
     }
 
-    void Scene::preloadTeleportDoorDestinations(
-        const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos, bool interiorsOnly)
+    void Scene::preloadTeleportDoorDestinations(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos)
     {
         std::vector<MWWorld::ConstPtr> teleportDoors;
         for (const MWWorld::CellStore* cellStore : mActiveCells)
@@ -1285,19 +1261,7 @@ namespace MWWorld
             {
                 try
                 {
-                    const ESM::RefId destinationId = door.getCellRef().getDestCell();
-
-                    // Do not even resolve an exterior destination for seamless-door preloading.
-                    // getCell() force-loads the CellStore, so resolving an exit here races the
-                    // synchronous exterior-grid handoff that follows when the player opens it.
-                    // This was the remaining interior -> exterior crash path: the old check was
-                    // performed only after getCell() had already created/loaded the exterior.
-                    if (interiorsOnly && destinationId.is<ESM::ESM3ExteriorCellRefId>())
-                        continue;
-
-                    CellStore& destination = mWorld.getWorldModel().getCell(destinationId);
-                    if (!interiorsOnly || !destination.isExterior())
-                        preloadCellWithSurroundings(destination);
+                    preloadCellWithSurroundings(mWorld.getWorldModel().getCell(door.getCellRef().getDestCell()));
                 }
                 catch (const std::exception& e)
                 {
