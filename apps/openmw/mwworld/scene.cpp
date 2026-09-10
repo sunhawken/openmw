@@ -1285,7 +1285,17 @@ namespace MWWorld
             {
                 try
                 {
-                    CellStore& destination = mWorld.getWorldModel().getCell(door.getCellRef().getDestCell());
+                    const ESM::RefId destinationId = door.getCellRef().getDestCell();
+
+                    // Do not even resolve an exterior destination for seamless-door preloading.
+                    // getCell() force-loads the CellStore, so resolving an exit here races the
+                    // synchronous exterior-grid handoff that follows when the player opens it.
+                    // This was the remaining interior -> exterior crash path: the old check was
+                    // performed only after getCell() had already created/loaded the exterior.
+                    if (interiorsOnly && destinationId.is<ESM::ESM3ExteriorCellRefId>())
+                        continue;
+
+                    CellStore& destination = mWorld.getWorldModel().getCell(destinationId);
                     if (!interiorsOnly || !destination.isExterior())
                         preloadCellWithSurroundings(destination);
                 }
