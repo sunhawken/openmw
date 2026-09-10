@@ -267,19 +267,23 @@ namespace MWRender
         if (rigs.empty())
             return;
 
-        // For the player, remember which body mesh is in use and load its saved Z offset into the
-        // live sliders, so each body mesh keeps its own tuning (edited in-game via the sliders).
+        // For the player, snap the breast/butt Z-offset sliders to whatever chest mesh is currently
+        // worn (naked body, clothing or armor), so each outfit keeps its own tuning and changing
+        // equipment automatically applies that outfit's saved offset - no manual re-adjusting. If an
+        // outfit has no saved value yet it snaps to 0 (a clean default) rather than leaving the
+        // previous outfit's offset in place. The settings window writes slider changes back keyed to
+        // this same mesh (see mwgui/settingswindow.cpp).
         if (isPlayer && !bodyMeshFile.empty())
         {
             Misc::JiggleZOffset::currentPlayerMesh() = bodyMeshFile;
-            if (auto stored = Misc::JiggleZOffset::lookup(bodyMeshFile))
-            {
-                Settings::game().mJiggleBoneBreastZOffset.set(stored->first);
-                Settings::game().mJiggleBoneButtZOffset.set(stored->second);
-                if (debug)
-                    Log(Debug::Warning) << "Jiggle auto-rig: applied saved Z offsets for " << bodyMeshFile
-                                        << " breast=" << stored->first << " butt=" << stored->second;
-            }
+            const auto stored = Misc::JiggleZOffset::lookup(bodyMeshFile);
+            const float breast = stored ? stored->first : 0.f;
+            const float butt = stored ? stored->second : 0.f;
+            Settings::game().mJiggleBoneBreastZOffset.set(breast);
+            Settings::game().mJiggleBoneButtZOffset.set(butt);
+            if (debug)
+                Log(Debug::Warning) << "Jiggle auto-rig: snapped Z offsets to " << bodyMeshFile << " breast=" << breast
+                                    << " butt=" << butt << (stored ? " (saved)" : " (default)");
         }
 
         SkeletonFinder sf;
@@ -297,9 +301,9 @@ namespace MWRender
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
             SceneUtil::Bone* parent = skeleton->getBone(std::string(sTargets[t].mConfig.mParent));
-            if (!parent || !parent->mNode)
+            osg::Group* parentNode = parent ? parent->mNode.get() : nullptr;
+            if (!parentNode)
                 continue;
-            osg::Group* parentNode = parent->mNode;
             for (unsigned int c = 0; c < parentNode->getNumChildren(); ++c)
             {
                 osg::Node* child = parentNode->getChild(c);
@@ -335,7 +339,8 @@ namespace MWRender
             const Target& tgt = sTargets[t];
 
             SceneUtil::Bone* parent = skeleton->getBone(std::string(tgt.mConfig.mParent));
-            if (!parent || !parent->mNode)
+            osg::MatrixTransform* parentNode = parent ? parent->mNode.get() : nullptr;
+            if (!parentNode)
             {
                 if (debug)
                     Log(Debug::Warning) << "Jiggle auto-rig: no parent bone " << tgt.mConfig.mParent << " for "
@@ -348,7 +353,7 @@ namespace MWRender
             boneNode->setName(std::string(tgt.mBoneNode));
             boneNode->setDataVariance(osg::Object::DYNAMIC);
             boneNode->setUserValue(sAutoRigMarker, true);
-            parent->mNode->addChild(boneNode);
+            parentNode->addChild(boneNode);
             boneNode->addUpdateCallback(new JiggleBoneController(debug));
             haveOurBone[t] = true;
             addedAny = true;

@@ -8,7 +8,10 @@
 // menu. All other settings (data paths, mods, graphics) come from the same
 // openmw.cfg/settings.cfg openmw.exe always reads - this doesn't touch or
 // duplicate any of that, it only picks the save file and adds two
-// command-line flags.
+// command-line flags. It also enables OpenMW's full-memory crash dump mode
+// for this child process. This keeps the live OSG scene objects in the dump,
+// allowing a rendering crash to be traced back to the loaded object rather
+// than stopping at an opaque osg.dll address.
 //
 // Windows subsystem app (no console window). Shows a message box on error
 // instead of writing to a console nobody would see.
@@ -120,6 +123,16 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     if (!latestSave)
     {
         showError(L"No save games (.omwsave) were found under:\n" + savesRoot.wstring());
+        return 1;
+    }
+
+    // This setting is inherited by openmw.exe only. It does not change the
+    // user's permanent environment and is consumed by CrashMonitor when it
+    // writes openmw-crash.dmp.
+    if (!SetEnvironmentVariableW(L"OPENMW_FULL_MEMDUMP", L"1"))
+    {
+        DWORD err = GetLastError();
+        showError(L"Failed to enable OpenMW crash diagnostics (error " + std::to_wstring(err) + L").");
         return 1;
     }
 

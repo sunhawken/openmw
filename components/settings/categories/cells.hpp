@@ -23,6 +23,8 @@ namespace Settings
         SettingValue<bool> mPreloadExteriorGrid{ mIndex, "Cells", "preload exterior grid" };
         SettingValue<bool> mPreloadFastTravel{ mIndex, "Cells", "preload fast travel" };
         SettingValue<bool> mPreloadDoors{ mIndex, "Cells", "preload doors" };
+        // Keeps door destinations warm and hides the transition overlay for exterior <-> interior doors.
+        SettingValue<bool> mSeamlessCellTransitions{ mIndex, "Cells", "seamless cell transitions" };
         SettingValue<float> mPreloadDistance{ mIndex, "Cells", "preload distance", makeMaxStrictSanitizerFloat(0) };
         SettingValue<bool> mPreloadInstances{ mIndex, "Cells", "preload instances" };
         SettingValue<int> mPreloadCellCacheMin{ mIndex, "Cells", "preload cell cache min", makeMaxSanitizerInt(1) };
