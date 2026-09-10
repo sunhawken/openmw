@@ -91,7 +91,6 @@ namespace MWWorld
         CellStoreCollection mActiveCells;
         bool mCellChanged;
         bool mCellLoaded = false;
-        bool mCellLoadIsSeamless = false;
         MWWorld::World& mWorld;
         MWPhysics::PhysicsSystem* mPhysics;
         MWRender::RenderingManager& mRendering;
@@ -123,14 +122,12 @@ namespace MWWorld
         osg::Vec2i mCurrentGridCenter;
 
         // Load and unload cells as necessary to create a cell grid with "X" and "Y" in the center
-        void changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent = true,
-            bool showLoadingScreen = true);
+        void changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent = true);
 
         void requestChangeCellGrid(const osg::Vec3f& position, const osg::Vec2i& cell, bool changeEvent = true);
 
         void preloadCells(float dt);
-        void preloadTeleportDoorDestinations(
-            const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos, bool interiorsOnly = false);
+        void preloadTeleportDoorDestinations(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos);
         void preloadExteriorGrid(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos);
         void preloadFastTravelDestinations(
             const osg::Vec3f& playerPos, std::vector<PositionCellGrid>& exteriorPositions);
@@ -160,8 +157,6 @@ namespace MWWorld
         CellStore* getCurrentCell();
 
         const CellStoreCollection& getActiveCells() const;
-
-        bool isLastCellLoadSeamless() const { return mCellLoadIsSeamless; }
 
         bool hasCellChanged() const;
         ///< Has the set of active cells changed, since the last frame?
