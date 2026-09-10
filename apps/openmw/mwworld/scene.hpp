@@ -91,6 +91,7 @@ namespace MWWorld
         CellStoreCollection mActiveCells;
         bool mCellChanged;
         bool mCellLoaded = false;
+        bool mCellLoadIsSeamless = false;
         MWWorld::World& mWorld;
         MWPhysics::PhysicsSystem* mPhysics;
         MWRender::RenderingManager& mRendering;
@@ -122,7 +123,8 @@ namespace MWWorld
         osg::Vec2i mCurrentGridCenter;
 
         // Load and unload cells as necessary to create a cell grid with "X" and "Y" in the center
-        void changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent = true);
+        void changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent = true,
+            bool showLoadingScreen = true);
 
         void requestChangeCellGrid(const osg::Vec3f& position, const osg::Vec2i& cell, bool changeEvent = true);
 
@@ -157,6 +159,8 @@ namespace MWWorld
         CellStore* getCurrentCell();
 
         const CellStoreCollection& getActiveCells() const;
+
+        bool isLastCellLoadSeamless() const { return mCellLoadIsSeamless; }
 
         bool hasCellChanged() const;
         ///< Has the set of active cells changed, since the last frame?

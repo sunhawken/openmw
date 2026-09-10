@@ -5,7 +5,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <limits>
 #include <string_view>
+#include <vector>
 
 #include <osgDB/Registry>
 
@@ -204,19 +206,55 @@ namespace
         return skip;
     }
 
+    // Check that this is the simple image layout used by DDS and the usual OpenMW texture readers:
+    // a tightly-packed, complete 2D mip chain. OSG's mip offsets are metadata supplied by each image
+    // reader; they are not an allocation-size API. Do not reinterpret arbitrary offsets as a contiguous
+    // byte range, since that can make a malformed or non-standard image read past its backing storage.
+    bool getCanonicalMipLayout(const osg::Image& src, std::vector<std::size_t>& offsets, std::size_t& total)
+    {
+        const unsigned int levels = src.getNumMipmapLevels();
+        if (!src.valid() || src.r() != 1 || !src.isDataContiguous() || levels < 2)
+            return false;
+
+        offsets.clear();
+        offsets.reserve(levels);
+        total = 0;
+        for (unsigned int level = 0; level < levels; ++level)
+        {
+            const std::size_t offset = level == 0 ? 0 : src.getMipmapLevels()[level - 1];
+            if (offset != total)
+                return false;
+
+            const int width = std::max(1, src.s() >> level);
+            const int height = std::max(1, src.t() >> level);
+            const std::size_t size = osg::Image::computeImageSizeInBytes(
+                width, height, 1, src.getPixelFormat(), src.getDataType(), src.getPacking());
+            if (size == 0 || size > std::numeric_limits<std::size_t>::max() - total)
+                return false;
+
+            offsets.push_back(offset);
+            total += size;
+        }
+
+        // This also rejects unusual row/slice padding and reader-specific image layouts. It is safer
+        // to leave those textures untouched than to risk making an invalid replacement image.
+        return total <= std::numeric_limits<unsigned int>::max()
+            && total == src.getTotalSizeInBytesIncludingMipmaps();
+    }
+
     // Build a copy of @p src that drops @p skip top mip levels: its base level becomes old level
-    // @p skip, with the remaining smaller mips kept. This is a plain byte copy of the mip stack from
-    // that level down, so it is valid for compressed (DXT/S3TC) images too - no resampling.
+    // @p skip, with the remaining smaller mips kept. This is a plain byte copy of a validated mip stack
+    // from that level down, so it remains valid for compressed (DXT/S3TC) images too - no resampling.
     osg::ref_ptr<osg::Image> dropTopMips(const osg::Image& src, unsigned int skip)
     {
         const unsigned int levels = src.getNumMipmapLevels();
-        const unsigned char* data0 = src.getMipmapData(0);
-        const auto levelOffset = [&](unsigned int level) -> std::size_t {
-            return static_cast<std::size_t>(src.getMipmapData(level) - data0);
-        };
+        std::vector<std::size_t> offsets;
+        std::size_t total = 0;
+        if (skip == 0 || skip >= levels || !getCanonicalMipLayout(src, offsets, total))
+            return nullptr;
 
-        const std::size_t base = levelOffset(skip);
-        const std::size_t total = src.getTotalSizeInBytesIncludingMipmaps();
+        const unsigned char* data0 = src.data();
+        const std::size_t base = offsets[skip];
         const std::size_t newSize = total - base;
 
         unsigned char* newData = new unsigned char[newSize];
@@ -234,7 +272,7 @@ namespace
 
         osg::Image::MipmapDataType mipmaps;
         for (unsigned int level = skip + 1; level < levels; ++level)
-            mipmaps.push_back(static_cast<unsigned int>(levelOffset(level) - base));
+            mipmaps.push_back(static_cast<unsigned int>(offsets[level] - base));
         dst->setMipmapLevels(mipmaps);
 
         return dst;
@@ -255,6 +293,12 @@ namespace
             return image;
 
         osg::ref_ptr<osg::Image> scaled = dropTopMips(*image, skip);
+        if (!scaled)
+        {
+            if (Settings::general().mTextureDownscaleDebug)
+                Log(Debug::Verbose) << "Skipped downscaling non-canonical mip chain: " << path;
+            return image;
+        }
         if (Settings::general().mTextureDownscaleDebug)
             Log(Debug::Verbose) << "Downscaled texture " << path << " from " << image->s() << "x" << image->t()
                                 << " to " << scaled->s() << "x" << scaled->t() << " (skipped " << skip << " mip level(s))";
