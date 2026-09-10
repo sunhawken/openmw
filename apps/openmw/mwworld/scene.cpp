@@ -1027,7 +1027,11 @@ namespace MWWorld
         }
         assert(mActiveCells.empty());
 
-        loadingListener->setProgressRange(cell.count());
+        // Seamless transitions intentionally run without a loading-screen listener.
+        // loadCell/InsertVisitor already accept a null listener, but the progress
+        // notification itself must not dereference it.
+        if (loadingListener != nullptr)
+            loadingListener->setProgressRange(cell.count());
 
         mNavigator.updateBounds(
             cell.getCell()->getWorldSpace(), std::nullopt, position.asVec3(), navigatorUpdateGuard.get());
