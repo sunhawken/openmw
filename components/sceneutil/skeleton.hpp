@@ -2,6 +2,7 @@
 #define OPENMW_COMPONENTS_NIFOSG_SKELETON_H
 
 #include <osg/Group>
+#include <osg/observer_ptr>
 
 #include <memory>
 #include <unordered_map>
@@ -18,7 +19,9 @@ namespace SceneUtil
 
         osg::Matrixf mMatrixInSkeletonSpace;
 
-        osg::MatrixTransform* mNode;
+        // Observed (weak) so it nulls out if the bone's node is freed while this Bone lingers in the
+        // hierarchy, rather than dangling - update() skips it instead of crashing on a freed node.
+        osg::observer_ptr<osg::MatrixTransform> mNode;
 
         std::vector<std::unique_ptr<Bone>> mChildren;
 

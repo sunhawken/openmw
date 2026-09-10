@@ -1590,7 +1590,9 @@ namespace MWWorld
         if (mWorldScene->hasCellLoaded())
         {
             mNavigator->wait(DetourNavigator::WaitConditionType::requiredTilesPresent,
-                MWBase::Environment::get().getWindowManager()->getLoadingScreen());
+                mWorldScene->isLastCellLoadSeamless()
+                    ? nullptr
+                    : MWBase::Environment::get().getWindowManager()->getLoadingScreen());
             mWorldScene->resetCellLoaded();
         }
 

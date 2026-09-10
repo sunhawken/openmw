@@ -656,8 +656,10 @@ namespace MWWorld
             ESM::ExteriorCellLocation(cell.x(), cell.y(), mCurrentCell->getCell()->getWorldSpace()), changeEvent };
     }
 
-    void Scene::changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent)
+    void Scene::changeCellGrid(
+        const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent, bool showLoadingScreen)
     {
+        mCellLoadIsSeamless = !showLoadingScreen;
         const int halfGridSize
             = isEsm4Ext(playerCellIndex.mWorldspace) ? Constants::ESM4CellGridRadius : Constants::CellGridRadius;
         auto navigatorUpdateGuard = mNavigator.makeUpdateGuard();
@@ -710,10 +712,14 @@ namespace MWWorld
             cellsPositionsToLoad.emplace_back(x, y);
         });
 
-        Loading::Listener* loadingListener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
+        Loading::Listener* loadingListener
+            = showLoadingScreen ? MWBase::Environment::get().getWindowManager()->getLoadingScreen() : nullptr;
         Loading::ScopedLoad load(loadingListener);
-        loadingListener->setLabel("#{OMWEngine:LoadingExterior}");
-        loadingListener->setProgressRange(refsToLoad);
+        if (loadingListener != nullptr)
+        {
+            loadingListener->setLabel("#{OMWEngine:LoadingExterior}");
+            loadingListener->setProgressRange(refsToLoad);
+        }
 
         sortCellsToLoad(playerCellX, playerCellY, cellsPositionsToLoad);
 
@@ -982,13 +988,21 @@ namespace MWWorld
         std::string_view cellName, const ESM::Position& position, bool adjustPlayerPos, bool changeEvent)
     {
         CellStore& cell = mWorld.getWorldModel().getInterior(cellName);
-        bool useFading = (mCurrentCell != nullptr);
+        const bool seamless = Settings::cells().mSeamlessCellTransitions && mCurrentCell != nullptr
+            && mCurrentCell->isExterior();
+        mCellLoadIsSeamless = seamless;
+        bool useFading = (mCurrentCell != nullptr) && !seamless;
         if (useFading)
             MWBase::Environment::get().getWindowManager()->fadeScreenOut(0.5);
 
-        Loading::Listener* loadingListener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
-        loadingListener->setLabel("#{OMWEngine:LoadingInterior}");
+        Loading::Listener* loadingListener
+            = seamless ? nullptr : MWBase::Environment::get().getWindowManager()->getLoadingScreen();
+        if (loadingListener != nullptr)
+            loadingListener->setLabel("#{OMWEngine:LoadingInterior}");
         Loading::ScopedLoad load(loadingListener);
+
+        if (seamless)
+            Log(Debug::Info) << "Seamless cell transition: exterior to interior";
 
         if (mCurrentCell == &cell)
         {
@@ -1049,19 +1063,26 @@ namespace MWWorld
         const ESM::RefId& extCellId, const ESM::Position& position, bool adjustPlayerPos, bool changeEvent)
     {
 
-        if (changeEvent)
+        const bool seamless = Settings::cells().mSeamlessCellTransitions && mCurrentCell != nullptr
+            && !mCurrentCell->isExterior();
+        mCellLoadIsSeamless = seamless;
+        if (changeEvent && !seamless)
             MWBase::Environment::get().getWindowManager()->fadeScreenOut(0.5);
         CellStore& current = mWorld.getWorldModel().getCell(extCellId);
 
         const osg::Vec2i cellIndex(current.getCell()->getGridX(), current.getCell()->getGridY());
 
         changeCellGrid(position.asVec3(),
-            ESM::ExteriorCellLocation(cellIndex.x(), cellIndex.y(), current.getCell()->getWorldSpace()), changeEvent);
+            ESM::ExteriorCellLocation(cellIndex.x(), cellIndex.y(), current.getCell()->getWorldSpace()), changeEvent,
+            !seamless);
 
         changePlayerCell(current, position, adjustPlayerPos);
 
-        if (changeEvent)
+        if (changeEvent && !seamless)
             MWBase::Environment::get().getWindowManager()->fadeScreenIn(0.5);
+
+        if (seamless)
+            Log(Debug::Info) << "Seamless cell transition: interior to exterior";
 
         MWBase::Environment::get().getWorld()->getPostProcessor()->setExteriorFlag(true);
 
@@ -1208,9 +1229,11 @@ namespace MWWorld
 
         mLastPlayerPos = playerPos;
 
-        if (mPreloadEnabled)
+        const bool seamless = Settings::cells().mSeamlessCellTransitions;
+        if (mPreloadEnabled || seamless)
         {
-            if (mPreloadDoors)
+            // Seamless transitions own their door prefetching so the toggle works even when general preloading is off.
+            if (mPreloadDoors || seamless)
                 preloadTeleportDoorDestinations(playerPos, predictedPos);
             if (mPreloadExteriorGrid)
                 preloadExteriorGrid(playerPos, predictedPos);

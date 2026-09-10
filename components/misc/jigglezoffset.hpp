@@ -33,7 +33,9 @@ namespace Misc::JiggleZOffset
         if (entry.substr(0, eq) != meshFile)
             return std::nullopt;
         std::string_view rest = entry.substr(eq + 1);
-        const std::size_t comma = rest.find(',');
+        // breast/butt are separated by ';' - NOT ',', because the whole setting is a comma-separated
+        // list, so a comma inside an entry would be split into separate (broken) list elements.
+        const std::size_t comma = rest.find(';');
         if (comma == std::string_view::npos)
             return std::nullopt;
         const auto toFloat = [](std::string_view s) -> std::optional<float> {
@@ -79,14 +81,14 @@ namespace Misc::JiggleZOffset
             const std::size_t eq = entry.rfind('=');
             if (eq != std::string::npos && std::string_view(entry).substr(0, eq) == meshFile)
             {
-                out.push_back(std::string(meshFile) + '=' + std::to_string(breast) + ',' + std::to_string(butt));
+                out.push_back(std::string(meshFile) + '=' + std::to_string(breast) + ';' + std::to_string(butt));
                 replaced = true;
             }
             else
                 out.push_back(entry);
         }
         if (!replaced)
-            out.push_back(std::string(meshFile) + '=' + std::to_string(breast) + ',' + std::to_string(butt));
+            out.push_back(std::string(meshFile) + '=' + std::to_string(breast) + ';' + std::to_string(butt));
         Settings::game().mJiggleMeshZOffsets.set(out);
     }
 }
