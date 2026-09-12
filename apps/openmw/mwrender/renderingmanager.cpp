@@ -1283,7 +1283,12 @@ namespace MWRender
 
         for (Settings::CategorySettingVector::const_iterator it = changed.begin(); it != changed.end(); ++it)
         {
-            if (it->first == "Camera" && it->second == "field of view")
+            if (it->first == "Game" && it->second == "curvy body meshes")
+            {
+                if (MWMechanics::getPlayer().isInCell())
+                    rebuildPtr(MWMechanics::getPlayer());
+            }
+            else if (it->first == "Camera" && it->second == "field of view")
             {
                 mFieldOfView = Settings::camera().mFieldOfView;
                 updateProjection = true;

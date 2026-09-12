@@ -502,6 +502,20 @@
                             </Widget>
                         </Widget>
 
+                        <Widget type="HBox" position="0 372 500 28">
+                            <Widget type="AutoSizedButton" skin="MW_Button">
+                                <UserString key="SettingCategory" value="Game"/>
+                                <UserString key="SettingName" value="curvy body meshes"/>
+                                <UserString key="SettingType" value="CheckButton"/>
+                            </Widget>
+                            <Widget type="AutoSizedTextBox" skin="SandText">
+                                <Property key="Caption" value="Curvy Body"/>
+                                <UserString key="ToolTipType" value="Layout"/>
+                                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                <UserString key="Caption_Text" value="Use alternate Curvy Body meshes for the player when available."/>
+                            </Widget>
+                        </Widget>
+
                     </Widget>
                     <Widget type="TabItem">
                         <Property key="Caption" value=" #{OMWEngine:Water} "/>

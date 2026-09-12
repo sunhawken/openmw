@@ -24,17 +24,6 @@ namespace sol
     };
 }
 
-namespace
-{
-    std::span<const uint8_t> getRegionWeatherChances(const ESM::Region& rec)
-    {
-        const auto chances = MWBase::Environment::get().getWorld()->getRegionWeatherChances(rec.mId);
-        if (!chances.empty())
-            return chances;
-        return rec.mData.mProbabilities;
-    }
-}
-
 namespace MWLua
 {
     sol::table initCoreRegionBindings(const Context& context)
@@ -65,7 +54,7 @@ namespace MWLua
 
         regionT["weatherProbabilities"] = sol::readonly_property([lua = lua.lua_state()](const ESM::Region& rec) {
             sol::table res(lua, sol::create);
-            const auto chances = getRegionWeatherChances(rec);
+            const auto& chances = rec.mData.mProbabilities;
             for (size_t i = 0; i < chances.size(); ++i)
             {
                 const MWWorld::Weather* weather = MWBase::Environment::get().getWorld()->getWeather(i);
@@ -83,8 +72,7 @@ namespace MWLua
             if (it == allWeather.end())
                 throw std::runtime_error("Weather \"" + std::string(weatherId) + "\" not found");
 
-            const auto current = getRegionWeatherChances(rec);
-            std::vector<uint8_t> chances(current.begin(), current.end());
+            std::vector<uint8_t> chances(rec.mData.mProbabilities.begin(), rec.mData.mProbabilities.end());
             const size_t index = std::distance(allWeather.begin(), it);
             if (chances.size() <= index)
                 chances.resize(index + 1, 0);
@@ -92,7 +80,8 @@ namespace MWLua
             world->modRegion(rec.mId, chances);
         };
         auto resetProbability = [](const ESM::Region& rec) {
-            MWBase::Environment::get().getWorld()->modRegion(rec.mId, rec.mData.mProbabilities);
+            MWBase::Environment::get().getWorld()->modRegion(
+                rec.mId, std::vector<uint8_t>(rec.mData.mProbabilities.begin(), rec.mData.mProbabilities.end()));
         };
         regionT["resetProbability"] = resetProbability;
         regionT["sounds"] = sol::readonly_property([lua = lua.lua_state()](const ESM::Region& rec) {

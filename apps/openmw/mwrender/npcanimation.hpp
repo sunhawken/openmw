@@ -97,6 +97,9 @@ namespace MWRender
         void addPartGroup(int group, int priority, const std::vector<ESM::PartReference>& parts,
             bool enchantedGlow = false, osg::Vec4f* glowColor = nullptr);
 
+        VFS::Path::Normalized resolvePlayerEquipmentMesh(VFS::Path::NormalizedView normalMesh) const;
+        VFS::Path::Normalized resolvePlayerNakedBodyMesh() const;
+
         void setRenderBin();
 
         osg::ref_ptr<RotateController> mFirstPersonNeckController;
