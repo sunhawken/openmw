@@ -566,6 +566,49 @@ namespace MWRender
         return mesh;
     }
 
+    VFS::Path::Normalized NpcAnimation::resolvePlayerEquipmentMesh(VFS::Path::NormalizedView normalMesh) const
+    {
+        if (!Settings::game().mCurvyBodyMeshes || mPtr != MWMechanics::getPlayer() || mNpc->isMale())
+            return VFS::Path::Normalized(normalMesh);
+
+        constexpr std::string_view meshesPrefix = "meshes/";
+        constexpr std::string_view curvyPrefix = "meshes/curvybody/";
+        const std::string_view path = normalMesh.value();
+        if (!path.starts_with(meshesPrefix) || path.starts_with(curvyPrefix))
+            return VFS::Path::Normalized(normalMesh);
+
+        VFS::Path::Normalized candidate(std::string(curvyPrefix) + std::string(path.substr(meshesPrefix.size())));
+        return mResourceSystem->getVFS()->exists(candidate) ? candidate : VFS::Path::Normalized(normalMesh);
+    }
+
+    VFS::Path::Normalized NpcAnimation::resolvePlayerNakedBodyMesh() const
+    {
+        if (!Settings::game().mCurvyBodyMeshes || mPtr != MWMechanics::getPlayer() || mNpc->isMale()
+            || mViewMode == VM_FirstPerson || getNpcType() == Type_Werewolf)
+            return {};
+
+        static const std::pair<ESM::RefId, std::string_view> bodyMeshes[] = {
+            { ESM::RefId::stringRefId("breton"), "meshes/bbr/br_f.nif" },
+            { ESM::RefId::stringRefId("dark elf"), "meshes/bbr/de_f.nif" },
+            { ESM::RefId::stringRefId("high elf"), "meshes/bbr/he_f.nif" },
+            { ESM::RefId::stringRefId("imperial"), "meshes/bbr/im_f.nif" },
+            { ESM::RefId::stringRefId("nord"), "meshes/bbr/no_f.nif" },
+            { ESM::RefId::stringRefId("orc"), "meshes/bbr/or_f.nif" },
+            { ESM::RefId::stringRefId("redguard"), "meshes/bbr/rg_f.nif" },
+            { ESM::RefId::stringRefId("wood elf"), "meshes/bbr/we_f.nif" },
+        };
+
+        for (const auto& [race, path] : bodyMeshes)
+        {
+            if (mNpc->mRace == race)
+            {
+                VFS::Path::Normalized candidate(path);
+                return mResourceSystem->getVFS()->exists(candidate) ? candidate : VFS::Path::Normalized();
+            }
+        }
+        return {};
+    }
+
     void NpcAnimation::updateParts()
     {
         if (!mObjectRoot.get())
@@ -675,13 +718,28 @@ namespace MWRender
 
         const std::vector<const ESM::BodyPart*>& parts
             = getBodyParts(race, !mNpc->isMale(), mViewMode == VM_FirstPerson, isWerewolf);
+
+        // BBR meshes are complete third-person bodies. Use one only when the player is actually naked,
+        // so its full geometry cannot overdraw any equipped armor or clothing.
+        bool hasCoveredBodyPart = false;
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
+            hasCoveredBodyPart = hasCoveredBodyPart || (parts[part] && mPartPriorities[part] >= 1);
+        const VFS::Path::Normalized nakedBodyMesh
+            = hasCoveredBodyPart ? VFS::Path::Normalized() : resolvePlayerNakedBodyMesh();
+        if (!nakedBodyMesh.empty())
         {
-            if (mPartPriorities[part] < 1)
+            addOrReplaceIndividualPart(ESM::PRT_Cuirass, -1, 1, nakedBodyMesh);
+        }
+        else
+        {
+            for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
             {
-                if (const ESM::BodyPart* bodypart = parts[part])
-                    addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1,
-                        Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)));
+                if (mPartPriorities[part] < 1)
+                {
+                    if (const ESM::BodyPart* bodypart = parts[part])
+                        addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1,
+                            Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)));
+                }
             }
         }
 
@@ -916,7 +974,8 @@ namespace MWRender
 
             if (bodypart)
                 addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part.mPart), group, priority,
-                    Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)), enchantedGlow,
+                    resolvePlayerEquipmentMesh(
+                        Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel))), enchantedGlow,
                     glowColor);
             else
                 reserveIndividualPart((ESM::PartReferenceType)part.mPart, group, priority);

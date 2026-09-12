@@ -135,6 +135,7 @@ namespace MWBase
         virtual bool containsMode(MWGui::GuiMode) const = 0;
 
         virtual bool isGuiMode() const = 0;
+        virtual bool isGuiModeForScript() const = 0;
 
         virtual bool isConsoleMode() const = 0;
         virtual bool isPostProcessorHudVisible() const = 0;
@@ -259,7 +260,7 @@ namespace MWBase
         virtual void staticMessageBox(std::string_view message) = 0;
         virtual void removeStaticMessageBox() = 0;
         virtual void interactiveMessageBox(std::string_view message, const std::vector<std::string>& buttons = {},
-            bool block = false, int defaultFocus = -1)
+            bool block = false, int defaultFocus = -1, int cancelIndex = -1)
             = 0;
 
         /// returns the index of the pressed button or -1 if no button was pressed
@@ -393,6 +394,7 @@ namespace MWBase
         virtual int getControllerMenuHeight() = 0;
         /// Cycle to the next window to receive controller events
         virtual void cycleActiveControllerWindow(bool next) = 0;
+        virtual bool isCrassifiedNavigationEnabled() const = 0;
         virtual void setActiveControllerWindow(MWGui::GuiMode mode, size_t activeIndex) = 0;
         virtual bool getControllerTooltipVisible() const = 0;
         virtual void setControllerTooltipVisible(bool visible) = 0;
@@ -401,6 +403,8 @@ namespace MWBase
         /// Restore tooltip visibility if user has them enabled but they were hidden by mouse movement
         virtual void restoreControllerTooltips() = 0;
         virtual void updateControllerButtonsOverlay() = 0;
+        virtual bool toggleVirtualKeyboard() = 0;
+        virtual bool isVirtualKeyboardVisible() const = 0;
 
         // Used in Lua bindings
         virtual const std::vector<MWGui::GuiMode>& getGuiModeStack() const = 0;

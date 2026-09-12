@@ -75,6 +75,8 @@ namespace Settings
         SettingValue<DetourNavigator::CollisionShapeType> mActorCollisionShapeType{ mIndex, "Game",
             "actor collision shape type" };
         SettingValue<bool> mPlayerMovementIgnoresAnimation{ mIndex, "Game", "player movement ignores animation" };
+        // Use optional player-only Curvy Body equipment and naked-body meshes when present in the VFS.
+        SettingValue<bool> mCurvyBodyMeshes{ mIndex, "Game", "curvy body meshes" };
         SettingValue<bool> mJiggleBoneDebug{ mIndex, "Game", "jiggle bone debug" };
         // Damped-spring tuning for breast/butt jiggle-bone secondary motion.
         SettingValue<float> mJiggleBoneStiffness{ mIndex, "Game", "jiggle bone stiffness",
