@@ -1,5 +1,6 @@
 #include "inventorywindow.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -113,8 +114,15 @@ namespace MWGui
         getWidget(mFilterMisc, "MiscButton");
         getWidget(mLeftPane, "LeftPane");
         getWidget(mRightPane, "RightPane");
+        getWidget(mCategories, "Categories");
+        getWidget(mTradeInfoPane, "TradeInfoPane");
+        getWidget(mTradeTotalBalanceLabel, "TradeTotalBalanceLabel");
+        getWidget(mTradeTotalBalanceValue, "TradeTotalBalanceValue");
+        getWidget(mTradePlayerGold, "TradePlayerGold");
+        getWidget(mTradeMerchantGold, "TradeMerchantGold");
         getWidget(mArmorRating, "ArmorRating");
-        getWidget(mFilterEdit, "FilterEdit");
+        mFilterEdit = nullptr;
+        mTradeInfoPane->setVisible(false);
 
         mAvatarImage->eventMouseButtonClick += MyGUI::newDelegate(this, &InventoryWindow::onAvatarClicked);
         mAvatarImage->setRenderItemTexture(mPreviewTexture.get());
@@ -130,41 +138,83 @@ namespace MWGui
         mFilterApparel->eventMouseButtonClick += MyGUI::newDelegate(this, &InventoryWindow::onFilterChanged);
         mFilterMagic->eventMouseButtonClick += MyGUI::newDelegate(this, &InventoryWindow::onFilterChanged);
         mFilterMisc->eventMouseButtonClick += MyGUI::newDelegate(this, &InventoryWindow::onFilterChanged);
-        mFilterEdit->eventEditTextChange += MyGUI::newDelegate(this, &InventoryWindow::onNameFilterChanged);
-
         mFilterAll->setStateSelected(true);
 
         setGuiMode(mGuiMode);
 
-        if (Settings::gui().mControllerMenus)
+        mControllerTabWidgets = { mFilterAll, mFilterWeapon, mFilterApparel, mFilterMagic, mFilterMisc };
+        if (mCategories)
         {
-            // Show L1 and R1 buttons next to tabs
-            MyGUI::ImageBox* image;
-            getWidget(image, "BtnL1Image");
-            image->setVisible(true);
-            image->setUserString("Hidden", "false");
-            image->setImageTexture(MWBase::Environment::get().getInputManager()->getControllerButtonIcon(
-                SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
-
-            getWidget(image, "BtnR1Image");
-            image->setVisible(true);
-            image->setUserString("Hidden", "false");
-            image->setImageTexture(MWBase::Environment::get().getInputManager()->getControllerButtonIcon(
-                SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
-
-            mControllerButtons.mR3 = "#{Interface:Info}";
+            mControllerTabHighlight = mCategories->createWidget<MyGUI::Widget>(
+                "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+            mControllerTabHighlight->setNeedMouseFocus(false);
+            mControllerTabHighlight->setVisible(false);
         }
 
+        if (Settings::gui().mControllerMenus)
+            mControllerButtons = {};
+
+        mDefaultWindowSize = MyGUI::IntSize(600, 300);
         adjustPanes();
     }
 
     void InventoryWindow::adjustPanes()
     {
-        const float aspect = 0.5; // fixed aspect ratio for the avatar image
-        int leftPaneWidth = static_cast<int>((mMainWidget->getSize().height - 44 - mArmorRating->getHeight()) * aspect);
-        mLeftPane->setSize(leftPaneWidth, mMainWidget->getSize().height - 44);
-        mRightPane->setCoord(mLeftPane->getPosition().left + leftPaneWidth + 4, mRightPane->getPosition().top,
-            mMainWidget->getSize().width - 12 - leftPaneWidth - 15, mMainWidget->getSize().height - 44);
+        const float aspect = 0.5f; // fixed aspect ratio for the avatar image
+        const int leftGap = mEncumbranceBar ? mEncumbranceBar->getLeft() : 8;
+        const int bottomGap = leftGap;
+        const int rightGap = leftGap;
+        const int paneGap = 4;
+        const int tradeInfoGap = 8;
+        const MyGUI::IntCoord client = mMainWidget->getClientCoord();
+        const bool showTradeInfo = mTradeInfoPane->getVisible();
+        const int tradeInfoHeight = showTradeInfo ? mTradeInfoPane->getHeight() : 0;
+        int targetPaneHeight = client.height - bottomGap;
+        if (showTradeInfo)
+        {
+            MWGui::TradeWindow* tradeWindow = MWBase::Environment::get().getWindowManager()->getTradeWindow();
+            if (tradeWindow)
+            {
+                const MyGUI::IntCoord tradeClient = tradeWindow->mMainWidget->getClientCoord();
+                const int tradeClientAbsTop = tradeWindow->mMainWidget->getAbsoluteCoord().top + tradeClient.top;
+                if (tradeWindow->mBottomPane)
+                {
+                    const int tradeBottomAbsTop = tradeWindow->mBottomPane->getAbsoluteCoord().top;
+                    targetPaneHeight = tradeBottomAbsTop - tradeClientAbsTop;
+                }
+                else if (tradeWindow->getItemView())
+                {
+                    const MyGUI::IntCoord tradeItemViewAbs = tradeWindow->getItemView()->getAbsoluteCoord();
+                    targetPaneHeight = tradeItemViewAbs.top + tradeItemViewAbs.height - tradeClientAbsTop;
+                }
+            }
+            if (mItemView && targetPaneHeight <= 0)
+                targetPaneHeight = mItemView->getTop() + mItemView->getHeight();
+        }
+        const int maxPaneHeight
+            = std::max(0, client.height - bottomGap - (showTradeInfo ? tradeInfoHeight + tradeInfoGap : 0));
+        const int paneHeight = std::min(targetPaneHeight, maxPaneHeight);
+        const int leftPaneWidth = std::max(0, static_cast<int>((paneHeight - mArmorRating->getHeight()) * aspect));
+        const int rightPaneWidth = std::max(0, client.width - rightGap - leftPaneWidth - paneGap);
+
+        mLeftPane->setCoord(0, 0, leftPaneWidth, paneHeight);
+        mRightPane->setCoord(leftPaneWidth + paneGap, 0, rightPaneWidth, paneHeight);
+        if (showTradeInfo)
+        {
+            const int tradeInfoWidth = std::min(mTradeInfoPane->getWidth(), client.width - leftGap - rightGap);
+            const int tradeInfoTop = paneHeight + tradeInfoGap;
+            mTradeInfoPane->setCoord(leftGap, tradeInfoTop, tradeInfoWidth, tradeInfoHeight);
+        }
+    }
+
+    void InventoryWindow::resetFixedWindowGeometry()
+    {
+        if (MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>(false))
+        {
+            MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            MyGUI::IntCoord coord = getFixedWindowCoord(viewSize);
+            window->setCoord(coord);
+        }
     }
 
     void InventoryWindow::updatePlayer()
@@ -182,7 +232,10 @@ namespace MWGui
             mItemView->setModel(std::move(sortModel));
         }
 
-        mSortModel->setNameFilter(mFilterEdit->getCaption());
+        if (mFilterEdit)
+            mSortModel->setNameFilter(mFilterEdit->getCaption());
+        else
+            mSortModel->setNameFilter({});
 
         mFilterAll->setStateSelected(true);
         mFilterWeapon->setStateSelected(false);
@@ -201,6 +254,17 @@ namespace MWGui
         updateEncumbranceBar();
         mItemView->update();
         notifyContentChanged();
+    }
+
+    void InventoryWindow::clearFilter()
+    {
+        if (mFilterEdit && !mFilterEdit->getCaption().empty())
+        {
+            mFilterEdit->setCaption({});
+            if (mSortModel)
+                mSortModel->setNameFilter({});
+            mItemView->update();
+        }
     }
 
     void InventoryWindow::clear()
@@ -236,15 +300,14 @@ namespace MWGui
             return;
 
         mGuiMode = mode;
-        const WindowSettingValues settings = getModeSettings(mGuiMode);
         setPinButtonVisible(
             mode != GM_Container && mode != GM_Companion && mode != GM_Barter && !Settings::gui().mControllerMenus);
 
-        const WindowRectSettingValues& rect = settings.mIsMaximized ? settings.mMaximized : settings.mRegular;
-
+        // For all modes, use fixed 16:10 at 85% of viewport
         MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-        MyGUI::IntPoint pos(static_cast<int>(rect.mX * viewSize.width), static_cast<int>(rect.mY * viewSize.height));
-        MyGUI::IntSize size(static_cast<int>(rect.mW * viewSize.width), static_cast<int>(rect.mH * viewSize.height));
+        MyGUI::IntCoord fixed = getFixedWindowCoord(viewSize);
+        MyGUI::IntPoint pos(fixed.left, fixed.top);
+        MyGUI::IntSize size(fixed.width, fixed.height);
 
         bool needUpdate = (size.width != mMainWidget->getWidth() || size.height != mMainWidget->getHeight());
 
@@ -275,16 +338,110 @@ namespace MWGui
     void InventoryWindow::onBackgroundSelected()
     {
         if (mDragAndDrop->mIsOnDragAndDrop)
+        {
+            if (!mTradeModel)
+                return;
             mDragAndDrop->drop(mTradeModel, mItemView);
+        }
+    }
+
+    int InventoryWindow::getSelectedTabIndex() const
+    {
+        if (mFilterAll->getStateSelected())
+            return 0;
+        if (mFilterWeapon->getStateSelected())
+            return 1;
+        if (mFilterApparel->getStateSelected())
+            return 2;
+        if (mFilterMagic->getStateSelected())
+            return 3;
+        if (mFilterMisc->getStateSelected())
+            return 4;
+        return 0;
+    }
+
+    void InventoryWindow::setControllerTabsActive(bool active)
+    {
+        if (mControllerTabWidgets.empty())
+            return;
+
+        if (!active && mItemView && mItemView->getItemCount() <= 0)
+        {
+            mControllerTabsActive = true;
+            mControllerTabIndex = getSelectedTabIndex();
+            updateControllerTabFocus(-1, mControllerTabIndex);
+            mItemView->setActiveControllerWindow(false);
+            return;
+        }
+
+        mControllerTabsActive = active;
+        if (mControllerTabsActive)
+        {
+            mControllerTabIndex = getSelectedTabIndex();
+            updateControllerTabFocus(-1, mControllerTabIndex);
+            if (mItemView)
+                mItemView->setActiveControllerWindow(false);
+        }
+        else
+        {
+            if (mControllerTabHighlight)
+                mControllerTabHighlight->setVisible(false);
+            mItemView->setActiveControllerWindow(true);
+            mItemView->refreshControllerFocus();
+            MWBase::Environment::get().getWindowManager()->setCursorVisible(false);
+        }
+    }
+
+    void InventoryWindow::updateControllerTabFocus(int prevIndex, int newIndex)
+    {
+        if (newIndex < 0 || static_cast<size_t>(newIndex) >= mControllerTabWidgets.size())
+            return;
+
+        if (prevIndex >= 0 && static_cast<size_t>(prevIndex) < mControllerTabWidgets.size())
+        {
+            MyGUI::Widget* prevWidget = mControllerTabWidgets[prevIndex];
+            if (mFilterEdit && prevWidget == mFilterEdit)
+                MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(nullptr);
+        }
+
+        MyGUI::Widget* widget = mControllerTabWidgets[newIndex];
+        if (widget == nullptr)
+            return;
+
+        if (mControllerTabHighlight)
+        {
+            if (mCategories)
+            {
+                const MyGUI::IntCoord widgetCoord = widget->getCoord();
+                mControllerTabHighlight->setCoord(
+                    widgetCoord.left, widgetCoord.top, widgetCoord.width, widgetCoord.height);
+                mControllerTabHighlight->setVisible(true);
+            }
+            else
+            {
+                mControllerTabHighlight->setVisible(false);
+            }
+        }
     }
 
     void InventoryWindow::onItemSelected(int index)
     {
-        onItemSelectedFromSourceModel(mSortModel->mapToSource(index));
+        if (!mSortModel || !mTradeModel)
+            return;
+        if (index < 0 || static_cast<size_t>(index) >= mSortModel->getItemCount())
+            return;
+        const int sourceIndex = mSortModel->mapToSource(index);
+        if (sourceIndex < 0)
+            return;
+        onItemSelectedFromSourceModel(sourceIndex);
     }
 
     void InventoryWindow::onItemSelectedFromSourceModel(int index)
     {
+        if (!mTradeModel)
+            return;
+        if (index < 0 || static_cast<size_t>(index) >= mTradeModel->getItemCount())
+            return;
         if (mDragAndDrop->mIsOnDragAndDrop)
         {
             mDragAndDrop->drop(mTradeModel, mItemView);
@@ -299,6 +456,9 @@ namespace MWGui
         bool shift = MyGUI::InputManager::getInstance().isShiftPressed();
 
         if (MyGUI::InputManager::getInstance().isControlPressed())
+            count = 1;
+
+        if (mPendingControllerAction == ControllerAction::Use && count > 1)
             count = 1;
 
         if (mTrading)
@@ -344,9 +504,11 @@ namespace MWGui
                 message = "#{sQuanityMenuMessage01}";
             else if (mPendingControllerAction == ControllerAction::Drop)
                 message = "#{sDrop}";
+            else if (mGuiMode == MWGui::GM_Companion || mGuiMode == MWGui::GM_Container)
+                message = "Give";
             std::string name{ object.getClass().getName(object) };
             name += MWGui::ToolTips::getSoulString(object.getCellRef());
-            dialog->openCountDialog(name, message, static_cast<int>(count));
+            dialog->openCountDialog(name, message, static_cast<int>(count), this);
             dialog->eventOkClicked.clear();
             if (mTrading || mPendingControllerAction == ControllerAction::Sell)
                 dialog->eventOkClicked += MyGUI::newDelegate(this, &InventoryWindow::sellItem);
@@ -382,6 +544,8 @@ namespace MWGui
 
     void InventoryWindow::ensureSelectedItemUnequipped(int count)
     {
+        if (!mTradeModel || mSelectedItem < 0 || static_cast<size_t>(mSelectedItem) >= mTradeModel->getItemCount())
+            return;
         const ItemStack& item = mTradeModel->getItem(mSelectedItem);
         if (item.mType == ItemStack::Type_Equipped)
         {
@@ -406,7 +570,10 @@ namespace MWGui
                 }
 
                 if (newIndex == -1)
-                    throw std::runtime_error("Can't find restacked item");
+                {
+                    mSelectedItem = -1;
+                    return;
+                }
 
                 mSelectedItem = newIndex;
             }
@@ -466,13 +633,22 @@ namespace MWGui
 
     void InventoryWindow::equipItem(std::size_t count)
     {
-        const ItemStack& item = mTradeModel->getItem(mSelectedItem);
+        const int prevFocus = mItemView ? mItemView->getControllerFocus() : -1;
+
+        const ItemStack preItem = mTradeModel->getItem(mSelectedItem);
+        const bool wasEquipped = preItem.mType == ItemStack::Type_Equipped;
+        const MWWorld::Ptr prePtr = preItem.mBase;
+
         ensureSelectedItemUnequipped(static_cast<int>(count));
+        const MWWorld::Ptr postPtr
+            = (mSelectedItem >= 0 && static_cast<size_t>(mSelectedItem) < mTradeModel->getItemCount())
+            ? mTradeModel->getItem(mSelectedItem).mBase
+            : MWWorld::Ptr();
+
         // Disable the pick up sound as the item will be used immediately
         mDragAndDrop->startDrag(mSelectedItem, mSortModel, mTradeModel, mItemView, count, false);
         notifyContentChanged();
 
-        const bool wasEquipped = item.mType == ItemStack::Type_Equipped;
         // Drop the item on the avatar to activate or equip it.
         if (!wasEquipped)
             onAvatarClicked(nullptr);
@@ -481,6 +657,22 @@ namespace MWGui
         // This is needed when clicking on a stack of items; we only want to use the first item.
         if (mDragAndDrop->mIsOnDragAndDrop)
             mDragAndDrop->drop(mTradeModel, mItemView, wasEquipped);
+
+        if (Settings::gui().mControllerMenus)
+        {
+            // Equipping can re-sort the view (equipped items are grouped first). Keep focus on the activated item.
+            if (!wasEquipped)
+                mItemView->setControllerFocusToItem(prePtr);
+            else
+            {
+                // Unequipping should keep focus position stable. If the list shrank (e.g. stack merged), keep focus
+                // on the resulting item instead of clamping to the previous slot.
+                if (mItemView && prevFocus >= 0 && prevFocus < mItemView->getItemCount())
+                    mItemView->setControllerFocusIndex(prevFocus);
+                else if (!postPtr.isEmpty())
+                    mItemView->setControllerFocusToItem(postPtr);
+            }
+        }
     }
 
     void InventoryWindow::updateItemView()
@@ -494,9 +686,11 @@ namespace MWGui
 
     void InventoryWindow::onOpen()
     {
+        resetFixedWindowGeometry();
+
         // Reset the filter focus when opening the window
         MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
-        if (focus == mFilterEdit)
+        if (mFilterEdit && focus == mFilterEdit)
             MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(nullptr);
 
         if (!mPtr.isEmpty())
@@ -506,6 +700,8 @@ namespace MWGui
             notifyContentChanged();
         }
         adjustPanes();
+        if (Settings::gui().mControllerMenus)
+            MWBase::Environment::get().getWindowManager()->setCursorVisible(false);
 
         mItemTransfer->addTarget(*mItemView);
     }
@@ -513,6 +709,9 @@ namespace MWGui
     void InventoryWindow::onClose()
     {
         mItemTransfer->removeTarget(*mItemView);
+        if (mControllerTabHighlight)
+            mControllerTabHighlight->setVisible(false);
+        mControllerTabsActive = false;
     }
 
     void InventoryWindow::onWindowResize(MyGUI::Window* sender)
@@ -561,9 +760,43 @@ namespace MWGui
         mAvatarImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, top, right, 0.f));
     }
 
+    void InventoryWindow::updateTradeInfo()
+    {
+        if (!mTrading)
+            return;
+
+        MWGui::TradeWindow* tradeWindow = MWBase::Environment::get().getWindowManager()->getTradeWindow();
+        if (!tradeWindow)
+            return;
+
+        MWWorld::Ptr player = MWMechanics::getPlayer();
+        int playerGold = player.getClass().getContainerStore(player).count(MWWorld::ContainerStore::sGoldId);
+        mTradePlayerGold->setCaptionWithReplacing("#{sYourGold} " + MyGUI::utility::toString(playerGold));
+
+        TradeItemModel* playerTradeModel = getTradeModel();
+        if (!playerTradeModel || !tradeWindow->mTradeModel)
+            return;
+
+        const std::vector<ItemStack>& playerBorrowed = playerTradeModel->getItemsBorrowedToUs();
+        const std::vector<ItemStack>& merchantBorrowed = tradeWindow->mTradeModel->getItemsBorrowedToUs();
+        int currentBalance = tradeWindow->mCurrentBalance;
+        if (playerBorrowed.empty() && merchantBorrowed.empty())
+            currentBalance = 0;
+
+        if (currentBalance < 0)
+            mTradeTotalBalanceLabel->setCaptionWithReplacing("#{sTotalCost}");
+        else
+            mTradeTotalBalanceLabel->setCaptionWithReplacing("#{sTotalSold}");
+
+        mTradeTotalBalanceValue->setCaption(MyGUI::utility::toString(std::abs(currentBalance)));
+        mTradeMerchantGold->setCaptionWithReplacing(
+            "#{sSellerGold} " + MyGUI::utility::toString(tradeWindow->getMerchantGold()));
+    }
+
     void InventoryWindow::onNameFilterChanged(MyGUI::EditBox* sender)
     {
-        mSortModel->setNameFilter(sender->getCaption());
+        if (mSortModel)
+            mSortModel->setNameFilter(sender->getCaption());
         mItemView->update();
     }
 
@@ -585,9 +818,15 @@ namespace MWGui
         mFilterMagic->setStateSelected(false);
         mFilterMisc->setStateSelected(false);
 
+        if (Settings::gui().mControllerMenus && mControllerTabsActive)
+            mItemView->setActiveControllerWindow(false);
         mItemView->update();
 
         sender->castType<MyGUI::Button>()->setStateSelected(true);
+        if (Settings::gui().mControllerMenus && mControllerTabsActive)
+            mItemView->setActiveControllerWindow(false);
+        if (Settings::gui().mControllerMenus && mItemView->getItemCount() <= 0)
+            setControllerTabsActive(true);
     }
 
     void InventoryWindow::onPinToggled()
@@ -754,7 +993,8 @@ namespace MWGui
 
         int capacity = static_cast<int>(player.getClass().getCapacity(player));
         float encumbrance = player.getClass().getEncumbrance(player);
-        mTradeModel->adjustEncumbrance(encumbrance);
+        if (mTradeModel)
+            mTradeModel->adjustEncumbrance(encumbrance);
         mEncumbranceBar->setValue(static_cast<int>(std::ceil(encumbrance)), capacity);
     }
 
@@ -775,13 +1015,26 @@ namespace MWGui
             mDragAndDrop->update();
             mItemView->update();
             notifyContentChanged();
+            if (Settings::gui().mControllerMenus && !mControllerTabWidgets.empty() && mItemView->getItemCount() <= 0)
+                setControllerTabsActive(true);
             mUpdateNextFrame = false;
         }
+
+        if (Settings::gui().mControllerMenus && !mControllerTabsActive && !mControllerTabWidgets.empty()
+            && mItemView->getItemCount() <= 0)
+            setControllerTabsActive(true);
+
+        if (mTrading)
+            updateTradeInfo();
     }
 
     void InventoryWindow::setTrading(bool trading)
     {
         mTrading = trading;
+        mTradeInfoPane->setVisible(trading);
+        if (mTrading)
+            updateTradeInfo();
+        adjustPanes();
     }
 
     void InventoryWindow::dirtyPreview()
@@ -964,32 +1217,46 @@ namespace MWGui
 
     ControllerButtons* InventoryWindow::getControllerButtons()
     {
+        mControllerButtons = {};
         switch (mGuiMode)
         {
             case MWGui::GM_Companion:
-                mControllerButtons.mA = "#{OMWEngine:InventorySelect}";
+                mControllerButtons.mA = "Give";
                 mControllerButtons.mB = "#{Interface:Close}";
-                mControllerButtons.mX.clear();
-                mControllerButtons.mR2 = "#{Interface:Share}";
+                mControllerButtons.mY = "#{Interface:Info}";
+                mControllerButtons.mL2 = "#{Interface:Container}";
                 break;
             case MWGui::GM_Container:
                 mControllerButtons.mA = "#{OMWEngine:InventorySelect}";
                 mControllerButtons.mB = "#{Interface:Close}";
                 mControllerButtons.mX = "#{Interface:TakeAll}";
-                mControllerButtons.mR2 = "#{Interface:Container}";
+                mControllerButtons.mY = "#{Interface:Info}";
+                mControllerButtons.mL2 = "#{Interface:Container}";
                 break;
             case MWGui::GM_Barter:
                 mControllerButtons.mA = "#{Interface:Sell}";
                 mControllerButtons.mB = "#{Interface:Cancel}";
                 mControllerButtons.mX = "#{Interface:Offer}";
-                mControllerButtons.mR2 = "#{Interface:Barter}";
+                mControllerButtons.mY = "#{Interface:Info}";
+                mControllerButtons.mL2 = "#{Interface:Barter}";
                 break;
             case MWGui::GM_Inventory:
             default:
-                mControllerButtons.mA = "#{Interface:Take}";
+                mControllerButtons.mA = "#{Interface:Select}";
                 mControllerButtons.mB = "#{Interface:Back}";
                 mControllerButtons.mX = "#{Interface:Drop}";
-                mControllerButtons.mR2.clear();
+                mControllerButtons.mY = "#{Interface:Info}";
+                const bool skipMap = MWBase::Environment::get().getWindowManager()->isCrassifiedNavigationEnabled();
+                if (Settings::gui().mXboxTabOrder)
+                {
+                    mControllerButtons.mL2 = "#{sStats}";
+                    mControllerButtons.mR2 = "#{sMagicMenu}";
+                }
+                else
+                {
+                    mControllerButtons.mL2 = skipMap ? "#{sStats}" : "#{sMap}";
+                    mControllerButtons.mR2 = "#{sMagicMenu}";
+                }
                 break;
         }
         return &mControllerButtons;
@@ -999,16 +1266,82 @@ namespace MWGui
     {
         mPendingControllerAction = ControllerAction::None; // Clear any pending controller actions
 
+        if (Settings::gui().mControllerMenus)
+        {
+            MWBase::Environment::get().getWindowManager()->setCursorVisible(false);
+            if (arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER || arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+            {
+                if (mControllerTabWidgets.empty())
+                    return true;
+
+                const int delta = (arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) ? 1 : -1;
+                const int prevIndex = mControllerTabsActive ? mControllerTabIndex : getSelectedTabIndex();
+                const int newIndex
+                    = static_cast<int>(wrap(static_cast<size_t>(prevIndex), mControllerTabWidgets.size(), delta));
+                mControllerTabIndex = newIndex;
+
+                if (MyGUI::Widget* widget = mControllerTabWidgets[newIndex])
+                    onFilterChanged(widget);
+
+                if (mControllerTabsActive)
+                    updateControllerTabFocus(prevIndex, newIndex);
+
+                return true;
+            }
+            if (mControllerTabsActive)
+            {
+                if (mControllerTabWidgets.empty())
+                    return true;
+                if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
+                {
+                    int delta = (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) ? 1 : -1;
+                    int prev = mControllerTabIndex;
+                    mControllerTabIndex = static_cast<int>(
+                        wrap(static_cast<size_t>(mControllerTabIndex), mControllerTabWidgets.size(), delta));
+                    updateControllerTabFocus(prev, mControllerTabIndex);
+                    return true;
+                }
+                if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
+                {
+                    if (mItemView->getItemCount() <= 0)
+                        return true;
+                    setControllerTabsActive(false);
+                    return true;
+                }
+                if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP)
+                    return true;
+                if (arg.button == SDL_CONTROLLER_BUTTON_A)
+                {
+                    MyGUI::Widget* widget = mControllerTabWidgets[mControllerTabIndex];
+                    onFilterChanged(widget);
+                    MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("Menu Click"));
+                    return true;
+                }
+            }
+            else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP)
+            {
+                if (mItemView->isControllerFocusTopRow())
+                {
+                    setControllerTabsActive(true);
+                    return true;
+                }
+            }
+        }
+
         if (arg.button == SDL_CONTROLLER_BUTTON_B)
         {
+            if (mFilterEdit && !mFilterEdit->getCaption().empty())
+            {
+                clearFilter();
+                return true;
+            }
             MWBase::Environment::get().getWindowManager()->exitCurrentGuiMode();
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
-            // In the inventory, leave the action as None so pressing A behaves like a left mouse
-            // click: pick the item up into a drag (and drop it again on the next press) instead of
-            // instantly using/equipping it. Equipping is done by dragging onto the avatar paperdoll.
-            if (mGuiMode == MWGui::GM_Companion || mGuiMode == MWGui::GM_Container)
+            if (mGuiMode == MWGui::GM_Inventory)
+                mPendingControllerAction = ControllerAction::Use;
+            else if (mGuiMode == MWGui::GM_Companion || mGuiMode == MWGui::GM_Container)
                 mPendingControllerAction = ControllerAction::Transfer;
             else if (mGuiMode == MWGui::GM_Barter)
                 mPendingControllerAction = ControllerAction::Sell;
@@ -1039,34 +1372,6 @@ namespace MWGui
                 tradeWindow->onControllerButtonEvent(arg);
             }
         }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
-        {
-            if (mFilterAll->getStateSelected())
-                onFilterChanged(mFilterMisc);
-            else if (mFilterWeapon->getStateSelected())
-                onFilterChanged(mFilterAll);
-            else if (mFilterApparel->getStateSelected())
-                onFilterChanged(mFilterWeapon);
-            else if (mFilterMagic->getStateSelected())
-                onFilterChanged(mFilterApparel);
-            else if (mFilterMisc->getStateSelected())
-                onFilterChanged(mFilterMagic);
-            MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("Menu Click"));
-        }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
-        {
-            if (mFilterAll->getStateSelected())
-                onFilterChanged(mFilterWeapon);
-            else if (mFilterWeapon->getStateSelected())
-                onFilterChanged(mFilterApparel);
-            else if (mFilterApparel->getStateSelected())
-                onFilterChanged(mFilterMagic);
-            else if (mFilterMagic->getStateSelected())
-                onFilterChanged(mFilterMisc);
-            else if (mFilterMisc->getStateSelected())
-                onFilterChanged(mFilterAll);
-            MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("Menu Click"));
-        }
         else
         {
             mItemView->onControllerButton(arg.button);
@@ -1083,13 +1388,12 @@ namespace MWGui
         MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
         if (winMgr->getMode() == MWGui::GM_Inventory)
         {
-            // Fill the screen, or limit to a certain size on large screens. Size chosen to
-            // match the size of the stats window.
             MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-            int width = std::min(viewSize.width, 1600);
-            int height = std::min(winMgr->getControllerMenuHeight(), StatsWindow::getIdealHeight());
-            int x = (viewSize.width - width) / 2;
-            int y = (viewSize.height - height) / 2;
+            MyGUI::IntCoord coord = getFixedWindowCoord(viewSize);
+            int x = coord.left;
+            int y = coord.top;
+            int width = coord.width;
+            int height = coord.height;
 
             MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>();
             window->setCoord(x, active ? y : viewSize.height + 1, width, height);
@@ -1098,15 +1402,48 @@ namespace MWGui
             updatePreviewSize();
         }
 
-        // Show L1 and R1 buttons next to tabs
-        MyGUI::Widget* image;
-        getWidget(image, "BtnL1Image");
-        image->setVisible(active);
-
-        getWidget(image, "BtnR1Image");
-        image->setVisible(active);
-
-        mItemView->setActiveControllerWindow(active);
+        if (mFilterEdit && active && winMgr->getMode() != MWGui::GM_Barter)
+            clearFilter();
+        winMgr->setCursorVisible(false);
+        if (!active)
+            mControllerTabsActive = false;
+        if (active && Settings::gui().mControllerMenus && !mControllerTabWidgets.empty()
+            && mItemView->getItemCount() <= 0)
+        {
+            setControllerTabsActive(true);
+            mItemView->setActiveControllerWindow(false);
+        }
+        mItemView->setActiveControllerWindow(active && !mControllerTabsActive);
+        if (active && !mControllerTabsActive)
+            mItemView->refreshControllerFocus();
+        winMgr->setCursorVisible(false);
+        if (active)
+        {
+            adjustPanes();
+            if (mControllerTabsActive)
+                updateControllerTabFocus(-1, mControllerTabIndex);
+        }
         WindowBase::setActiveControllerWindow(active);
+    }
+
+    MyGUI::IntCoord InventoryWindow::getFixedWindowCoord(const MyGUI::IntSize& viewSize) const
+    {
+        const float scale = 0.85f;
+        const float targetWidth = viewSize.width * scale;
+        const float targetHeightFromWidth = targetWidth * 10.f / 16.f;
+        const float maxHeight = viewSize.height * scale;
+
+        int width = static_cast<int>(targetWidth);
+        int height = static_cast<int>(targetHeightFromWidth);
+
+        if (height > maxHeight)
+        {
+            height = static_cast<int>(maxHeight);
+            width = static_cast<int>(height * 16.f / 10.f);
+        }
+
+        const int x = (viewSize.width - width) / 2;
+        const int y = (viewSize.height - height) / 2;
+        return MyGUI::IntCoord(x, y, width, height);
     }
 }

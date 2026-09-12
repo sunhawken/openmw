@@ -1,6 +1,8 @@
 #ifndef MWGUI_COUNTDIALOG_H
 #define MWGUI_COUNTDIALOG_H
 
+#include <chrono>
+
 #include "windowbase.hpp"
 
 namespace Gui
@@ -14,8 +16,10 @@ namespace MWGui
     {
     public:
         CountDialog();
-        void openCountDialog(const std::string& item, const std::string& message, const int maxCount);
+        void openCountDialog(const std::string& item, const std::string& message, const int maxCount,
+            WindowBase* tooltipSourceWindow = nullptr);
         void setCount(int count);
+        WindowBase* getTooltipSourceWindow() const { return mTooltipSourceWindow; }
 
         /** Event : Ok button was clicked.\n
             signature : void method(MyGUI::Widget* sender, std::size_t count)\n
@@ -29,6 +33,11 @@ namespace MWGui
         MyGUI::TextBox* mLabelText;
         MyGUI::Button* mOkButton;
         MyGUI::Button* mCancelButton;
+        WindowBase* mTooltipSourceWindow = nullptr;
+        int mNavButton = -1;
+        bool mNavActive = false;
+        std::chrono::steady_clock::time_point mNavStartTime{};
+        std::chrono::steady_clock::time_point mLastNavEventTime{};
 
         void onCancelButtonClicked(MyGUI::Widget* sender);
         void onOkButtonClicked(MyGUI::Widget* sender);
@@ -36,6 +45,7 @@ namespace MWGui
         void onSliderMoved(MyGUI::ScrollBar* sender, size_t position);
         void onEnterKeyPressed(MyGUI::EditBox* sender);
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
+        void resetControllerNavHold();
     };
 
 }

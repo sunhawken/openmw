@@ -1,5 +1,7 @@
 #include "bookwindow.hpp"
 
+#include <algorithm>
+
 #include <MyGUI_InputManager.h>
 #include <MyGUI_TextBox.h>
 
@@ -18,6 +20,10 @@
 
 namespace MWGui
 {
+    namespace
+    {
+        constexpr int sJournalBookVerticalOffset = 15;
+    }
 
     BookWindow::BookWindow()
         : BookWindowBase("openmw_book.layout")
@@ -66,11 +72,24 @@ namespace MWGui
                 0, 0, static_cast<int>((64 - 7) * scale), static_cast<int>(mNextPageButton->getSize().height * scale)));
         }
 
-        mControllerButtons.mL1 = "#{Interface:Prev}";
-        mControllerButtons.mR1 = "#{Interface:Next}";
+        mControllerButtons = {};
+        mControllerButtons.mL2 = "#{Interface:Prev}";
+        mControllerButtons.mR2 = "#{Interface:Next}";
         mControllerButtons.mB = "#{Interface:Close}";
 
+        mTakeButton->setEnabled(false);
+        mTakeButton->setVisible(false);
+
         center();
+        MyGUI::IntPoint pos = mMainWidget->getPosition();
+        mMainWidget->setPosition(pos.left, std::max(0, pos.top - sJournalBookVerticalOffset));
+    }
+
+    void BookWindow::onResChange(int, int)
+    {
+        center();
+        MyGUI::IntPoint pos = mMainWidget->getPosition();
+        mMainWidget->setPosition(pos.left, std::max(0, pos.top - sJournalBookVerticalOffset));
     }
 
     void BookWindow::onMouseWheel(MyGUI::Widget* /*sender*/, int rel)
@@ -105,7 +124,7 @@ namespace MWGui
             text = &book.get<ESM4::Book>()->mBase->mText;
         bool shrinkTextAtLastTag = book.getType() == ESM::REC_BOOK;
 
-        Formatting::BookFormatter formatter;
+        Formatting::BookFormatter formatter(/*useDialogueBoldFont=*/true);
         mPages = formatter.markupToWidget(mLeftPage, *text, shrinkTextAtLastTag);
         formatter.markupToWidget(mRightPage, *text, shrinkTextAtLastTag);
 
@@ -119,7 +138,7 @@ namespace MWGui
     void BookWindow::setTakeButtonShow(bool show)
     {
         mTakeButtonShow = show;
-        mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
     }
 
     void BookWindow::onKeyButtonPressed(MyGUI::Widget* /*sender*/, MyGUI::KeyCode key, MyGUI::Char character)
@@ -133,7 +152,7 @@ namespace MWGui
     void BookWindow::setInventoryAllowed(bool allowed)
     {
         mTakeButtonAllowed = allowed;
-        mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
     }
 
     void BookWindow::onCloseButtonClicked(MyGUI::Widget* /*sender*/)
@@ -166,16 +185,8 @@ namespace MWGui
         mLeftPageNumber->setCaption(MyGUI::utility::toString(mCurrentPage * 2 + 1));
         mRightPageNumber->setCaption(MyGUI::utility::toString(mCurrentPage * 2 + 2));
 
-        MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
-        bool nextPageVisible = (mCurrentPage + 1) * 2 < mPages.size();
-        mNextPageButton->setVisible(nextPageVisible);
-        bool prevPageVisible = mCurrentPage != 0;
-        mPrevPageButton->setVisible(prevPageVisible);
-
-        if (focus == mNextPageButton && !nextPageVisible && prevPageVisible)
-            MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mPrevPageButton);
-        else if (focus == mPrevPageButton && !prevPageVisible && nextPageVisible)
-            MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mNextPageButton);
+        mNextPageButton->setVisible(false);
+        mPrevPageButton->setVisible(false);
 
         if (mPages.empty())
             return;
@@ -224,7 +235,7 @@ namespace MWGui
 
     ControllerButtons* BookWindow::getControllerButtons()
     {
-        if (mTakeButton->getVisible())
+        if (mTakeButtonShow && mTakeButtonAllowed)
             mControllerButtons.mA = "#{Interface:Take}";
         else
             mControllerButtons.mA.clear();
@@ -235,16 +246,31 @@ namespace MWGui
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
-            if (mTakeButton->getVisible())
+            if (mTakeButtonShow && mTakeButtonAllowed)
                 onTakeButtonClicked(mTakeButton);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_B)
             onCloseButtonClicked(mCloseButton);
-        else if (arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
-            prevPage();
-        else if (arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
             nextPage();
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP)
+            prevPage();
 
         return true;
+    }
+
+    bool BookWindow::onControllerThumbstickEvent(const SDL_ControllerAxisEvent& arg)
+    {
+        if (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)
+        {
+            prevPage();
+            return true;
+        }
+        if (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
+        {
+            nextPage();
+            return true;
+        }
+        return false;
     }
 }

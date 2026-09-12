@@ -1,11 +1,14 @@
 #include "settingswindow.hpp"
 
+#include <algorithm>
 #include <array>
+#include <memory>
 
 #include <unicode/locid.h>
 
 #include <MyGUI_ComboBox.h>
 #include <MyGUI_Gui.h>
+#include <MyGUI_InputManager.h>
 #include <MyGUI_LanguageManager.h>
 #include <MyGUI_ScrollBar.h>
 #include <MyGUI_ScrollView.h>
@@ -18,10 +21,10 @@
 #include <components/debug/debuglog.hpp>
 #include <components/files/configurationmanager.hpp>
 #include <components/l10n/manager.hpp>
+#include <components/l10n/messagebundles.hpp>
 #include <components/lua_ui/scriptsettings.hpp>
 #include <components/misc/constants.hpp>
 #include <components/misc/display.hpp>
-#include <components/misc/jigglezoffset.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
@@ -63,6 +66,92 @@ namespace
         return "#{OMWEngine:TextureFilteringOther}";
     }
 
+    struct KeyboardFileInfo
+    {
+        std::string mBaseName;
+        std::string mLanguageName;
+    };
+
+    std::string getMessageOrEmpty(const L10n::MessageBundles& bundles, std::string_view key)
+    {
+        std::string value = bundles.formatMessage(key, {}, {});
+        if (value == key)
+            return {};
+        return value;
+    }
+
+    std::unique_ptr<L10n::MessageBundles> loadKeyboardBundles(const VFS::Manager* vfs, std::string_view baseName)
+    {
+        if (!vfs || baseName.empty())
+            return {};
+
+        VFS::Path::Normalized path("mygui");
+        path /= "Keyboard";
+        std::string fileName(baseName);
+        if (!Misc::StringUtils::ciEndsWith(fileName, ".yaml"))
+            fileName += ".yaml";
+        path /= fileName;
+        const Files::IStreamPtr stream = vfs->find(path);
+        if (!stream)
+            return {};
+
+        std::vector<icu::Locale> preferredLocales;
+        preferredLocales.emplace_back("keyboard");
+        icu::Locale fallbackLocale("en");
+        auto bundles = std::make_unique<L10n::MessageBundles>(preferredLocales, fallbackLocale);
+        bundles->load(*stream, preferredLocales.front());
+        return bundles;
+    }
+
+    std::vector<KeyboardFileInfo> listKeyboardFiles(const VFS::Manager* vfs)
+    {
+        std::vector<KeyboardFileInfo> files;
+        if (!vfs)
+            return files;
+
+        constexpr std::string_view keyboardPath = "mygui/Keyboard";
+        for (const auto& path : vfs->getRecursiveDirectoryIterator(keyboardPath))
+        {
+            if (path.extension() != "yaml")
+                continue;
+            KeyboardFileInfo info;
+            info.mBaseName = std::string(path.stem());
+            std::unique_ptr<L10n::MessageBundles> bundles = loadKeyboardBundles(vfs, info.mBaseName);
+            if (bundles)
+                info.mLanguageName = getMessageOrEmpty(*bundles, "languageName");
+            if (info.mLanguageName.empty())
+                info.mLanguageName = info.mBaseName;
+            files.push_back(std::move(info));
+        }
+
+        std::sort(files.begin(), files.end(), [](const KeyboardFileInfo& left, const KeyboardFileInfo& right) {
+            return Misc::StringUtils::ciLess(left.mBaseName, right.mBaseName);
+        });
+        return files;
+    }
+
+    std::vector<std::string> getKeyboardLayouts(const VFS::Manager* vfs, std::string_view languageCode)
+    {
+        std::vector<std::string> layouts;
+        std::unique_ptr<L10n::MessageBundles> bundles = loadKeyboardBundles(vfs, languageCode);
+        if (bundles)
+        {
+            std::string layoutList = getMessageOrEmpty(*bundles, "Layouts");
+            if (!layoutList.empty())
+            {
+                Misc::StringUtils::split(layoutList, layouts, ",");
+                for (std::string& name : layouts)
+                    Misc::StringUtils::trim(name);
+                layouts.erase(std::remove_if(
+                                  layouts.begin(), layouts.end(), [](const std::string& name) { return name.empty(); }),
+                    layouts.end());
+            }
+        }
+        if (layouts.empty())
+            layouts.push_back("qwerty");
+        return layouts;
+    }
+
     MyGUI::UString lightingMethodToStr(SceneUtil::LightingMethod method)
     {
         std::string_view result;
@@ -85,6 +174,66 @@ namespace
         if (left.first == right.first)
             return left.second > right.second;
         return left.first > right.first;
+    }
+
+    struct RecommendedScalingDefaults
+    {
+        int width;
+        int height;
+        float interfaceScaling;
+        float dialogueScaling;
+    };
+
+    constexpr std::array<RecommendedScalingDefaults, 21> recommendedScalingDefaults = {
+        RecommendedScalingDefaults{ 640, 480, 0.8f, 1.0f },
+        RecommendedScalingDefaults{ 720, 480, 0.8f, 1.0f },
+        RecommendedScalingDefaults{ 720, 576, 0.9f, 1.1f },
+        RecommendedScalingDefaults{ 800, 600, 1.0f, 1.2f },
+        RecommendedScalingDefaults{ 1024, 768, 1.25f, 1.45f },
+        RecommendedScalingDefaults{ 1152, 864, 1.45f, 1.65f },
+        RecommendedScalingDefaults{ 1280, 720, 1.45f, 1.65f },
+        RecommendedScalingDefaults{ 1280, 800, 1.65f, 2.0f },
+        RecommendedScalingDefaults{ 1280, 960, 1.65f, 2.0f },
+        RecommendedScalingDefaults{ 1280, 1024, 1.65f, 2.0f },
+        RecommendedScalingDefaults{ 1360, 768, 1.55f, 1.85f },
+        RecommendedScalingDefaults{ 1366, 768, 1.55f, 1.85f },
+        RecommendedScalingDefaults{ 1440, 1080, 1.85f, 2.15f },
+        RecommendedScalingDefaults{ 1600, 900, 1.75f, 2.05f },
+        RecommendedScalingDefaults{ 1600, 1200, 1.95f, 2.35f },
+        RecommendedScalingDefaults{ 1680, 1050, 1.85f, 2.25f },
+        RecommendedScalingDefaults{ 1920, 1080, 1.85f, 2.25f },
+        RecommendedScalingDefaults{ 1920, 1200, 1.95f, 2.35f },
+        RecommendedScalingDefaults{ 1920, 1440, 2.35f, 2.75f },
+        RecommendedScalingDefaults{ 2560, 1440, 2.35f, 2.75f },
+        RecommendedScalingDefaults{ 3840, 2160, 2.65f, 3.15f },
+    };
+
+    bool tryGetRecommendedScaling(int width, int height, float& interfaceScaling, float& dialogueScaling)
+    {
+        for (const auto& entry : recommendedScalingDefaults)
+        {
+            if (entry.width == width && entry.height == height)
+            {
+                interfaceScaling = entry.interfaceScaling;
+                dialogueScaling = entry.dialogueScaling;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void applyRecommendedScalingDefaults(int width, int height)
+    {
+        if (!Settings::gui().mUseRecommendedScalingDefaults)
+            return;
+
+        float interfaceScaling = 1.0f;
+        float dialogueScaling = 1.0f;
+        if (!tryGetRecommendedScaling(width, height, interfaceScaling, dialogueScaling))
+            return;
+
+        Settings::gui().mScalingFactor.set(interfaceScaling);
+        Settings::gui().mDialogueInterfaceScaling.set(dialogueScaling);
     }
 
     const std::string_view checkButtonType = "CheckButton";
@@ -120,6 +269,33 @@ namespace
             min = MyGUI::utility::parseFloat(widget->getUserString(settingMin));
         if (!widget->getUserString(settingMax).empty())
             max = MyGUI::utility::parseFloat(widget->getUserString(settingMax));
+    }
+
+    void collectComboBoxes(MyGUI::Widget* parent, std::vector<MyGUI::ComboBox*>& out)
+    {
+        MyGUI::EnumeratorWidgetPtr enumerator = parent->getEnumerator();
+        while (enumerator.next())
+        {
+            MyGUI::Widget* current = enumerator.current();
+            if (auto* combo = current->castType<MyGUI::ComboBox>(false))
+                out.push_back(combo);
+            collectComboBoxes(current, out);
+        }
+    }
+
+    void retargetComboPopupLayer(MyGUI::Widget* root, std::string_view layer)
+    {
+        if (!root)
+            return;
+        std::vector<MyGUI::ComboBox*> combos;
+        collectComboBoxes(root, combos);
+        for (MyGUI::ComboBox* combo : combos)
+        {
+            MyGUI::Widget* list = combo->findWidget("List");
+            if (!list)
+                continue;
+            list->setWidgetStyle(MyGUI::WidgetStyle::Popup, layer);
+        }
     }
 
     void updateMaxLightsComboBox(MyGUI::ComboBox* box)
@@ -280,8 +456,14 @@ namespace MWGui
         getWidget(mWaterRainRippleDetail, "WaterRainRippleDetail");
         getWidget(mPrimaryLanguage, "PrimaryLanguage");
         getWidget(mSecondaryLanguage, "SecondaryLanguage");
+        getWidget(mKeyboardPrimaryLanguage, "KeyboardPrimaryLanguage");
+        getWidget(mKeyboardSecondaryLanguage, "KeyboardSecondaryLanguage");
+        getWidget(mKeyboardPrimaryLayout, "KeyboardPrimaryLayout");
+        getWidget(mKeyboardSecondaryLayout, "KeyboardSecondaryLayout");
+        getWidget(mKeyboardSecondaryLayoutLabel, "KeyboardSecondaryLayoutLabel");
         getWidget(mGmstOverridesL10n, "GmstOverridesL10nButton");
         getWidget(mWindowModeHint, "WindowModeHint");
+        getWidget(mScalingRestartHint, "ScalingRestartHint");
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mMaxLights, "MaxLights");
@@ -341,12 +523,20 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onPrimaryLanguageChanged);
         mSecondaryLanguage->eventComboChangePosition
             += MyGUI::newDelegate(this, &SettingsWindow::onSecondaryLanguageChanged);
+        mKeyboardPrimaryLanguage->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onKeyboardPrimaryLanguageChanged);
+        mKeyboardSecondaryLanguage->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onKeyboardSecondaryLanguageChanged);
+        mKeyboardPrimaryLayout->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onKeyboardPrimaryLayoutChanged);
+        mKeyboardSecondaryLayout->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onKeyboardSecondaryLayoutChanged);
         mGmstOverridesL10n->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onGmstOverridesL10nChanged);
 
-        computeMinimumWindowSize();
+        mScalingRestartHint->setVisible(Settings::gui().mUseRecommendedScalingDefaults);
 
-        center();
+        computeMinimumWindowSize();
 
         mResetControlsButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onResetDefaultBindings);
@@ -405,6 +595,7 @@ namespace MWGui
 
         mScriptFilter->eventEditTextChange += MyGUI::newDelegate(this, &SettingsWindow::onScriptFilterChange);
         mScriptList->eventListMouseItemActivate += MyGUI::newDelegate(this, &SettingsWindow::onScriptListSelection);
+        retargetComboPopupLayer(mMainWidget, "SettingsPopup");
 
         std::vector<std::string> availableLanguages;
         const VFS::Manager* vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
@@ -459,8 +650,64 @@ namespace MWGui
             i++;
         }
 
+        populateKeyboardLanguageCombo(mKeyboardPrimaryLanguage, false);
+        populateKeyboardLanguageCombo(mKeyboardSecondaryLanguage, true);
+
+        std::string primaryKeyboardLanguage = Settings::gui().mVirtualKeyboardLanguage;
+        if (primaryKeyboardLanguage.empty())
+            primaryKeyboardLanguage = currentLocales[0];
+        Settings::gui().mVirtualKeyboardLanguage.set(primaryKeyboardLanguage);
+
+        auto selectComboByData = [](MyGUI::ComboBox* combo, const std::string& value) {
+            for (size_t index = 0; index < combo->getItemCount(); ++index)
+            {
+                if (*combo->getItemDataAt<std::string>(index) == value)
+                {
+                    combo->setIndexSelected(index);
+                    return;
+                }
+            }
+        };
+
+        selectComboByData(mKeyboardPrimaryLanguage, primaryKeyboardLanguage);
+
+        populateKeyboardLayoutCombo(primaryKeyboardLanguage, mKeyboardPrimaryLayout);
+        const std::vector<std::string> primaryLayouts = getKeyboardLayouts(vfs, primaryKeyboardLanguage);
+        std::string primaryLayout = Settings::gui().mVirtualKeyboardLayout;
+        if (primaryLayout.empty()
+            || std::find(primaryLayouts.begin(), primaryLayouts.end(), primaryLayout) == primaryLayouts.end())
+            primaryLayout = primaryLayouts.front();
+        Settings::gui().mVirtualKeyboardLayout.set(primaryLayout);
+        selectComboByData(mKeyboardPrimaryLayout, primaryLayout);
+
+        const std::string secondaryKeyboardLanguage = Settings::gui().mVirtualKeyboardLanguageSecondary;
+        if (!secondaryKeyboardLanguage.empty())
+            selectComboByData(mKeyboardSecondaryLanguage, secondaryKeyboardLanguage);
+        else
+            mKeyboardSecondaryLanguage->setIndexSelected(0);
+
+        if (!secondaryKeyboardLanguage.empty())
+        {
+            populateKeyboardLayoutCombo(secondaryKeyboardLanguage, mKeyboardSecondaryLayout);
+            const std::vector<std::string> secondaryLayouts = getKeyboardLayouts(vfs, secondaryKeyboardLanguage);
+            std::string secondaryLayout = Settings::gui().mVirtualKeyboardLayoutSecondary;
+            if (secondaryLayout.empty()
+                || std::find(secondaryLayouts.begin(), secondaryLayouts.end(), secondaryLayout)
+                    == secondaryLayouts.end())
+                secondaryLayout = secondaryLayouts.front();
+            Settings::gui().mVirtualKeyboardLayoutSecondary.set(secondaryLayout);
+            selectComboByData(mKeyboardSecondaryLayout, secondaryLayout);
+        }
+        else
+        {
+            Settings::gui().mVirtualKeyboardLayoutSecondary.set("");
+            mKeyboardSecondaryLayout->removeAllItems();
+        }
+        updateKeyboardSecondaryLayoutVisibility();
+
+        mControllerButtons = {};
         mControllerButtons.mA = "#{Interface:Select}";
-        mControllerButtons.mB = "#{Interface:OK}";
+        mControllerButtons.mB = "#{Interface:Back}";
         mControllerButtons.mLStick = "#{Interface:Mouse}";
     }
 
@@ -495,6 +742,7 @@ namespace MWGui
             Settings::video().mResolutionX.set(resolution->first);
             Settings::video().mResolutionY.set(resolution->second);
 
+            applyRecommendedScalingDefaults(resolution->first, resolution->second);
             apply();
         }
     }
@@ -591,6 +839,122 @@ namespace MWGui
             currentLocales.resize(1);
 
         Settings::general().mPreferredLocales.set(currentLocales);
+        if (langPriority == 0 && !currentLocales.empty())
+        {
+            const std::string& keyboardLanguage = currentLocales[0];
+            Settings::gui().mVirtualKeyboardLanguage.set(keyboardLanguage);
+            populateKeyboardLayoutCombo(keyboardLanguage, mKeyboardPrimaryLayout);
+            const VFS::Manager* vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+            const std::vector<std::string> layouts = getKeyboardLayouts(vfs, keyboardLanguage);
+            const std::string& layout = layouts.front();
+            Settings::gui().mVirtualKeyboardLayout.set(layout);
+            for (size_t index = 0; index < mKeyboardPrimaryLanguage->getItemCount(); ++index)
+            {
+                if (*mKeyboardPrimaryLanguage->getItemDataAt<std::string>(index) == keyboardLanguage)
+                {
+                    mKeyboardPrimaryLanguage->setIndexSelected(index);
+                    break;
+                }
+            }
+            for (size_t index = 0; index < mKeyboardPrimaryLayout->getItemCount(); ++index)
+            {
+                if (*mKeyboardPrimaryLayout->getItemDataAt<std::string>(index) == layout)
+                {
+                    mKeyboardPrimaryLayout->setIndexSelected(index);
+                    break;
+                }
+            }
+        }
+    }
+
+    void SettingsWindow::onKeyboardPrimaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        const auto& languageCode = *sender->getItemDataAt<std::string>(pos);
+        Settings::gui().mVirtualKeyboardLanguage.set(languageCode);
+        populateKeyboardLayoutCombo(languageCode, mKeyboardPrimaryLayout);
+        const VFS::Manager* vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+        const std::vector<std::string> layouts = getKeyboardLayouts(vfs, languageCode);
+        const std::string& layout = layouts.front();
+        Settings::gui().mVirtualKeyboardLayout.set(layout);
+        mKeyboardPrimaryLayout->setIndexSelected(0);
+        apply();
+    }
+
+    void SettingsWindow::onKeyboardSecondaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        const auto& languageCode = *sender->getItemDataAt<std::string>(pos);
+        Settings::gui().mVirtualKeyboardLanguageSecondary.set(languageCode);
+        if (languageCode.empty())
+        {
+            Settings::gui().mVirtualKeyboardLayoutSecondary.set("");
+            mKeyboardSecondaryLayout->removeAllItems();
+            updateKeyboardSecondaryLayoutVisibility();
+            apply();
+            return;
+        }
+        populateKeyboardLayoutCombo(languageCode, mKeyboardSecondaryLayout);
+        const VFS::Manager* vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+        const std::vector<std::string> layouts = getKeyboardLayouts(vfs, languageCode);
+        const std::string& layout = layouts.front();
+        Settings::gui().mVirtualKeyboardLayoutSecondary.set(layout);
+        mKeyboardSecondaryLayout->setIndexSelected(0);
+        updateKeyboardSecondaryLayoutVisibility();
+        apply();
+    }
+
+    void SettingsWindow::onKeyboardPrimaryLayoutChanged(MyGUI::ComboBox* sender, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        const auto& layout = *sender->getItemDataAt<std::string>(pos);
+        Settings::gui().mVirtualKeyboardLayout.set(layout);
+        apply();
+    }
+
+    void SettingsWindow::onKeyboardSecondaryLayoutChanged(MyGUI::ComboBox* sender, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        const auto& layout = *sender->getItemDataAt<std::string>(pos);
+        Settings::gui().mVirtualKeyboardLayoutSecondary.set(layout);
+        apply();
+    }
+
+    void SettingsWindow::populateKeyboardLanguageCombo(MyGUI::ComboBox* combo, bool includeNone)
+    {
+        combo->removeAllItems();
+        if (includeNone)
+            combo->addItem(MyGUI::LanguageManager::getInstance().replaceTags("#{Interface:None}"), std::string());
+
+        const VFS::Manager* vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+        const std::vector<KeyboardFileInfo> files = listKeyboardFiles(vfs);
+        for (const KeyboardFileInfo& file : files)
+            combo->addItem(file.mLanguageName, file.mBaseName);
+    }
+
+    void SettingsWindow::populateKeyboardLayoutCombo(std::string_view languageCode, MyGUI::ComboBox* combo)
+    {
+        combo->removeAllItems();
+
+        const VFS::Manager* vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+        const std::vector<std::string> layouts = getKeyboardLayouts(vfs, languageCode);
+        for (const std::string& layout : layouts)
+            combo->addItem(layout, layout);
+    }
+
+    void SettingsWindow::updateKeyboardSecondaryLayoutVisibility()
+    {
+        const bool hasSecondary = !Settings::gui().mVirtualKeyboardLanguageSecondary.get().empty();
+        mKeyboardSecondaryLayout->setVisible(hasSecondary);
+        mKeyboardSecondaryLayoutLabel->setVisible(hasSecondary);
     }
 
     void SettingsWindow::onGmstOverridesL10nChanged(MyGUI::Widget*)
@@ -699,12 +1063,17 @@ namespace MWGui
         auto& generalSettings = Settings::general();
         switch (pos)
         {
-            case 0: // Bilinear with mips
+            case 0: // Nearest
+                generalSettings.mTextureMipmap.set("nearest");
+                generalSettings.mTextureMagFilter.set("nearest");
+                generalSettings.mTextureMinFilter.set("nearest");
+                break;
+            case 1: // Bilinear with mips
                 generalSettings.mTextureMipmap.set("nearest");
                 generalSettings.mTextureMagFilter.set("linear");
                 generalSettings.mTextureMinFilter.set("linear");
                 break;
-            case 1: // Trilinear with mips
+            case 2: // Trilinear with mips
                 generalSettings.mTextureMipmap.set("linear");
                 generalSettings.mTextureMagFilter.set("linear");
                 generalSettings.mTextureMinFilter.set("linear");
@@ -719,7 +1088,7 @@ namespace MWGui
 
     void SettingsWindow::onResChange(int /*width*/, int /*height*/)
     {
-        center();
+        WindowBase::clampWindowCoordinates(mMainWidget->castType<MyGUI::Window>());
         highlightCurrentResolution();
     }
 
@@ -749,13 +1118,6 @@ namespace MWGui
                     Settings::get<float>(getSettingCategory(scroller), getSettingName(scroller)).set(value);
                     argNames.emplace_back("value");
                     args.emplace_back(value);
-
-                    // Persist the breast/butt jiggle Z offset per body mesh so each mesh remembers
-                    // its own tuning (keyed by the player's current body mesh).
-                    const std::string_view sname = getSettingName(scroller);
-                    if (sname == "jiggle bone breast z offset" || sname == "jiggle bone butt z offset")
-                        Misc::JiggleZOffset::save(Misc::JiggleZOffset::currentPlayerMesh(),
-                            Settings::game().mJiggleBoneBreastZOffset, Settings::game().mJiggleBoneButtZOffset);
                 }
                 else
                 {
@@ -1064,18 +1426,22 @@ namespace MWGui
 
     void SettingsWindow::onOpen()
     {
+        MyGUI::InputManager::getInstance().addWidgetModal(mMainWidget);
         highlightCurrentResolution();
+        mScalingRestartHint->setVisible(Settings::gui().mUseRecommendedScalingDefaults);
         updateControlsBox();
         updateLightSettings();
         updateWindowModeSettings();
         updateVSyncModeSettings();
         resetScrollbars();
         renderScriptSettings();
+        WindowBase::clampWindowCoordinates(mMainWidget->castType<MyGUI::Window>());
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mOkButton);
     }
 
     void SettingsWindow::onClose()
     {
+        MyGUI::InputManager::getInstance().removeWidgetModal(mMainWidget);
         // Save user settings
         Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");
         MWBase::Environment::get().getLuaManager()->savePermanentStorage(mCfgMgr.getUserConfigPath());

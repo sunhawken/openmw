@@ -33,8 +33,13 @@ namespace MWGui
         void setTakeButtonShow(bool show);
         void onKeyButtonPressed(MyGUI::Widget* sender, MyGUI::KeyCode key, MyGUI::Char character);
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
+        bool onControllerThumbstickEvent(const SDL_ControllerAxisEvent& arg) override;
+        bool canTake() const;
 
     private:
+        void updateControllerScrollButtons();
+        bool isScrollable() const;
+
         Gui::ImageButton* mCloseButton;
         Gui::ImageButton* mTakeButton;
         MyGUI::ScrollView* mTextView;

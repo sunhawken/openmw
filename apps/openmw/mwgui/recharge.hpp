@@ -28,6 +28,8 @@ namespace MWGui
 
         std::string_view getWindowIdForLua() const override { return "Recharge"; }
 
+        MyGUI::Widget* getControllerFocusTooltipWidget() const;
+
     protected:
         ItemChargeView* mBox;
 

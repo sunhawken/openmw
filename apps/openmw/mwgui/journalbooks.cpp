@@ -152,7 +152,7 @@ namespace MWGui
     {
         // For small font size split alphabet to two columns (2x15 characers), for big font size split it to three
         // colums (3x10 characters).
-        return Settings::gui().mFontSize < 18 ? 2 : 3;
+        return Settings::gui().mJournalFontSize < 18 ? 2 : 3;
     }
 
     JournalBooks::JournalBooks(std::shared_ptr<JournalViewModel> model, ToUTF8::FromType encoding)
@@ -166,8 +166,8 @@ namespace MWGui
     {
         std::shared_ptr<BookTypesetter> typesetter = createTypesetter();
 
-        BookTypesetter::Style* header = typesetter->createStyle({}, journalHeaderColour);
-        BookTypesetter::Style* body = typesetter->createStyle({}, MyGUI::Colour::Black);
+        BookTypesetter::Style* header = typesetter->createStyle("DialogueBoldFont", journalHeaderColour, false);
+        BookTypesetter::Style* body = typesetter->createStyle("DialogueBoldFont", MyGUI::Colour::Black, false);
 
         typesetter->write(header, "You have no journal entries!");
         typesetter->lineBreak();
@@ -180,8 +180,8 @@ namespace MWGui
     {
         std::shared_ptr<BookTypesetter> typesetter = createTypesetter();
 
-        BookTypesetter::Style* header = typesetter->createStyle({}, journalHeaderColour);
-        BookTypesetter::Style* body = typesetter->createStyle({}, MyGUI::Colour::Black);
+        BookTypesetter::Style* header = typesetter->createStyle("DialogueBoldFont", journalHeaderColour, false);
+        BookTypesetter::Style* body = typesetter->createStyle("DialogueBoldFont", MyGUI::Colour::Black, false);
 
         mModel->visitJournalEntries({}, AddJournalEntry(typesetter, body, header, true));
 
@@ -192,8 +192,8 @@ namespace MWGui
     {
         std::shared_ptr<BookTypesetter> typesetter = createTypesetter();
 
-        BookTypesetter::Style* header = typesetter->createStyle({}, journalHeaderColour);
-        BookTypesetter::Style* body = typesetter->createStyle({}, MyGUI::Colour::Black);
+        BookTypesetter::Style* header = typesetter->createStyle("DialogueBoldFont", journalHeaderColour, false);
+        BookTypesetter::Style* body = typesetter->createStyle("DialogueBoldFont", MyGUI::Colour::Black, false);
 
         mModel->visitTopicName(topic, AddTopicName(typesetter, header));
 
@@ -208,8 +208,8 @@ namespace MWGui
     {
         std::shared_ptr<BookTypesetter> typesetter = createTypesetter();
 
-        BookTypesetter::Style* header = typesetter->createStyle({}, journalHeaderColour);
-        BookTypesetter::Style* body = typesetter->createStyle({}, MyGUI::Colour::Black);
+        BookTypesetter::Style* header = typesetter->createStyle("DialogueBoldFont", journalHeaderColour, false);
+        BookTypesetter::Style* body = typesetter->createStyle("DialogueBoldFont", MyGUI::Colour::Black, false);
 
         AddQuestName addName(typesetter, header);
         addName(questName);
@@ -241,7 +241,7 @@ namespace MWGui
         char ch = 'A';
         std::string buffer;
 
-        BookTypesetter::Style* body = typesetter->createStyle({}, MyGUI::Colour::Black);
+        BookTypesetter::Style* body = typesetter->createStyle("DialogueBoldFont", MyGUI::Colour::Black, false);
         for (int i = 0; i < 26; ++i)
         {
             buffer = "( ";
@@ -270,7 +270,7 @@ namespace MWGui
 
         typesetter->setSectionAlignment(BookTypesetter::AlignCenter);
 
-        BookTypesetter::Style* body = typesetter->createStyle({}, MyGUI::Colour::Black);
+        BookTypesetter::Style* body = typesetter->createStyle("DialogueBoldFont", MyGUI::Colour::Black, false);
 
         // for small font size split alphabet to two columns (2x15 characers), for big font size split it to three
         // colums (3x10 characters).

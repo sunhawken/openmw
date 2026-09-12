@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Window_Pinnable_DialogNoTransp" layer="Windows" align="Center" position="0 0 441 220" name="_Main">
+        <Property key="MinSize" value="441 214"/>
+
+        <Widget type="Widget" skin="" position="0 0 441 220" name="XboxSummaryPanel">
+            <Widget type="TextBox" skin="SandText" position="10 8 65 30">
+                <Property key="Caption" value="#{sName}"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+
+            <Widget type="EditBox" skin="MW_TextEdit" position="70 8 202 30" name="NameEdit">
+                <Property key="NeedKey" value="true"/>
+            </Widget>
+
+            <Widget type="TextBox" skin="SandText" position="278 8 89 30">
+                <Property key="Caption" value="Quantity"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+
+            <Widget type="NumericEditBox" skin="MW_TextEdit" position="363 8 60 30" name="BrewCount">
+                <Property key="TextAlign" value="Center"/>
+                <Property key="Visible" value="true"/>
+                <Property key="Enabled" value="true"/>
+                <Property key="NeedKey" value="true"/>
+            </Widget>
+
+            <Widget type="TextBox" skin="SandText" position="10 40 212 24">
+                <Property key="Caption" value="#{sApparatus}"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+
+            <Widget type="Widget" skin="" position="10 66 212 50">
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="Apparatus1"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="54 0 50 50" name="Apparatus2"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="108 0 50 50" name="Apparatus3"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="162 0 50 50" name="Apparatus4"/>
+            </Widget>
+
+            <Widget type="TextBox" skin="SandText" position="10 120 212 24">
+                <Property key="Caption" value="#{sIngredients}"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+
+            <Widget type="Widget" skin="" position="10 146 212 50">
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="Ingredient1"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="54 0 50 50" name="Ingredient2"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="108 0 50 50" name="Ingredient3"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="162 0 50 50" name="Ingredient4"/>
+            </Widget>
+
+            <Widget type="TextBox" skin="SandText" position="228 40 195 24">
+                <Property key="Caption" value="#{sCreatedEffects}"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+
+            <Widget type="Widget" skin="MW_Box" position="228 66 195 130" align="Top Left HStretch">
+                <Widget type="Widget" skin="" position="4 4 187 122" name="CreatedEffects" align="HStretch"/>
+            </Widget>
+        </Widget>
+
+        <Widget type="Widget" skin="" position="0 0 441 220" name="XboxIngredientPickerPanel">
+            <Property key="Visible" value="false"/>
+
+            <Widget type="ItemView" skin="MW_ItemView" position="10 8 413 162" name="ItemView" align="Left Top Stretch"/>
+
+            <Widget type="HBox" skin="" position="10 176 413 28" align="Top HStretch">
+                <Widget type="AutoSizedButton" skin="MW_Button" position="10 2 1 1" name="FilterType">
+                    <Property key="Caption" value="#{sIngredients}"/>
+                    <Property key="NeedKey" value="true"/>
+                </Widget>
+
+                <Widget type="ComboBox" skin="MW_ComboBox" position="0 2 271 24" name="FilterValue">
+                    <Property key="ModeDrop" value="false"/>
+                    <Property key="NeedKey" value="true"/>
+                </Widget>
+            </Widget>
+        </Widget>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" name="DecreaseButton">
+            <Property key="Caption" value=" - "/>
+            <Property key="Visible" value="false"/>
+            <Property key="Enabled" value="false"/>
+        </Widget>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" name="IncreaseButton">
+            <Property key="Caption" value=" + "/>
+            <Property key="Visible" value="false"/>
+            <Property key="Enabled" value="false"/>
+        </Widget>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" name="CreateButton">
+            <Property key="Caption" value="#{sCreate}"/>
+            <Property key="Visible" value="false"/>
+            <Property key="Enabled" value="false"/>
+        </Widget>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+            <Property key="Caption" value="#{Interface:Cancel}"/>
+            <Property key="Visible" value="false"/>
+            <Property key="Enabled" value="false"/>
+        </Widget>
+    </Widget>
+</MyGUI>

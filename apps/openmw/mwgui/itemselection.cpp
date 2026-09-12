@@ -23,15 +23,11 @@ namespace MWGui
         getWidget(l, "Label");
         l->setCaptionWithReplacing(label);
 
-        MyGUI::Button* cancelButton;
-        getWidget(cancelButton, "CancelButton");
-        cancelButton->eventMouseButtonClick += MyGUI::newDelegate(this, &ItemSelectionDialog::onCancelButtonClicked);
-
         center();
 
         mControllerButtons.mA = "#{Interface:Select}";
         mControllerButtons.mB = "#{Interface:Cancel}";
-        mControllerButtons.mR3 = "#{Interface:Info}";
+        mControllerButtons.mY = "#{Interface:Info}";
     }
 
     bool ItemSelectionDialog::exit()

@@ -41,6 +41,9 @@ namespace SDLUtil
 
         void updateMouseSettings();
 
+        float getWindowToDrawableScaleX() const { return mScaleX; }
+        float getWindowToDrawableScaleY() const { return mScaleY; }
+
     private:
         void handleWindowEvent(const SDL_Event& evt);
 
@@ -79,8 +82,8 @@ namespace SDLUtil
         bool mWindowHasFocus;
         bool mMouseInWindow;
 
-        Uint16 mScaleX;
-        Uint16 mScaleY;
+        float mScaleX;
+        float mScaleY;
     };
 
 }

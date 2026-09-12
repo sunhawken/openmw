@@ -140,6 +140,18 @@ namespace SDLUtil
 
             // set the cursor and store it for later
             SDL_Cursor* curs = SDL_CreateColorCursor(surface.get(), hotspotX, hotspotY);
+            if (!curs)
+            {
+                Log(Debug::Warning) << "Failed to create SDL color cursor '" << name << "': " << SDL_GetError()
+                                    << "; falling back to system cursor";
+                curs = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+            }
+            if (!curs)
+            {
+                Log(Debug::Warning) << "Failed to create SDL system cursor fallback for '" << name
+                                    << "': " << SDL_GetError();
+                return;
+            }
 
             mCursorMap.emplace(name, curs);
         }

@@ -132,6 +132,9 @@ namespace MWGui
 
             void setStateSelected(bool selected);
 
+            MyGUI::TextBox* getNameWidget() const { return mAttributeNameWidget; }
+            MyGUI::TextBox* getValueWidget() const { return mAttributeValueWidget; }
+
         protected:
             ~MWAttribute() override = default;
 
@@ -238,6 +241,7 @@ namespace MWGui
             typedef ESM::ENAMstruct SpellEffectValue;
 
             void setSpellEffect(const SpellEffectParams& params);
+            int fitToWidth(int width, bool wrap);
 
             int getRequestedWidth() const { return mRequestedWidth; }
 
@@ -271,6 +275,9 @@ namespace MWGui
 
             int getValue() const { return mValue; }
             int getMax() const { return mMax; }
+
+            MyGUI::TextBox* getTitleWidget() const { return mTextWidget; }
+            MyGUI::TextBox* getValueWidget() const { return mBarTextWidget; }
 
         protected:
             virtual ~MWDynamicStat();

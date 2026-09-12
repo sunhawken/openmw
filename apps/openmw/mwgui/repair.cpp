@@ -42,7 +42,7 @@ namespace MWGui
 
         mControllerButtons.mA = "#{Interface:Repair}";
         mControllerButtons.mB = "#{Interface:Cancel}";
-        mControllerButtons.mY = "#{OMWEngine:RepairTool}";
+        mControllerButtons.mY = "#{Interface:Info}";
     }
 
     void Repair::onOpen()
@@ -110,6 +110,13 @@ namespace MWGui
         center();
     }
 
+    MyGUI::Widget* Repair::getControllerFocusTooltipWidget() const
+    {
+        if (!Settings::gui().mControllerMenus || !mRepairBox)
+            return nullptr;
+        return mRepairBox->getControllerFocusWidget();
+    }
+
     void Repair::onSelectItem(MyGUI::Widget* /*sender*/)
     {
         mItemSelectionDialog = std::make_unique<ItemSelectionDialog>("#{sRepair}");
@@ -156,12 +163,7 @@ namespace MWGui
 
     bool Repair::onControllerButtonEvent(const SDL_ControllerButtonEvent& arg)
     {
-        if ((arg.button == SDL_CONTROLLER_BUTTON_A && !mToolBox->getVisible()) || arg.button == SDL_CONTROLLER_BUTTON_Y)
-        {
-            onSelectItem(mToolIcon);
-            MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("Menu Click"));
-        }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_B)
+        if (arg.button == SDL_CONTROLLER_BUTTON_B)
             onCancel(mCancelButton);
         else
             mRepairBox->onControllerButton(arg.button);

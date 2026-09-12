@@ -199,6 +199,7 @@ namespace MWGui
         EditNoteDialog();
 
         void onOpen() override;
+        void onClose() override;
 
         void showDeleteButton(bool show);
         bool getDeleteButtonShown();
@@ -211,19 +212,19 @@ namespace MWGui
         EventHandle_Void eventOkClicked;
 
         ControllerButtons* getControllerButtons() override;
+        MyGUI::EditBox* getEditBox() const;
 
     private:
         void onCancelButtonClicked(MyGUI::Widget* sender);
         void onOkButtonClicked(MyGUI::Widget* sender);
         void onDeleteButtonClicked(MyGUI::Widget* sender);
 
-        MyGUI::TextBox* mTextEdit;
-        MyGUI::Button* mOkButton;
-        MyGUI::Button* mCancelButton;
-        MyGUI::Button* mDeleteButton;
+        MyGUI::EditBox* mTextEdit = nullptr;
+        MyGUI::Button* mOkButton = nullptr;
+        MyGUI::Button* mCancelButton = nullptr;
+        MyGUI::Button* mDeleteButton = nullptr;
 
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
-        size_t mControllerFocus = 0;
     };
 
     class MapWindow : public MWGui::WindowPinnableBase, public LocalMapBase, public NoDrop
@@ -287,6 +288,7 @@ namespace MWGui
         void onNoteDoubleClicked(MyGUI::Widget* sender);
         void onChangeScrollWindowCoord(MyGUI::Widget* sender);
         void globalMapUpdatePlayer();
+        void warpCursorToMapCenter();
         void setGlobalMapMarkerTooltip(MyGUI::Widget* widget, int x, int y);
         float getMarkerSize(size_t agregatedWeight) const;
         void resizeGlobalMap();
@@ -303,6 +305,7 @@ namespace MWGui
         MyGUI::ImageBox* mPlayerArrowLocal;
         MyGUI::ImageBox* mPlayerArrowGlobal;
         MyGUI::Button* mButton;
+        MyGUI::Widget* mCursorAnchor = nullptr;
         MyGUI::IntPoint mLastDragPos;
 
         MyGUI::IntCoord mLastScrollWindowCoordinates;
@@ -327,6 +330,7 @@ namespace MWGui
 
         std::map<std::string, MapMarkerType> mGlobalMapMarkersByName;
         std::map<MapMarkerType, std::vector<MapMarkerType>> mGlobalMapMarkers;
+        std::vector<MarkerWidget*> mGlobalCustomMarkerWidgets;
 
         EditNoteDialog mEditNoteDialog;
         ESM::CustomMarker mEditingMarker;
@@ -340,6 +344,8 @@ namespace MWGui
         void notifyPlayerUpdate() override;
 
         void centerView() override;
+        void resetFixedWindowGeometry();
+        MyGUI::IntCoord getFixedWindowCoord(const MyGUI::IntSize& viewSize) const;
     };
 }
 #endif

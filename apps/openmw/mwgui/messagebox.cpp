@@ -5,6 +5,7 @@
 #include <MyGUI_LanguageManager.h>
 #include <MyGUI_RenderManager.h>
 #include <MyGUI_UString.h>
+#include <MyGUI_Widget.h>
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/strings/algorithm.hpp>
@@ -127,8 +128,8 @@ namespace MWGui
         mStaticMessageBox = nullptr;
     }
 
-    bool MessageBoxManager::createInteractiveMessageBox(
-        std::string_view message, const std::vector<std::string>& buttons, bool immediate, int defaultFocus)
+    bool MessageBoxManager::createInteractiveMessageBox(std::string_view message,
+        const std::vector<std::string>& buttons, bool immediate, int defaultFocus, int cancelIndex)
     {
         if (mInterMessageBoxe != nullptr)
         {
@@ -136,8 +137,8 @@ namespace MWGui
             mInterMessageBoxe->setVisible(false);
         }
 
-        mInterMessageBoxe
-            = std::make_unique<InteractiveMessageBox>(*this, std::string{ message }, buttons, immediate, defaultFocus);
+        mInterMessageBoxe = std::make_unique<InteractiveMessageBox>(
+            *this, std::string{ message }, buttons, immediate, defaultFocus, cancelIndex);
         mLastButtonPressed = -1;
 
         return true;
@@ -218,7 +219,7 @@ namespace MWGui
     }
 
     InteractiveMessageBox::InteractiveMessageBox(MessageBoxManager& parMessageBoxManager, const std::string& message,
-        const std::vector<std::string>& buttons, bool immediate, size_t defaultFocus)
+        const std::vector<std::string>& buttons, bool immediate, size_t defaultFocus, int cancelIndex)
         : WindowModal(MWBase::Environment::get().getWindowManager()->isGuiMode()
                 ? "openmw_interactive_messagebox_notransp.layout"
                 : "openmw_interactive_messagebox.layout")
@@ -227,6 +228,7 @@ namespace MWGui
         , mDefaultFocus(defaultFocus)
         , mImmediate(immediate)
         , mControllerFocus(0)
+        , mCancelIndex(cancelIndex)
     {
         int textPadding = 10; // padding between text-widget and main-widget
         int textButtonPadding = 10; // padding between the text-widget und the button-widget
@@ -286,6 +288,8 @@ namespace MWGui
         {
             mDisableGamepadCursor = true;
             mControllerButtons.mA = "#{Interface:OK}";
+            if (mCancelIndex >= 0 && mCancelIndex < static_cast<int>(buttons.size()))
+                mControllerButtons.mB = "#{Interface:Back}";
 
             // If we have more than one button, we need to set the focus to the first one.
             if (mButtons.size() > 1)
@@ -393,6 +397,19 @@ namespace MWGui
             mMessageWidget->setCoord(messageWidgetCoord);
         }
 
+        if (Settings::gui().mControllerMenus)
+        {
+            MyGUI::Widget* highlightParent = mMainWidget->getClientWidget();
+            if (!highlightParent)
+                highlightParent = mMainWidget;
+            mControllerFocusHighlight = highlightParent->createWidget<MyGUI::Widget>(
+                "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+            mControllerFocusHighlight->setNeedMouseFocus(false);
+            mControllerFocusHighlight->setDepth(1);
+            mControllerFocusHighlight->setVisible(false);
+            updateControllerHighlight();
+        }
+
         setVisible(true);
     }
 
@@ -464,6 +481,8 @@ namespace MWGui
         {
             if (mButtons.size() == 1)
                 buttonActivated(mButtons[0]);
+            else if (mCancelIndex >= 0 && mCancelIndex < static_cast<int>(mButtons.size()))
+                buttonActivated(mButtons[mCancelIndex]);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP || arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)
         {
@@ -475,6 +494,7 @@ namespace MWGui
             setControllerFocus(mButtons, mControllerFocus, false);
             mControllerFocus = wrap(mControllerFocus, mButtons.size(), -1);
             setControllerFocus(mButtons, mControllerFocus, true);
+            updateControllerHighlight();
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN || arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
         {
@@ -486,8 +506,30 @@ namespace MWGui
             setControllerFocus(mButtons, mControllerFocus, false);
             mControllerFocus = wrap(mControllerFocus, mButtons.size(), 1);
             setControllerFocus(mButtons, mControllerFocus, true);
+            updateControllerHighlight();
         }
 
         return true;
+    }
+
+    void InteractiveMessageBox::updateControllerHighlight()
+    {
+        if (!mControllerFocusHighlight || !Settings::gui().mControllerMenus)
+            return;
+
+        if (mButtons.empty() || mControllerFocus >= mButtons.size())
+        {
+            mControllerFocusHighlight->setVisible(false);
+            return;
+        }
+
+        MyGUI::Widget* focus = mButtons[mControllerFocus];
+        MyGUI::Widget* highlightParent = mControllerFocusHighlight->getParent();
+        const MyGUI::IntCoord baseCoord
+            = highlightParent ? highlightParent->getAbsoluteCoord() : mMainWidget->getAbsoluteCoord();
+        const MyGUI::IntCoord focusCoord = focus->getAbsoluteCoord();
+        mControllerFocusHighlight->setCoord(
+            focusCoord.left - baseCoord.left, focusCoord.top - baseCoord.top, focusCoord.width, focusCoord.height);
+        mControllerFocusHighlight->setVisible(true);
     }
 }

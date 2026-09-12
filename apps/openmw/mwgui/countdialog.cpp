@@ -32,9 +32,12 @@ namespace MWGui
         mControllerButtons.mB = "#{Interface:Cancel}";
     }
 
-    void CountDialog::openCountDialog(const std::string& item, const std::string& message, const int maxCount)
+    void CountDialog::openCountDialog(
+        const std::string& item, const std::string& message, const int maxCount, WindowBase* tooltipSourceWindow)
     {
         setVisible(true);
+        resetControllerNavHold();
+        mTooltipSourceWindow = tooltipSourceWindow;
 
         mLabelText->setCaptionWithReplacing(message);
 
@@ -47,14 +50,14 @@ namespace MWGui
         setCoord(viewSize.width / 2 - width / 2, viewSize.height / 2 - mMainWidget->getHeight() / 2, width,
             mMainWidget->getHeight());
 
-        // by default, the text edit field has the focus of the keyboard
-        MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mItemEdit);
-
         mSlider->setScrollPosition(maxCount - 1);
 
         mItemEdit->setMinValue(1);
         mItemEdit->setMaxValue(maxCount);
         mItemEdit->setValue(maxCount);
+        mItemEdit->setEditStatic(true);
+        mItemEdit->setNeedKeyFocus(false);
+        MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(nullptr);
     }
 
     void CountDialog::setCount(int count)
@@ -96,6 +99,14 @@ namespace MWGui
         mItemEdit->setValue(static_cast<int>(position + 1));
     }
 
+    void CountDialog::resetControllerNavHold()
+    {
+        mNavButton = -1;
+        mNavActive = false;
+        mNavStartTime = {};
+        mLastNavEventTime = {};
+    }
+
     bool CountDialog::onControllerButtonEvent(const SDL_ControllerButtonEvent& arg)
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
@@ -106,10 +117,40 @@ namespace MWGui
             setCount(1);
         else if (arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
             setCount(static_cast<int>(mSlider->getScrollRange()));
-        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)
-            MWBase::Environment::get().getWindowManager()->injectKeyPress(MyGUI::KeyCode::ArrowDown, 0, false);
-        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
-            MWBase::Environment::get().getWindowManager()->injectKeyPress(MyGUI::KeyCode::ArrowUp, 0, false);
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
+        {
+            const int direction = (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) ? 1 : -1;
+            const size_t maxCount = mSlider->getScrollRange();
+            const float repeatRate = Settings::gui().mControllerMenuTurboRepeat * 7.5f;
+            const auto now = std::chrono::steady_clock::now();
+            float gapSeconds = 0.2f;
+            if (repeatRate > 0.f)
+            {
+                const float intervalSeconds = 1.f / repeatRate;
+                gapSeconds = std::max(gapSeconds, intervalSeconds * 1.5f);
+            }
+            const auto gap = std::chrono::duration<float>(gapSeconds);
+
+            if (!mNavActive || mNavButton != static_cast<int>(arg.button) || (now - mLastNavEventTime) > gap)
+            {
+                mNavActive = true;
+                mNavButton = static_cast<int>(arg.button);
+                mNavStartTime = now;
+            }
+
+            mLastNavEventTime = now;
+
+            int step = 1;
+            if ((now - mNavStartTime) >= std::chrono::seconds(3))
+            {
+                if (maxCount > 1000)
+                    step = 100;
+                else
+                    step = 10;
+            }
+
+            setCount(mItemEdit->getValue() + direction * step);
+        }
 
         return true;
     }

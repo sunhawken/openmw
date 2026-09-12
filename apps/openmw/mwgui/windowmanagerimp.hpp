@@ -112,6 +112,7 @@ namespace MWGui
     class CompanionWindow;
     class VideoWidget;
     class WindowModal;
+    class VirtualKeyboard;
     class ScreenFader;
     class DebugWindow;
     class PostProcessorHud;
@@ -161,6 +162,7 @@ namespace MWGui
         bool containsMode(GuiMode mode) const override;
 
         bool isGuiMode() const override;
+        bool isGuiModeForScript() const override;
 
         bool isConsoleMode() const override;
         bool isPostProcessorHudVisible() const override;
@@ -273,7 +275,7 @@ namespace MWGui
         void staticMessageBox(std::string_view message) override;
         void removeStaticMessageBox() override;
         void interactiveMessageBox(std::string_view message, const std::vector<std::string>& buttons = {},
-            bool block = false, int defaultFocus = -1) override;
+            bool block = false, int defaultFocus = -1, int cancelIndex = -1) override;
 
         int readPressedButton() override; ///< returns the index of the pressed button or -1 if no button was pressed
                                           ///< (->MessageBoxmanager->InteractiveMessageBox)
@@ -394,6 +396,7 @@ namespace MWGui
         WindowBase* getActiveControllerWindow() override;
         int getControllerMenuHeight() override;
         void cycleActiveControllerWindow(bool next) override;
+        bool isCrassifiedNavigationEnabled() const override;
         void setActiveControllerWindow(GuiMode mode, size_t activeIndex) override;
         bool getControllerTooltipVisible() const override { return mControllerTooltipVisible; }
         void setControllerTooltipVisible(bool visible) override;
@@ -401,6 +404,8 @@ namespace MWGui
         void setControllerTooltipEnabled(bool enabled) override;
         void restoreControllerTooltips() override;
         void updateControllerButtonsOverlay() override;
+        bool toggleVirtualKeyboard() override;
+        bool isVirtualKeyboardVisible() const override;
 
         // Used in Lua bindings
         const std::vector<GuiMode>& getGuiModeStack() const override { return mGuiModes; }
@@ -468,6 +473,8 @@ namespace MWGui
         ScreenFader* mHitFader;
         ScreenFader* mScreenFader;
         DebugWindow* mDebugWindow;
+        VirtualKeyboard* mVirtualKeyboard;
+        std::vector<WindowBase*> mVirtualKeyboardHiddenWindows;
         PostProcessorHud* mPostProcessorHud;
         JailScreen* mJailScreen;
         ContainerWindow* mContainerWindow;
@@ -486,8 +493,15 @@ namespace MWGui
         MyGUI::Widget* mInputBlocker;
 
         bool mHudEnabled;
+        bool mLuaHudLayerVisible = true;
         bool mCursorVisible;
         bool mCursorActive;
+        bool mLuaUiWantsCursor = false;
+        bool mHasSavedLuaUiCursorState = false;
+        bool mSavedLuaUiCursorVisible = true;
+        bool mSavedLuaUiCursorActive = true;
+        bool mHasSavedGamepadGuiCursorEnabled = false;
+        bool mSavedGamepadGuiCursorEnabled = false;
 
         int mPlayerBounty;
 
@@ -514,6 +528,7 @@ namespace MWGui
         std::vector<GuiMode> mGuiModes;
         // The active window for controller mode for each GUI mode.
         std::map<GuiMode, size_t> mActiveControllerWindows;
+        size_t mLastInventoryControllerWindow = 1;
         // Current tooltip visibility state (can be disabled by mouse movement)
         bool mControllerTooltipVisible = false;
         // User preference for tooltips (persists across mouse/controller switches)
@@ -601,6 +616,9 @@ namespace MWGui
         void createTextures();
         void createCursors();
         void setMenuTransparency(float value);
+        void updateDialogueLayerSize();
+        void updateSettingsLayerSize();
+        void updateSaveLoadLayerSize();
 
         void updatePinnedWindows();
 

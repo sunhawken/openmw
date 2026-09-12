@@ -1,5 +1,6 @@
 #include "bindingsmanager.hpp"
 
+#include <algorithm>
 #include <filesystem>
 
 #include <MyGUI_EditBox.h>
@@ -21,6 +22,99 @@ namespace MWInput
 {
     static const int sFakeDeviceId = 1; // As we only support one controller at a time, use a fake deviceID so we don't
                                         // lose bindings when switching controllers
+
+    namespace
+    {
+        std::vector<ICS::Control*> findControlsBoundToKey(ICS::InputControlSystem* inputBinder, SDL_Scancode key)
+        {
+            std::vector<ICS::Control*> result;
+            const int controlCount = inputBinder->getControlCount();
+            result.reserve(static_cast<std::size_t>(controlCount));
+            for (int i = 0; i < controlCount; ++i)
+            {
+                ICS::Control* control = inputBinder->getControl(i);
+                if (inputBinder->getKeyBinding(control, ICS::Control::INCREASE) == key
+                    || inputBinder->getKeyBinding(control, ICS::Control::DECREASE) == key)
+                    result.push_back(control);
+            }
+            return result;
+        }
+
+        std::vector<ICS::Control*> findControlsBoundToMouseButton(
+            ICS::InputControlSystem* inputBinder, unsigned int button)
+        {
+            std::vector<ICS::Control*> result;
+            const int controlCount = inputBinder->getControlCount();
+            result.reserve(static_cast<std::size_t>(controlCount));
+            for (int i = 0; i < controlCount; ++i)
+            {
+                ICS::Control* control = inputBinder->getControl(i);
+                if (inputBinder->getMouseButtonBinding(control, ICS::Control::INCREASE) == button
+                    || inputBinder->getMouseButtonBinding(control, ICS::Control::DECREASE) == button)
+                    result.push_back(control);
+            }
+            return result;
+        }
+
+        std::vector<ICS::Control*> findControlsBoundToMouseWheel(
+            ICS::InputControlSystem* inputBinder, ICS::InputControlSystem::MouseWheelClick click)
+        {
+            std::vector<ICS::Control*> result;
+            const int controlCount = inputBinder->getControlCount();
+            result.reserve(static_cast<std::size_t>(controlCount));
+            for (int i = 0; i < controlCount; ++i)
+            {
+                ICS::Control* control = inputBinder->getControl(i);
+                if (inputBinder->getMouseWheelBinding(control, ICS::Control::INCREASE) == click
+                    || inputBinder->getMouseWheelBinding(control, ICS::Control::DECREASE) == click)
+                    result.push_back(control);
+            }
+            return result;
+        }
+
+        std::vector<ICS::Control*> findControlsBoundToJoystickButton(
+            ICS::InputControlSystem* inputBinder, int deviceID, unsigned int button)
+        {
+            std::vector<ICS::Control*> result;
+            const int controlCount = inputBinder->getControlCount();
+            result.reserve(static_cast<std::size_t>(controlCount));
+            for (int i = 0; i < controlCount; ++i)
+            {
+                ICS::Control* control = inputBinder->getControl(i);
+                if (inputBinder->getJoystickButtonBinding(control, deviceID, ICS::Control::INCREASE) == button
+                    || inputBinder->getJoystickButtonBinding(control, deviceID, ICS::Control::DECREASE) == button)
+                    result.push_back(control);
+            }
+            return result;
+        }
+
+        std::vector<ICS::Control*> findControlsBoundToJoystickAxis(
+            ICS::InputControlSystem* inputBinder, int deviceID, int axis)
+        {
+            std::vector<ICS::Control*> result;
+            const int controlCount = inputBinder->getControlCount();
+            result.reserve(static_cast<std::size_t>(controlCount));
+            for (int i = 0; i < controlCount; ++i)
+            {
+                ICS::Control* control = inputBinder->getControl(i);
+                if (inputBinder->getJoystickAxisBinding(control, deviceID, ICS::Control::INCREASE) == axis
+                    || inputBinder->getJoystickAxisBinding(control, deviceID, ICS::Control::DECREASE) == axis)
+                    result.push_back(control);
+            }
+            return result;
+        }
+
+        void resetControlsToInitialValue(const std::vector<ICS::Control*>& controls, const ICS::Control* exclude)
+        {
+            for (ICS::Control* control : controls)
+            {
+                if (control == nullptr || control == exclude)
+                    continue;
+                control->setChangingDirection(ICS::Control::STOP);
+                control->setValue(control->getInitialValue());
+            }
+        }
+    }
 
     void clearAllKeyBindings(ICS::InputControlSystem* inputBinder, ICS::Control* control)
     {
@@ -98,9 +192,11 @@ namespace MWInput
             if (!mDetectingKeyboard)
                 return;
 
+            const auto controlsPreviouslyBoundToKey = findControlsBoundToKey(mInputBinder, key);
             clearAllKeyBindings(mInputBinder, control);
             control->setInitialValue(0.0f);
             ICS::DetectingBindingListener::keyBindingDetected(ics, control, key, direction);
+            resetControlsToInitialValue(controlsPreviouslyBoundToKey, control);
             MWBase::Environment::get().getWindowManager()->notifyInputActionBound();
         }
 
@@ -116,9 +212,11 @@ namespace MWInput
         {
             if (!mDetectingKeyboard)
                 return;
+            const auto controlsPreviouslyBoundToButton = findControlsBoundToMouseButton(mInputBinder, button);
             clearAllKeyBindings(mInputBinder, control);
             control->setInitialValue(0.0f);
             ICS::DetectingBindingListener::mouseButtonBindingDetected(ics, control, button, direction);
+            resetControlsToInitialValue(controlsPreviouslyBoundToButton, control);
             MWBase::Environment::get().getWindowManager()->notifyInputActionBound();
         }
 
@@ -127,9 +225,11 @@ namespace MWInput
         {
             if (!mDetectingKeyboard)
                 return;
+            const auto controlsPreviouslyBoundToWheel = findControlsBoundToMouseWheel(mInputBinder, click);
             clearAllKeyBindings(mInputBinder, control);
             control->setInitialValue(0.0f);
             ICS::DetectingBindingListener::mouseWheelBindingDetected(ics, control, click, direction);
+            resetControlsToInitialValue(controlsPreviouslyBoundToWheel, control);
             MWBase::Environment::get().getWindowManager()->notifyInputActionBound();
         }
 
@@ -142,10 +242,12 @@ namespace MWInput
             if (mDetectingKeyboard)
                 return;
 
+            const auto controlsPreviouslyBoundToAxis = findControlsBoundToJoystickAxis(mInputBinder, deviceID, axis);
             clearAllControllerBindings(mInputBinder, control);
             control->setValue(0.5f); // axis bindings must start at 0.5
             control->setInitialValue(0.5f);
             ICS::DetectingBindingListener::joystickAxisBindingDetected(ics, deviceID, control, axis, direction);
+            resetControlsToInitialValue(controlsPreviouslyBoundToAxis, control);
             MWBase::Environment::get().getWindowManager()->notifyInputActionBound();
         }
 
@@ -154,9 +256,12 @@ namespace MWInput
         {
             if (mDetectingKeyboard)
                 return;
+            const auto controlsPreviouslyBoundToButton
+                = findControlsBoundToJoystickButton(mInputBinder, deviceID, button);
             clearAllControllerBindings(mInputBinder, control);
             control->setInitialValue(0.0f);
             ICS::DetectingBindingListener::joystickButtonBindingDetected(ics, deviceID, control, button, direction);
+            resetControlsToInitialValue(controlsPreviouslyBoundToButton, control);
             MWBase::Environment::get().getWindowManager()->notifyInputActionBound();
         }
 
@@ -173,12 +278,16 @@ namespace MWInput
 
     BindingsManager::BindingsManager(const std::filesystem::path& userFile, bool userFileExists)
         : mUserFile(userFile)
+        , mControlLoadedFromFile(A_Last, false)
         , mDragDrop(false)
     {
         const auto file = userFileExists ? userFile : std::filesystem::path();
         mInputBinder = std::make_unique<InputControlSystem>(file);
         mListener = std::make_unique<BindingsListener>(mInputBinder.get(), this);
         mInputBinder->setDetectingBindingListener(mListener.get());
+
+        for (int i = 0; i < A_Last; ++i)
+            mControlLoadedFromFile[i] = mInputBinder->getChannel(i)->getControlsCount() != 0;
 
         loadKeyDefaults();
         loadControllerDefaults();
@@ -315,11 +424,9 @@ namespace MWInput
                 control = mInputBinder->getChannel(i)->getAttachedControls().front().control;
             }
 
-            if (!controlExists || force
-                || (mInputBinder->getKeyBinding(control, ICS::Control::INCREASE) == SDL_SCANCODE_UNKNOWN
-                    && mInputBinder->getMouseButtonBinding(control, ICS::Control::INCREASE) == ICS_MAX_DEVICE_BUTTONS
-                    && mInputBinder->getMouseWheelBinding(control, ICS::Control::INCREASE)
-                        == ICS::InputControlSystem::MouseWheelClick::UNASSIGNED))
+            // Only apply defaults for actions that were missing from the loaded config file (e.g. newly added actions),
+            // or when explicitly forced. Existing actions without bindings are treated as intentionally unbound.
+            if (force || !mControlLoadedFromFile[static_cast<std::size_t>(i)])
             {
                 clearAllKeyBindings(mInputBinder.get(), control);
 
@@ -365,6 +472,10 @@ namespace MWInput
         std::map<int, int> defaultButtonBindings;
 
         defaultButtonBindings[A_Activate] = SDL_CONTROLLER_BUTTON_A;
+        defaultButtonBindings[A_MoveBackward] = SDL_CONTROLLER_BUTTON_DPAD_DOWN;
+        defaultButtonBindings[A_MoveForward] = SDL_CONTROLLER_BUTTON_DPAD_UP;
+        defaultButtonBindings[A_MoveLeft] = SDL_CONTROLLER_BUTTON_DPAD_LEFT;
+        defaultButtonBindings[A_MoveRight] = SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
         defaultButtonBindings[A_ToggleWeapon] = SDL_CONTROLLER_BUTTON_X;
         defaultButtonBindings[A_ToggleSpell] = SDL_CONTROLLER_BUTTON_Y;
         // defaultButtonBindings[A_QuickButtonsMenu] = SDL_GetButtonFromScancode(SDL_SCANCODE_F1); // Need to implement,
@@ -405,11 +516,24 @@ namespace MWInput
                 control = mInputBinder->getChannel(i)->getAttachedControls().front().control;
             }
 
-            if (!controlExists || force
-                || (mInputBinder->getJoystickAxisBinding(control, sFakeDeviceId, ICS::Control::INCREASE)
-                        == ICS::InputControlSystem::UNASSIGNED
-                    && mInputBinder->getJoystickButtonBinding(control, sFakeDeviceId, ICS::Control::INCREASE)
-                        == ICS_MAX_DEVICE_BUTTONS))
+            const bool controlWasLoadedFromFile = mControlLoadedFromFile[static_cast<std::size_t>(i)];
+            const bool isHiddenAxisAction
+                = (i == A_LookUpDown || i == A_LookLeftRight || i == A_MoveForwardBackward || i == A_MoveLeftRight);
+            const bool hasControllerBinding
+                = mInputBinder->getJoystickAxisBinding(control, sFakeDeviceId, ICS::Control::INCREASE)
+                    != ICS::InputControlSystem::UNASSIGNED
+                || mInputBinder->getJoystickAxisBinding(control, sFakeDeviceId, ICS::Control::DECREASE)
+                    != ICS::InputControlSystem::UNASSIGNED
+                || mInputBinder->getJoystickButtonBinding(control, sFakeDeviceId, ICS::Control::INCREASE)
+                    != ICS_MAX_DEVICE_BUTTONS
+                || mInputBinder->getJoystickButtonBinding(control, sFakeDeviceId, ICS::Control::DECREASE)
+                    != ICS_MAX_DEVICE_BUTTONS;
+
+            // Only apply defaults for actions that were missing from the loaded config file (e.g. newly added actions),
+            // or when explicitly forced. Existing actions without bindings are treated as intentionally unbound.
+            //
+            // Hidden joystick axes (movement/look) are not exposed in the UI, so make sure they always have bindings.
+            if (force || !controlWasLoadedFromFile || (isHiddenAxisAction && !hasControllerBinding))
             {
                 clearAllControllerBindings(mInputBinder.get(), control);
 
@@ -586,8 +710,8 @@ namespace MWInput
     const std::initializer_list<int>& BindingsManager::getActionControllerSorting()
     {
         static const std::initializer_list<int> actions{ A_MoveForward, A_MoveBackward, A_MoveLeft, A_MoveRight,
-            A_TogglePOV, A_ZoomIn, A_ZoomOut, A_Sneak, A_Activate, A_Use, A_ToggleWeapon, A_ToggleSpell, A_AutoMove,
-            A_Jump, A_Inventory, A_Journal, A_Rest, A_QuickSave, A_QuickLoad, A_ToggleHUD, A_Screenshot,
+            A_TogglePOV, A_ZoomIn, A_ZoomOut, A_AlwaysRun, A_Sneak, A_Activate, A_Use, A_ToggleWeapon, A_ToggleSpell,
+            A_AutoMove, A_Jump, A_Inventory, A_Journal, A_Rest, A_QuickSave, A_QuickLoad, A_ToggleHUD, A_Screenshot,
             A_QuickKeysMenu, A_QuickKey1, A_QuickKey2, A_QuickKey3, A_QuickKey4, A_QuickKey5, A_QuickKey6, A_QuickKey7,
             A_QuickKey8, A_QuickKey9, A_QuickKey10, A_CycleSpellLeft, A_CycleSpellRight, A_CycleWeaponLeft,
             A_CycleWeaponRight };
@@ -659,6 +783,84 @@ namespace MWInput
 
     void BindingsManager::controllerAxisMoved(int deviceID, const SDL_ControllerAxisEvent& arg)
     {
+        constexpr float triggerPressThreshold = 0.6f;
+        constexpr float triggerReleaseThreshold = 0.55f;
+
+        auto normalizeTriggerValue = [](Sint16 value) -> float {
+            // SDL controller triggers are reported as axes in the range [0..32767]. Our input system normalizes
+            // axes from [-32768..32767] into [0..1], which makes the trigger "rest" position 0.5.
+            constexpr float min = -32768.f;
+            constexpr float range = 65535.f;
+            const float normalized = (static_cast<float>(value) - min) / range;
+            return std::clamp(normalized, 0.f, 1.f);
+        };
+
+        const bool triggerAxis
+            = arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || arg.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
+        if (triggerAxis)
+        {
+            auto inputManager = MWBase::Environment::get().getInputManager();
+            const bool joystickUsed
+                = inputManager->joystickLastUsed() && inputManager->getControlSwitch("playercontrols");
+
+            const bool toggleWeapon = actionIsActive(A_ToggleWeapon);
+            const bool toggleSpell = actionIsActive(A_ToggleSpell);
+            const bool chordActive = joystickUsed && (toggleWeapon || toggleSpell);
+
+            const float norm = normalizeTriggerValue(arg.value);
+            const bool pressed = norm > triggerPressThreshold;
+            const bool released = norm < triggerReleaseThreshold;
+
+            if (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)
+            {
+                if (chordActive && pressed && !mLeftTriggerChordPressed)
+                {
+                    const int cycleAction = toggleWeapon ? A_CycleWeaponLeft : A_CycleSpellLeft;
+                    inputManager->executeAction(cycleAction);
+                    if (toggleWeapon)
+                        mToggleWeaponChorded = true;
+                    else
+                        mToggleSpellChorded = true;
+                }
+
+                mLeftTriggerChordPressed = pressed;
+                if (chordActive && pressed)
+                    mIgnoreLeftTriggerUntilRelease = true;
+                if (released)
+                    mIgnoreLeftTriggerUntilRelease = false;
+
+                if (chordActive || mIgnoreLeftTriggerUntilRelease)
+                {
+                    if (!released)
+                        return;
+                }
+            }
+            else // SDL_CONTROLLER_AXIS_TRIGGERRIGHT
+            {
+                if (chordActive && pressed && !mRightTriggerChordPressed)
+                {
+                    const int cycleAction = toggleWeapon ? A_CycleWeaponRight : A_CycleSpellRight;
+                    inputManager->executeAction(cycleAction);
+                    if (toggleWeapon)
+                        mToggleWeaponChorded = true;
+                    else
+                        mToggleSpellChorded = true;
+                }
+
+                mRightTriggerChordPressed = pressed;
+                if (chordActive && pressed)
+                    mIgnoreRightTriggerUntilRelease = true;
+                if (released)
+                    mIgnoreRightTriggerUntilRelease = false;
+
+                if (chordActive || mIgnoreRightTriggerUntilRelease)
+                {
+                    if (!released)
+                        return;
+                }
+            }
+        }
+
         mInputBinder->axisMoved(deviceID, arg);
     }
 
@@ -678,30 +880,75 @@ namespace MWInput
 
     void BindingsManager::actionValueChanged(int action, float currentValue, float previousValue)
     {
+        if (isDetectingBindingState())
+            return;
+
         auto manager = MWBase::Environment::get().getInputManager();
         manager->resetIdleTime();
 
         if (mDragDrop && action != A_GameMenu && action != A_Inventory)
             return;
 
-        if (manager->joystickLastUsed() && manager->getControlSwitch("playercontrols"))
+        const bool joystickUsed = manager->joystickLastUsed() && manager->getControlSwitch("playercontrols");
+        if (joystickUsed)
         {
-            if (action == A_Use && actionIsActive(A_ToggleWeapon))
-                action = A_CycleWeaponRight;
-            else if (action == A_Use && actionIsActive(A_ToggleSpell))
-                action = A_CycleSpellRight;
-            else if (action == A_Jump && actionIsActive(A_ToggleWeapon))
-                action = A_CycleWeaponLeft;
-            else if (action == A_Jump && actionIsActive(A_ToggleSpell))
-                action = A_CycleSpellLeft;
+            auto isActionBoundToAxis = [this](int actionId, int axis) -> bool {
+                auto* channel = mInputBinder->getChannel(actionId);
+                if (channel->getControlsCount() == 0)
+                    return false;
+
+                for (const auto& attached : channel->getAttachedControls())
+                {
+                    ICS::Control* control = attached.control;
+                    if (mInputBinder->getJoystickAxisBinding(control, sFakeDeviceId, ICS::Control::INCREASE) == axis)
+                        return true;
+                    if (mInputBinder->getJoystickAxisBinding(control, sFakeDeviceId, ICS::Control::DECREASE) == axis)
+                        return true;
+                }
+
+                return false;
+            };
+
+            if (previousValue <= 0.6f && currentValue > 0.6f)
+            {
+                // If a trigger press was used as a chord (X/Y + LT/RT), suppress the normal action bound to that
+                // trigger so it doesn't fire (e.g. jump/attack).
+                if (mIgnoreLeftTriggerUntilRelease && isActionBoundToAxis(action, SDL_CONTROLLER_AXIS_TRIGGERLEFT))
+                    return;
+                if (mIgnoreRightTriggerUntilRelease && isActionBoundToAxis(action, SDL_CONTROLLER_AXIS_TRIGGERRIGHT))
+                    return;
+            }
+
+            if (action == A_ToggleWeapon || action == A_ToggleSpell)
+            {
+                // Let chorded inputs win: toggle only on release if no chord fired.
+                if (previousValue <= 0.6f && currentValue > 0.6f)
+                {
+                    if (action == A_ToggleWeapon)
+                        mToggleWeaponChorded = false;
+                    else
+                        mToggleSpellChorded = false;
+                    return;
+                }
+                if (previousValue > 0.6f && currentValue <= 0.6f)
+                {
+                    const bool chorded = action == A_ToggleWeapon ? mToggleWeaponChorded : mToggleSpellChorded;
+                    if (action == A_ToggleWeapon)
+                        mToggleWeaponChorded = false;
+                    else
+                        mToggleSpellChorded = false;
+                    if (!chorded)
+                        manager->executeAction(action);
+                    return;
+                }
+            }
+
+            // Cycling weapon/spell while holding toggle is bound to the physical controller triggers (LT/RT)
+            // and is handled in controllerAxisMoved. Do not derive this chord from configurable actions like Jump/Use.
         }
 
-        // Detect press (value goes above threshold)
         if (previousValue <= 0.6 && currentValue > 0.6)
             manager->executeAction(action);
-        // Detect release (value goes below threshold)
-        else if (previousValue > 0.6 && currentValue <= 0.6)
-            manager->executeActionRelease(action);
     }
 
     void BindingsManager::saveBindings()

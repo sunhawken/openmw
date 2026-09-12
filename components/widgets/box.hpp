@@ -64,6 +64,10 @@ namespace Gui
     public:
         MyGUI::IntSize getRequestedSize() override;
         void setCaption(const MyGUI::UString& value) override;
+        void setSize(const MyGUI::IntSize& value) override;
+        void setCoord(const MyGUI::IntCoord& value) override;
+        void setCoord(int left, int top, int width, int height);
+        void forceTextUpdate();
 
         void initialiseOverride() override;
 

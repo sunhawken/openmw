@@ -1,11 +1,13 @@
 #include "journalwindow.hpp"
 
+#include <algorithm>
 #include <set>
 #include <stack>
 #include <string>
 #include <utility>
 
 #include <MyGUI_Button.h>
+#include <MyGUI_Gui.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_TextBox.h>
 
@@ -44,6 +46,7 @@ namespace
     static constexpr std::string_view LeftTopicIndex = "LeftTopicIndex";
     static constexpr std::string_view CenterTopicIndex = "CenterTopicIndex";
     static constexpr std::string_view RightTopicIndex = "RightTopicIndex";
+    static constexpr int JournalBookVerticalOffset = 15;
 
     struct JournalWindowImpl : MWGui::JournalBooks, MWGui::JournalWindow
     {
@@ -59,6 +62,8 @@ namespace
         bool mOptionsMode;
         bool mTopicsMode;
         bool mAllQuests;
+        bool mQuestFilterFocused = false;
+        MyGUI::Widget* mQuestFilterHighlight = nullptr;
 
         template <typename T>
         T* getWidget(std::string_view name)
@@ -89,11 +94,18 @@ namespace
 
         MWGui::BookPage* getPage(std::string_view name) { return getWidget<MWGui::BookPage>(name); }
 
+        void applyVerticalOffset()
+        {
+            MyGUI::IntPoint pos = mMainWidget->getPosition();
+            mMainWidget->setPosition(pos.left, std::max(0, pos.top - JournalBookVerticalOffset));
+        }
+
         JournalWindowImpl(std::shared_ptr<MWGui::JournalViewModel> model, bool questList, ToUTF8::FromType encoding)
             : JournalBooks(std::move(model), encoding)
             , JournalWindow()
         {
             center();
+            applyVerticalOffset();
 
             adviseButtonClick(OptionsBTN, &JournalWindowImpl::notifyOptions);
             adviseButtonClick(PrevPageBTN, &JournalWindowImpl::notifyPrevPage);
@@ -155,6 +167,8 @@ namespace
             Gui::ImageButton* showActiveButton = getWidget<Gui::ImageButton>(ShowActiveBTN);
             Gui::ImageButton* showAllButton = getWidget<Gui::ImageButton>(ShowAllBTN);
             Gui::ImageButton* questsButton = getWidget<Gui::ImageButton>(QuestsBTN);
+            showActiveButton->setNeedKeyFocus(true);
+            showAllButton->setNeedKeyFocus(true);
 
             Gui::ImageButton* nextButton = getWidget<Gui::ImageButton>(NextPageBTN);
             if (nextButton->getSize().width == 64)
@@ -230,10 +244,21 @@ namespace
             mControllerButtons.mX = "#{OMWEngine:JournalQuests}";
             mControllerButtons.mY = "#{Interface:Topics}";
 
+            setVisible(OptionsBTN, false);
+            setVisible(CloseBTN, false);
+            getWidget<MyGUI::Widget>(OptionsBTN)->setEnabled(false);
+            getWidget<MyGUI::Widget>(CloseBTN)->setEnabled(false);
+
             mQuestMode = false;
             mAllQuests = false;
             mOptionsMode = false;
             mTopicsMode = false;
+        }
+
+        void onResChange(int, int) override
+        {
+            center();
+            applyVerticalOffset();
         }
 
         void onOpen() override
@@ -510,12 +535,14 @@ namespace
                 {
                     listItem->setTextColour(
                         mButtons.size() == selectedIndex ? MWGui::journalHeaderColour : MyGUI::Colour::Black);
+                    if (useControllerSelectionHighlight())
+                        list->setItemHighlightVisible(i, mButtons.size() == selectedIndex);
                     mButtons.push_back(listItem);
                 }
             }
         }
 
-        void notifyIndexLinkClicked(Utf8Stream::UnicodeChar index)
+        void notifyIndexLinkClicked(Utf8Stream::UnicodeChar indexChar)
         {
             setVisible(LeftTopicIndex, false);
             setVisible(CenterTopicIndex, false);
@@ -523,20 +550,28 @@ namespace
             setVisible(TopicsList, true);
 
             mTopicsMode = true;
+            mSelectedQuest = 0;
 
             Gui::MWList* list = getWidget<Gui::MWList>(TopicsList);
             list->clear();
 
             AddNamesToList add(list);
 
-            mModel->visitTopicNamesStartingWith(index, add);
-
-            list->adjustSize();
+            mModel->visitTopicNamesStartingWith(indexChar, add);
 
             if (Settings::gui().mControllerMenus)
             {
+                list->setProperty(
+                    "ControllerHighlightSkin", useControllerSelectionHighlight() ? "ControllerHighlight" : "");
+            }
+
+            list->adjustSize();
+            list->scrollToTop();
+
+            if (Settings::gui().mControllerMenus)
+            {
+                addControllerButtons(list, 0);
                 setControllerFocusedQuest(0);
-                addControllerButtons(list, mSelectedQuest);
             }
 
             MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("book page"));
@@ -547,6 +582,8 @@ namespace
         {
             mQuestMode = false;
             mTopicsMode = false;
+            mQuestFilterFocused = false;
+            updateQuestFilterHighlight();
             setVisible(LeftTopicIndex, true);
             setVisible(CenterTopicIndex, true);
             setVisible(RightTopicIndex, true);
@@ -588,7 +625,10 @@ namespace
 
         void notifyQuests(MyGUI::Widget* /*sender*/)
         {
+            const bool wasQuestMode = mQuestMode;
             mQuestMode = true;
+            if (!wasQuestMode)
+                mQuestFilterFocused = false;
 
             setVisible(LeftTopicIndex, false);
             setVisible(CenterTopicIndex, false);
@@ -606,13 +646,28 @@ namespace
             mModel->visitQuestNames(!mAllQuests, add);
 
             list->sort();
+            if (Settings::gui().mControllerMenus)
+            {
+                list->setProperty(
+                    "ControllerHighlightSkin", useControllerSelectionHighlight() ? "ControllerHighlight" : "");
+            }
+
             list->adjustSize();
 
             if (Settings::gui().mControllerMenus)
             {
                 addControllerButtons(list, mSelectedQuest);
-                setControllerFocusedQuest(std::min(mSelectedQuest, mButtons.size()));
+                const size_t focusedIndex = mButtons.empty() ? 0 : std::min(mSelectedQuest, mButtons.size() - 1);
+                setControllerFocusedQuest(focusedIndex);
             }
+
+            if (Settings::gui().mControllerMenus && mQuestFilterFocused)
+            {
+                clearControllerFocusedQuest();
+                MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(
+                    getWidget<MyGUI::Widget>(getQuestFilterButtonName()));
+            }
+            updateQuestFilterHighlight();
 
             if (mAllQuests)
             {
@@ -627,12 +682,14 @@ namespace
         void notifyShowAll(MyGUI::Widget* sender)
         {
             mAllQuests = true;
+            mQuestFilterFocused = true;
             notifyQuests(sender);
         }
 
         void notifyShowActive(MyGUI::Widget* sender)
         {
             mAllQuests = false;
+            mQuestFilterFocused = true;
             notifyQuests(sender);
         }
 
@@ -710,16 +767,9 @@ namespace
 
             mControllerButtons.mL1.clear();
             mControllerButtons.mR1.clear();
+            mControllerButtons.mL2 = "#{Interface:Prev}";
+            mControllerButtons.mR2 = "#{Interface:Next}";
             mControllerButtons.mR3.clear();
-            if (!mOptionsMode)
-            {
-                mControllerButtons.mL1 = "#{Interface:Prev}";
-                mControllerButtons.mR1 = "#{Interface:Next}";
-            }
-            else if (mQuestMode)
-            {
-                mControllerButtons.mR3 = "#{OMWEngine:JournalShowAll}";
-            }
             return &mControllerButtons;
         }
 
@@ -728,6 +778,14 @@ namespace
             size_t col = mSelectedIndex / mIndexRowCount;
             size_t row = mSelectedIndex % mIndexRowCount;
             mTopicIndexBook->setColour(col, row, 0, focused ? MWGui::journalHeaderColour : MyGUI::Colour::Black);
+
+            if (useControllerSelectionHighlight())
+            {
+                const auto id = focused ? getSelectedIndexChar() : 0;
+                getPage(LeftTopicIndex)->setFocusByInteractiveId(id);
+                getPage(CenterTopicIndex)->setFocusByInteractiveId(id);
+                getPage(RightTopicIndex)->setFocusByInteractiveId(id);
+            }
         }
 
         void moveSelectedIndex(int offset)
@@ -770,6 +828,15 @@ namespace
             {
                 if (mQuestMode)
                 {
+                    if (mQuestFilterFocused)
+                    {
+                        if (mAllQuests)
+                            notifyShowActive(getWidget<MyGUI::Widget>(ShowActiveBTN));
+                        else
+                            notifyShowAll(getWidget<MyGUI::Widget>(ShowAllBTN));
+                        return true;
+                    }
+
                     // Choose a quest
                     Gui::MWList* list = getWidget<Gui::MWList>(QuestsList);
                     if (mSelectedQuest < list->getItemCount())
@@ -784,16 +851,7 @@ namespace
                 }
                 else
                 {
-                    // Choose an index. Cyrillic capital A is a 0xd090 in UTF-8.
-                    // Words can not be started with characters 26 or 28.
-                    int russianOffset = 0xd090;
-                    if (mSelectedIndex >= 26)
-                        russianOffset++;
-                    if (mSelectedIndex >= 27)
-                        russianOffset++; // 27, not 28, because of skipping char 26
-                    bool isRussian = (mEncoding == ToUTF8::WINDOWS_1251);
-                    size_t ch = isRussian ? mSelectedIndex + russianOffset : mSelectedIndex + 'A';
-                    notifyIndexLinkClicked(static_cast<Utf8Stream::UnicodeChar>(ch));
+                    notifyIndexLinkClicked(getSelectedIndexChar());
                 }
             }
             else if (arg.button == SDL_CONTROLLER_BUTTON_B) // B: Back
@@ -801,6 +859,7 @@ namespace
                 // Hide the options overlay
                 notifyCancel(getWidget<MyGUI::Widget>(CancelBTN));
                 mQuestMode = false;
+                mQuestFilterFocused = false;
             }
             else if (arg.button == SDL_CONTROLLER_BUTTON_X) // X: Quests
             {
@@ -809,6 +868,7 @@ namespace
                     // Hide the quest overlay if visible
                     notifyCancel(getWidget<MyGUI::Widget>(CancelBTN));
                     mQuestMode = false;
+                    mQuestFilterFocused = false;
                 }
                 else
                 {
@@ -838,6 +898,18 @@ namespace
             }
             else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP)
             {
+                if (mQuestMode)
+                {
+                    if (mQuestFilterFocused)
+                        return true;
+
+                    if (mSelectedQuest == 0)
+                    {
+                        setQuestFilterFocused(true);
+                        return true;
+                    }
+                }
+
                 if (mQuestMode || mTopicsMode)
                 {
                     if (mButtons.size() <= 1)
@@ -851,6 +923,12 @@ namespace
             }
             else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
             {
+                if (mQuestMode && mQuestFilterFocused)
+                {
+                    setQuestFilterFocused(false);
+                    return true;
+                }
+
                 if (mQuestMode || mTopicsMode)
                 {
                     if (mButtons.size() <= 1)
@@ -878,6 +956,111 @@ namespace
             }
 
             return true;
+        }
+
+        std::string_view getQuestFilterButtonName() const { return mAllQuests ? ShowActiveBTN : ShowAllBTN; }
+
+        void destroyQuestFilterHighlight()
+        {
+            if (!mQuestFilterHighlight)
+                return;
+
+            MyGUI::Gui::getInstance().destroyWidget(mQuestFilterHighlight);
+            mQuestFilterHighlight = nullptr;
+        }
+
+        void updateQuestFilterHighlight()
+        {
+            if (!Settings::gui().mControllerMenus || !useControllerSelectionHighlight() || !mQuestMode
+                || !mQuestFilterFocused)
+            {
+                destroyQuestFilterHighlight();
+                return;
+            }
+
+            Gui::ImageButton* button = getWidget<Gui::ImageButton>(getQuestFilterButtonName());
+            if (!button || !button->getVisible())
+            {
+                destroyQuestFilterHighlight();
+                return;
+            }
+
+            MyGUI::Widget* highlightParent = button->getParent();
+            if (!highlightParent)
+            {
+                destroyQuestFilterHighlight();
+                return;
+            }
+
+            if (!mQuestFilterHighlight || mQuestFilterHighlight->getParent() != highlightParent)
+            {
+                destroyQuestFilterHighlight();
+
+                mQuestFilterHighlight = highlightParent->createWidget<MyGUI::Widget>(
+                    "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+                mQuestFilterHighlight->setNeedMouseFocus(false);
+                mQuestFilterHighlight->setDepth(1);
+            }
+
+            MyGUI::IntCoord coord = button->getCoord();
+            if (MyGUI::Widget* listWidget = getWidget<MyGUI::Widget>(QuestsList))
+            {
+                const int maxHeight = std::max(0, listWidget->getCoord().top - coord.top);
+                coord.height = std::min(coord.height / 2, maxHeight);
+            }
+            else
+            {
+                coord.height = coord.height / 2;
+            }
+            coord.height = std::max(coord.height, 1);
+            mQuestFilterHighlight->setCoord(coord);
+            mQuestFilterHighlight->setVisible(true);
+        }
+
+        void clearControllerFocusedQuest()
+        {
+            const size_t listSize = mButtons.size();
+            if (mSelectedQuest < listSize)
+                mButtons[mSelectedQuest]->setTextColour(MyGUI::Colour::Black);
+            if (useControllerSelectionHighlight() && (mQuestMode || mTopicsMode) && mSelectedQuest < listSize)
+            {
+                Gui::MWList* list = getWidget<Gui::MWList>(mQuestMode ? QuestsList : TopicsList);
+                list->setItemHighlightVisible(mSelectedQuest, false);
+            }
+        }
+
+        void setQuestFilterFocused(bool focused)
+        {
+            if (!Settings::gui().mControllerMenus || !mQuestMode)
+                return;
+
+            if (focused == mQuestFilterFocused)
+                return;
+
+            MWBase::WindowManager& windowManager = *MWBase::Environment::get().getWindowManager();
+
+            if (focused)
+            {
+                mQuestFilterFocused = true;
+                clearControllerFocusedQuest();
+                windowManager.setKeyFocusWidget(getWidget<MyGUI::Widget>(getQuestFilterButtonName()));
+                updateQuestFilterHighlight();
+            }
+            else
+            {
+                mQuestFilterFocused = false;
+                updateQuestFilterHighlight();
+
+                if (!mButtons.empty())
+                {
+                    setControllerFocusedQuest(std::min(mSelectedQuest, mButtons.size() - 1));
+                    windowManager.setKeyFocusWidget(mButtons[mSelectedQuest]);
+                }
+                else
+                {
+                    windowManager.setKeyFocusWidget(getWidget<MyGUI::Widget>(CancelBTN));
+                }
+            }
         }
 
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override
@@ -920,13 +1103,29 @@ namespace
                 if (mQuestMode)
                     notifyTopics(getWidget<MyGUI::Widget>(TopicsBTN));
             }
-            else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
+            else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)
                 notifyPrevPage(getWidget<MyGUI::Widget>(PrevPageBTN));
-            else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT
-                || arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+            else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
                 notifyNextPage(getWidget<MyGUI::Widget>(NextPageBTN));
 
             return true;
+        }
+
+        bool onControllerThumbstickEvent(const SDL_ControllerAxisEvent& arg) override
+        {
+            if (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)
+            {
+                if (!mOptionsMode)
+                    notifyPrevPage(getWidget<MyGUI::Widget>(PrevPageBTN));
+                return true;
+            }
+            if (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
+            {
+                if (!mOptionsMode)
+                    notifyNextPage(getWidget<MyGUI::Widget>(NextPageBTN));
+                return true;
+            }
+            return false;
         }
 
         void setControllerFocusedQuest(size_t index)
@@ -934,11 +1133,21 @@ namespace
             size_t listSize = mButtons.size();
             if (mSelectedQuest < listSize)
                 mButtons[mSelectedQuest]->setTextColour(MyGUI::Colour::Black);
+            if (useControllerSelectionHighlight())
+            {
+                Gui::MWList* list = getWidget<Gui::MWList>(mQuestMode ? QuestsList : TopicsList);
+                list->setItemHighlightVisible(mSelectedQuest, false);
+            }
 
             mSelectedQuest = index;
             if (mSelectedQuest < listSize)
             {
                 mButtons[mSelectedQuest]->setTextColour(MWGui::journalHeaderColour);
+                if (useControllerSelectionHighlight())
+                {
+                    Gui::MWList* list = getWidget<Gui::MWList>(mQuestMode ? QuestsList : TopicsList);
+                    list->setItemHighlightVisible(mSelectedQuest, true);
+                }
 
                 // Scroll the list to keep the active item in view
                 Gui::MWList* list = getWidget<Gui::MWList>(mQuestMode ? QuestsList : TopicsList);
@@ -947,6 +1156,24 @@ namespace
                     offset += mButtons[i]->getHeight();
                 list->setViewOffset(-offset);
             }
+        }
+
+        Utf8Stream::UnicodeChar getSelectedIndexChar() const
+        {
+            // Cyrillic capital A is a 0xd090 in UTF-8. Words can not be started with characters 26 or 28.
+            int russianOffset = 0xd090;
+            if (mSelectedIndex >= 26)
+                russianOffset++;
+            if (mSelectedIndex >= 27)
+                russianOffset++; // 27, not 28, because of skipping char 26
+            bool isRussian = (mEncoding == ToUTF8::WINDOWS_1251);
+            size_t ch = isRussian ? mSelectedIndex + russianOffset : mSelectedIndex + 'A';
+            return static_cast<Utf8Stream::UnicodeChar>(ch);
+        }
+
+        bool useControllerSelectionHighlight() const
+        {
+            return Settings::gui().mControllerMenus && Settings::gui().mControllerHighlightSelections;
         }
     };
 }

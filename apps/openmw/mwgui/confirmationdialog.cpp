@@ -2,6 +2,7 @@
 
 #include <MyGUI_Button.h>
 #include <MyGUI_EditBox.h>
+#include <MyGUI_Widget.h>
 
 #include <components/settings/values.hpp>
 
@@ -23,14 +24,24 @@ namespace MWGui
         if (Settings::gui().mControllerMenus)
         {
             mDisableGamepadCursor = true;
-            mControllerButtons.mA = "#{Interface:OK}";
-            mControllerButtons.mB = "#{Interface:Cancel}";
+            mControllerButtons.mA = "#{Interface:Select}";
+            mControllerButtons.mB.clear();
+
+            MyGUI::Widget* highlightParent = mMainWidget->getClientWidget();
+            if (!highlightParent)
+                highlightParent = mMainWidget;
+            mControllerFocusHighlight = highlightParent->createWidget<MyGUI::Widget>(
+                "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+            mControllerFocusHighlight->setNeedMouseFocus(false);
+            mControllerFocusHighlight->setDepth(1);
+            mControllerFocusHighlight->setVisible(false);
         }
     }
 
     void ConfirmationDialog::askForConfirmation(const std::string& message)
     {
         setVisible(true);
+        mTooltipSourceWindow = nullptr;
 
         mMessage->setCaptionWithReplacing(message);
 
@@ -49,6 +60,7 @@ namespace MWGui
             mOkButtonFocus = true;
             mOkButton->setStateSelected(true);
             mCancelButton->setStateSelected(false);
+            updateControllerHighlight();
         }
 
         center();
@@ -57,6 +69,9 @@ namespace MWGui
     bool ConfirmationDialog::exit()
     {
         setVisible(false);
+        mTooltipSourceWindow = nullptr;
+        if (mControllerFocusHighlight)
+            mControllerFocusHighlight->setVisible(false);
         eventCancelClicked();
         return true;
     }
@@ -69,6 +84,7 @@ namespace MWGui
     void ConfirmationDialog::onOkButtonClicked(MyGUI::Widget* /*sender*/)
     {
         setVisible(false);
+        mTooltipSourceWindow = nullptr;
 
         eventOkClicked();
     }
@@ -92,8 +108,30 @@ namespace MWGui
             mOkButtonFocus = !mOkButtonFocus;
             mOkButton->setStateSelected(mOkButtonFocus);
             mCancelButton->setStateSelected(!mOkButtonFocus);
+            updateControllerHighlight();
         }
 
         return true;
+    }
+
+    void ConfirmationDialog::updateControllerHighlight()
+    {
+        if (!mControllerFocusHighlight || !Settings::gui().mControllerMenus)
+            return;
+
+        MyGUI::Widget* focus = mOkButtonFocus ? mOkButton : mCancelButton;
+        if (!focus)
+        {
+            mControllerFocusHighlight->setVisible(false);
+            return;
+        }
+
+        MyGUI::Widget* highlightParent = mControllerFocusHighlight->getParent();
+        const MyGUI::IntCoord baseCoord
+            = highlightParent ? highlightParent->getAbsoluteCoord() : mMainWidget->getAbsoluteCoord();
+        const MyGUI::IntCoord focusCoord = focus->getAbsoluteCoord();
+        mControllerFocusHighlight->setCoord(
+            focusCoord.left - baseCoord.left, focusCoord.top - baseCoord.top, focusCoord.width, focusCoord.height);
+        mControllerFocusHighlight->setVisible(true);
     }
 }

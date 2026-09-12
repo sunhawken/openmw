@@ -1,66 +1,66 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_Window_NoCaption" layer="Windows" align="Center" position="0 0 588 444" name="_Main">
-       <Property key="MinSize" value="425 360"/>
+    <Widget type="Window" skin="MW_Window_Pinnable_DialogNoTransp" layer="Windows" align="Center" position="0 0 588 424" name="_Main">
+        <Property key="MinSize" value="588 394"/>
 
-        <!-- Name -->
-
+        <!-- Name Label -->
         <Widget type="TextBox" skin="SandText" position="10 8 65 30">
             <Property key="Caption" value="#{sName}"/>
             <Property key="TextAlign" value="Left"/>
         </Widget>
 
-        <Widget type="EditBox" skin="MW_TextEdit" position="70 8 492 30" align="Top Left HStretch" name="NameEdit">
+        <!-- Name edit + BrewCount HBox -->
+        <Widget type="HBox" position="70 8 492 30" align="Top Left HStretch">
+            <!-- Name edit -->
+            <Widget type="EditBox" skin="MW_TextEdit" position="0 0 370 30" name="NameEdit">
+                <Property key="NeedKey" value="true"/>
+            </Widget>
+
+            <!-- Name Label -->
+            <Widget type="TextBox" skin="SandText" position="10 8 65 30">
+                <Property key="Caption" value="Quantity"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+            <!-- BrewCount -->
+            <Widget type="NumericEditBox" skin="MW_TextEdit" position="400 0 50 30" name="BrewCount">
+                <Property key="TextAlign" value="Center"/>
+                <Property key="Visible" value="true"/>
+                <Property key="Enabled" value="true"/>
+                <Property key="NeedKey" value="true"/>
+            </Widget>
         </Widget>
 
-
         <!-- Apparatus -->
-
         <Widget type="TextBox" skin="SandText" position="10 40 260 24">
             <Property key="Caption" value="#{sApparatus}"/>
             <Property key="TextAlign" value="Left"/>
         </Widget>
 
         <Widget type="Widget" skin="" position="10 66 260 50">
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="Apparatus1"/>
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="60 0 50 50" name="Apparatus2"/>
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="120 0 50 50" name="Apparatus3"/>
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="180 0 50 50" name="Apparatus4"/>
-
         </Widget>
 
-
         <!-- Used Ingredients -->
-
         <Widget type="TextBox" skin="SandText" position="10 120 260 24">
             <Property key="Caption" value="#{sIngredients}"/>
             <Property key="TextAlign" value="Left"/>
         </Widget>
 
         <Widget type="Widget" skin="" position="10 146 260 50">
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="Ingredient1"/>
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="60 0 50 50" name="Ingredient2"/>
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="120 0 50 50" name="Ingredient3"/>
-
             <Widget type="ItemWidget" skin="MW_ItemIconBox" position="180 0 50 50" name="Ingredient4"/>
-
         </Widget>
 
-
         <!-- Available Ingredients -->
-
-        <Widget type="ItemView" skin="MW_ItemView" position="10 206 552 132" name="ItemView" align="Left Top Stretch"/>
+        <Widget type="ItemView" skin="MW_ItemView" position="10 206 552 172" name="ItemView" align="Left Top Stretch"/>
 
         <!-- Created Effects -->
-
         <Widget type="TextBox" skin="SandText" position="250 40 320 24">
             <Property key="Caption" value="#{sCreatedEffects}"/>
             <Property key="TextAlign" value="Left"/>
@@ -70,49 +70,51 @@
             <Widget type="Widget" skin="" position="4 4 316 122" name="CreatedEffects" align="HStretch"/>
         </Widget>
 
-        <!-- Filters -->
-
-        <Widget type="HBox" skin="MW_Box" position="10 333 552 39" align="Bottom HStretch">
-            <Property key="Padding" value="5"/>
-            <Property key="Spacing" value="10"/>
-
+        <Widget type="HBox" skin="" position="10 384 552 28" align="Bottom HStretch">
             <Widget type="AutoSizedButton" skin="MW_Button" position="10 2 1 1" name="FilterType">
-                <Property key="Caption" value="#{sIngredients}"/> <!-- default value, can be either sIngredients of sMagicEffects -->
+                <Property key="Caption" value="#{sIngredients}"/>
+                <Property key="NeedKey" value="true"/>
             </Widget>
-            <Widget type="ComboBox" skin="MW_ComboBox" position="0 2 0 24" name="FilterValue">
-                <UserString key="HStretch" value="true"/>
+
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 2 410 24" name="FilterValue">
                 <Property key="ModeDrop" value="false"/>
+                <Property key="NeedKey" value="true"/>
             </Widget>
-        </Widget>
 
 
-        <!-- Buttons -->
+        <!-- Buttons (invisible)-->
 
-        <Widget type="HBox" skin="" position="10 374 552 28" align="Bottom HStretch">
+            <Widget type="Spacer">
+                <Property key="Visible" value="false"/>
+            </Widget>
+
             <Widget type="AutoSizedButton" skin="MW_Button" name="DecreaseButton">
                 <Property key="Caption" value=" - "/>
-                <Property key="NeedKey" value="false"/>
-            </Widget>
-
-            <Widget type="NumericEditBox" skin="MW_TextEdit" position="0 0 96 25" name="BrewCount">
-                <Property key="TextAlign" value="Center"/>
+                <Property key="Visible" value="false"/>
+                <Property key="Enabled" value="false"/>
             </Widget>
 
             <Widget type="AutoSizedButton" skin="MW_Button" name="IncreaseButton">
                 <Property key="Caption" value=" + "/>
-                <Property key="NeedKey" value="false"/>
+                <Property key="Visible" value="false"/>
+                <Property key="Enabled" value="false"/>
             </Widget>
 
-            <Widget type="Spacer"/>
+            <Widget type="Spacer">
+                <Property key="Visible" value="false"/>
+            </Widget>
 
             <Widget type="AutoSizedButton" skin="MW_Button" name="CreateButton">
                 <Property key="Caption" value="#{sCreate}"/>
+                <Property key="Visible" value="false"/>
+                <Property key="Enabled" value="false"/>
             </Widget>
 
             <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
                 <Property key="Caption" value="#{Interface:Cancel}"/>
+                <Property key="Visible" value="false"/>
+                <Property key="Enabled" value="false"/>
             </Widget>
-
         </Widget>
 
     </Widget>

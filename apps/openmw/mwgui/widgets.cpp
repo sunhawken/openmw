@@ -4,6 +4,7 @@
 
 #include <MyGUI_Button.h>
 #include <MyGUI_ControllerManager.h>
+#include <MyGUI_ISubWidgetText.h>
 #include <MyGUI_ImageBox.h>
 #include <MyGUI_ProgressBar.h>
 #include <MyGUI_UString.h>
@@ -358,6 +359,36 @@ namespace MWGui::Widgets
     {
         mEffectParams = params;
         updateWidgets();
+    }
+
+    int MWSpellEffect::fitToWidth(int width, bool wrap)
+    {
+        width = std::max(1, width);
+        const int minHeight = std::max(24, getHeight());
+        setSize(width, minHeight);
+
+        if (!mTextWidget)
+            return minHeight;
+
+        if (MyGUI::ISubWidgetText* text = mTextWidget->getSubWidgetText())
+            text->setWordWrap(wrap);
+        mTextWidget->setTextAlign(MyGUI::Align::Left | MyGUI::Align::Top);
+
+        const MyGUI::IntCoord textCoord = mTextWidget->getCoord();
+        const int textWidth = std::max(1, width - textCoord.left);
+        mTextWidget->setCoord(textCoord.left, textCoord.top, textWidth, textCoord.height);
+
+        // Refresh wrapped line layout with the new width before measuring height.
+        mTextWidget->setCaptionWithReplacing(mTextWidget->getCaption());
+
+        MyGUI::IntSize textSize = mTextWidget->getTextSize();
+        const MyGUI::IntCoord textRegion = mTextWidget->getTextRegion();
+        textSize.height += textCoord.height - textRegion.height;
+        const int height = std::max(minHeight, textCoord.top + textSize.height);
+
+        mTextWidget->setCoord(textCoord.left, textCoord.top, textWidth, std::max(1, height - textCoord.top));
+        setSize(width, height);
+        return height;
     }
 
     void MWSpellEffect::updateWidgets()

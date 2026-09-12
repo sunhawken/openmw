@@ -6,6 +6,7 @@
 
 #include <MyGUI_ComboBox.h>
 #include <MyGUI_ControllerItem.h>
+#include <MyGUI_UString.h>
 
 #include <components/widgets/box.hpp>
 #include <components/widgets/numericeditbox.hpp>
@@ -14,6 +15,13 @@
 #include "windowbase.hpp"
 
 #include "../mwmechanics/alchemy.hpp"
+
+namespace MyGUI
+{
+    class EditBox;
+    class ListBox;
+    class Widget;
+}
 
 namespace MWGui
 {
@@ -28,14 +36,25 @@ namespace MWGui
         AlchemyWindow();
 
         void onOpen() override;
+        void onFrame(float duration) override;
 
         void onResChange(int, int) override { center(); }
 
         std::string_view getWindowIdForLua() const override { return "Alchemy"; }
+        MyGUI::EditBox* getNameEdit() const { return mNameEdit; }
+        ItemView* getItemView() const { return mItemView; }
+        bool isControllerItemViewFocused() const { return mControllerItemViewFocus; }
+        MyGUI::Widget* getControllerFocusTooltipWidget() const;
 
     private:
         static const float sCountChangeInitialPause; // in seconds
         static const float sCountChangeInterval; // in seconds
+
+        enum class XboxPage
+        {
+            Summary,
+            Picker
+        };
 
         std::string mSuggestedPotionName;
         enum class FilterType
@@ -44,6 +63,8 @@ namespace MWGui
             ByEffect
         };
         FilterType mCurrentFilter;
+        XboxPage mXboxPage = XboxPage::Summary;
+        const bool mUseXboxAlchemyUi;
 
         std::unique_ptr<ItemSelectionDialog> mItemSelectionDialog;
 
@@ -55,13 +76,46 @@ namespace MWGui
         MyGUI::Button* mCancelButton;
 
         MyGUI::Widget* mEffectsBox;
+        MyGUI::Widget* mXboxSummaryPanel = nullptr;
+        MyGUI::Widget* mXboxIngredientPickerPanel = nullptr;
 
         MyGUI::Button* mIncreaseButton;
         MyGUI::Button* mDecreaseButton;
         Gui::AutoSizedButton* mFilterType;
         MyGUI::ComboBox* mFilterValue;
+        MyGUI::ListBox* mFilterList = nullptr;
+        MyGUI::Widget* mFilterListHighlight = nullptr;
         MyGUI::EditBox* mNameEdit;
         Gui::NumericEditBox* mBrewCountEdit;
+        MyGUI::Widget* mControllerFocusHighlight = nullptr;
+        bool mControllerItemViewFocus = false;
+        MyGUI::Widget* mLastControllerFocusWidget = nullptr;
+        MyGUI::EditBox* mLastKeyboardEdit = nullptr;
+        bool mVirtualKeyboardWasVisible = false;
+        bool mNameHitLimit = false;
+        bool mSuppressNameLimitMessage = false;
+        int mXboxFocusedIngredient = 0;
+        int mXboxSelectedIngredientSlot = 0;
+
+        void openVirtualKeyboard(MyGUI::EditBox* edit);
+        void setControllerFocusWidget(MyGUI::Widget* widget);
+        void updateControllerFocusHighlight();
+        void updateControllerFocusState();
+        void updateControllerButtons();
+        void updateEditStaticState();
+        bool isFocusInItemView(MyGUI::Widget* focus) const;
+        void resizeToLayoutSize(MyGUI::Widget* source);
+        void setXboxIngredientFocus(int index);
+        void updateXboxIngredientFocus();
+        void switchXboxPage(XboxPage page);
+        void openXboxIngredientPicker(size_t slot);
+        void closeXboxIngredientPicker();
+        int getLastFilledIngredientIndex() const;
+        void showControllerInfo();
+        bool onXboxControllerButtonEvent(const SDL_ControllerButtonEvent& arg);
+        void onNameEdited(MyGUI::EditBox* sender);
+        void setNameCaption(const MyGUI::UString& caption);
+        void setNameCaptionWithReplacing(const std::string& caption);
 
         void onCancelButtonClicked(MyGUI::Widget* sender);
         void onCreateButtonClicked(MyGUI::Widget* sender);
@@ -80,11 +134,15 @@ namespace MWGui
         void onFilterEdited(MyGUI::EditBox* sender);
         void switchFilterType(MyGUI::Widget* sender);
         void updateFilters();
+        MyGUI::ListBox* getFilterListBox(MyGUI::Widget* focus) const;
+        void ensureFilterListHighlight(MyGUI::ListBox* list);
+        void updateFilterListHighlight(MyGUI::ListBox* list);
 
         void addRepeatController(MyGUI::Widget* widget);
 
         void onIncreaseButtonTriggered();
         void onDecreaseButtonTriggered();
+        void onBrewCountSelected(MyGUI::Widget* sender, std::size_t count);
 
         void onSelectedItem(int index);
 

@@ -22,7 +22,7 @@
         <Widget type="TextBox" skin="SandText" position="6 212 300 24" name="PlayerGold" align="Right Top">
             <Property key="TextAlign" value="Left"/>
         </Widget>
-        <Widget type="AutoSizedButton" skin="MW_Button" position="350 212 56 24" name="OkButton" align="Right Top">
+        <Widget type="AutoSizedButton" skin="MW_Button" position="350 212 5600 2400" name="OkButton" align="Right Top">
             <Property key="ExpandDirection" value="Left"/>
             <Property key="Caption" value="#{Interface:OK}"/>
         </Widget>

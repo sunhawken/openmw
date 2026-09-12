@@ -2,6 +2,8 @@
 
 #include <MyGUI_Button.h>
 #include <MyGUI_InputManager.h>
+#include <MyGUI_RenderManager.h>
+#include <MyGUI_Window.h>
 
 #include <components/settings/values.hpp>
 
@@ -59,15 +61,20 @@ namespace MWGui
 
         setCoord(200, 0, 600, 300);
 
+        mControllerButtons = {};
         mControllerButtons.mA = "#{Interface:Take}";
         mControllerButtons.mB = "#{Interface:Close}";
+        mControllerButtons.mR2 = "#{Interface:Inventory}";
+        mControllerButtons.mY = "#{Interface:Info}";
         mControllerButtons.mX = "#{Interface:TakeAll}";
-        mControllerButtons.mR3 = "#{Interface:Info}";
-        mControllerButtons.mL2 = "#{Interface:Inventory}";
     }
 
     void ContainerWindow::onItemSelected(int index)
     {
+        if (!mSortModel || !mModel)
+            return;
+        if (index < 0 || static_cast<size_t>(index) >= mSortModel->getItemCount())
+            return;
         if (mDragAndDrop->mIsOnDragAndDrop)
         {
             dropItem();
@@ -90,13 +97,15 @@ namespace MWGui
             count = 1;
 
         mSelectedItem = mSortModel->mapToSource(index);
+        if (mSelectedItem < 0)
+            return;
 
         if (count > 1 && !shift)
         {
             CountDialog* dialog = MWBase::Environment::get().getWindowManager()->getCountDialog();
             std::string name{ object.getClass().getName(object) };
             name += MWGui::ToolTips::getSoulString(object.getCellRef());
-            dialog->openCountDialog(name, "#{sTake}", static_cast<int>(count));
+            dialog->openCountDialog(name, "#{sTake}", static_cast<int>(count), this);
             dialog->eventOkClicked.clear();
             if (Settings::gui().mControllerMenus || MyGUI::InputManager::getInstance().isAltPressed())
                 dialog->eventOkClicked += MyGUI::newDelegate(this, &ContainerWindow::transferItem);
@@ -113,6 +122,8 @@ namespace MWGui
     {
         if (mModel == nullptr)
             return;
+        if (mSelectedItem < 0 || static_cast<size_t>(mSelectedItem) >= mModel->getItemCount())
+            return;
 
         const ItemStack item = mModel->getItem(mSelectedItem);
 
@@ -125,6 +136,8 @@ namespace MWGui
     void ContainerWindow::transferItem(MyGUI::Widget* /*sender*/, std::size_t count)
     {
         if (mModel == nullptr)
+            return;
+        if (mSelectedItem < 0 || static_cast<size_t>(mSelectedItem) >= mModel->getItemCount())
             return;
 
         const ItemStack item = mModel->getItem(mSelectedItem);
@@ -159,6 +172,9 @@ namespace MWGui
         bool lootAnyway = mTreatNextOpenAsLoot;
         mTreatNextOpenAsLoot = false;
         mPtr = container;
+        mItemTransfer->addTarget(*mItemView);
+        if (auto* inventory = MWBase::Environment::get().getWindowManager()->getInventoryWindow())
+            mItemTransfer->addTarget(*inventory->getItemView());
 
         bool loot = mPtr.getClass().isActor() && mPtr.getClass().getCreatureStats(mPtr).isDead();
 
@@ -202,7 +218,10 @@ namespace MWGui
 
     void ContainerWindow::onOpen()
     {
+        resetFixedWindowGeometry();
         mItemTransfer->addTarget(*mItemView);
+        if (auto* inventory = MWBase::Environment::get().getWindowManager()->getInventoryWindow())
+            mItemTransfer->addTarget(*inventory->getItemView());
     }
 
     void ContainerWindow::onClose()
@@ -345,6 +364,28 @@ namespace MWGui
         MWBase::Environment::get().getWindowManager()->removeGuiMode(GM_Container);
     }
 
+    void ContainerWindow::resetFixedWindowGeometry()
+    {
+        if (MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>(false))
+        {
+            MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            const float scale = 0.85f;
+            float targetWidth = viewSize.width * scale;
+            float targetHeight = targetWidth * 10.f / 16.f;
+            const float maxHeight = viewSize.height * scale;
+            int width = static_cast<int>(targetWidth);
+            int height = static_cast<int>(targetHeight);
+            if (height > maxHeight)
+            {
+                height = static_cast<int>(maxHeight);
+                width = static_cast<int>(height * 16.f / 10.f);
+            }
+            const int x = (viewSize.width - width) / 2;
+            const int y = (viewSize.height - height) / 2;
+            window->setCoord(x, y, width, height);
+        }
+    }
+
     void ContainerWindow::onDeleteCustomData(const MWWorld::Ptr& ptr)
     {
         if (mModel && mModel->usesContainer(ptr))
@@ -364,8 +405,11 @@ namespace MWGui
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
+            if (!mSortModel)
+                return true;
             int index = mItemView->getControllerFocus();
-            if (index >= 0 && index < mItemView->getItemCount())
+            const size_t modelCount = mSortModel->getItemCount();
+            if (index >= 0 && static_cast<size_t>(index) < modelCount)
                 onItemSelected(index);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_B)
@@ -394,6 +438,8 @@ namespace MWGui
     void ContainerWindow::setActiveControllerWindow(bool active)
     {
         mItemView->setActiveControllerWindow(active);
+        if (active)
+            mItemView->refreshControllerFocus();
         WindowBase::setActiveControllerWindow(active);
     }
 

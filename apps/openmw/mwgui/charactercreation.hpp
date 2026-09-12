@@ -51,6 +51,7 @@ namespace MWGui
         void configureSkills(const std::vector<ESM::RefId>& major, const std::vector<ESM::RefId>& minor) override;
 
         void onFrame(float duration);
+        CreateClassDialog* getCreateClassDialog() const;
 
     private:
         osg::Group* mParent;

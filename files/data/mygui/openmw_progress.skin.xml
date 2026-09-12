@@ -38,13 +38,24 @@
             <State name="normal" offset="0 0 16 2"/>
         </BasisSkin>
     </Resource>
-    <Resource type="ResourceSkin" name="ProgressText" size="16 16">
+    <Resource type="ResourceSkin" name="ProgressText" size="16 14">
         <Property key="FontName" value="Default"/>
         <Property key="TextAlign" value="VCenter HCenter"/>
-        <Property key="TextColour" value="#{fontcolour=normal}"/>
         <Property key="TextShadow" value="true"/>
+        <BasisSkin type="SimpleText" offset="0 0 16 10" align="Stretch">
+            <State name="normal" colour="#{fontcolour=normal}" shift="0"/>
+            <State name="highlighted" colour="#{fontcolour=active_over}" shift="0"/>
+        </BasisSkin>
+    </Resource>
 
-        <BasisSkin type="SimpleText" offset="0 0 16 16" align="Stretch"/>
+    <Resource type="ResourceSkin" name="ProgressTextController" size="16 14">
+        <Property key="FontName" value="Default"/>
+        <Property key="TextAlign" value="VCenter HCenter"/>
+        <Property key="TextShadow" value="true"/>
+        <BasisSkin type="SimpleText" offset="0 0 16 10" align="Stretch">
+            <State name="normal" colour="#{fontcolour=normal}" shift="0 0.5"/>
+            <State name="highlighted" colour="#{fontcolour=active}" shift="0 0.5"/>
+        </BasisSkin>
     </Resource>
 
     <!-- Main energy bar widget definitions. There's one for each color.-->

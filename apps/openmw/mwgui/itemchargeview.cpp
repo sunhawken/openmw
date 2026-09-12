@@ -175,6 +175,13 @@ namespace MWGui
         }
     }
 
+    MyGUI::Widget* ItemChargeView::getControllerFocusWidget() const
+    {
+        if (!Settings::gui().mControllerMenus || mLines.empty() || mControllerFocus >= mLines.size())
+            return nullptr;
+        return mLines[mControllerFocus].mIcon;
+    }
+
     void ItemChargeView::setSize(const MyGUI::IntSize& value)
     {
         bool changed = (value.width != getWidth() || value.height != getHeight());

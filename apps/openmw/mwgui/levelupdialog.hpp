@@ -14,8 +14,10 @@ namespace MWGui
         LevelupDialog();
 
         void onOpen() override;
+        void onFrame(float dt) override;
 
         std::string_view getWindowIdForLua() const override { return "LevelUpDialog"; }
+        MyGUI::Widget* getControllerFocusTooltipWidget() const;
 
     private:
         struct Widgets
@@ -42,6 +44,7 @@ namespace MWGui
 
         void onOkButtonClicked(MyGUI::Widget* sender);
         void onAttributeClicked(MyGUI::Widget* sender);
+        void updateControllerHighlight();
 
         void assignCoins();
         void resetCoins();
@@ -54,6 +57,8 @@ namespace MWGui
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
         std::vector<MyGUI::Button*> mAttributeButtons;
         size_t mControllerFocus = 0;
+        bool mNeedsCentering = false;
+        MyGUI::Widget* mControllerHighlight = nullptr;
     };
 
 }

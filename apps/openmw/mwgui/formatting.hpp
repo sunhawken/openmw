@@ -121,6 +121,11 @@ namespace MWGui
         class BookFormatter
         {
         public:
+            explicit BookFormatter(bool useDialogueBoldFont = false)
+                : mUseDialogueBoldFont(useDialogueBoldFont)
+            {
+            }
+
             Paginator::Pages markupToWidget(MyGUI::Widget* parent, const std::string& markup, const int pageWidth,
                 const int pageHeight, bool shrinkTextAtLastTag);
             Paginator::Pages markupToWidget(MyGUI::Widget* parent, const std::string& markup, bool shrinkTextAtLastTag);
@@ -133,6 +138,7 @@ namespace MWGui
 
             TextStyle mTextStyle;
             BlockStyle mBlockStyle;
+            bool mUseDialogueBoldFont = false;
         };
 
         class GraphicElement

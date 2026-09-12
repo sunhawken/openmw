@@ -17,6 +17,7 @@ namespace MWGui
         void setPtr(const MWWorld::Ptr& actor) override;
 
         std::string_view getWindowIdForLua() const override { return "MerchantRepair"; }
+        MyGUI::Widget* getControllerFocusTooltipWidget() const;
 
     private:
         MyGUI::ScrollView* mList;
@@ -24,6 +25,7 @@ namespace MWGui
         MyGUI::TextBox* mGoldLabel;
         /// List of enabled/repairable items and their index in the full list.
         std::vector<std::pair<MyGUI::Button*, size_t>> mButtons;
+        std::vector<MyGUI::Widget*> mButtonHighlights;
 
         MWWorld::Ptr mActor;
 
@@ -34,6 +36,7 @@ namespace MWGui
         void onRepairButtonClick(MyGUI::Widget* sender);
         void onOkButtonClick(MyGUI::Widget* sender);
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
+        bool useControllerSelectionHighlight() const;
     };
 
 }
