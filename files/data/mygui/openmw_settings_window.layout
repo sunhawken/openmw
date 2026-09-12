@@ -437,6 +437,71 @@
                             <Property key="TextAlign" value="Right"/>
                         </Widget>
 
+                        <!-- Performance / VRAM options -->
+                        <Widget type="AutoSizedTextBox" skin="NormalText" position="0 176 400 18" align="Left Top">
+                            <Property key="Caption" value="#{OMWEngine:PerformanceNote}"/>
+                        </Widget>
+
+                        <Widget type="TextBox" skin="NormalText" position="0 200 352 18" align="Left Top" name="TextureDownscaleLabel"/>
+                        <Widget type="ScrollBar" skin="MW_HScroll" position="0 220 352 18" align="HStretch Top">
+                            <Property key="Range" value="33"/>
+                            <Property key="Page" value="1"/>
+                            <UserString key="SettingType" value="Slider"/>
+                            <UserString key="SettingCategory" value="General"/>
+                            <UserString key="SettingName" value="texture downscale"/>
+                            <UserString key="SettingValueType" value="Integer"/>
+                            <UserString key="SettingMin" value="0"/>
+                            <UserString key="SettingMax" value="4096"/>
+                            <UserString key="SettingLabelWidget" value="TextureDownscaleLabel"/>
+                            <UserString key="SettingLabelCaption" value="TextureDownscaleValue"/>
+                        </Widget>
+                        <Widget type="TextBox" skin="SandText" position="0 240 352 16" align="Left Top">
+                            <Property key="Caption" value="#{OMWEngine:TextureDownscaleOff}"/>
+                            <Property key="TextAlign" value="Left"/>
+                        </Widget>
+
+                        <Widget type="HBox" position="0 262 500 28">
+                            <Widget type="AutoSizedButton" skin="MW_Button">
+                                <UserString key="SettingCategory" value="General"/>
+                                <UserString key="SettingName" value="vfs directory cache"/>
+                                <UserString key="SettingType" value="CheckButton"/>
+                            </Widget>
+                            <Widget type="AutoSizedTextBox" skin="SandText">
+                                <Property key="Caption" value="#{OMWEngine:VfsDirectoryCache}"/>
+                                <UserString key="ToolTipType" value="Layout"/>
+                                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                <UserString key="Caption_Text" value="#{OMWEngine:VfsDirectoryCacheTooltip}"/>
+                            </Widget>
+                        </Widget>
+
+                        <Widget type="HBox" position="0 292 500 28">
+                            <Widget type="AutoSizedButton" skin="MW_Button">
+                                <UserString key="SettingCategory" value="General"/>
+                                <UserString key="SettingName" value="bsa memory mapping"/>
+                                <UserString key="SettingType" value="CheckButton"/>
+                            </Widget>
+                            <Widget type="AutoSizedTextBox" skin="SandText">
+                                <Property key="Caption" value="#{OMWEngine:BsaMemoryMapping}"/>
+                                <UserString key="ToolTipType" value="Layout"/>
+                                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                <UserString key="Caption_Text" value="#{OMWEngine:BsaMemoryMappingTooltip}"/>
+                            </Widget>
+                        </Widget>
+
+                        <Widget type="HBox" position="0 322 500 44">
+                            <Widget type="AutoSizedButton" skin="MW_Button">
+                                <UserString key="SettingCategory" value="Cells"/>
+                                <UserString key="SettingName" value="seamless cell transitions"/>
+                                <UserString key="SettingType" value="CheckButton"/>
+                            </Widget>
+                            <Widget type="AutoSizedTextBox" skin="SandText">
+                                <Property key="Caption" value="Seamless Interior / Exterior Transitions"/>
+                                <UserString key="ToolTipType" value="Layout"/>
+                                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                <UserString key="Caption_Text" value="Keeps the interior/exterior transition preference enabled. The engine uses its safe synchronized handoff; use the standard cell-preload options to reduce loading time."/>
+                            </Widget>
+                        </Widget>
+
                     </Widget>
                     <Widget type="TabItem">
                         <Property key="Caption" value=" #{OMWEngine:Water} "/>

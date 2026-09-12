@@ -76,7 +76,7 @@ namespace SceneUtil
         for (osg::MatrixTransform* matrixTransform : found->second)
         {
             const auto it = std::find_if(bone->mChildren.begin(), bone->mChildren.end(),
-                [&](const auto& v) { return v->mNode == matrixTransform; });
+                [&](const auto& v) { return v->mNode.get() == matrixTransform; });
 
             if (it == bone->mChildren.end())
             {
@@ -157,22 +157,20 @@ namespace SceneUtil
         markDirty();
     }
 
-    Bone::Bone()
-        : mNode(nullptr)
-    {
-    }
+    Bone::Bone() {}
 
     void Bone::update(const osg::Matrixf* parentMatrixInSkeletonSpace)
     {
-        if (!mNode)
-        {
-            Log(Debug::Error) << "Error: Bone without node";
+        // Lock the observed node; if it has been freed (a stale bone still lingering in the
+        // hierarchy) skip it instead of dereferencing a dangling pointer, which used to crash.
+        osg::ref_ptr<osg::MatrixTransform> node;
+        if (!mNode.lock(node))
             return;
-        }
+
         if (parentMatrixInSkeletonSpace)
-            mMatrixInSkeletonSpace = mNode->getMatrix() * (*parentMatrixInSkeletonSpace);
+            mMatrixInSkeletonSpace = node->getMatrix() * (*parentMatrixInSkeletonSpace);
         else
-            mMatrixInSkeletonSpace = mNode->getMatrix();
+            mMatrixInSkeletonSpace = node->getMatrix();
 
         for (const auto& child : mChildren)
             child->update(&mMatrixInSkeletonSpace);
