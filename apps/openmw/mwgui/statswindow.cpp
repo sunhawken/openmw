@@ -150,15 +150,20 @@ namespace MWGui
             MyGUI::TextBox* classValue = nullptr;
             MyGUI::TextBox* nameValue = nullptr;
 
-            getWidget(nameWidget, "NameText");
+            // The player-name row was added by the controller layout.  Keep custom
+            // stats layouts that predate that row usable: the window caption still
+            // displays the player name and the row is simply absent from controller
+            // navigation.
+            nameWidget = mMainWidget->findWidget("NameText");
             getWidget(levelWidget, "LevelText");
             getWidget(raceWidget, "RaceText");
             getWidget(classWidget, "ClassText");
-            getWidget(nameName, "Name_str");
+            if (MyGUI::Widget* widget = mMainWidget->findWidget("Name_str"))
+                nameName = widget->castType<MyGUI::TextBox>(false);
             getWidget(levelName, "Level_str");
             getWidget(raceName, "Race_str");
             getWidget(className, "Class_str");
-            getWidget(nameValue, "NameText");
+            nameValue = nameWidget ? nameWidget->castType<MyGUI::TextBox>(false) : nullptr;
             getWidget(levelValue, "LevelText");
             getWidget(raceValue, "RaceText");
             getWidget(classValue, "ClassText");
@@ -186,7 +191,8 @@ namespace MWGui
                 mClassHighlight
                     = createControllerHighlight(mClassRow->getParent(), MyGUI::IntCoord(mClassRow->getCoord()));
 
-            addStaticControllerEntry(nameWidget, { nameName, nameValue }, mNameHighlight, false);
+            if (nameWidget)
+                addStaticControllerEntry(nameWidget, { nameName, nameValue }, mNameHighlight, false);
             addStaticControllerEntry(levelWidget, { levelName, levelValue }, mLevelHighlight, false);
             addStaticControllerEntry(raceWidget, { raceName, raceValue }, mRaceHighlight, false);
             addStaticControllerEntry(classWidget, { className, classValue }, mClassHighlight, false);
@@ -367,8 +373,10 @@ namespace MWGui
     {
         MyGUI::TextBox* nameValue = nullptr;
         MyGUI::TextBox* nameLabel = nullptr;
-        getWidget(nameValue, "NameText");
-        getWidget(nameLabel, "Name_str");
+        if (MyGUI::Widget* widget = mMainWidget->findWidget("NameText"))
+            nameValue = widget->castType<MyGUI::TextBox>(false);
+        if (MyGUI::Widget* widget = mMainWidget->findWidget("Name_str"))
+            nameLabel = widget->castType<MyGUI::TextBox>(false);
         if (nameValue)
             nameValue->setCaption(playerName);
         if (nameLabel)
