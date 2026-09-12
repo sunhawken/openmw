@@ -1,5 +1,8 @@
 #include "race.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 #include <MyGUI_Gui.h>
 #include <MyGUI_ImageBox.h>
 #include <MyGUI_ListBox.h>
@@ -11,7 +14,7 @@
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadbody.hpp>
 #include <components/esm3/loadrace.hpp>
-#include <components/misc/rng.hpp>
+#include <components/esm3/loadspel.hpp>
 #include <components/myguiplatform/myguitexture.hpp>
 #include <components/settings/values.hpp>
 
@@ -91,16 +94,15 @@ namespace MWGui
         mRaceList->setScrollVisible(true);
         mRaceList->eventListSelectAccept += MyGUI::newDelegate(this, &RaceDialog::onAccept);
         mRaceList->eventListChangePosition += MyGUI::newDelegate(this, &RaceDialog::onSelectRace);
+        mRaceList->eventListChangeScroll += MyGUI::newDelegate(this, &RaceDialog::onListScroll);
 
-        MyGUI::Button* rerollButton;
-        getWidget(rerollButton, "RerollGenderButton");
-        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollGender);
-        getWidget(rerollButton, "RerollFaceButton");
-        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollFace);
-        getWidget(rerollButton, "RerollHairButton");
-        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollHair);
-        getWidget(rerollButton, "RerollAllButton");
-        rerollButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onRerollAll);
+        if (MyGUI::Widget* client = mRaceList->getClientWidget())
+        {
+            mControllerHighlight = client->createWidget<MyGUI::Widget>(
+                "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+            mControllerHighlight->setNeedMouseFocus(false);
+            mControllerHighlight->setVisible(false);
+        }
 
         setText("SkillsT",
             MWBase::Environment::get().getWindowManager()->getGameSettingString("sBonusSkillTitle", "Skill Bonus"));
@@ -119,17 +121,26 @@ namespace MWGui
 
         if (Settings::gui().mControllerMenus)
         {
-            mControllerButtons.mLStick = "#{Interface:Mouse}";
-            mControllerButtons.mA = "#{Interface:Select}";
+            mControllerButtons = {};
+            mControllerButtons.mA = "#{Interface:OK}";
             mControllerButtons.mB = "#{Interface:Back}";
-            mControllerButtons.mY = "#{Interface:Sex}";
-            mControllerButtons.mL1 = "#{Interface:Hair}";
-            mControllerButtons.mR1 = "#{Interface:Face}";
+            mControllerButtons.mX = "#{Interface:Sex}";
+            if (Settings::input().mControllerIconStyle.get() == "gamecube")
+            {
+                mControllerButtons.mL2 = "#{Interface:Hair}";
+                mControllerButtons.mR2 = "#{Interface:Face}";
+            }
+            else
+            {
+                mControllerButtons.mL1 = "#{Interface:Hair}";
+                mControllerButtons.mR1 = "#{Interface:Face}";
+            }
         }
 
         updateRaces();
         updateSkills();
         updateSpellPowers();
+        updateControllerListHighlight(mRaceList, mControllerHighlight);
     }
 
     void RaceDialog::setNextButtonShow(bool shown)
@@ -141,13 +152,13 @@ namespace MWGui
         {
             okButton->setCaption(
                 MyGUI::UString(MWBase::Environment::get().getWindowManager()->getGameSettingString("sNext", {})));
-            mControllerButtons.mX = "#{Interface:Next}";
+            mControllerButtons.mA = "#{Interface:OK}";
         }
         else if (Settings::gui().mControllerMenus)
         {
             okButton->setCaption(
                 MyGUI::UString(MWBase::Environment::get().getWindowManager()->getGameSettingString("sDone", {})));
-            mControllerButtons.mX = "#{Interface:Done}";
+            mControllerButtons.mA = "#{Interface:OK}";
         }
         else
             okButton->setCaption(
@@ -200,7 +211,11 @@ namespace MWGui
         mHeadRotate->setScrollPosition(initialPos);
         onHeadRotate(mHeadRotate, initialPos);
 
+        mHeadRotateAxis = 0.f;
+        mHeadRotateCarry = 0.f;
+
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mRaceList);
+        updateControllerListHighlight(mRaceList, mControllerHighlight);
     }
 
     void RaceDialog::setRaceId(const ESM::RefId& raceId)
@@ -229,6 +244,16 @@ namespace MWGui
 
         mPreviewTexture.reset(nullptr);
         mPreview.reset(nullptr);
+
+        mHeadRotateAxis = 0.f;
+        mHeadRotateCarry = 0.f;
+
+        mLeftTriggerHeld = false;
+        mRightTriggerHeld = false;
+        mHairButtonPending = false;
+        mFaceButtonPending = false;
+        mHairChordUsed = false;
+        mFaceChordUsed = false;
     }
 
     // widget controls
@@ -245,50 +270,6 @@ namespace MWGui
         eventBack();
     }
 
-    void RaceDialog::onRerollGender(MyGUI::Widget* /*sender*/)
-    {
-        mGenderIndex = Misc::Rng::rollDice(2);
-        recountParts();
-        updatePreview();
-    }
-
-    void RaceDialog::onRerollFace(MyGUI::Widget* /*sender*/)
-    {
-        if (mAvailableHeads.empty())
-            return;
-        mFaceIndex = Misc::Rng::rollDice(mAvailableHeads.size());
-        updatePreview();
-    }
-
-    void RaceDialog::onRerollHair(MyGUI::Widget* /*sender*/)
-    {
-        if (mAvailableHairs.empty())
-            return;
-        mHairIndex = Misc::Rng::rollDice(mAvailableHairs.size());
-        updatePreview();
-    }
-
-    void RaceDialog::onRerollAll(MyGUI::Widget* /*sender*/)
-    {
-        size_t count = mRaceList->getItemCount();
-        if (count == 0)
-            return;
-        size_t index = Misc::Rng::rollDice(count);
-        mCurrentRaceId = *mRaceList->getItemDataAt<ESM::RefId>(index);
-        mRaceList->setIndexSelected(index);
-
-        mGenderIndex = Misc::Rng::rollDice(2);
-        recountParts();
-        if (!mAvailableHeads.empty())
-            mFaceIndex = Misc::Rng::rollDice(mAvailableHeads.size());
-        if (!mAvailableHairs.empty())
-            mHairIndex = Misc::Rng::rollDice(mAvailableHairs.size());
-
-        updatePreview();
-        updateSkills();
-        updateSpellPowers();
-    }
-
     void RaceDialog::onPreviewScroll(MyGUI::Widget*, int delta)
     {
         size_t oldPos = mHeadRotate->getScrollPosition();
@@ -300,6 +281,40 @@ namespace MWGui
             mHeadRotate->setScrollPosition(oldPos - std::min(oldPos, scrollPage));
 
         onHeadRotate(mHeadRotate, mHeadRotate->getScrollPosition());
+    }
+
+    void RaceDialog::onFrame(float dt)
+    {
+        if (!mPreview || !mHeadRotate || mHeadRotateAxis == 0.f)
+            return;
+
+        const size_t range = mHeadRotate->getScrollRange();
+        if (range <= 1)
+            return;
+
+        constexpr float kTurnsPerSecond = 1.4f;
+        const float scrollPerSecond = static_cast<float>(range - 1) * kTurnsPerSecond;
+        mHeadRotateCarry += mHeadRotateAxis * scrollPerSecond * dt;
+
+        const int step = static_cast<int>(std::lround(mHeadRotateCarry));
+        if (step == 0)
+            return;
+
+        mHeadRotateCarry -= static_cast<float>(step);
+
+        size_t pos = mHeadRotate->getScrollPosition();
+        if (step > 0)
+        {
+            pos = std::min(range - 1, pos + static_cast<size_t>(step));
+        }
+        else
+        {
+            const size_t delta = static_cast<size_t>(-step);
+            pos = (pos > delta) ? (pos - delta) : 0;
+        }
+
+        mHeadRotate->setScrollPosition(pos);
+        onHeadRotate(mHeadRotate, pos);
     }
 
     void RaceDialog::onHeadRotate(MyGUI::ScrollBar* scroll, size_t position)
@@ -353,11 +368,17 @@ namespace MWGui
     void RaceDialog::onSelectRace(MyGUI::ListBox* sender, size_t index)
     {
         if (index == MyGUI::ITEM_NONE)
+        {
+            updateControllerListHighlight(sender, mControllerHighlight);
             return;
+        }
 
         ESM::RefId& raceId = *mRaceList->getItemDataAt<ESM::RefId>(index);
         if (mCurrentRaceId == raceId)
+        {
+            updateControllerListHighlight(sender, mControllerHighlight);
             return;
+        }
 
         mCurrentRaceId = raceId;
 
@@ -366,6 +387,12 @@ namespace MWGui
         updatePreview();
         updateSkills();
         updateSpellPowers();
+        updateControllerListHighlight(sender, mControllerHighlight);
+    }
+
+    void RaceDialog::onListScroll(MyGUI::ListBox* sender, size_t /*position*/)
+    {
+        updateControllerListHighlight(sender, mControllerHighlight);
     }
 
     void RaceDialog::onAccept(MyGUI::ListBox* sender, size_t index)
@@ -456,6 +483,8 @@ namespace MWGui
                 mRaceList->setIndexSelected(index);
             ++index;
         }
+
+        updateControllerListHighlight(mRaceList, mControllerHighlight);
     }
 
     void RaceDialog::updateSkills()
@@ -517,6 +546,7 @@ namespace MWGui
             spellPowerWidget->setSpellId(spellpower);
             spellPowerWidget->setUserString("ToolTipType", "Spell");
             spellPowerWidget->setUserString("Spell", spellpower.serialize());
+            spellPowerWidget->setUserString("SpellName", store.get<ESM::Spell>().find(spellpower)->mName);
 
             mSpellPowerItems.push_back(spellPowerWidget);
 
@@ -527,25 +557,90 @@ namespace MWGui
 
     bool RaceDialog::onControllerButtonEvent(const SDL_ControllerButtonEvent& arg)
     {
+        const bool useGamecubeHairButton = Settings::input().mControllerIconStyle.get() == "gamecube";
+        const bool pressed = arg.state == SDL_PRESSED;
+        const bool released = arg.state == SDL_RELEASED;
+
+        if (useGamecubeHairButton)
+        {
+            if (arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
+            {
+                return true;
+            }
+
+            if (arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+            {
+                return true;
+            }
+        }
+        else if (arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
+        {
+            if (pressed)
+            {
+                mHairButtonPending = true;
+                mHairChordUsed = false;
+                if (mLeftTriggerHeld)
+                {
+                    onSelectPreviousHair(nullptr);
+                    mHairChordUsed = true;
+                }
+                else if (mRightTriggerHeld)
+                {
+                    onSelectNextHair(nullptr);
+                    mHairChordUsed = true;
+                }
+            }
+            else if (released && mHairButtonPending)
+            {
+                if (!mHairChordUsed)
+                    onSelectNextHair(nullptr);
+                mHairButtonPending = false;
+                mHairChordUsed = false;
+            }
+            return true;
+        }
+
+        if (!useGamecubeHairButton && arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
+        {
+            if (pressed)
+            {
+                mFaceButtonPending = true;
+                mFaceChordUsed = false;
+                if (mLeftTriggerHeld)
+                {
+                    onSelectPreviousFace(nullptr);
+                    mFaceChordUsed = true;
+                }
+                else if (mRightTriggerHeld)
+                {
+                    onSelectNextFace(nullptr);
+                    mFaceChordUsed = true;
+                }
+            }
+            else if (released && mFaceButtonPending)
+            {
+                if (!mFaceChordUsed)
+                    onSelectNextFace(nullptr);
+                mFaceButtonPending = false;
+                mFaceChordUsed = false;
+            }
+            return true;
+        }
+
+        if (!pressed)
+            return true;
+
         if (arg.button == SDL_CONTROLLER_BUTTON_B)
         {
             onBackClicked(mBackButton);
         }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_X)
+        else if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
             onOkClicked(mOkButton);
         }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_Y)
+        else if (arg.button == SDL_CONTROLLER_BUTTON_X)
         {
             onSelectNextGender(nullptr);
-        }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
-        {
-            onSelectNextHair(nullptr);
-        }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
-        {
-            onSelectNextFace(nullptr);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP)
         {
@@ -565,9 +660,86 @@ namespace MWGui
 
     bool RaceDialog::onControllerThumbstickEvent(const SDL_ControllerAxisEvent& arg)
     {
+        const bool useGamecubeHairButton = Settings::input().mControllerIconStyle.get() == "gamecube";
+        constexpr int kTriggerPressThreshold = 16000;
+        constexpr int kTriggerReleaseThreshold = 8000;
+
+        if (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)
+        {
+            if (!mLeftTriggerHeld && arg.value >= kTriggerPressThreshold)
+            {
+                mLeftTriggerHeld = true;
+                if (useGamecubeHairButton)
+                    onSelectNextHair(nullptr);
+                else
+                {
+                    if (mHairButtonPending)
+                    {
+                        onSelectPreviousHair(nullptr);
+                        mHairChordUsed = true;
+                    }
+                    if (mFaceButtonPending)
+                    {
+                        onSelectPreviousFace(nullptr);
+                        mFaceChordUsed = true;
+                    }
+                }
+            }
+            else if (mLeftTriggerHeld && arg.value <= kTriggerReleaseThreshold)
+            {
+                mLeftTriggerHeld = false;
+            }
+            return true;
+        }
+
+        if (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
+        {
+            if (!mRightTriggerHeld && arg.value >= kTriggerPressThreshold)
+            {
+                mRightTriggerHeld = true;
+                if (useGamecubeHairButton)
+                    onSelectNextFace(nullptr);
+                else
+                {
+                    if (mHairButtonPending)
+                    {
+                        onSelectNextHair(nullptr);
+                        mHairChordUsed = true;
+                    }
+                    if (mFaceButtonPending)
+                    {
+                        onSelectNextFace(nullptr);
+                        mFaceChordUsed = true;
+                    }
+                }
+            }
+            else if (mRightTriggerHeld && arg.value <= kTriggerReleaseThreshold)
+            {
+                mRightTriggerHeld = false;
+            }
+            return true;
+        }
+
         if (arg.axis == SDL_CONTROLLER_AXIS_RIGHTX)
         {
-            onPreviewScroll(nullptr, arg.value < 0 ? 1 : -1);
+            constexpr float kAxisMax = 32767.f;
+            constexpr float kDeadzone = 0.6f;
+
+            float axis = static_cast<float>(arg.value) / kAxisMax;
+            axis = std::clamp(axis, -1.f, 1.f);
+
+            const float magnitude = std::abs(axis);
+            if (magnitude <= kDeadzone)
+            {
+                mHeadRotateAxis = 0.f;
+            }
+            else
+            {
+                const float sign = axis < 0.f ? -1.f : 1.f;
+                const float scaled = (magnitude - kDeadzone) / (1.f - kDeadzone);
+                mHeadRotateAxis = sign * scaled;
+            }
+
             return true;
         }
 

@@ -10,6 +10,8 @@ local Player = require('openmw.types').Player
 local I = require('openmw.interfaces')
 
 local settings = storage.playerSection('SettingsOMWControls')
+local sessionState = storage.playerSection('OMWControlsSessionState')
+sessionState:setLifeTime(storage.LIFE_TIME.GameSession)
 
 do
     local rangeActions = {
@@ -237,6 +239,11 @@ local function onSave()
 end
 
 local function onLoad(data)
+    if data ~= nil and not sessionState:get('alwaysRunEnabledOnFirstLoad') then
+        settings:set('alwaysRun', true)
+        sessionState:set('alwaysRunEnabledOnFirstLoad', true)
+    end
+
     if not data then return end
     self.controls.sneak = data.sneaking or false
 end

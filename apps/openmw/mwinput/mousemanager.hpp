@@ -4,6 +4,11 @@
 #include <components/sdlutil/events.hpp>
 #include <components/settings/settings.hpp>
 
+namespace MyGUI
+{
+    class Widget;
+}
+
 namespace SDLUtil
 {
     class InputWrapper;
@@ -29,6 +34,7 @@ namespace MWInput
         void mouseWheelMoved(const SDL_MouseWheelEvent& arg) override;
 
         bool injectMouseButtonPress(Uint8 button);
+        bool injectMouseButtonPressWithFocusAssist(Uint8 button, int left, int up, int right, int down);
         bool injectMouseButtonRelease(Uint8 button);
         void injectMouseMove(float xMove, float yMove, float mouseWheelMove);
         void warpMouse();
@@ -54,6 +60,13 @@ namespace MWInput
 
         int mMouseMoveX;
         int mMouseMoveY;
+
+        bool mRestoreCursorAfterButtonRelease = false;
+        Uint8 mRestoreCursorButton = 0;
+        float mRestoreCursorX = 0.f;
+        float mRestoreCursorY = 0.f;
+        float mRestoreCursorCheckX = 0.f;
+        float mRestoreCursorCheckY = 0.f;
     };
 }
 #endif

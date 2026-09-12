@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_DialogNoTransp" layer="Modal" position="0 0 244 248" align="Center" name="_Main">
+    <Widget type="Window" skin="MW_DialogNoTransp" layer="Modal" position="0 0 244 218" align="Center" name="_Main">
 
         <!-- Edit box -->
         <Widget type="Widget" skin="MW_Box" position="8 8 220 192" align="Stretch"/>
@@ -13,7 +13,7 @@
         </Widget>
 
         <!-- Dialog buttons -->
-        <Widget type="AutoSizedButton" skin="MW_Button" position="171 208 57 24" name="OKButton">
+        <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 0 0" name="OKButton">
             <Property key="ExpandDirection" value="Left"/>
             <Property key="Caption" value="Enter"/>
         </Widget>

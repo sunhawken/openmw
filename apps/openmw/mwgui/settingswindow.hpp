@@ -55,9 +55,15 @@ namespace MWGui
 
         MyGUI::ComboBox* mPrimaryLanguage;
         MyGUI::ComboBox* mSecondaryLanguage;
+        MyGUI::ComboBox* mKeyboardPrimaryLanguage;
+        MyGUI::ComboBox* mKeyboardSecondaryLanguage;
+        MyGUI::ComboBox* mKeyboardPrimaryLayout;
+        MyGUI::ComboBox* mKeyboardSecondaryLayout;
+        MyGUI::TextBox* mKeyboardSecondaryLayoutLabel;
         MyGUI::Button* mGmstOverridesL10n;
 
         MyGUI::Widget* mWindowModeHint;
+        MyGUI::TextBox* mScalingRestartHint;
 
         // controls
         MyGUI::ScrollView* mControlsBox;
@@ -96,6 +102,10 @@ namespace MWGui
         void onPrimaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos) { onLanguageChanged(0, sender, pos); }
         void onSecondaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos) { onLanguageChanged(1, sender, pos); }
         void onLanguageChanged(size_t langPriority, MyGUI::ComboBox* sender, size_t pos);
+        void onKeyboardPrimaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos);
+        void onKeyboardSecondaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos);
+        void onKeyboardPrimaryLayoutChanged(MyGUI::ComboBox* sender, size_t pos);
+        void onKeyboardSecondaryLayoutChanged(MyGUI::ComboBox* sender, size_t pos);
         void onGmstOverridesL10nChanged(MyGUI::Widget* sender);
 
         void onWindowModeChanged(MyGUI::ComboBox* sender, size_t pos);
@@ -117,6 +127,9 @@ namespace MWGui
 
         void configureWidgets(MyGUI::Widget* widget, bool init);
         MyGUI::TextBox* getSliderLabel(MyGUI::ScrollBar* scroller) const;
+        void populateKeyboardLanguageCombo(MyGUI::ComboBox* combo, bool includeNone);
+        void populateKeyboardLayoutCombo(std::string_view languageCode, MyGUI::ComboBox* combo);
+        void updateKeyboardSecondaryLayoutVisibility();
 
         void layoutControlsBox();
         void renderScriptSettings();

@@ -34,6 +34,7 @@ namespace MWGui
             mDisableGamepadCursor = true;
             mControllerButtons.mA = "#{Interface:Repair}";
             mControllerButtons.mB = "#{Interface:Cancel}";
+            mControllerButtons.mY = "#{Interface:Info}";
         }
     }
 
@@ -93,8 +94,19 @@ namespace MWGui
         std::stable_sort(items.begin(), items.end(),
             [](const auto& a, const auto& b) { return Misc::StringUtils::ciLess(std::get<0>(a), std::get<0>(b)); });
 
+        mButtons.clear();
+        mButtonHighlights.clear();
         for (const auto& [name, price, ptr] : items)
         {
+            MyGUI::Widget* highlight = nullptr;
+            if (price <= playerGold && useControllerSelectionHighlight())
+            {
+                highlight = mList->createWidget<MyGUI::Widget>(
+                    "ControllerHighlight", 0, currentY, 0, lineHeight, MyGUI::Align::Default);
+                highlight->setNeedMouseFocus(false);
+                highlight->setVisible(false);
+            }
+
             MyGUI::Button* button = mList->createWidget<MyGUI::Button>(price <= playerGold
                     ? "SandTextButton"
                     : "SandTextButtonDisabled", // can't use setEnabled since that removes tooltip
@@ -110,14 +122,25 @@ namespace MWGui
             button->setUserString("ToolTipType", "ItemPtr");
             button->eventMouseButtonClick += MyGUI::newDelegate(this, &MerchantRepair::onRepairButtonClick);
             if (price <= playerGold)
+            {
                 mButtons.emplace_back(std::make_pair(button, mButtons.size()));
+                if (highlight)
+                {
+                    highlight->setSize(mList->getWidth(), lineHeight);
+                    mButtonHighlights.emplace_back(highlight);
+                }
+            }
         }
 
         if (Settings::gui().mControllerMenus)
         {
             mControllerFocus = 0;
             if (mButtons.size() > 0)
+            {
                 mButtons[0].first->setStateSelected(true);
+                if (useControllerSelectionHighlight() && !mButtonHighlights.empty())
+                    mButtonHighlights[0]->setVisible(true);
+            }
         }
 
         // Canvas size must be expressed with VScroll disabled, otherwise MyGUI would expand the scroll area when the
@@ -174,6 +197,13 @@ namespace MWGui
         MWBase::Environment::get().getWindowManager()->removeGuiMode(GM_MerchantRepair);
     }
 
+    MyGUI::Widget* MerchantRepair::getControllerFocusTooltipWidget() const
+    {
+        if (!Settings::gui().mControllerMenus || mButtons.empty() || mControllerFocus >= mButtons.size())
+            return nullptr;
+        return mButtons[mControllerFocus].first;
+    }
+
     bool MerchantRepair::onControllerButtonEvent(const SDL_ControllerButtonEvent& arg)
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
@@ -191,8 +221,12 @@ namespace MWGui
                 return true;
 
             mButtons[mControllerFocus].first->setStateSelected(false);
+            if (useControllerSelectionHighlight() && mControllerFocus < mButtonHighlights.size())
+                mButtonHighlights[mControllerFocus]->setVisible(false);
             mControllerFocus = wrap(mControllerFocus, mButtons.size(), -1);
             mButtons[mControllerFocus].first->setStateSelected(true);
+            if (useControllerSelectionHighlight() && mControllerFocus < mButtonHighlights.size())
+                mButtonHighlights[mControllerFocus]->setVisible(true);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
         {
@@ -200,8 +234,12 @@ namespace MWGui
                 return true;
 
             mButtons[mControllerFocus].first->setStateSelected(false);
+            if (useControllerSelectionHighlight() && mControllerFocus < mButtonHighlights.size())
+                mButtonHighlights[mControllerFocus]->setVisible(false);
             mControllerFocus = wrap(mControllerFocus, mButtons.size(), 1);
             mButtons[mControllerFocus].first->setStateSelected(true);
+            if (useControllerSelectionHighlight() && mControllerFocus < mButtonHighlights.size())
+                mButtonHighlights[mControllerFocus]->setVisible(true);
         }
 
         // Scroll the list to keep the active item in view
@@ -218,5 +256,10 @@ namespace MWGui
         }
 
         return true;
+    }
+
+    bool MerchantRepair::useControllerSelectionHighlight() const
+    {
+        return Settings::gui().mControllerMenus && Settings::gui().mControllerHighlightSelections;
     }
 }

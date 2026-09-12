@@ -19,23 +19,46 @@ namespace Settings
         using WithIndex::WithIndex;
 
         SettingValue<float> mScalingFactor{ mIndex, "GUI", "scaling factor", makeClampSanitizerFloat(0.5f, 8) };
+        SettingValue<float> mDialogueInterfaceScaling{ mIndex, "GUI", "dialogue interface scaling",
+            makeClampSanitizerFloat(0.f, 8) };
+        SettingValue<float> mSettingsInterfaceScaling{ mIndex, "GUI", "settings interface scaling",
+            makeClampSanitizerFloat(0.f, 8) };
+        SettingValue<bool> mUseRecommendedScalingDefaults{ mIndex, "GUI", "use recommended scaling defaults", true };
+        SettingValue<bool> mSettingsWindowIgnoreScaling{ mIndex, "GUI", "settings window ignore scaling", false };
         SettingValue<int> mFontSize{ mIndex, "GUI", "font size", makeClampSanitizerInt(12, 18) };
+        SettingValue<int> mJournalFontSize{ mIndex, "GUI", "journal font size", 16, makeClampSanitizerInt(12, 25) };
         SettingValue<float> mMenuTransparency{ mIndex, "GUI", "menu transparency", makeClampSanitizerFloat(0, 1) };
         SettingValue<float> mTooltipDelay{ mIndex, "GUI", "tooltip delay", makeMaxSanitizerFloat(0) };
         SettingValue<bool> mStretchMenuBackground{ mIndex, "GUI", "stretch menu background" };
+        SettingValue<bool> mUnskippableIntroVideos{ mIndex, "GUI", "unskippable intro videos" };
+        SettingValue<bool> mLuaHudHideInMenus{ mIndex, "GUI", "lua hud hide in menus" };
         SettingValue<bool> mControllerMenus{ mIndex, "GUI", "controller menus" };
         SettingValue<int> mControllerTriggerPressThreshold{ mIndex, "GUI", "controller trigger press",
             makeClampSanitizerInt(1, 32767) };
         SettingValue<int> mControllerTriggerReleaseThreshold{ mIndex, "GUI", "controller trigger release",
             makeClampSanitizerInt(0, 32766) };
         SettingValue<bool> mControllerTooltips{ mIndex, "GUI", "controller tooltips" };
+        SettingValue<bool> mControllerJoystickDpad{ mIndex, "GUI", "controller joystick dpad navigation" };
+        SettingValue<float> mControllerMenuTurboRepeat{ mIndex, "GUI", "controller menu turbo repeat", 1.5f,
+            makeClampSanitizerFloat(0.f, 2.f) };
+        SettingValue<bool> mControllerHighlightSelections{ mIndex, "GUI", "controller highlight selections" };
+        SettingValue<bool> mSingularContainerTradeWindow{ mIndex, "GUI", "singular container trade window" };
         SettingValue<bool> mSubtitles{ mIndex, "GUI", "subtitles" };
         SettingValue<bool> mHitFader{ mIndex, "GUI", "hit fader" };
         SettingValue<bool> mWerewolfOverlay{ mIndex, "GUI", "werewolf overlay" };
         SettingValue<MyGUI::Colour> mColorBackgroundOwned{ mIndex, "GUI", "color background owned" };
         SettingValue<MyGUI::Colour> mColorCrosshairOwned{ mIndex, "GUI", "color crosshair owned" };
         SettingValue<bool> mKeyboardNavigation{ mIndex, "GUI", "keyboard navigation" };
+        SettingValue<std::string> mVirtualKeyboardLanguage{ mIndex, "GUI", "virtual keyboard language" };
+        SettingValue<std::string> mVirtualKeyboardLayout{ mIndex, "GUI", "virtual keyboard layout" };
+        SettingValue<std::string> mVirtualKeyboardLanguageSecondary{ mIndex, "GUI", "virtual keyboard language secondary" };
+        SettingValue<std::string> mVirtualKeyboardLayoutSecondary{ mIndex, "GUI", "virtual keyboard layout secondary" };
         SettingValue<bool> mColorTopicEnable{ mIndex, "GUI", "color topic enable" };
+        SettingValue<bool> mXboxStyledDialog{ mIndex, "GUI", "xbox styled dialog" };
+        SettingValue<bool> mXboxAlchemyUi{ mIndex, "GUI", "xbox alchemy ui", true };
+        SettingValue<bool> mXboxStyledMinimap{ mIndex, "GUI", "xbox styled minimap", true };
+        SettingValue<bool> mXboxStyledFonts{ mIndex, "GUI", "xbox styled fonts" };
+        SettingValue<bool> mXboxTabOrder{ mIndex, "GUI", "xbox tab order", false };
         SettingValue<MyGUI::Colour> mColorTopicSpecific{ mIndex, "GUI", "color topic specific" };
         SettingValue<MyGUI::Colour> mColorTopicSpecificOver{ mIndex, "GUI", "color topic specific over" };
         SettingValue<MyGUI::Colour> mColorTopicSpecificPressed{ mIndex, "GUI", "color topic specific pressed" };

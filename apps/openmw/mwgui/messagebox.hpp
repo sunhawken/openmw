@@ -26,7 +26,7 @@ namespace MWGui
         void createMessageBox(std::string_view message, bool stat = false);
         void removeStaticMessageBox();
         bool createInteractiveMessageBox(std::string_view message, const std::vector<std::string>& buttons,
-            bool immediate = false, int defaultFocus = -1);
+            bool immediate = false, int defaultFocus = -1, int cancelIndex = -1);
         bool isInteractiveMessageBox();
 
         std::size_t getMessagesCount();
@@ -93,7 +93,7 @@ namespace MWGui
     {
     public:
         InteractiveMessageBox(MessageBoxManager& parMessageBoxManager, const std::string& message,
-            const std::vector<std::string>& buttons, bool immediate, size_t defaultFocus);
+            const std::vector<std::string>& buttons, bool immediate, size_t defaultFocus, int cancelIndex);
         void mousePressed(MyGUI::Widget* widget);
         int readPressedButton();
 
@@ -107,16 +107,19 @@ namespace MWGui
 
     private:
         void buttonActivated(MyGUI::Widget* widget);
+        void updateControllerHighlight();
 
         MessageBoxManager& mMessageBoxManager;
         MyGUI::EditBox* mMessageWidget;
         MyGUI::Widget* mButtonsWidget;
         std::vector<MyGUI::Button*> mButtons;
+        MyGUI::Widget* mControllerFocusHighlight = nullptr;
 
         int mButtonPressed;
         size_t mDefaultFocus;
         bool mImmediate;
         size_t mControllerFocus = 0;
+        int mCancelIndex = -1;
     };
 
 }

@@ -22,6 +22,14 @@
 
 namespace MWGui::Formatting
 {
+    namespace
+    {
+        int getJournalUiFontHeight()
+        {
+            return std::max(1, Settings::gui().mJournalFontSize.get());
+        }
+    }
+
     /* BookTextParser */
     BookTextParser::BookTextParser(const std::string& text, bool shrinkTextAtLastTag)
         : mIndex(0)
@@ -237,6 +245,7 @@ namespace MWGui::Formatting
         }
 
         mTextStyle = TextStyle();
+        mTextStyle.mTextSize = getJournalUiFontHeight();
         mBlockStyle = BlockStyle();
 
         MyGUI::Widget* paper = parent->createWidget<MyGUI::Widget>("Widget",
@@ -401,6 +410,9 @@ namespace MWGui::Formatting
     void BookFormatter::resetFontProperties()
     {
         mTextStyle = TextStyle();
+        mTextStyle.mTextSize = getJournalUiFontHeight();
+        if (mUseDialogueBoldFont)
+            mTextStyle.mFont = "DialogueBoldFont";
     }
 
     void BookFormatter::handleDiv(const BookTextParser::Attributes& attr)
@@ -436,8 +448,17 @@ namespace MWGui::Formatting
         {
             const std::string& face = it->second;
             std::string name{ Gui::FontLoader::getFontForFace(face) };
-
-            mTextStyle.mFont = "Journalbook " + name;
+            if (mUseDialogueBoldFont)
+            {
+                if (Misc::StringUtils::ciEqual(name, "DefaultFont"))
+                    mTextStyle.mFont = "DialogueBoldFont";
+                else
+                    mTextStyle.mFont = name;
+            }
+            else
+            {
+                mTextStyle.mFont = "Journalbook " + name;
+            }
         }
         if (attr.find("size") != attr.end())
         {
@@ -489,6 +510,7 @@ namespace MWGui::Formatting
         box->setTextAlign(mBlockStyle.mAlign);
         box->setTextColour(mTextStyle.mColour);
         box->setFontName(mTextStyle.mFont);
+        box->setFontHeight(getJournalUiFontHeight());
         box->setCaption(MyGUI::TextIterator::toTagsString(text));
         box->setSize(box->getSize().width, box->getTextSize().height);
         mEditBox = box;
@@ -502,7 +524,7 @@ namespace MWGui::Formatting
     int TextElement::pageSplit()
     {
         // split lines
-        const int lineHeight = Settings::gui().mFontSize;
+        const int lineHeight = getJournalUiFontHeight();
         unsigned int lastLine = (mPaginator.getStartTop() + mPaginator.getPageHeight() - mPaginator.getCurrentTop());
         if (lineHeight > 0)
             lastLine /= lineHeight;

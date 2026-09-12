@@ -47,6 +47,8 @@ namespace MWGui
         void layoutWidgets();
         void resetScrollbars();
 
+        MyGUI::Widget* getControllerFocusWidget() const;
+
         void setSize(const MyGUI::IntSize& value) override;
         void setCoord(const MyGUI::IntCoord& value) override;
 

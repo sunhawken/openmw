@@ -31,6 +31,7 @@ namespace MWGui
         void onResChange(int, int) override { center(); }
 
         std::string_view getWindowIdForLua() const override { return "SpellBuying"; }
+        MyGUI::Widget* getControllerFocusTooltipWidget() const;
 
     protected:
         MyGUI::Button* mCancelButton;
@@ -41,6 +42,7 @@ namespace MWGui
         std::map<MyGUI::Widget*, ESM::RefId> mSpellsWidgetMap;
         /// List of enabled/purchasable spells and their index in the full list.
         std::vector<std::pair<MyGUI::Button*, size_t>> mSpellButtons;
+        std::vector<MyGUI::Widget*> mSpellHighlights;
 
         void onCancelButtonClicked(MyGUI::Widget* sender);
         void onSpellButtonClick(MyGUI::Widget* sender);
@@ -59,6 +61,7 @@ namespace MWGui
         static bool sortSpells(const ESM::Spell* left, const ESM::Spell* right);
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
         size_t mControllerFocus = 0;
+        bool useControllerSelectionHighlight() const;
     };
 }
 
