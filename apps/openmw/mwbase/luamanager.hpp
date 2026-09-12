@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include <SDL_events.h>
 
@@ -61,7 +62,24 @@ namespace MWBase
     class LuaManager
     {
     public:
+        struct CustomSkillForStatsWindow
+        {
+            std::string mId;
+            std::string mName;
+            std::string mDescription;
+            std::string mIconPath;
+            std::string mAttributeId;
+            std::string mSubsection;
+            int mBase = 0;
+            int mModified = 0;
+            float mProgress = 0.f;
+            int mMaxLevel = 100;
+            bool mVisible = true;
+        };
+
         virtual ~LuaManager() = default;
+
+        virtual std::vector<CustomSkillForStatsWindow> getCustomSkillsForStatsWindow() const = 0;
 
         virtual void contentFilesLoaded() = 0;
         virtual void newGameStarted() = 0;

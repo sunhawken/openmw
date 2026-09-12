@@ -18,9 +18,6 @@
 #include <MyGUI_UString.h>
 #include <MyGUI_Widget.h>
 
-// For BT_NO_PROFILE
-#include <LinearMath/btQuickprof.h>
-
 #include <SDL_clipboard.h>
 #include <SDL_keyboard.h>
 
