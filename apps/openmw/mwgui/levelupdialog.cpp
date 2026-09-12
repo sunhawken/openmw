@@ -64,11 +64,14 @@ namespace MWGui
                 widgets.mButton->setUserData(attribute.mId);
                 widgets.mButton->eventMouseButtonClick += MyGUI::newDelegate(this, &LevelupDialog::onAttributeClicked);
                 widgets.mButton->setUserString("TextPadding", "0 0");
+                widgets.mButton->setUserString("ToolTipDynamic", "Stats");
                 widgets.mButton->setUserString("ToolTipType", "Layout");
                 widgets.mButton->setUserString("ToolTipLayout", "AttributeToolTip");
                 widgets.mButton->setUserString("Caption_AttributeName", attribute.mName);
                 widgets.mButton->setUserString("Caption_AttributeDescription", attribute.mDescription);
                 widgets.mButton->setUserString("ImageTexture_AttributeImage", attribute.mIcon);
+                widgets.mButton->setUserString("CollapsedLabel", attribute.mName);
+                widgets.mButton->setUserString("CollapsedValue", "");
                 widgets.mButton->setCaption(attribute.mName);
                 widgets.mValue = hbox->createWidget<Gui::AutoSizedTextBox>("SandText", {}, MyGUI::Align::Default);
                 mAttributeWidgets.emplace(attribute.mId, widgets);
@@ -98,6 +101,14 @@ namespace MWGui
             mControllerButtons.mX = "#{Interface:Done}";
             mOkButton->setCaption(
                 MyGUI::UString(MWBase::Environment::get().getWindowManager()->getGameSettingString("sDone", {})));
+
+            if (MyGUI::Widget* client = mAssignWidget->getClientWidget())
+            {
+                mControllerHighlight = client->createWidget<MyGUI::Widget>(
+                    "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+                mControllerHighlight->setNeedMouseFocus(false);
+                mControllerHighlight->setVisible(false);
+            }
         }
 
         center();
@@ -232,10 +243,31 @@ namespace MWGui
             mControllerFocus = 0;
             for (size_t i = 0; i < mAttributeButtons.size(); i++)
                 mAttributeButtons[i]->setStateSelected(i == 0);
+            updateControllerHighlight();
         }
+
+        mNeedsCentering = true;
 
         // Play LevelUp Music
         MWBase::Environment::get().getSoundManager()->streamMusic(MWSound::triumphMusic, MWSound::MusicType::Normal);
+    }
+
+    void LevelupDialog::onFrame(float /*dt*/)
+    {
+        if (!mNeedsCentering)
+            return;
+
+        center();
+        mNeedsCentering = false;
+    }
+
+    MyGUI::Widget* LevelupDialog::getControllerFocusTooltipWidget() const
+    {
+        if (!Settings::gui().mControllerMenus)
+            return nullptr;
+        if (mControllerFocus >= mAttributeButtons.size())
+            return nullptr;
+        return mAttributeButtons[mControllerFocus];
     }
 
     void LevelupDialog::onOkButtonClicked(MyGUI::Widget* /*sender*/)
@@ -401,6 +433,7 @@ namespace MWGui
             else
                 mControllerFocus--;
             setControllerFocus(mAttributeButtons, mControllerFocus, true);
+            updateControllerHighlight();
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
         {
@@ -410,14 +443,47 @@ namespace MWGui
             else
                 mControllerFocus++;
             setControllerFocus(mAttributeButtons, mControllerFocus, true);
+            updateControllerHighlight();
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
         {
             setControllerFocus(mAttributeButtons, mControllerFocus, false);
             mControllerFocus = (mControllerFocus + mPerCol) % mAttributeButtons.size();
             setControllerFocus(mAttributeButtons, mControllerFocus, true);
+            updateControllerHighlight();
         }
 
         return true;
+    }
+
+    void LevelupDialog::updateControllerHighlight()
+    {
+        if (!mControllerHighlight || !Settings::gui().mControllerMenus
+            || !Settings::gui().mControllerHighlightSelections)
+        {
+            if (mControllerHighlight)
+                mControllerHighlight->setVisible(false);
+            return;
+        }
+
+        if (mControllerFocus >= mAttributeButtons.size())
+        {
+            mControllerHighlight->setVisible(false);
+            return;
+        }
+
+        MyGUI::Widget* item = mAttributeButtons[mControllerFocus];
+        MyGUI::Widget* client = mAssignWidget->getClientWidget();
+        if (!item || !client)
+        {
+            mControllerHighlight->setVisible(false);
+            return;
+        }
+
+        const MyGUI::IntCoord itemCoord = item->getAbsoluteCoord();
+        const MyGUI::IntCoord clientCoord = client->getAbsoluteCoord();
+        mControllerHighlight->setCoord(
+            itemCoord.left - clientCoord.left, itemCoord.top - clientCoord.top, itemCoord.width, itemCoord.height);
+        mControllerHighlight->setVisible(true);
     }
 }

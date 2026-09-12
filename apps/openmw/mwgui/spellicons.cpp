@@ -1,5 +1,6 @@
 #include "spellicons.hpp"
 
+#include <algorithm>
 #include <iomanip>
 #include <set>
 #include <sstream>
@@ -41,7 +42,7 @@ namespace MWGui
             tooltipInfo.wordWrap = false;
 
             widget->setUserData(tooltipInfo);
-            widget->setUserString("ToolTipType", "ToolTipInfo");
+            widget->setNeedMouseFocus(true);
             widget->setVisible(false);
 
             return widget;
@@ -85,12 +86,14 @@ namespace MWGui
         }
     }
 
-    void SpellIcons::updateWidgets(MyGUI::Widget* parent, bool adjustSize)
+    void SpellIcons::updateWidgets(MyGUI::Widget* parent, bool adjustSize, bool anchorRight)
     {
         for (auto& [effectId, widget] : mWidgetMap)
         {
             widget->setAlpha(1.f);
             widget->getUserData<ToolTipInfo>()->text.clear();
+            widget->setUserString("ActiveEffectText", {});
+            widget->setUserString("ActiveEffectDuration", {});
         }
 
         int horizontalOffset = 2;
@@ -101,6 +104,7 @@ namespace MWGui
         static const float fadeTime = store.get<ESM::GameSetting>().find("fMagicStartIconBlink")->mValue.getFloat();
 
         std::set<ESM::RefId> activeEffects;
+        std::map<ESM::RefId, float> maxDisplayDuration;
 
         const MWWorld::Ptr player = MWMechanics::getPlayer();
         const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
@@ -123,8 +127,12 @@ namespace MWGui
                 MyGUI::ImageBox& widget = *mWidgetMap[effectId];
                 if (activeEffects.emplace(effectId).second)
                 {
-                    widget.setPosition(horizontalOffset, verticalOffset);
+                    widget.setCoord(horizontalOffset, verticalOffset, size, size);
                     widget.setVisible(true);
+                    widget.setNeedMouseFocus(true);
+                    widget.setUserString("ToolTipType", "ActiveEffect");
+                    widget.setUserString("ActiveEffectIcon", effect.mIcon);
+                    widget.setUserString("ActiveEffectName", effect.mName);
                     if (source.mDuration >= fadeTime && fadeTime > 0.f)
                         widget.setAlpha(std::min(source.mTimeLeft / fadeTime, 1.f));
                     horizontalOffset += size;
@@ -148,8 +156,26 @@ namespace MWGui
                 }
                 desc += printEffectMagnitude(source.mMagnitude, effect.getMagnitudeDisplayType());
                 if (source.mTimeLeft > -1 && Settings::game().mShowEffectDuration)
+                {
                     desc += MWGui::ToolTips::getDurationString(source.mTimeLeft, " #{sDuration}");
+                    maxDisplayDuration[effectId] = std::max(maxDisplayDuration[effectId], source.mTimeLeft);
+                }
             }
+        }
+
+        for (auto& [effectId, widget] : mWidgetMap)
+        {
+            if (!widget->getVisible())
+                continue;
+
+            ToolTipInfo* tooltipInfo = widget->getUserData<ToolTipInfo>();
+            widget->setUserString("ActiveEffectText", tooltipInfo ? tooltipInfo->text : "");
+
+            const auto it = maxDisplayDuration.find(effectId);
+            if (Settings::game().mShowEffectDuration && it != maxDisplayDuration.end())
+                widget->setUserString("ActiveEffectDuration", ToolTips::getDurationString(it->second, "#{sDuration}"));
+            else
+                widget->setUserString("ActiveEffectDuration", {});
         }
 
         if (adjustSize)
@@ -157,7 +183,8 @@ namespace MWGui
             const int newWidth = horizontalOffset > 2 ? horizontalOffset + 2 : 0;
             const int diff = parent->getWidth() - newWidth;
             parent->setSize(newWidth, parent->getHeight());
-            parent->setPosition(parent->getLeft() + diff, parent->getTop());
+            if (anchorRight)
+                parent->setPosition(parent->getLeft() + diff, parent->getTop());
         }
 
         for (auto& [effectId, widget] : mWidgetMap)
@@ -165,5 +192,27 @@ namespace MWGui
             if (!activeEffects.contains(effectId))
                 widget->setVisible(false);
         }
+    }
+
+    void SpellIcons::getVisibleWidgets(std::vector<MyGUI::ImageBox*>& out) const
+    {
+        out.clear();
+        out.reserve(mWidgetMap.size());
+        for (const auto& [effectId, widget] : mWidgetMap)
+        {
+            if (widget && widget->getVisible())
+                out.push_back(widget);
+        }
+        std::sort(out.begin(), out.end(), [](const MyGUI::ImageBox* left, const MyGUI::ImageBox* right) {
+            if (!left || !right)
+                return left != nullptr;
+            const MyGUI::IntCoord leftCoord = left->getCoord();
+            const MyGUI::IntCoord rightCoord = right->getCoord();
+            if (leftCoord.left != rightCoord.left)
+                return leftCoord.left < rightCoord.left;
+            if (leftCoord.top != rightCoord.top)
+                return leftCoord.top < rightCoord.top;
+            return left < right;
+        });
     }
 }

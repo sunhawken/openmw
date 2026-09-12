@@ -75,6 +75,24 @@ namespace MWLua
             .mLogMemoryUsage = Settings::lua().mLogMemoryUsage };
     }
 
+    void LuaManager::setCustomSkillsForStatsWindow(std::vector<MWBase::LuaManager::CustomSkillForStatsWindow> skills)
+    {
+        std::lock_guard<std::mutex> lock(mCustomSkillsForStatsMutex);
+        mCustomSkillsForStatsWindow = std::move(skills);
+    }
+
+    void LuaManager::clearCustomSkillsForStatsWindow()
+    {
+        std::lock_guard<std::mutex> lock(mCustomSkillsForStatsMutex);
+        mCustomSkillsForStatsWindow.clear();
+    }
+
+    std::vector<MWBase::LuaManager::CustomSkillForStatsWindow> LuaManager::getCustomSkillsForStatsWindow() const
+    {
+        std::lock_guard<std::mutex> lock(mCustomSkillsForStatsMutex);
+        return mCustomSkillsForStatsWindow;
+    }
+
     LuaManager::LuaManager(const VFS::Manager* vfs, const std::filesystem::path& libsDir)
         : mLua(vfs, &mConfiguration, createLuaStateSettings())
     {

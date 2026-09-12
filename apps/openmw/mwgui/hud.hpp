@@ -89,6 +89,9 @@ namespace MWGui
         int mHealthManaStaminaBaseLeft, mWeapBoxBaseLeft, mSpellBoxBaseLeft, mSneakBoxBaseLeft;
         // bottom right elements
         int mMinimapBoxBaseRight, mEffectBoxBaseRight;
+        int mMinimapBoxBaseBottom = 0;
+        int mCellNameBaseLeft = 0;
+        int mCellNameBaseTop = 0;
 
         float mCellNameTimer = 0.f;
         float mWeaponSpellTimer = 0.f;

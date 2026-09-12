@@ -17,8 +17,9 @@ namespace MWGui
         void setPtr(const MWWorld::Ptr& book) override;
         void setInventoryAllowed(bool allowed);
 
-        void onResChange(int, int) override { center(); }
+        void onResChange(int, int) override;
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
+        bool onControllerThumbstickEvent(const SDL_ControllerAxisEvent& arg) override;
 
         std::string_view getWindowIdForLua() const override { return "Book"; }
         ControllerButtons* getControllerButtons() override;

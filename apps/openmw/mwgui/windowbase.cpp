@@ -2,6 +2,7 @@
 
 #include <MyGUI_Button.h>
 #include <MyGUI_InputManager.h>
+#include <MyGUI_ListBox.h>
 #include <MyGUI_RenderManager.h>
 
 #include "../mwbase/environment.hpp"
@@ -39,6 +40,44 @@ void MWGui::setControllerFocus(const std::vector<MyGUI::Button*>& buttons, size_
 {
     if (index < buttons.size())
         buttons[index]->setStateSelected(focused);
+}
+
+bool MWGui::useControllerSelectionHighlight()
+{
+    return Settings::gui().mControllerMenus && Settings::gui().mControllerHighlightSelections;
+}
+
+void MWGui::updateControllerListHighlight(MyGUI::ListBox* list, MyGUI::Widget* highlight)
+{
+    if (!list || !highlight)
+        return;
+
+    if (!useControllerSelectionHighlight())
+    {
+        highlight->setVisible(false);
+        return;
+    }
+
+    size_t index = list->getIndexSelected();
+    if (index == MyGUI::ITEM_NONE)
+    {
+        highlight->setVisible(false);
+        return;
+    }
+
+    MyGUI::Widget* item = list->getWidgetByIndex(index);
+    MyGUI::Widget* client = list->getClientWidget();
+    if (!item || !client)
+    {
+        highlight->setVisible(false);
+        return;
+    }
+
+    const MyGUI::IntCoord itemCoord = item->getAbsoluteCoord();
+    const MyGUI::IntCoord clientCoord = client->getAbsoluteCoord();
+    highlight->setCoord(
+        itemCoord.left - clientCoord.left, itemCoord.top - clientCoord.top, itemCoord.width, itemCoord.height);
+    highlight->setVisible(true);
 }
 
 WindowBase::WindowBase(std::string_view parLayout)
@@ -83,6 +122,12 @@ void WindowBase::setVisible(bool visible)
         onOpen();
     else if (wasVisible)
         onClose();
+}
+
+void WindowBase::setVisibleNoStateChange(bool visible)
+{
+    visible = visible && !mDisabledByLua;
+    mMainWidget->setVisible(visible);
 }
 
 bool WindowBase::isVisible() const

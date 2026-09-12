@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_DialogNoTransp" layer="Windows" position="0 0 395 225" align="Center" name="_Main">
+        <Property key="Visible" value="false"/>
+
+        <Widget type="EditBox" skin="MW_TextEdit" position="12 10 370 20" align="HStretch Top" name="InputBar">
+            <Property key="ReadOnly" value="true"/>
+        </Widget>
+
+        <Widget type="VBox" position="7 38 375 170" align="HStretch Bottom" name="KeyRows">
+            <Property key="Spacing" value="4"/>
+
+            <Widget type="HBox" name="Row0">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="4"/>
+                <Widget type="Spacer"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key00"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key01"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key02"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key03"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key04"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key05"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key06"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key07"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key08"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key09"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key10"/>
+                <Widget type="Spacer"/>
+            </Widget>
+
+            <Widget type="HBox" name="Row1">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="4"/>
+                <Widget type="Spacer"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key11"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key12"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key13"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key14"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key15"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key16"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key17"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key18"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key19"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key20"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key21"/>
+                <Widget type="Spacer"/>
+            </Widget>
+
+            <Widget type="HBox" name="Row2">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="4"/>
+                <Widget type="Spacer"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key22"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key23"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key24"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key25"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key26"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key27"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key28"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key29"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key30"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key31"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 30 30" name="Key32"/>
+                <Widget type="Spacer"/>
+            </Widget>
+
+            <Widget type="HBox" name="Row3">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="4"/>
+                <Widget type="Spacer"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 268 30" name="KeySpace"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 98 30" name="KeyMore"/>
+                <Widget type="Spacer"/>
+            </Widget>
+
+            <Widget type="HBox" name="Row4">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="4"/>
+                <Widget type="Spacer"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 132 30" name="KeyShift"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 132 30" name="KeyBackspace"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 98 30" name="KeyDone"/>
+                <Widget type="Spacer"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

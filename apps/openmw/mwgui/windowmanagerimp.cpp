@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <thread>
 
@@ -15,6 +16,10 @@
 #include <MyGUI_LayerManager.h>
 #include <MyGUI_PointerManager.h>
 #include <MyGUI_UString.h>
+#include <MyGUI_Widget.h>
+
+// For BT_NO_PROFILE
+#include <LinearMath/btQuickprof.h>
 
 #include <SDL_clipboard.h>
 #include <SDL_keyboard.h>
@@ -45,9 +50,12 @@
 #include <components/widgets/widgets.hpp>
 
 #include <components/misc/frameratelimiter.hpp>
+#include <components/misc/resourcehelpers.hpp>
+#include <components/misc/strings/algorithm.hpp>
 
 #include <components/l10n/manager.hpp>
 
+#include <components/lua_ui/element.hpp>
 #include <components/lua_ui/util.hpp>
 #include <components/lua_ui/widget.hpp>
 
@@ -77,6 +85,7 @@
 #include "backgroundimage.hpp"
 #include "bookpage.hpp"
 #include "bookwindow.hpp"
+#include "class.hpp"
 #include "companionwindow.hpp"
 #include "confirmationdialog.hpp"
 #include "console.hpp"
@@ -104,28 +113,154 @@
 #include "loadingscreen.hpp"
 #include "mainmenu.hpp"
 #include "merchantrepair.hpp"
+#include "messagebox.hpp"
 #include "postprocessorhud.hpp"
 #include "quickkeysmenu.hpp"
 #include "recharge.hpp"
 #include "repair.hpp"
 #include "resourceskin.hpp"
+#include "savegamedialog.hpp"
 #include "screenfader.hpp"
 #include "scrollwindow.hpp"
 #include "settingswindow.hpp"
 #include "spellbuyingwindow.hpp"
+#include "spellcreationdialog.hpp"
 #include "spellview.hpp"
 #include "spellwindow.hpp"
 #include "statswindow.hpp"
+#include "textinput.hpp"
 #include "tradewindow.hpp"
 #include "trainingwindow.hpp"
 #include "travelwindow.hpp"
 #include "videowidget.hpp"
+#include "virtualkeyboard.hpp"
 #include "waitdialog.hpp"
 
 namespace MWGui
 {
     namespace
     {
+        MyGUI::IntSize getWindowTrackingSize(MyGUI::Window* window)
+        {
+            const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            if (!window || !window->getLayer())
+                return viewSize;
+
+            const MyGUI::IntSize layerSize = window->getLayer()->getSize();
+            if (layerSize.width <= 0 || layerSize.height <= 0)
+                return viewSize;
+
+            return layerSize;
+        }
+
+        float convertLegacyNormalizedValue(float value, int viewSize, int layerSize)
+        {
+            if (layerSize <= 0 || viewSize <= 0)
+                return value;
+            return value * (static_cast<float>(viewSize) / static_cast<float>(layerSize));
+        }
+
+        void sanitizeNormalizedWindowRect(float& x, float& y, float& w, float& h, float defaultW, float defaultH)
+        {
+            constexpr float minSize = 0.05f;
+            constexpr float maxSize = 0.98f; // keep draggable
+
+            if (!(w > 0.f) || !(h > 0.f))
+            {
+                w = defaultW;
+                h = defaultH;
+            }
+
+            w = std::clamp(w, minSize, maxSize);
+            h = std::clamp(h, minSize, maxSize);
+
+            if (!(x >= 0.f) || !(y >= 0.f))
+            {
+                x = 0.1f;
+                y = 0.1f;
+            }
+
+            x = std::clamp(x, 0.f, 1.f - w);
+            y = std::clamp(y, 0.f, 1.f - h);
+        }
+    }
+
+    namespace
+    {
+        float getCustomScaleMultiplier(float customScaling)
+        {
+            const float interfaceScaling = Settings::gui().mScalingFactor;
+            if (interfaceScaling <= 0.f)
+                return 1.f;
+
+            if (customScaling <= 0.f)
+                customScaling = interfaceScaling;
+
+            return std::max(customScaling / interfaceScaling, 0.01f);
+        }
+
+        float getDialogueScaleMultiplier()
+        {
+            return getCustomScaleMultiplier(Settings::gui().mDialogueInterfaceScaling);
+        }
+
+        float getSettingsScaleMultiplier()
+        {
+            float settingsScaling = Settings::gui().mSettingsInterfaceScaling;
+            if (settingsScaling <= 0.f && Settings::gui().mSettingsWindowIgnoreScaling)
+                settingsScaling = 1.f;
+            return getCustomScaleMultiplier(settingsScaling);
+        }
+
+        void updateScalingLayerSize(std::string_view layerName, float scaleMultiplier)
+        {
+            auto* layer = MyGUI::LayerManager::getInstance().getByName(std::string(layerName), false);
+            auto* scalingLayer = dynamic_cast<MyGUIPlatform::ScalingLayer*>(layer);
+            if (!scalingLayer)
+                return;
+
+            const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            const int layerWidth = std::max(1, static_cast<int>(std::lround(viewSize.width / scaleMultiplier)));
+            const int layerHeight = std::max(1, static_cast<int>(std::lround(viewSize.height / scaleMultiplier)));
+            scalingLayer->setLayerSize(MyGUI::IntSize(layerWidth, layerHeight));
+        }
+
+        bool isChildOf(MyGUI::Widget* widget, MyGUI::Widget* parent)
+        {
+            for (MyGUI::Widget* current = widget; current; current = current->getParent())
+            {
+                if (current == parent)
+                    return true;
+            }
+            return false;
+        }
+
+        // Pick the edit box that should receive virtual keyboard input.
+        MyGUI::EditBox* resolveKeyboardEdit(WindowBase* window)
+        {
+            if (auto* dialog = dynamic_cast<AlchemyWindow*>(window))
+                return dialog->getNameEdit();
+            if (auto* dialog = dynamic_cast<EnchantingDialog*>(window))
+                return dialog->getNameEdit();
+            if (auto* dialog = dynamic_cast<SpellCreationDialog*>(window))
+                return dialog->getNameEdit();
+            if (auto* dialog = dynamic_cast<TextInputDialog*>(window))
+                return dialog->getEditBox();
+            if (auto* dialog = dynamic_cast<EditNoteDialog*>(window))
+                return dialog->getEditBox();
+            if (auto* dialog = dynamic_cast<CreateClassDialog*>(window))
+                return dialog->getEditName();
+            if (auto* dialog = dynamic_cast<DescriptionDialog*>(window))
+                return dialog->getTextEdit();
+            if (auto* dialog = dynamic_cast<InventoryWindow*>(window))
+                return dialog->getFilterEdit();
+            if (auto* dialog = dynamic_cast<SpellWindow*>(window))
+                return dialog->getFilterEdit();
+            if (auto* dialog = dynamic_cast<TradeWindow*>(window))
+                return dialog->getFilterEdit();
+            return nullptr;
+        }
+
         Settings::SettingValue<bool>* findHiddenSetting(GuiWindow window)
         {
             switch (window)
@@ -141,6 +276,22 @@ namespace MWGui
                 default:
                     return nullptr;
             }
+        }
+
+        GuiWindow inventoryIndexToWindow(size_t index, bool skipMap)
+        {
+            static constexpr GuiWindow kDefaultOrder[] = { GW_Map, GW_Inventory, GW_Magic, GW_Stats };
+            static constexpr GuiWindow kXboxOrder[] = { GW_Inventory, GW_Magic, GW_Map, GW_Stats };
+            static constexpr size_t kOrderSize = sizeof(kDefaultOrder) / sizeof(kDefaultOrder[0]);
+
+            const auto& order = Settings::gui().mXboxTabOrder ? kXboxOrder : kDefaultOrder;
+            if (index < kOrderSize)
+            {
+                const GuiWindow window = order[index];
+                return (skipMap && window == GW_Map) ? GW_None : window;
+            }
+
+            return GW_None;
         }
     }
 
@@ -179,6 +330,7 @@ namespace MWGui
         , mHitFader(nullptr)
         , mScreenFader(nullptr)
         , mDebugWindow(nullptr)
+        , mVirtualKeyboard(nullptr)
         , mPostProcessorHud(nullptr)
         , mJailScreen(nullptr)
         , mContainerWindow(nullptr)
@@ -250,6 +402,9 @@ namespace MWGui
         MyGUI::FactoryManager::getInstance().registerFactory<AutoSizedResourceSkin>(
             "Resource", "AutoSizedResourceSkin");
         MyGUI::ResourceManager::getInstance().load("core.xml");
+        updateDialogueLayerSize();
+        updateSettingsLayerSize();
+        updateSaveLoadLayerSize();
 
         const bool keyboardNav = Settings::gui().mKeyboardNavigation;
         mKeyboardNavigation = std::make_unique<KeyboardNavigation>();
@@ -347,8 +502,16 @@ namespace MWGui
         mWindows.push_back(std::move(spellWindow));
         trackWindow(mSpellWindow, makeSpellsWindowSettingValues());
 
-        mGuiModeStates[GM_Inventory] = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow });
-        mGuiModeStates[GM_None] = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow });
+        if (Settings::gui().mXboxTabOrder)
+        {
+            mGuiModeStates[GM_Inventory] = GuiModeState({ mInventoryWindow, mSpellWindow, mMap, mStatsWindow });
+            mGuiModeStates[GM_None] = GuiModeState({ mInventoryWindow, mSpellWindow, mMap, mStatsWindow });
+        }
+        else
+        {
+            mGuiModeStates[GM_Inventory] = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow });
+            mGuiModeStates[GM_None] = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow });
+        }
 
         auto tradeWindow = std::make_unique<TradeWindow>();
         mTradeWindow = tradeWindow.get();
@@ -464,7 +627,7 @@ namespace MWGui
         auto companionWindow
             = std::make_unique<CompanionWindow>(*mDragAndDrop, *mItemTransfer, mMessageBoxManager.get());
         trackWindow(companionWindow.get(), makeCompanionWindowSettingValues());
-        mGuiModeStates[GM_Companion] = GuiModeState({ mInventoryWindow, companionWindow.get() });
+        mGuiModeStates[GM_Companion] = GuiModeState({ companionWindow.get(), mInventoryWindow });
         mWindows.push_back(std::move(companionWindow));
 
         auto jailScreen = std::make_unique<JailScreen>();
@@ -518,8 +681,13 @@ namespace MWGui
         mInventoryTabsOverlay = inventoryTabsOverlay.get();
         mWindows.push_back(std::move(inventoryTabsOverlay));
 
+        auto virtualKeyboard = std::make_unique<VirtualKeyboard>();
+        mVirtualKeyboard = virtualKeyboard.get();
+        mWindows.push_back(std::move(virtualKeyboard));
+
         mControllerTooltipEnabled = Settings::gui().mControllerTooltips;
-        mActiveControllerWindows[GM_Inventory] = 1; // Start on Inventory page
+        mActiveControllerWindows[GM_Inventory] = Settings::gui().mXboxTabOrder ? 0 : 1; // Start on Inventory page
+        mLastInventoryControllerWindow = mActiveControllerWindows[GM_Inventory];
 
         mInputBlocker = MyGUI::Gui::getInstance().createWidget<MyGUI::Widget>(
             {}, 0, 0, w, h, MyGUI::Align::Stretch, "InputBlocker");
@@ -642,10 +810,17 @@ namespace MWGui
         if (!mMap)
             return; // UI not created yet
 
-        mHud->setVisible(mHudEnabled && !loading);
-        mToolTips->setVisible(mHudEnabled && !loading);
-
         bool gameMode = !isGuiMode();
+        const bool hudVisible = mHudEnabled && !loading && gameMode;
+        mHud->setVisible(hudVisible);
+        mToolTips->setVisible(mHudEnabled && !loading);
+        const bool luaHudAdjustmentsEnabled = Settings::gui().mLuaHudHideInMenus;
+        const bool luaHudVisible = luaHudAdjustmentsEnabled ? hudVisible : true;
+        if (luaHudVisible != mLuaHudLayerVisible)
+        {
+            mLuaHudLayerVisible = luaHudVisible;
+            LuaUi::Element::setLayerVisible("HUD", luaHudVisible);
+        }
 
         MWBase::Environment::get().getInputManager()->changeInputMode(!gameMode);
 
@@ -704,15 +879,55 @@ namespace MWGui
 
         if (getMode() == GM_Inventory)
         {
-            // For the inventory mode, compute the effective set of windows to show.
-            // This is controlled both by what windows the
-            // user has opened/closed (the 'shown' variable) and by what
-            // windows we are allowed to show (the 'allowed' var.)
-            int eff = mShown & mAllowed & ~mForceHidden;
-            mMap->setVisible(eff & GW_Map);
-            mInventoryWindow->setVisible(eff & GW_Inventory);
-            mSpellWindow->setVisible(eff & GW_Magic);
-            mStatsWindow->setVisible(eff & GW_Stats);
+            if (Settings::gui().mControllerMenus)
+            {
+                const size_t winCount = mGuiModeStates[GM_Inventory].mWindows.size();
+                const size_t activeIndex
+                    = winCount > 0 ? std::clamp<size_t>(mActiveControllerWindows[GM_Inventory], 0, winCount - 1) : 0;
+                const bool skipMap = isCrassifiedNavigationEnabled();
+                const auto canShow = [this](GuiWindow wnd) { return (mAllowed & wnd) && !(mForceHidden & wnd); };
+
+                mMap->setVisible(false);
+                mInventoryWindow->setVisible(false);
+                mSpellWindow->setVisible(false);
+                mStatsWindow->setVisible(false);
+
+                switch (inventoryIndexToWindow(activeIndex, skipMap))
+                {
+                    case GW_Map:
+                        if (canShow(GW_Map))
+                            mMap->setVisible(true);
+                        break;
+                    case GW_Inventory:
+                        if (canShow(GW_Inventory))
+                            mInventoryWindow->setVisible(true);
+                        break;
+                    case GW_Magic:
+                        if (canShow(GW_Magic))
+                            mSpellWindow->setVisible(true);
+                        break;
+                    case GW_Stats:
+                        if (canShow(GW_Stats))
+                            mStatsWindow->setVisible(true);
+                        break;
+                    case GW_ALL:
+                        break;
+                    case GW_None:
+                        break;
+                }
+            }
+            else
+            {
+                // For the inventory mode, compute the effective set of windows to show.
+                // This is controlled both by what windows the
+                // user has opened/closed (the 'shown' variable) and by what
+                // windows we are allowed to show (the 'allowed' var.)
+                int eff = mShown & mAllowed & ~mForceHidden;
+                mMap->setVisible(eff & GW_Map);
+                mInventoryWindow->setVisible(eff & GW_Inventory);
+                mSpellWindow->setVisible(eff & GW_Magic);
+                mStatsWindow->setVisible(eff & GW_Stats);
+            }
         }
 
         updateControllerButtonsOverlay();
@@ -744,6 +959,20 @@ namespace MWGui
     {
         if (!dialog)
             return;
+        // Prevent removed dialogs from being restored by the virtual keyboard.
+        if (auto* window = dynamic_cast<WindowBase*>(dialog.get()))
+        {
+            auto it = std::remove(mVirtualKeyboardHiddenWindows.begin(), mVirtualKeyboardHiddenWindows.end(), window);
+            if (it != mVirtualKeyboardHiddenWindows.end())
+                mVirtualKeyboardHiddenWindows.erase(it, mVirtualKeyboardHiddenWindows.end());
+        }
+        // If a modal was hidden via setVisibleNoStateChange, it may still be in the modal stack.
+        if (auto* modal = dynamic_cast<WindowModal*>(dialog.get()))
+        {
+            auto it = std::find(mCurrentModals.begin(), mCurrentModals.end(), modal);
+            if (it != mCurrentModals.end() && !modal->isVisible())
+                modal->onClose();
+        }
         dialog->setVisible(false);
         mGarbageDialogs.push_back(std::move(dialog));
         updateControllerButtonsOverlay();
@@ -775,10 +1004,10 @@ namespace MWGui
         popGuiMode();
     }
 
-    void WindowManager::interactiveMessageBox(
-        std::string_view message, const std::vector<std::string>& buttons, bool block, int defaultFocus)
+    void WindowManager::interactiveMessageBox(std::string_view message, const std::vector<std::string>& buttons,
+        bool block, int defaultFocus, int cancelIndex)
     {
-        mMessageBoxManager->createInteractiveMessageBox(message, buttons, block, defaultFocus);
+        mMessageBoxManager->createInteractiveMessageBox(message, buttons, block, defaultFocus, cancelIndex);
         updateVisible();
 
         if (block)
@@ -794,7 +1023,8 @@ namespace MWGui
 
                 mKeyboardNavigation->onFrame();
                 mMessageBoxManager->onFrame(dt);
-                MWBase::Environment::get().getInputManager()->update(dt, true, false);
+                // Keep GUI input active while the modal message box is blocking so controller navigation still works.
+                MWBase::Environment::get().getInputManager()->update(dt, false, false);
 
                 if (!mWindowVisible)
                     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -888,6 +1118,9 @@ namespace MWGui
 
     WindowBase* WindowManager::getActiveControllerWindow()
     {
+        if (mVirtualKeyboard && mVirtualKeyboard->isVisible())
+            return mVirtualKeyboard;
+
         if (!mCurrentModals.empty())
             return mCurrentModals.back();
 
@@ -906,11 +1139,16 @@ namespace MWGui
 
             size_t activeIndex = std::clamp<size_t>(mActiveControllerWindows[mode], 0, state.mWindows.size() - 1);
 
-            // If the active window is no longer visible, find the next visible window.
-            if (!state.mWindows[activeIndex]->isVisible())
-                cycleActiveControllerWindow(true);
+            if (WindowBase* active = state.mWindows[activeIndex]; active && active->isVisible())
+                return active;
 
-            return state.mWindows[activeIndex];
+            for (WindowBase* window : state.mWindows)
+            {
+                if (window && window->isVisible())
+                    return window;
+            }
+
+            return nullptr;
         }
 
         return nullptr;
@@ -927,15 +1165,42 @@ namespace MWGui
         size_t activeIndex = 0;
         if (winCount > 1)
         {
-            // Find next/previous visible window
             activeIndex = mActiveControllerWindows[mode];
             int delta = next ? 1 : -1;
-
-            for (size_t i = 0; i < winCount; ++i)
+            if (Settings::gui().mSingularContainerTradeWindow && (mode == GM_Container || mode == GM_Barter))
             {
                 activeIndex = wrap(activeIndex, winCount, delta);
-                if (mGuiModeStates[mode].mWindows[activeIndex]->isVisible())
-                    break;
+            }
+            else if (mode == GM_Companion)
+            {
+                activeIndex = wrap(activeIndex, winCount, delta);
+            }
+            else if (mode == GM_Inventory && Settings::gui().mControllerMenus)
+            {
+                const bool skipMap = isCrassifiedNavigationEnabled();
+                bool found = false;
+                for (size_t i = 0; i < winCount; ++i)
+                {
+                    activeIndex = wrap(activeIndex, winCount, delta);
+                    const GuiWindow window = inventoryIndexToWindow(activeIndex, skipMap);
+                    if (window != GW_None && (mAllowed & window) && !(mForceHidden & window))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    return;
+            }
+            else
+            {
+                // Find next/previous visible window
+                for (size_t i = 0; i < winCount; ++i)
+                {
+                    activeIndex = wrap(activeIndex, winCount, delta);
+                    if (mGuiModeStates[mode].mWindows[activeIndex]->isVisible())
+                        break;
+                }
             }
         }
 
@@ -950,6 +1215,21 @@ namespace MWGui
 
         const GuiMode mode = mGuiModes.back();
         size_t winCount = mGuiModeStates[mode].mWindows.size();
+        WindowBase* activeWindow = nullptr;
+        if (winCount == 0)
+            return;
+
+        if (mode == GM_Inventory)
+        {
+            const bool skipMap = isCrassifiedNavigationEnabled();
+            for (size_t i = 0; i < winCount; i++)
+                mGuiModeStates[mode].mWindows[i]->setVisible(false);
+
+            const size_t activeIndex = std::clamp<size_t>(mActiveControllerWindows[mode], 0, winCount - 1);
+            const GuiWindow window = inventoryIndexToWindow(activeIndex, skipMap);
+            if (window != GW_None && (mAllowed & window) && !(mForceHidden & window))
+                mGuiModeStates[mode].mWindows[activeIndex]->setVisible(true);
+        }
 
         for (size_t i = 0; i < winCount; i++)
         {
@@ -957,8 +1237,30 @@ namespace MWGui
             if (i != mActiveControllerWindows[mode])
                 mGuiModeStates[mode].mWindows[i]->setActiveControllerWindow(false);
         }
-        if (winCount > 0)
-            mGuiModeStates[mode].mWindows[mActiveControllerWindows[mode]]->setActiveControllerWindow(true);
+        activeWindow = mGuiModeStates[mode].mWindows[mActiveControllerWindows[mode]];
+        activeWindow->setActiveControllerWindow(true);
+
+        if (mode == GM_Container || mode == GM_Barter)
+        {
+            if (Settings::gui().mSingularContainerTradeWindow)
+            {
+                for (size_t i = 0; i < winCount; i++)
+                    mGuiModeStates[mode].mWindows[i]->setVisible(i == mActiveControllerWindows[mode]);
+            }
+            else
+            {
+                for (size_t i = 0; i < winCount; i++)
+                    mGuiModeStates[mode].mWindows[i]->setVisible(true);
+            }
+        }
+        else if (mode == GM_Companion)
+        {
+            for (size_t i = 0; i < winCount; i++)
+                mGuiModeStates[mode].mWindows[i]->setVisible(i == mActiveControllerWindows[mode]);
+        }
+
+        if (activeWindow && (mode == GM_Container || mode == GM_Barter || mode == GM_Companion))
+            activeWindow->setActiveControllerWindow(true);
     }
 
     void WindowManager::setActiveControllerWindow(GuiMode mode, size_t activeIndex)
@@ -971,12 +1273,20 @@ namespace MWGui
             return;
 
         activeIndex = std::clamp<size_t>(activeIndex, 0, winCount - 1);
+        if (mode == GM_Inventory)
+        {
+            const GuiWindow window = inventoryIndexToWindow(activeIndex, isCrassifiedNavigationEnabled());
+            if (window == GW_None || !(mAllowed & window) || (mForceHidden & window))
+                return;
+        }
         mActiveControllerWindows[mode] = activeIndex;
-
+        if (mode == GM_Inventory)
+            mLastInventoryControllerWindow = activeIndex;
         reapplyActiveControllerWindow();
 
+        const bool keyboardVisible = mVirtualKeyboard && mVirtualKeyboard->isVisible();
         MWBase::Environment::get().getInputManager()->setGamepadGuiCursorEnabled(
-            mGuiModeStates[mode].mWindows[activeIndex]->isGamepadCursorAllowed());
+            keyboardVisible ? false : mGuiModeStates[mode].mWindows[activeIndex]->isGamepadCursorAllowed());
 
         WindowBase* activeWindow = mGuiModeStates[mode].mWindows[activeIndex];
         if (activeWindow->isVisible())
@@ -985,12 +1295,97 @@ namespace MWGui
         updateControllerButtonsOverlay();
         setCursorActive(false);
 
+        if (dynamic_cast<MapWindow*>(activeWindow))
+        {
+            setCursorActive(true);
+            setCursorVisible(true);
+        }
+
+        if (keyboardVisible)
+        {
+            // Keep the keyboard target in sync with the active tab.
+            if (MyGUI::EditBox* edit = resolveKeyboardEdit(activeWindow))
+            {
+                mVirtualKeyboard->setTargetEdit(edit);
+                setKeyFocusWidget(edit);
+            }
+            else
+            {
+                mVirtualKeyboard->clearTargetEdit();
+            }
+        }
+
         if (winCount > 1)
-            playSound(ESM::RefId::stringRefId("Menu Size"));
+        {
+            MWBase::Environment::get().getSoundManager()->playSound(
+                Misc::ResourceHelpers::correctSoundPath(VFS::Path::Normalized("Fx\\inter\\menuNEWxbx.wav")), 0.6f, 1.0f,
+                MWSound::Type::Sfx, MWSound::PlayMode::NoEnvNoScaling);
+        }
     }
 
     void WindowManager::update(float frameDuration)
     {
+        const bool luaUiWantsCursorNow = LuaUi::isAnyElementVisibleOnLayer("Windows")
+            || LuaUi::isAnyElementVisibleOnLayer("Dialogue") || LuaUi::isAnyElementVisibleOnLayer("JournalBooks")
+            || LuaUi::isAnyElementVisibleOnLayer("Modal") || LuaUi::isAnyElementVisibleOnLayer("Popup");
+
+        if (luaUiWantsCursorNow != mLuaUiWantsCursor)
+        {
+            MWBase::InputManager* inputManager = MWBase::Environment::get().getInputManager();
+
+            if (luaUiWantsCursorNow)
+            {
+                if (!mHasSavedLuaUiCursorState)
+                {
+                    mSavedLuaUiCursorVisible = mCursorVisible;
+                    mSavedLuaUiCursorActive = mCursorActive;
+                    mHasSavedLuaUiCursorState = true;
+                }
+
+                if (inputManager != nullptr && !mHasSavedGamepadGuiCursorEnabled)
+                {
+                    mSavedGamepadGuiCursorEnabled = inputManager->isGamepadGuiCursorEnabled();
+                    mHasSavedGamepadGuiCursorEnabled = true;
+                }
+                if (inputManager != nullptr)
+                    inputManager->setGamepadGuiCursorEnabled(true);
+
+                mLuaUiWantsCursor = true;
+                setCursorActive(true);
+                setCursorVisible(true);
+            }
+            else
+            {
+                mLuaUiWantsCursor = false;
+                if (inputManager != nullptr && mHasSavedGamepadGuiCursorEnabled)
+                    inputManager->setGamepadGuiCursorEnabled(mSavedGamepadGuiCursorEnabled);
+                mHasSavedGamepadGuiCursorEnabled = false;
+
+                if (mHasSavedLuaUiCursorState)
+                {
+                    setCursorActive(mSavedLuaUiCursorActive);
+                    setCursorVisible(mSavedLuaUiCursorVisible);
+                }
+                mHasSavedLuaUiCursorState = false;
+            }
+
+            updateVisible();
+            updateControllerButtonsOverlay();
+        }
+
+        if (mLuaUiWantsCursor)
+        {
+            if (MWBase::InputManager* inputManager = MWBase::Environment::get().getInputManager())
+            {
+                if (!inputManager->isGamepadGuiCursorEnabled())
+                    inputManager->setGamepadGuiCursorEnabled(true);
+            }
+            if (!mCursorActive)
+                setCursorActive(true);
+            if (!mCursorVisible)
+                setCursorVisible(true);
+        }
+
         handleScheduledMessageBoxes();
 
         bool gameRunning
@@ -1059,7 +1454,9 @@ namespace MWGui
             mInventoryTabsOverlay->onFrame(frameDuration);
 
         if (!gameRunning)
+        {
             return;
+        }
 
         // We should display message about crime only once per frame, even if there are several crimes.
         // Otherwise we will get message spam when stealing several items via Take All button.
@@ -1217,6 +1614,30 @@ namespace MWGui
 
     void WindowManager::setCursorVisible(bool visible)
     {
+        if (mLuaUiWantsCursor)
+        {
+            mCursorVisible = visible;
+            return;
+        }
+
+        if (Settings::gui().mControllerMenus)
+        {
+            const GuiMode mode = getMode();
+            if (mode == GM_Inventory || mode == GM_Container || mode == GM_Barter || mode == GM_Companion)
+            {
+                if (mode == GM_Inventory)
+                {
+                    // Use the actual active controller window so modals (e.g. edit note dialog)
+                    // can override the map cursor visibility.
+                    WindowBase* activeWindow = getActiveControllerWindow();
+                    visible = dynamic_cast<MapWindow*>(activeWindow) != nullptr;
+                }
+                else
+                    visible = false;
+            }
+            else if (mode == GM_SpellCreation)
+                visible = false;
+        }
         mCursorVisible = visible;
     }
 
@@ -1293,6 +1714,14 @@ namespace MWGui
         {
             if (setting.first == "GUI" && setting.second == "menu transparency")
                 setMenuTransparency(Settings::gui().mMenuTransparency);
+            else if (setting.first == "GUI"
+                && (setting.second == "dialogue interface scaling" || setting.second == "settings interface scaling"
+                    || setting.second == "scaling factor" || setting.second == "settings window ignore scaling"))
+            {
+                updateDialogueLayerSize();
+                updateSettingsLayerSize();
+                updateSaveLoadLayerSize();
+            }
             else if (setting.first == "Video"
                 && (setting.second == "resolution x" || setting.second == "resolution y"
                     || setting.second == "window mode" || setting.second == "window border"))
@@ -1328,6 +1757,9 @@ namespace MWGui
         Settings::Manager::resetPendingChanges(filter);
 
         mGuiPlatform->getRenderManagerPtr()->setViewSize(x, y);
+        updateDialogueLayerSize();
+        updateSettingsLayerSize();
+        updateSaveLoadLayerSize();
 
         // scaled size
         const MyGUI::IntSize& viewSize = MyGUI::RenderManager::getInstance().getViewSize();
@@ -1342,8 +1774,11 @@ namespace MWGui
         for (const auto& [window, settings] : mTrackedWindows)
         {
             const WindowRectSettingValues& rect = settings.mIsMaximized ? settings.mMaximized : settings.mRegular;
-            window->setPosition(MyGUI::IntPoint(static_cast<int>(rect.mX * x), static_cast<int>(rect.mY * y)));
-            window->setSize(MyGUI::IntSize(static_cast<int>(rect.mW * x), static_cast<int>(rect.mH * y)));
+            const MyGUI::IntSize trackingSize = getWindowTrackingSize(window);
+            window->setPosition(MyGUI::IntPoint(static_cast<int>(rect.mX.get() * trackingSize.width),
+                static_cast<int>(rect.mY.get() * trackingSize.height)));
+            window->setSize(MyGUI::IntSize(static_cast<int>(rect.mW.get() * trackingSize.width),
+                static_cast<int>(rect.mH.get() * trackingSize.height)));
 
             WindowBase::clampWindowCoordinates(window);
         }
@@ -1355,6 +1790,23 @@ namespace MWGui
         reapplyActiveControllerWindow();
 
         // TODO: check if any windows are now off-screen and move them back if so
+    }
+
+    void WindowManager::updateDialogueLayerSize()
+    {
+        updateScalingLayerSize("Dialogue", getDialogueScaleMultiplier());
+    }
+
+    void WindowManager::updateSettingsLayerSize()
+    {
+        const float scaleMultiplier = getSettingsScaleMultiplier();
+        updateScalingLayerSize("Settings", scaleMultiplier);
+        updateScalingLayerSize("SettingsPopup", scaleMultiplier);
+    }
+
+    void WindowManager::updateSaveLoadLayerSize()
+    {
+        updateScalingLayerSize("SaveLoad", getCustomScaleMultiplier(Settings::gui().mSettingsInterfaceScaling));
     }
 
     bool WindowManager::isWindowVisible() const
@@ -1440,12 +1892,40 @@ namespace MWGui
                 // Ensure controller focus is on container when entering container mode.
                 setActiveControllerWindow(mode, 0);
             }
+            else if (mode == GM_Companion)
+            {
+                // Always start with the companion window focused.
+                setActiveControllerWindow(mode, 0);
+            }
+            else if (mode == GM_Inventory)
+            {
+                const size_t winCount = mGuiModeStates[mode].mWindows.size();
+                if (winCount == 0)
+                    return;
+                const bool skipMap = isCrassifiedNavigationEnabled();
+                const auto canActivateIndex = [this, skipMap](size_t idx) {
+                    const GuiWindow window = inventoryIndexToWindow(idx, skipMap);
+                    return window != GW_None && (mAllowed & window) && !(mForceHidden & window);
+                };
+                const size_t index = std::min(mLastInventoryControllerWindow, winCount - 1);
+                WindowBase* target = mGuiModeStates[mode].mWindows[index];
+                if (target && target->isVisible() && canActivateIndex(index))
+                    setActiveControllerWindow(mode, index);
+                else
+                    cycleActiveControllerWindow(true);
+            }
             else
             {
-                // Activate first visible window. This needs to be called after updateVisible.
-                if (mActiveControllerWindows[mode] != 0)
-                    mActiveControllerWindows[mode] = mActiveControllerWindows[mode] - 1;
-                cycleActiveControllerWindow(true);
+                // Restore last active window when possible; otherwise fall back to the next visible window.
+                const size_t winCount = mGuiModeStates[mode].mWindows.size();
+                if (winCount == 0)
+                    return;
+                const size_t index = std::min(mActiveControllerWindows[mode], winCount - 1);
+                WindowBase* target = mGuiModeStates[mode].mWindows[index];
+                if (target && target->isVisible())
+                    setActiveControllerWindow(mode, index);
+                else
+                    cycleActiveControllerWindow(true);
             }
         }
     }
@@ -1729,6 +2209,12 @@ namespace MWGui
 
     bool WindowManager::isGuiMode() const
     {
+        return !mGuiModes.empty() || isConsoleMode() || isPostProcessorHudVisible() || isInteractiveMessageBoxActive()
+            || mLuaUiWantsCursor;
+    }
+
+    bool WindowManager::isGuiModeForScript() const
+    {
         return !mGuiModes.empty() || isConsoleMode() || isPostProcessorHudVisible() || isInteractiveMessageBoxActive();
     }
 
@@ -1749,7 +2235,11 @@ namespace MWGui
 
     bool WindowManager::isInteractiveMessageBoxActive() const
     {
-        return mMessageBoxManager && mMessageBoxManager->isInteractiveMessageBox();
+        if (!mMessageBoxManager)
+            return false;
+
+        const InteractiveMessageBox* box = mMessageBoxManager->getInteractiveMessageBox();
+        return box && box->isVisible();
     }
 
     MWGui::GuiMode WindowManager::getMode() const
@@ -1869,26 +2359,10 @@ namespace MWGui
 
     void WindowManager::onKeyFocusChanged(MyGUI::Widget* widget)
     {
-        bool capturesInput = false;
-        if (widget)
-        {
-            LuaUi::WidgetExtension* luaWidget = dynamic_cast<LuaUi::WidgetExtension*>(widget);
-            if (luaWidget)
-                capturesInput = luaWidget->isTextInput();
-            else
-                capturesInput = widget->castType<MyGUI::EditBox>(false);
-        }
-
-        // The SDL_IsTextInputActive() check helps to avoid duplicate calls in SDL2.
-        // This may no longer be required when switching to SDL3 where the function
-        // has also been renamed to SDL_TextInputActive() and returns bool instead
-        // of SDL_bool.
-
-        const bool inputActive = SDL_IsTextInputActive() == SDL_TRUE;
-        if (capturesInput == inputActive)
-            return;
-
-        if (capturesInput)
+        bool isEditBox = widget && widget->castType<MyGUI::EditBox>(false);
+        LuaUi::WidgetExtension* luaWidget = dynamic_cast<LuaUi::WidgetExtension*>(widget);
+        bool capturesInput = luaWidget ? luaWidget->isTextInput() : isEditBox;
+        if (widget && capturesInput)
             SDL_StartTextInput();
         else
             SDL_StopTextInput();
@@ -1920,15 +2394,51 @@ namespace MWGui
 
     void WindowManager::trackWindow(Layout* layout, const WindowSettingValues& settings)
     {
-        MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-
         const WindowRectSettingValues& rect = settings.mIsMaximized ? settings.mMaximized : settings.mRegular;
 
         MyGUI::Window* window = layout->mMainWidget->castType<MyGUI::Window>();
+        const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+        const MyGUI::IntSize trackingSize = getWindowTrackingSize(window);
+
+        float x = rect.mX.get();
+        float y = rect.mY.get();
+        float w = rect.mW.get();
+        float h = rect.mH.get();
+        const float originalX = x;
+        const float originalY = y;
+        const float originalW = w;
+        const float originalH = h;
+
+        // Backward compatibility: some windows (notably Settings) are tracked on a ScalingLayer whose size can
+        // differ from RenderManager::getViewSize(). Older code stored normalized values relative to viewSize,
+        // which can yield values > 1 when later interpreted relative to the layer size.
+        if ((x > 1.f || y > 1.f || w > 1.f || h > 1.f)
+            && (trackingSize.width != viewSize.width || trackingSize.height != viewSize.height))
+        {
+            x = convertLegacyNormalizedValue(x, viewSize.width, trackingSize.width);
+            y = convertLegacyNormalizedValue(y, viewSize.height, trackingSize.height);
+            w = convertLegacyNormalizedValue(w, viewSize.width, trackingSize.width);
+            h = convertLegacyNormalizedValue(h, viewSize.height, trackingSize.height);
+
+            rect.mX.set(x);
+            rect.mY.set(y);
+            rect.mW.set(w);
+            rect.mH.set(h);
+        }
+
+        sanitizeNormalizedWindowRect(x, y, w, h, 0.8f, 0.8f);
+        if (x != originalX || y != originalY || w != originalW || h != originalH)
+        {
+            rect.mX.set(x);
+            rect.mY.set(y);
+            rect.mW.set(w);
+            rect.mH.set(h);
+        }
+
         window->setPosition(
-            MyGUI::IntPoint(static_cast<int>(rect.mX * viewSize.width), static_cast<int>(rect.mY * viewSize.height)));
+            MyGUI::IntPoint(static_cast<int>(x * trackingSize.width), static_cast<int>(y * trackingSize.height)));
         window->setSize(
-            MyGUI::IntSize(static_cast<int>(rect.mW * viewSize.width), static_cast<int>(rect.mH * viewSize.height)));
+            MyGUI::IntSize(static_cast<int>(w * trackingSize.width), static_cast<int>(h * trackingSize.height)));
 
         window->eventWindowChangeCoord += MyGUI::newDelegate(this, &WindowManager::onWindowChangeCoord);
         WindowBase::clampWindowCoordinates(window);
@@ -1946,11 +2456,11 @@ namespace MWGui
         const WindowSettingValues& settings = it->second;
         const WindowRectSettingValues& rect = settings.mIsMaximized ? settings.mRegular : settings.mMaximized;
 
-        MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-        const int x = static_cast<int>(rect.mX * viewSize.width);
-        const int y = static_cast<int>(rect.mY * viewSize.height);
-        const int w = static_cast<int>(rect.mW * viewSize.width);
-        const int h = static_cast<int>(rect.mH * viewSize.height);
+        const MyGUI::IntSize trackingSize = getWindowTrackingSize(window);
+        const int x = static_cast<int>(rect.mX.get() * trackingSize.width);
+        const int y = static_cast<int>(rect.mY.get() * trackingSize.height);
+        const int w = static_cast<int>(rect.mW.get() * trackingSize.width);
+        const int h = static_cast<int>(rect.mH.get() * trackingSize.height);
         window->setCoord(x, y, w, h);
 
         settings.mIsMaximized.set(!settings.mIsMaximized.get());
@@ -1973,11 +2483,11 @@ namespace MWGui
 
         const WindowSettingValues& settings = it->second;
 
-        MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-        settings.mRegular.mX.set(window->getPosition().left / static_cast<float>(viewSize.width));
-        settings.mRegular.mY.set(window->getPosition().top / static_cast<float>(viewSize.height));
-        settings.mRegular.mW.set(window->getSize().width / static_cast<float>(viewSize.width));
-        settings.mRegular.mH.set(window->getSize().height / static_cast<float>(viewSize.height));
+        const MyGUI::IntSize trackingSize = getWindowTrackingSize(window);
+        settings.mRegular.mX.set(window->getPosition().left / static_cast<float>(trackingSize.width));
+        settings.mRegular.mY.set(window->getPosition().top / static_cast<float>(trackingSize.height));
+        settings.mRegular.mW.set(window->getSize().width / static_cast<float>(trackingSize.width));
+        settings.mRegular.mH.set(window->getSize().height / static_cast<float>(trackingSize.height));
 
         settings.mIsMaximized.set(false);
     }
@@ -2177,6 +2687,7 @@ namespace MWGui
 
     void WindowManager::removeCurrentModal(WindowModal* input)
     {
+        const bool refreshUi = dynamic_cast<InteractiveMessageBox*>(input) != nullptr;
         if (!mCurrentModals.empty())
         {
             if (input == mCurrentModals.back())
@@ -2200,6 +2711,14 @@ namespace MWGui
         }
         else
             mKeyboardNavigation->setModalWindow(mCurrentModals.back()->mMainWidget);
+
+        // Only refresh UI state for message boxes (prevents other modals from reappearing).
+        if (refreshUi)
+        {
+            updateVisible();
+            if (Settings::gui().mControllerMenus)
+                reapplyActiveControllerWindow();
+        }
     }
 
     void WindowManager::onVideoKeyPressed(MyGUI::Widget* /*sender*/, MyGUI::KeyCode key, MyGUI::Char value)
@@ -2669,6 +3188,30 @@ namespace MWGui
         return height;
     }
 
+    bool WindowManager::isCrassifiedNavigationEnabled() const
+    {
+        static constexpr std::string_view kPluginName = "crassified navigation.esp";
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        if (!world)
+            return false;
+
+        for (const std::string& contentFile : world->getContentFiles())
+        {
+            if (Misc::StringUtils::ciEqual(contentFile, kPluginName))
+                return true;
+
+            std::string_view filename = contentFile;
+            const std::string_view::size_type separator = filename.find_last_of("/\\");
+            if (separator != std::string_view::npos)
+                filename = filename.substr(separator + 1);
+
+            if (Misc::StringUtils::ciEqual(filename, kPluginName))
+                return true;
+        }
+
+        return false;
+    }
+
     void WindowManager::setControllerTooltipVisible(bool visible)
     {
         if (!Settings::gui().mControllerMenus)
@@ -2699,8 +3242,29 @@ namespace MWGui
         if (!Settings::gui().mControllerMenus || !mControllerButtonsOverlay)
             return;
 
+        static thread_local bool updating = false;
+        if (updating)
+            return;
+        struct UpdatingGuard
+        {
+            bool& mUpdating;
+            UpdatingGuard(bool& updatingFlag)
+                : mUpdating(updatingFlag)
+            {
+                mUpdating = true;
+            }
+            ~UpdatingGuard() { mUpdating = false; }
+        } guard(updating);
+
         if (mWindows.empty())
             return;
+
+        if (isSettingsWindowVisible())
+        {
+            mControllerButtonsOverlay->setVisible(false);
+            mInventoryTabsOverlay->setVisible(false);
+            return;
+        }
 
         WindowBase* topWin = getActiveControllerWindow();
         if (!topWin || !topWin->isVisible())
@@ -2712,13 +3276,162 @@ namespace MWGui
 
         // setButtons will handle setting visibility based on if any buttons are defined.
         mControllerButtonsOverlay->setButtons(topWin->getControllerButtons());
-        if (getMode() == GM_Inventory)
+        mControllerButtonsOverlay->setAnchor(6);
+        mInventoryTabsOverlay->setVisible(false);
+    }
+
+    bool WindowManager::toggleVirtualKeyboard()
+    {
+        if (!Settings::gui().mControllerMenus || !isGuiMode() || isConsoleMode() || !mVirtualKeyboard)
+            return false;
+
+        if (mVirtualKeyboard->isVisible())
         {
-            mInventoryTabsOverlay->setVisible(true);
-            mInventoryTabsOverlay->setTab(mActiveControllerWindows[GM_Inventory]);
+            for (WindowBase* hidden : mVirtualKeyboardHiddenWindows)
+                hidden->setVisibleNoStateChange(true);
+            mVirtualKeyboard->setVisible(false);
+            mVirtualKeyboard->clearTargetEdit();
+            mVirtualKeyboard->setTooltipSourceWindow(nullptr);
+            mVirtualKeyboardHiddenWindows.clear();
+            if (WindowBase* active = getActiveControllerWindow())
+                MWBase::Environment::get().getInputManager()->setGamepadGuiCursorEnabled(
+                    active->isGamepadCursorAllowed());
+            updateControllerButtonsOverlay();
+            return true;
         }
-        else
-            mInventoryTabsOverlay->setVisible(false);
+
+        WindowBase* topWin = getActiveControllerWindow();
+        if (!topWin)
+            return false;
+
+        const bool supportsKeyboard = dynamic_cast<AlchemyWindow*>(topWin) != nullptr
+            || dynamic_cast<EnchantingDialog*>(topWin) != nullptr || dynamic_cast<TextInputDialog*>(topWin) != nullptr
+            || dynamic_cast<CreateClassDialog*>(topWin) != nullptr
+            || dynamic_cast<DescriptionDialog*>(topWin) != nullptr || dynamic_cast<InventoryWindow*>(topWin) != nullptr
+            || dynamic_cast<SpellWindow*>(topWin) != nullptr || dynamic_cast<TradeWindow*>(topWin) != nullptr
+            || dynamic_cast<SpellCreationDialog*>(topWin) != nullptr || dynamic_cast<SaveGameDialog*>(topWin) != nullptr
+            || dynamic_cast<EditNoteDialog*>(topWin) != nullptr;
+        if (!supportsKeyboard)
+            return false;
+
+        MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
+        MyGUI::EditBox* edit = focus ? focus->castType<MyGUI::EditBox>(false) : nullptr;
+        if (edit)
+        {
+            if (getMode() == GM_Barter)
+            {
+                const bool inTrade = mTradeWindow && isChildOf(edit, mTradeWindow->mMainWidget);
+                const bool inInventory = mInventoryWindow && isChildOf(edit, mInventoryWindow->mMainWidget);
+                if (!inTrade && !inInventory)
+                    edit = nullptr;
+            }
+            else if (!isChildOf(edit, topWin->mMainWidget))
+            {
+                edit = nullptr;
+            }
+        }
+        if (getMode() == GM_Barter)
+        {
+            // Ignore stale focus from the other barter pane.
+            if (!focus || !isChildOf(focus, topWin->mMainWidget))
+                edit = nullptr;
+
+            if (!edit)
+            {
+                if (auto* tradeWindow = dynamic_cast<TradeWindow*>(topWin))
+                    edit = tradeWindow->getFilterEdit();
+                else if (auto* inventoryWindow = dynamic_cast<InventoryWindow*>(topWin))
+                    edit = inventoryWindow->getFilterEdit();
+            }
+        }
+        if (!edit)
+        {
+            if (auto* alchemyWindow = dynamic_cast<AlchemyWindow*>(topWin))
+                edit = alchemyWindow->getNameEdit();
+            else if (auto* enchantingDialog = dynamic_cast<EnchantingDialog*>(topWin))
+                edit = enchantingDialog->getNameEdit();
+            else if (auto* spellCreationDialog = dynamic_cast<SpellCreationDialog*>(topWin))
+                edit = spellCreationDialog->getNameEdit();
+            else if (auto* textInputDialog = dynamic_cast<TextInputDialog*>(topWin))
+                edit = textInputDialog->getEditBox();
+            else if (auto* createClassDialog = dynamic_cast<CreateClassDialog*>(topWin))
+                edit = createClassDialog->getEditName();
+            else if (auto* descriptionDialog = dynamic_cast<DescriptionDialog*>(topWin))
+                edit = descriptionDialog->getTextEdit();
+            else if (auto* inventoryWindow = dynamic_cast<InventoryWindow*>(topWin))
+                edit = inventoryWindow->getFilterEdit();
+            else if (auto* spellWindow = dynamic_cast<SpellWindow*>(topWin))
+                edit = spellWindow->getFilterEdit();
+            else if (auto* tradeWindow = dynamic_cast<TradeWindow*>(topWin))
+                edit = tradeWindow->getFilterEdit();
+            else if (auto* saveDialog = dynamic_cast<SaveGameDialog*>(topWin))
+            {
+                edit = saveDialog->getSaveNameEdit();
+                if (edit && !edit->getVisible())
+                    edit = nullptr;
+            }
+            else if (auto* editNoteDialog = dynamic_cast<EditNoteDialog*>(topWin))
+                edit = editNoteDialog->getEditBox();
+        }
+        if (!edit)
+            return false;
+
+        // Hide underlying windows while the keyboard is open.
+        auto addHiddenWindow = [this](WindowBase* window) {
+            if (window && window->isVisible())
+            {
+                window->setVisibleNoStateChange(false);
+                mVirtualKeyboardHiddenWindows.push_back(window);
+            }
+        };
+        addHiddenWindow(topWin);
+        if (getMode() == GM_Barter)
+        {
+            addHiddenWindow(mTradeWindow);
+            addHiddenWindow(mInventoryWindow);
+        }
+        if (dynamic_cast<SaveGameDialog*>(topWin) != nullptr)
+        {
+            auto it = mGuiModeStates.find(GM_MainMenu);
+            if (it != mGuiModeStates.end())
+            {
+                for (WindowBase* window : it->second.mWindows)
+                    addHiddenWindow(window);
+            }
+        }
+        if (dynamic_cast<DescriptionDialog*>(topWin) != nullptr)
+        {
+            if (mCharGen)
+                addHiddenWindow(mCharGen->getCreateClassDialog());
+        }
+        mVirtualKeyboard->setTargetEdit(edit);
+        setKeyFocusWidget(edit);
+
+        WindowBase* tooltipSourceWindow = topWin;
+        if (dynamic_cast<EditNoteDialog*>(topWin) != nullptr && getMode() == GM_Inventory)
+        {
+            for (WindowBase* window : getGuiModeWindows(GM_Inventory))
+            {
+                auto* mapWindow = dynamic_cast<MapWindow*>(window);
+                if (!mapWindow || !mapWindow->isVisible())
+                    continue;
+                tooltipSourceWindow = mapWindow;
+                break;
+            }
+        }
+        mVirtualKeyboard->setTooltipSourceWindow(tooltipSourceWindow);
+
+        mVirtualKeyboard->setVisible(true);
+        setCursorActive(false);
+        MWBase::Environment::get().getInputManager()->setGamepadGuiCursorEnabled(false);
+
+        updateControllerButtonsOverlay();
+        return true;
+    }
+
+    bool WindowManager::isVirtualKeyboardVisible() const
+    {
+        return mVirtualKeyboard && mVirtualKeyboard->isVisible();
     }
 
     void WindowManager::inventoryUpdated(const MWWorld::Ptr& ptr) const

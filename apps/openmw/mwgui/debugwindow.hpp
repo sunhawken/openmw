@@ -18,12 +18,12 @@ namespace MWGui
     private:
         void updateLogView();
         void updateLuaProfile();
-        void updatePhysicsProfile();
+        void updateBulletProfile();
 
         MyGUI::TabControl* mTabControl;
         MyGUI::EditBox* mLogView;
         MyGUI::EditBox* mLuaProfiler;
-        MyGUI::EditBox* mPhysicsProfilerEdit;
+        MyGUI::EditBox* mBulletProfilerEdit;
     };
 
 }

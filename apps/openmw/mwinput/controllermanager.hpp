@@ -8,6 +8,11 @@
 #include <components/sdlutil/events.hpp>
 #include <components/settings/settings.hpp>
 
+namespace MWGui
+{
+    class WindowBase;
+}
+
 namespace MWInput
 {
     class BindingsManager;
@@ -37,7 +42,7 @@ namespace MWInput
         void setJoystickLastUsed(bool enabled) { mJoystickLastUsed = enabled; }
         bool joystickLastUsed() const { return mJoystickLastUsed; }
 
-        void setGuiCursorEnabled(bool enabled) { mGuiCursorEnabled = enabled; }
+        void setGuiCursorEnabled(bool enabled);
 
         void setGamepadGuiCursorEnabled(bool enabled) { mGamepadGuiCursorEnabled = enabled; }
         bool gamepadGuiCursorEnabled() const { return mGamepadGuiCursorEnabled; }
@@ -63,13 +68,36 @@ namespace MWInput
         BindingsManager* mBindingsManager;
         MouseManager* mMouseManager;
 
+        int mLeftStickX;
+        int mLeftStickY;
+        int mLeftStickDpadButton;
+        int mGuiNavHeldButton;
+        float mGuiNavHoldTime;
+        float mGuiNavRepeatTime;
+        bool mGuiNavHeldFromAxis;
+        bool mIgnoreGuiNavUntilRelease;
+        bool mIgnoreGuiCursorUntilRelease;
+
         bool mGyroAvailable;
         bool mGamepadGuiCursorEnabled;
         bool mGuiCursorEnabled;
         bool mJoystickLastUsed;
         bool mGamepadMousePressed;
-        bool mLeftTriggerGuiPressed;
-        bool mRightTriggerGuiPressed;
+        bool mLeftTriggerPressed;
+        bool mRightTriggerPressed;
+        float mLeftTriggerHoldTime;
+        float mRightTriggerHoldTime;
+        float mLeftTriggerRepeatTime;
+        float mRightTriggerRepeatTime;
+        float mPendingDialogueTriggerScrollTicks;
+        bool mLeftShoulderHeld = false;
+        bool mRightShoulderHeld = false;
+        int mLastControllerDeviceId = -1;
+        MWGui::WindowBase* mLastActiveControllerWindow = nullptr;
+        bool mLastGuiMode = false;
+
+        void resetGuiNavState();
+        void syncControllerAxisState();
     };
 }
 #endif

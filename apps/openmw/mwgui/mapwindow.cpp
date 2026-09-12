@@ -3,6 +3,7 @@
 #include <osg/Texture2D>
 
 #include <MyGUI_Button.h>
+#include <MyGUI_EditBox.h>
 #include <MyGUI_FactoryManager.h>
 #include <MyGUI_Gui.h>
 #include <MyGUI_ImageBox.h>
@@ -14,12 +15,14 @@
 #include <MyGUI_TextIterator.h>
 #include <MyGUI_Window.h>
 
+#include <algorithm>
 #include <components/esm3/esmwriter.hpp>
 #include <components/esm3/globalmap.hpp>
 #include <components/myguiplatform/myguitexture.hpp>
 #include <components/settings/values.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/inputmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
 
@@ -33,13 +36,15 @@
 
 #include "confirmationdialog.hpp"
 
+#include <cctype>
+#include <cmath>
 #include <numeric>
 
 namespace
 {
 
     constexpr int cellSize = Constants::CellSizeInUnits;
-    constexpr float speed = 1.08f; // the zoom speed, it should be greater than 1
+    constexpr float speed = 1.01f; // the zoom speed, it should be greater than 1
 
     enum LocalMapWidgetDepth
     {
@@ -836,6 +841,18 @@ namespace MWGui
         const bool global = Settings::map().mGlobal;
 
         mButton->setCaptionWithReplacing(global ? "#{sLocal}" : "#{sWorld}");
+        mButton->setNeedMouseFocus(false);
+        mButton->setEnabled(false);
+        mButton->setVisible(false);
+
+        if (!mCursorAnchor)
+        {
+            mCursorAnchor
+                = mMainWidget->createWidget<MyGUI::Widget>({}, MyGUI::IntCoord(0, 0, 2, 4), MyGUI::Align::Default);
+            mCursorAnchor->setVisible(false);
+            mCursorAnchor->setNeedMouseFocus(false);
+            mCursorAnchor->setEnabled(false);
+        }
 
         getWidget(mEventBoxGlobal, "EventBoxGlobal");
         mEventBoxGlobal->eventMouseDrag += MyGUI::newDelegate(this, &MapWindow::onMouseDrag);
@@ -848,6 +865,10 @@ namespace MWGui
         mEventBoxGlobal->setDepth(Global_ExploreOverlayLayer);
 
         getWidget(mEventBoxLocal, "EventBoxLocal");
+        mEventBoxLocal->setVisible(true);
+        mEventBoxLocal->setEnabled(true);
+        mEventBoxLocal->setNeedMouseFocus(true);
+        mEventBoxLocal->setDepth(Local_MapLayer);
         mEventBoxLocal->eventMouseDrag += MyGUI::newDelegate(this, &MapWindow::onMouseDrag);
         mEventBoxLocal->eventMouseButtonPressed += MyGUI::newDelegate(this, &MapWindow::onDragStart);
         mEventBoxLocal->eventMouseButtonDoubleClick += MyGUI::newDelegate(this, &MapWindow::onMapDoubleClicked);
@@ -861,21 +882,40 @@ namespace MWGui
 
         if (Settings::gui().mControllerMenus)
         {
+            mControllerButtons = {};
+            mControllerButtons.mA = "Move";
             mControllerButtons.mB = "#{Interface:Back}";
+            if (Settings::gui().mXboxTabOrder)
+            {
+                mControllerButtons.mL2 = "#{Interface:Magic}";
+                mControllerButtons.mR2 = "#{sStats}";
+            }
+            else
+            {
+                mControllerButtons.mL2 = "#{sStats}";
+                mControllerButtons.mR2 = "#{Interface:Inventory}";
+            }
             mControllerButtons.mX = global ? "#{Interface:Local}" : "#{Interface:World}";
             mControllerButtons.mY = "#{Interface:Center}";
-            if (!Settings::map().mAllowZooming)
-                mControllerButtons.mDpad = "#{Interface:Move}";
         }
     }
 
     void MapWindow::onNoteEditOk()
     {
+        std::string noteText = mEditNoteDialog.getText();
+        const bool noteIsBlank
+            = std::all_of(noteText.begin(), noteText.end(), [](unsigned char c) { return std::isspace(c) != 0; });
+        if (noteText.empty() || noteIsBlank)
+        {
+            mEditNoteDialog.setVisible(false);
+            return;
+        }
+
         if (mEditNoteDialog.getDeleteButtonShown())
-            mCustomMarkers.updateMarker(mEditingMarker, mEditNoteDialog.getText());
+            mCustomMarkers.updateMarker(mEditingMarker, noteText);
         else
         {
-            mEditingMarker.mNote = mEditNoteDialog.getText();
+            mEditingMarker.mNote = std::move(noteText);
             mCustomMarkers.addMarker(mEditingMarker);
         }
 
@@ -886,6 +926,7 @@ namespace MWGui
     {
         ConfirmationDialog* confirmation = MWBase::Environment::get().getWindowManager()->getConfirmationDialog();
         confirmation->askForConfirmation("#{sDeleteNote}");
+        confirmation->setTooltipSourceWindow(this);
         confirmation->eventCancelClicked.clear();
         confirmation->eventOkClicked.clear();
         confirmation->eventOkClicked += MyGUI::newDelegate(this, &MapWindow::onNoteEditDeleteConfirm);
@@ -934,9 +975,9 @@ namespace MWGui
 
         mEditingMarker.mCell = clickedId;
 
-        mEditNoteDialog.setVisible(true);
         mEditNoteDialog.showDeleteButton(false);
         mEditNoteDialog.setText({});
+        mEditNoteDialog.setVisible(true);
     }
 
     void MapWindow::onMapZoomed(MyGUI::Widget* /*sender*/, int rel)
@@ -1035,6 +1076,18 @@ namespace MWGui
                 createMarkerCoords(marker.position.x(), marker.position.y(), static_cast<float>(col.size())));
             marker.widget->setVisible(marker.widget->getHeight() >= 6);
         }
+
+        for (MyGUI::Widget* widget : mGlobalCustomMarkerWidgets)
+        {
+            const ESM::CustomMarker* marker = widget->getUserData<ESM::CustomMarker>();
+            if (!marker)
+                continue;
+
+            float imageX = 0.f;
+            float imageY = 0.f;
+            worldPosToGlobalMapImageSpace(marker->mWorldX, marker->mWorldY, imageX, imageY);
+            widget->setCoord(MyGUI::IntCoord(static_cast<int>(imageX) - 8, static_cast<int>(imageY) - 8, 16, 16));
+        }
     }
 
     void MapWindow::onChangeScrollWindowCoord(MyGUI::Widget* sender)
@@ -1057,7 +1110,7 @@ namespace MWGui
     {
         WindowBase::setVisible(visible);
         MWGui::GuiMode mode = MWBase::Environment::get().getWindowManager()->getMode();
-        mButton->setVisible(visible && mode != MWGui::GM_None);
+        mButton->setVisible(false);
 
         if (Settings::gui().mControllerMenus && mode == MWGui::GM_None && pinned() && visible)
         {
@@ -1083,6 +1136,12 @@ namespace MWGui
     void MapWindow::setCellName(const std::string& cellName)
     {
         setTitle("#{sCell=" + cellName + "}");
+        if (mEventBoxLocal != nullptr)
+        {
+            mEventBoxLocal->setUserString("ToolTipType", "Layout");
+            mEventBoxLocal->setUserString("ToolTipLayout", "TextToolTipOneLine");
+            mEventBoxLocal->setUserString("Caption_TextOneLine", cellName);
+        }
     }
 
     MyGUI::IntCoord MapWindow::createMarkerCoords(float x, float y, float agregatedWeight) const
@@ -1102,7 +1161,7 @@ namespace MWGui
         MyGUI::Widget* markerWidget = mGlobalMap->createWidget<MyGUI::Widget>(
             "MarkerButton", createMarkerCoords(x, y, agregatedWeight), MyGUI::Align::Default);
         markerWidget->setVisible(markerWidget->getHeight() >= 6.0);
-        markerWidget->setUserString("Caption_TextOneLine", "#{sCell=" + name + "}");
+        markerWidget->setUserString("Caption_TextOneLine", name);
         setGlobalMapMarkerTooltip(markerWidget, static_cast<int>(x), static_cast<int>(y));
 
         markerWidget->setUserString("ToolTipLayout", "TextToolTipOneLine");
@@ -1220,6 +1279,34 @@ namespace MWGui
     {
         LocalMapBase::updateCustomMarkers();
 
+        for (MyGUI::Widget* widget : mGlobalCustomMarkerWidgets)
+            MyGUI::Gui::getInstance().destroyWidget(widget);
+        mGlobalCustomMarkerWidgets.clear();
+
+        for (auto it = mCustomMarkers.begin(); it != mCustomMarkers.end(); ++it)
+        {
+            const ESM::CustomMarker& marker = it->second;
+            if (!marker.mCell.is<ESM::ESM3ExteriorCellRefId>())
+                continue;
+
+            float x = 0.f;
+            float y = 0.f;
+            worldPosToGlobalMapImageSpace(marker.mWorldX, marker.mWorldY, x, y);
+
+            MarkerWidget* markerWidget = mGlobalMap->createWidget<MarkerWidget>("CustomMarkerButton",
+                MyGUI::IntCoord(static_cast<int>(x) - 8, static_cast<int>(y) - 8, 16, 16), MyGUI::Align::Default);
+            markerWidget->setDepth(Global_MarkerLayer);
+            markerWidget->setUserString("ToolTipType", "Layout");
+            markerWidget->setUserString("ToolTipLayout", "TextToolTipOneLine");
+            markerWidget->setUserString("Caption_TextOneLine", MyGUI::TextIterator::toTagsString(marker.mNote));
+            markerWidget->setNormalColour(MyGUI::Colour(0.6f, 0.6f, 0.6f));
+            markerWidget->setHoverColour(MyGUI::Colour(1.0f, 1.0f, 1.0f));
+            markerWidget->setUserData(marker);
+            markerWidget->setNeedMouseFocus(true);
+            customMarkerCreated(markerWidget);
+            mGlobalCustomMarkerWidgets.push_back(markerWidget);
+        }
+
         for (auto& [widgetPair, ignore] : mGlobalMapMarkers)
             setGlobalMapMarkerTooltip(widgetPair.widget, static_cast<int>(widgetPair.position.x()),
                 static_cast<int>(widgetPair.position.y()));
@@ -1262,6 +1349,13 @@ namespace MWGui
         mButton->setCaptionWithReplacing(global ? "#{sLocal}" : "#{sWorld}");
         mControllerButtons.mX = global ? "#{Interface:Local}" : "#{Interface:World}";
         MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
+
+        if (Settings::gui().mControllerMenus)
+        {
+            MWBase::Environment::get().getWindowManager()->setCursorActive(true);
+            MWBase::Environment::get().getWindowManager()->setCursorVisible(true);
+            warpCursorToMapCenter();
+        }
     }
 
     void MapWindow::onPinToggled()
@@ -1283,6 +1377,7 @@ namespace MWGui
 
     void MapWindow::onOpen()
     {
+        resetFixedWindowGeometry();
         ensureGlobalMapLoaded();
 
         globalMapUpdatePlayer();
@@ -1471,58 +1566,120 @@ namespace MWGui
         }
     }
 
+    void MapWindow::warpCursorToMapCenter()
+    {
+        if (!mCursorAnchor)
+            return;
+
+        MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+        MyGUI::IntCoord parentCoord = mMainWidget->getAbsoluteCoord();
+
+        constexpr int anchorWidth = 2;
+        constexpr int anchorHeight = 4;
+        const int targetX = viewSize.width / 2;
+        const int targetY = viewSize.height / 2;
+        const int localLeft = targetX - parentCoord.left - anchorWidth / 2;
+        const int localTop = targetY - parentCoord.top - anchorHeight / 4;
+
+        mCursorAnchor->setCoord(localLeft, localTop, anchorWidth, anchorHeight);
+        MWBase::Environment::get().getInputManager()->warpMouseToWidget(mCursorAnchor);
+    }
+
     void MapWindow::setActiveControllerWindow(bool active)
     {
         MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
         if (winMgr->getMode() == MWGui::GM_Inventory)
         {
-            // Fill the screen, or limit to a certain size on large screens. Size chosen to
-            // show the entire local map without scrolling.
             MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-            MyGUI::IntSize canvasSize = mLocalMap->getCanvasSize();
-            MyGUI::IntSize borderSize = mMainWidget->getSize() - mMainWidget->getClientWidget()->getSize();
-
-            int width = std::min(viewSize.width, canvasSize.width + borderSize.width);
-            int height = std::min(winMgr->getControllerMenuHeight(), canvasSize.height + borderSize.height);
-            int x = (viewSize.width - width) / 2;
-            int y = (viewSize.height - height) / 2;
+            MyGUI::IntCoord coord = getFixedWindowCoord(viewSize);
 
             MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>();
-            window->setCoord(x, active ? y : viewSize.height + 1, width, height);
+            window->setCoord(coord.left, active ? coord.top : viewSize.height + 1, coord.width, coord.height);
+        }
+
+        if (Settings::gui().mControllerMenus)
+        {
+            winMgr->setControllerTooltipVisible(active && Settings::gui().mControllerTooltips);
+            winMgr->setCursorVisible(active);
+            if (active)
+                warpCursorToMapCenter();
         }
 
         WindowBase::setActiveControllerWindow(active);
     }
 
+    void MapWindow::resetFixedWindowGeometry()
+    {
+        if (MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>(false))
+        {
+            MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            window->setCoord(getFixedWindowCoord(viewSize));
+        }
+    }
+
+    MyGUI::IntCoord MapWindow::getFixedWindowCoord(const MyGUI::IntSize& viewSize) const
+    {
+        const float scale = 0.85f;
+        float width = viewSize.width * scale;
+        float height = width * 10.f / 16.f;
+        const float maxHeight = viewSize.height * scale;
+        if (height > maxHeight)
+        {
+            height = maxHeight;
+            width = height * 16.f / 10.f;
+        }
+
+        const int w = static_cast<int>(width);
+        const int h = static_cast<int>(height);
+        const int x = (viewSize.width - w) / 2;
+        const int y = (viewSize.height - h) / 2;
+        return { x, y, w, h };
+    }
+
     // -------------------------------------------------------------------
 
     EditNoteDialog::EditNoteDialog()
-        : WindowModal("openmw_edit_note.layout")
+        : WindowModal(Settings::gui().mControllerMenus ? "openmw_edit_note_xbox.layout" : "openmw_edit_note.layout")
     {
-        getWidget(mOkButton, "OkButton");
-        getWidget(mCancelButton, "CancelButton");
-        getWidget(mDeleteButton, "DeleteButton");
-        getWidget(mTextEdit, "TextEdit");
+        if (Settings::gui().mControllerMenus)
+            mDisableGamepadCursor = true;
 
-        mCancelButton->eventMouseButtonClick += MyGUI::newDelegate(this, &EditNoteDialog::onCancelButtonClicked);
-        mOkButton->eventMouseButtonClick += MyGUI::newDelegate(this, &EditNoteDialog::onOkButtonClicked);
+        getWidget(mTextEdit, "TextEdit");
+        getWidget(mDeleteButton, "DeleteButton");
+
+        if (!Settings::gui().mControllerMenus)
+        {
+            getWidget(mOkButton, "OkButton");
+            getWidget(mCancelButton, "CancelButton");
+            mCancelButton->eventMouseButtonClick += MyGUI::newDelegate(this, &EditNoteDialog::onCancelButtonClicked);
+            mOkButton->eventMouseButtonClick += MyGUI::newDelegate(this, &EditNoteDialog::onOkButtonClicked);
+        }
+
         mDeleteButton->eventMouseButtonClick += MyGUI::newDelegate(this, &EditNoteDialog::onDeleteButtonClicked);
 
         if (Settings::gui().mControllerMenus)
         {
             mControllerButtons.mA = "#{Interface:OK}";
             mControllerButtons.mB = "#{Interface:Cancel}";
+            mControllerButtons.mX = "#{Interface:ShowKeyboard}";
         }
     }
 
     void EditNoteDialog::showDeleteButton(bool show)
     {
         mDeleteButton->setVisible(show);
+        if (Settings::gui().mControllerMenus && isVisible())
+            MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
     }
 
     bool EditNoteDialog::getDeleteButtonShown()
     {
         return mDeleteButton->getVisible();
+    }
+
+    MyGUI::EditBox* EditNoteDialog::getEditBox() const
+    {
+        return mTextEdit;
     }
 
     void EditNoteDialog::setText(const std::string& text)
@@ -1539,13 +1696,39 @@ namespace MWGui
     {
         WindowModal::onOpen();
         center();
-        MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mTextEdit);
+        auto winMgr = MWBase::Environment::get().getWindowManager();
+        winMgr->setKeyFocusWidget(mTextEdit);
 
         if (Settings::gui().mControllerMenus)
         {
-            mControllerFocus = getDeleteButtonShown() ? 1 : 0;
-            mOkButton->setStateSelected(true);
-            mCancelButton->setStateSelected(false);
+            winMgr->setCursorActive(false);
+            winMgr->setCursorVisible(false);
+            MWBase::Environment::get().getInputManager()->setGamepadGuiCursorEnabled(false);
+        }
+    }
+
+    void EditNoteDialog::onClose()
+    {
+        WindowModal::onClose();
+
+        if (!Settings::gui().mControllerMenus)
+            return;
+
+        auto winMgr = MWBase::Environment::get().getWindowManager();
+        MWBase::InputManager* inputMgr = MWBase::Environment::get().getInputManager();
+        WindowBase* active = winMgr->getActiveControllerWindow();
+        if (!active || !inputMgr)
+            return;
+
+        inputMgr->setGamepadGuiCursorEnabled(active->isGamepadCursorAllowed());
+        if (dynamic_cast<MapWindow*>(active) != nullptr)
+        {
+            winMgr->setCursorActive(true);
+            winMgr->setCursorVisible(true);
+
+            // Ensure the tooltip system immediately picks up the map widget under the cursor.
+            const MyGUI::IntPoint& mousePos = MyGUI::InputManager::getInstance().getMousePosition();
+            MyGUI::InputManager::getInstance().injectMouseMove(mousePos.left, mousePos.top, 0);
         }
     }
 
@@ -1567,9 +1750,9 @@ namespace MWGui
     ControllerButtons* EditNoteDialog::getControllerButtons()
     {
         if (getDeleteButtonShown())
-            mControllerButtons.mX = "#{Interface:Delete}";
+            mControllerButtons.mY = "#{Interface:Delete}";
         else
-            mControllerButtons.mX.clear();
+            mControllerButtons.mY.clear();
         return &mControllerButtons;
     }
 
@@ -1577,63 +1760,20 @@ namespace MWGui
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
-            if (getDeleteButtonShown())
-            {
-                if (mControllerFocus == 0)
-                    onDeleteButtonClicked(mDeleteButton);
-                else if (mControllerFocus == 1)
-                    onOkButtonClicked(mOkButton);
-                else
-                    onCancelButtonClicked(mCancelButton);
-            }
-            else
-            {
-                if (mControllerFocus == 0)
-                    onOkButtonClicked(mOkButton);
-                else
-                    onCancelButtonClicked(mCancelButton);
-            }
+            onOkButtonClicked(nullptr);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_B)
         {
-            onCancelButtonClicked(mCancelButton);
+            onCancelButtonClicked(nullptr);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_X)
         {
-            if (getDeleteButtonShown())
-                onDeleteButtonClicked(mDeleteButton);
+            MWBase::Environment::get().getWindowManager()->toggleVirtualKeyboard();
         }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)
+        else if (arg.button == SDL_CONTROLLER_BUTTON_Y)
         {
             if (getDeleteButtonShown())
-            {
-                mControllerFocus = wrap(mControllerFocus, 3, -1);
-                mDeleteButton->setStateSelected(mControllerFocus == 0);
-                mOkButton->setStateSelected(mControllerFocus == 1);
-                mCancelButton->setStateSelected(mControllerFocus == 2);
-            }
-            else
-            {
-                mControllerFocus = 0;
-                mOkButton->setStateSelected(mControllerFocus == 0);
-                mCancelButton->setStateSelected(mControllerFocus == 1);
-            }
-        }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
-        {
-            if (getDeleteButtonShown())
-            {
-                mControllerFocus = wrap(mControllerFocus, 3, 1);
-                mDeleteButton->setStateSelected(mControllerFocus == 0);
-                mOkButton->setStateSelected(mControllerFocus == 1);
-                mCancelButton->setStateSelected(mControllerFocus == 2);
-            }
-            else
-            {
-                mControllerFocus = 1;
-                mOkButton->setStateSelected(mControllerFocus == 0);
-                mCancelButton->setStateSelected(mControllerFocus == 1);
-            }
+                onDeleteButtonClicked(nullptr);
         }
 
         return true;

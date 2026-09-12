@@ -7,19 +7,19 @@
     <Widget type="ImageBox" skin="ImageBox" position_real="0 0 1 1" name="ScrollImage">     
         <Property key="ImageTexture" value="textures\scroll.dds"/>
 
-        <Widget type="ImageButton" skin="ImageBox" position="12 14 128 32" name="TakeButton">
+        <Widget type="ImageButton" skin="ImageBox" position="12 14 1280 3200" name="TakeButton">
             <Property key="ImageHighlighted" value="textures\tx_menubook_take_over.dds"/>
             <Property key="ImageNormal" value="textures\tx_menubook_take_idle.dds"/>
             <Property key="ImagePushed" value="textures\tx_menubook_take_pressed.dds"/>
         </Widget>
 
-        <Widget type="ImageButton" skin="ImageBox" position="415 20 128 32" name="CloseButton">
+        <Widget type="ImageButton" skin="ImageBox" position="415 20 1280 3200" name="CloseButton">
             <Property key="ImageHighlighted" value="textures\tx_menubook_close_over.dds"/>
             <Property key="ImageNormal" value="textures\tx_menubook_close_idle.dds"/>
             <Property key="ImagePushed" value="textures\tx_menubook_close_pressed.dds"/>
         </Widget>
 
-        <Widget type="ScrollView" skin="MW_ScrollView" position="60 84 410 235" name="TextView">
+        <Widget type="ScrollView" skin="MW_ScrollView" position="60 84 410 245" name="TextView">
             <Property key="CanvasSize" value="410 900"/>
         </Widget>
 

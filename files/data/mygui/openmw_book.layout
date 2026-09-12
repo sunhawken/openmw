@@ -12,23 +12,28 @@
                 <Property key="ImageHighlighted" value="textures\tx_menubook_take_over.dds"/>
                 <Property key="ImageNormal" value="textures\tx_menubook_take_idle.dds"/>
                 <Property key="ImagePushed" value="textures\tx_menubook_take_pressed.dds"/>
+                <Property key="Visible" value="False"/>
             </Widget>
 
             <Widget type="ImageButton" skin="ImageBox" position="205 358 48 32" name="PrevPageBTN">
                 <Property key="ImageHighlighted" value="textures\tx_menubook_prev_over.dds"/>
                 <Property key="ImageNormal" value="textures\tx_menubook_prev_idle.dds"/>
                 <Property key="ImagePushed" value="textures\tx_menubook_prev_pressed.dds"/>
+                <Property key="Visible" value="False"/>
             </Widget>
+
             <Widget type="ImageButton" skin="ImageBox" position="330 358 48 32" name="NextPageBTN">
                 <Property key="ImageHighlighted" value="textures\tx_menubook_next_over.dds"/>
                 <Property key="ImageNormal" value="textures\tx_menubook_next_idle.dds"/>
                 <Property key="ImagePushed" value="textures\tx_menubook_next_pressed.dds"/>
+                <Property key="Visible" value="False"/>
             </Widget>
 
             <Widget type="ImageButton" skin="ImageBox" position="488 358 48 32" name="CloseButton">
                 <Property key="ImageHighlighted" value="textures\tx_menubook_close_over.dds"/>
                 <Property key="ImageNormal" value="textures\tx_menubook_close_idle.dds"/>
                 <Property key="ImagePushed" value="textures\tx_menubook_close_pressed.dds"/>
+                <Property key="Visible" value="False"/>
             </Widget>
 
             <Widget type="TextBox" skin="NormalText" position="30 358 250 16" name="LeftPageNumber">

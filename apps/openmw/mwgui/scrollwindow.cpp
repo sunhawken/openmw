@@ -32,6 +32,7 @@ namespace MWGui
 
         getWidget(mTakeButton, "TakeButton");
         mTakeButton->eventMouseButtonClick += MyGUI::newDelegate(this, &ScrollWindow::onTakeButtonClicked);
+        mTakeButton->setVisible(false);
 
         adjustButton("CloseButton");
         adjustButton("TakeButton");
@@ -41,7 +42,6 @@ namespace MWGui
 
         mControllerScrollWidget = mTextView;
         mControllerButtons.mB = "#{Interface:Close}";
-        mControllerButtons.mDpad = "#{Interface:ScrollDown}";
 
         center();
     }
@@ -55,16 +55,39 @@ namespace MWGui
         MWWorld::Ptr player = MWMechanics::getPlayer();
         bool showTakeButton = scroll.getContainerStore() != &player.getClass().getContainerStore(player);
 
-        const std::string* text;
-        if (scroll.getType() == ESM::REC_BOOK)
-            text = &scroll.get<ESM::Book>()->mBase->mText;
-        else
-            text = &scroll.get<ESM4::Book>()->mBase->mText;
-        bool shrinkTextAtLastTag = scroll.getType() == ESM::REC_BOOK;
+        static const std::string kEmptyText;
+        const std::string* text = &kEmptyText;
+        const bool shrinkTextAtLastTag = scroll.getType() == ESM::REC_BOOK;
 
-        Formatting::BookFormatter formatter;
+        bool isMagicScroll = false;
+        if (scroll.getType() == ESM::REC_BOOK)
+        {
+            const auto* ref = scroll.get<ESM::Book>();
+            const ESM::Book* book = ref ? ref->mBase : nullptr;
+            if (book)
+            {
+                text = &book->mText;
+                isMagicScroll = book->mData.mIsScroll && !book->mEnchant.empty();
+            }
+        }
+        else if (scroll.getType() == ESM::REC_BOOK4)
+        {
+            const auto* ref = scroll.get<ESM4::Book>();
+            const ESM4::Book* book = ref ? ref->mBase : nullptr;
+            if (book)
+            {
+                text = &book->mText;
+                isMagicScroll = (book->mData.flags & ESM4::Book::Flag_Scroll) && !book->mEnchantment.isZeroOrUnset();
+            }
+        }
+
+        Formatting::BookFormatter formatter(/*useDialogueBoldFont=*/!isMagicScroll);
         formatter.markupToWidget(mTextView, *text, 390, mTextView->getHeight(), shrinkTextAtLastTag);
-        MyGUI::IntSize size = mTextView->getChildAt(0)->getSize();
+        MyGUI::IntSize size;
+        if (mTextView->getChildCount() > 0)
+            size = mTextView->getChildAt(0)->getSize();
+        else
+            size = MyGUI::IntSize(0, 0);
 
         // Canvas size must be expressed with VScroll disabled, otherwise MyGUI would expand the scroll area when the
         // scrollbar is hidden
@@ -78,6 +101,10 @@ namespace MWGui
         mTextView->setViewOffset(MyGUI::IntPoint(0, 0));
 
         setTakeButtonShow(showTakeButton);
+
+        updateControllerScrollButtons();
+        if (Settings::gui().mControllerMenus)
+            MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
 
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mCloseButton);
     }
@@ -97,13 +124,13 @@ namespace MWGui
     void ScrollWindow::setTakeButtonShow(bool show)
     {
         mTakeButtonShow = show;
-        mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
     }
 
     void ScrollWindow::setInventoryAllowed(bool allowed)
     {
         mTakeButtonAllowed = allowed;
-        mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
     }
 
     void ScrollWindow::onCloseButtonClicked(MyGUI::Widget* /*sender*/)
@@ -130,7 +157,8 @@ namespace MWGui
 
     ControllerButtons* ScrollWindow::getControllerButtons()
     {
-        if (mTakeButton->getVisible())
+        updateControllerScrollButtons();
+        if (canTake())
             mControllerButtons.mA = "#{Interface:Take}";
         else
             mControllerButtons.mA.clear();
@@ -141,7 +169,7 @@ namespace MWGui
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
-            if (mTakeButton->getVisible())
+            if (canTake())
                 onTakeButtonClicked(mTakeButton);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_B)
@@ -150,5 +178,41 @@ namespace MWGui
             return false; // Fall through to keyboard
 
         return true;
+    }
+
+    bool ScrollWindow::onControllerThumbstickEvent(const SDL_ControllerAxisEvent& arg)
+    {
+        const bool isTrigger
+            = arg.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT || arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT;
+        if (!isTrigger)
+            return false;
+
+        if (!isScrollable())
+            return true;
+
+        const int direction = (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) ? 1 : -1;
+        constexpr int kScrollStep = 1;
+        mTextView->setViewOffset(mTextView->getViewOffset() + MyGUI::IntPoint(0, direction * kScrollStep));
+        return true;
+    }
+
+    bool ScrollWindow::canTake() const
+    {
+        return mTakeButtonShow && mTakeButtonAllowed;
+    }
+
+    void ScrollWindow::updateControllerScrollButtons()
+    {
+        const bool scrollable = isScrollable();
+        mControllerButtons.mL2 = scrollable ? "#{Interface:ScrollUp}" : "";
+        mControllerButtons.mR2 = scrollable ? "#{Interface:ScrollDown}" : "";
+        mControllerButtons.mDpad.clear();
+    }
+
+    bool ScrollWindow::isScrollable() const
+    {
+        if (!mTextView)
+            return false;
+        return mTextView->getCanvasSize().height > mTextView->getHeight();
     }
 }
