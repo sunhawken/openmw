@@ -721,9 +721,12 @@ namespace MWRender
 
         // BBR meshes are complete third-person bodies. Use one only when the player is actually naked,
         // so its full geometry cannot overdraw any equipped armor or clothing.
+        // Use mPartslots[part] >= 0 (equipment-owned slot) rather than mPartPriorities >= 1, because
+        // body-part meshes attached with slot=-1 also carry priority 1 and would falsely trigger the check
+        // on every call after the first.
         bool hasCoveredBodyPart = false;
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
-            hasCoveredBodyPart = hasCoveredBodyPart || (parts[part] && mPartPriorities[part] >= 1);
+            hasCoveredBodyPart = hasCoveredBodyPart || (parts[part] && mPartslots[part] >= 0);
         const VFS::Path::Normalized nakedBodyMesh
             = hasCoveredBodyPart ? VFS::Path::Normalized() : resolvePlayerNakedBodyMesh();
         if (!nakedBodyMesh.empty())
