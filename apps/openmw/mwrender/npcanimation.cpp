@@ -727,19 +727,18 @@ namespace MWRender
         const VFS::Path::Normalized nakedBodyMesh
             = hasCoveredBodyPart ? VFS::Path::Normalized() : resolvePlayerNakedBodyMesh();
         if (!nakedBodyMesh.empty())
-        {
             addOrReplaceIndividualPart(ESM::PRT_Cuirass, -1, 1, nakedBodyMesh);
-        }
-        else
+
+        for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
         {
-            for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
+            // PRT_Cuirass is already filled by the BBR mesh above; skip it to avoid overwriting.
+            if (!nakedBodyMesh.empty() && part == ESM::PRT_Cuirass)
+                continue;
+            if (mPartPriorities[part] < 1)
             {
-                if (mPartPriorities[part] < 1)
-                {
-                    if (const ESM::BodyPart* bodypart = parts[part])
-                        addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1,
-                            Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)));
-                }
+                if (const ESM::BodyPart* bodypart = parts[part])
+                    addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1,
+                        Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)));
             }
         }
 
