@@ -44,17 +44,29 @@ namespace MWRender
 
     void JiggleBoneController::operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv)
     {
-        // getParentalNodePaths() includes `node` itself as the path's last element;
-        // drop it so we get the PARENT's world transform, since the offset needs to
-        // be computed in the parent's space, not the bone's own (about to be modified).
-        osg::Matrix parentWorldMatrix;
-        osg::NodePathList nodePaths = node->getParentalNodePaths();
-        if (!nodePaths.empty() && nodePaths[0].size() > 1)
+        // Use the path owned by the traversal currently invoking this callback.
+        // getParentalNodePaths() walks the mutable scene graph and may return a
+        // stale path while actor parts are being rebuilt. In that case OSG can
+        // dereference a transform that has already been detached. The visitor's
+        // path is valid for this update traversal and therefore also tells us
+        // whether this node is still attached to the graph being updated.
+        if (!node || !nv)
+            return;
+
+        const osg::NodePath& traversalPath = nv->getNodePath();
+        if (traversalPath.empty() || traversalPath.back() != node)
         {
-            osg::NodePath parentPath = nodePaths[0];
-            parentPath.pop_back();
-            parentWorldMatrix = osg::computeLocalToWorld(parentPath);
+            // A detached/replaced part can retain its callback until the old
+            // subtree is released. Do not simulate against an unknown parent;
+            // the replacement body gets a fresh controller during its rebuild.
+            traverse(node, nv);
+            return;
         }
+
+        osg::NodePath parentPath = traversalPath;
+        parentPath.pop_back();
+        const osg::Matrix parentWorldMatrix = parentPath.empty() ? osg::Matrix::identity()
+                                                                  : osg::computeLocalToWorld(parentPath);
 
         const double simTime = nv->getFrameStamp() ? nv->getFrameStamp()->getSimulationTime() : 0.0;
 
