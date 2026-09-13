@@ -719,29 +719,34 @@ namespace MWRender
         const std::vector<const ESM::BodyPart*>& parts
             = getBodyParts(race, !mNpc->isMale(), mViewMode == VM_FirstPerson, isWerewolf);
 
-        // BBR meshes are complete third-person bodies. Use one only when the player is actually naked,
-        // so its full geometry cannot overdraw any equipped armor or clothing.
-        // Use mPartslots[part] >= 0 (equipment-owned slot) rather than mPartPriorities >= 1, because
-        // body-part meshes attached with slot=-1 also carry priority 1 and would falsely trigger the check
-        // on every call after the first.
+        // BBR meshes (Curvybody for Morrowind) follow the same multi-geometry convention as Better Bodies:
+        // one NIF contains "Tri Neck", "Tri Chest", "Tri Groin", etc. geometry nodes. OpenMW's
+        // SceneUtil::attach applies the slot's bone-name as a filter (e.g. "Chest" for PRT_Cuirass),
+        // so attaching the BBR mesh to EACH slot individually renders only that slot's geometry.
+        // Only activate this path when the player is actually naked (no equipment owns any body-part slot),
+        // so the curvy body cannot overdraw equipped armor or clothing.
+        // Use mPartslots[part] >= 0 (equipment-owned) not mPartPriorities >= 1, because body-part meshes
+        // attached with slot=-1 also carry priority 1 and would falsely fire the check every subsequent call.
         bool hasCoveredBodyPart = false;
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
             hasCoveredBodyPart = hasCoveredBodyPart || (parts[part] && mPartslots[part] >= 0);
         const VFS::Path::Normalized nakedBodyMesh
             = hasCoveredBodyPart ? VFS::Path::Normalized() : resolvePlayerNakedBodyMesh();
-        if (!nakedBodyMesh.empty())
-            addOrReplaceIndividualPart(ESM::PRT_Cuirass, -1, 1, nakedBodyMesh);
 
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
         {
-            // PRT_Cuirass is already filled by the BBR mesh above; skip it to avoid overwriting.
-            if (!nakedBodyMesh.empty() && part == ESM::PRT_Cuirass)
-                continue;
             if (mPartPriorities[part] < 1)
             {
                 if (const ESM::BodyPart* bodypart = parts[part])
-                    addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1,
-                        Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)));
+                {
+                    // When the BBR naked-body mesh is active, use it for every slot that has a BB
+                    // body part. The per-slot bone filter extracts the correct geometry region from
+                    // the BBR NIF (same "Tri X" naming convention used by Better Bodies).
+                    const VFS::Path::Normalized mesh = !nakedBodyMesh.empty()
+                        ? nakedBodyMesh
+                        : Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel));
+                    addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1, mesh);
+                }
             }
         }
 
