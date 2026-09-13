@@ -727,6 +727,18 @@ namespace MWRender
         // so the curvy body cannot overdraw equipped armor or clothing.
         // Use mPartslots[part] >= 0 (equipment-owned) not mPartPriorities >= 1, because body-part meshes
         // attached with slot=-1 also carry priority 1 and would falsely fire the check every subsequent call.
+
+        // When the BBR naked-body feature can activate, clear stale body-part-owned (slot=-1) meshes
+        // from earlier calls so the loop below can re-evaluate BBR vs. BB on every updateParts() call.
+        // Without this, switching from dressed to naked (or vice versa) would leave the wrong mesh in
+        // slots whose priority is already 1 — preventing the desired mesh from loading there.
+        if (Settings::game().mCurvyNakedBody && mPtr == MWMechanics::getPlayer() && !mNpc->isMale())
+        {
+            for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
+                if (mPartslots[part] == -1 && mPartPriorities[part] > 0)
+                    removeIndividualPart(static_cast<ESM::PartReferenceType>(part));
+        }
+
         bool hasCoveredBodyPart = false;
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
             hasCoveredBodyPart = hasCoveredBodyPart || (parts[part] && mPartslots[part] >= 0);
