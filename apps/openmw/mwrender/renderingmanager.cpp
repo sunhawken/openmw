@@ -1283,7 +1283,8 @@ namespace MWRender
 
         for (Settings::CategorySettingVector::const_iterator it = changed.begin(); it != changed.end(); ++it)
         {
-            if (it->first == "Game" && it->second == "curvy body meshes")
+            if (it->first == "Game"
+                && (it->second == "curvy body meshes" || it->second == "curvy naked body"))
             {
                 if (MWMechanics::getPlayer().isInCell())
                     rebuildPtr(MWMechanics::getPlayer());

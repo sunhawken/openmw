@@ -583,7 +583,7 @@ namespace MWRender
 
     VFS::Path::Normalized NpcAnimation::resolvePlayerNakedBodyMesh() const
     {
-        if (!Settings::game().mCurvyBodyMeshes || mPtr != MWMechanics::getPlayer() || mNpc->isMale()
+        if (!Settings::game().mCurvyNakedBody || mPtr != MWMechanics::getPlayer() || mNpc->isMale()
             || mViewMode == VM_FirstPerson || getNpcType() == Type_Werewolf)
             return {};
 
