@@ -12,6 +12,11 @@
 namespace SDLUtil
 {
 
+    // Extra (non-standard) game-controller buttons - e.g. the additional keys on an MMO gamepad -
+    // are surfaced to the input/Lua layer as (sExtraControllerButtonOffset + rawJoystickButtonIndex)
+    // so they never collide with the standard SDL_GameControllerButton values (0..20).
+    inline constexpr int sExtraControllerButtonOffset = 100;
+
     /** Extended mouse event struct where we treat the wheel like an axis, like everyone expects */
     struct MouseMotionEvent : SDL_MouseMotionEvent
     {
@@ -76,6 +81,12 @@ namespace SDLUtil
 
         virtual void buttonPressed(int deviceID, const SDL_ControllerButtonEvent& evt) = 0;
         virtual void buttonReleased(int deviceID, const SDL_ControllerButtonEvent& evt) = 0;
+
+        // Raw joystick buttons for the underlying device. Used to surface extra buttons that are
+        // not part of the standard SDL game-controller layout (e.g. the extra keys on an MMO
+        // gamepad). Default no-op so listeners that only care about mapped buttons need not react.
+        virtual void joyButtonPressed(int deviceID, const SDL_JoyButtonEvent& evt) {}
+        virtual void joyButtonReleased(int deviceID, const SDL_JoyButtonEvent& evt) {}
 
         virtual void axisMoved(int deviceID, const SDL_ControllerAxisEvent& arg) = 0;
 
