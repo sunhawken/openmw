@@ -742,8 +742,16 @@ namespace MWRender
         bool hasCoveredBodyPart = false;
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
             hasCoveredBodyPart = hasCoveredBodyPart || (parts[part] && mPartslots[part] >= 0);
+        // Normally the curvy naked (BBR) body is only used when the player is fully naked, reverting
+        // exposed skin to Better Bodies as soon as anything is equipped. But when the equipment-mesh
+        // override ("curvy body meshes") is also on, the player is wearing curvy equipment, so the
+        // exposed skin around it should stay curvy too - use the BBR mesh for the exposed slots
+        // instead of Better Bodies. The loop below only fills slots equipment doesn't own
+        // (priority < 1), and the per-slot bone filter renders only that slot's region, so equipped
+        // armor/clothing is never overdrawn.
+        const bool curvyUnderEquipment = Settings::game().mCurvyBodyMeshes && Settings::game().mCurvyNakedBody;
         const VFS::Path::Normalized nakedBodyMesh
-            = hasCoveredBodyPart ? VFS::Path::Normalized() : resolvePlayerNakedBodyMesh();
+            = (hasCoveredBodyPart && !curvyUnderEquipment) ? VFS::Path::Normalized() : resolvePlayerNakedBodyMesh();
 
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
         {
