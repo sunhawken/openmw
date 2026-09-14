@@ -60,7 +60,6 @@ namespace MWGui
 
         bool toggleFullHelp(); ///< show extra info in item tooltips (owner, script)
         bool getFullHelp() const;
-
         void clear();
 
         void setFocusObject(const MWWorld::Ptr& focus);
@@ -108,10 +107,12 @@ namespace MWGui
 
         MWWorld::Ptr mFocusObject;
 
-        MyGUI::IntSize getToolTipViaPtr(int count, bool image = true, bool isOwned = false);
+        MyGUI::IntSize getToolTipViaPtr(
+            int count, bool image = true, bool isOwned = false, int forcedWidth = 0, bool menuMode = true);
         ///< @return requested tooltip size
 
-        MyGUI::IntSize createToolTip(const ToolTipInfo& info, bool isOwned = false);
+        MyGUI::IntSize createToolTip(
+            const ToolTipInfo& info, bool isOwned = false, int forcedWidth = 0, bool menuMode = true);
         ///< @return requested tooltip size
         /// @param isFocusObject Is the object this tooltips originates from mFocusObject?
 

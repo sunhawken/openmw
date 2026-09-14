@@ -1332,6 +1332,35 @@
 -- @usage print(region.weatherProbabilities["rain"])
 
 ---
+-- Set one weather probability entry for this region at runtime.
+-- Signature: `region.setProbability(region, weatherId, value)`.
+--
+-- Throws an error if `weatherId` is not a valid weather id.
+-- Value is clamped to the range [0, 100].
+-- Multiple calls modify the current runtime weather table.
+-- Keep total weather probabilities at 100 after modifications.
+--
+-- For a full table replacement, zero the current table first, then set the new values.
+-- @function [parent=#RegionRecord] setProbability
+-- @param self
+-- @param #string weatherId Weather id to modify.
+-- @param #number value New probability value.
+-- @usage region.setProbability(region, 'rain', 30)
+-- @usage
+-- for weatherId, _ in pairs(region.weatherProbabilities) do
+--     region.setProbability(region, weatherId, 0)
+-- end
+-- region.setProbability(region, 'clear', 70)
+-- region.setProbability(region, 'rain', 30)
+
+---
+-- Reset this region's runtime weather probabilities to defaults from the loaded records.
+-- Signature: `region.resetProbability(region)`.
+-- @function [parent=#RegionRecord] resetProbability
+-- @param self
+-- @usage region.resetProbability(region)
+
+---
 -- Region sound reference
 -- @type RegionSoundRef
 -- @field #string soundId Sound record ID

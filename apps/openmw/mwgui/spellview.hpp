@@ -61,6 +61,11 @@ namespace MWGui
 
         void setActiveControllerWindow(bool active);
         void onControllerButton(const unsigned char button);
+        MyGUI::Widget* getControllerFocusWidget() const;
+        size_t getControllerFocusIndex() const { return mControllerFocus; }
+        size_t getControllerButtonCount() const { return mButtons.size(); }
+        bool isControllerAtTop() const { return mControllerFocus == 0; }
+        void setControllerFocusIndex(size_t index);
 
     private:
         std::unique_ptr<SpellModel> mModel;
@@ -74,10 +79,14 @@ namespace MWGui
             /// the widget on the left side of the row (if there is one)
             MyGUI::Widget* mRightWidget;
 
+            /// background highlight for controller focus, may be null
+            MyGUI::Widget* mHighlight;
+
             /// index to item in mModel that row is showing information for
             SpellModel::ModelIndex mSpellIndex;
 
-            LineInfo(MyGUI::Widget* leftWidget, MyGUI::Widget* rightWidget, SpellModel::ModelIndex spellIndex);
+            LineInfo(MyGUI::Widget* leftWidget, MyGUI::Widget* rightWidget, MyGUI::Widget* highlight,
+                SpellModel::ModelIndex spellIndex);
         };
 
         /// magic number indicating LineInfo does not correspond to an item in mModel
@@ -88,8 +97,15 @@ namespace MWGui
 
         std::vector<LineInfo> mLines;
 
+        struct ButtonInfo
+        {
+            Gui::SharedStateButton* mButton;
+            SpellModel::ModelIndex mSpellIndex;
+            size_t mLineIndex;
+        };
+
         /// Keep a list of buttons for controller navigation and their index in the full list.
-        std::vector<std::pair<Gui::SharedStateButton*, int>> mButtons;
+        std::vector<ButtonInfo> mButtons;
         /// Keep a list of group offsets for controller navigation
         std::vector<size_t> mGroupIndices;
         MyGUI::ScrollView* mScrollView = nullptr;

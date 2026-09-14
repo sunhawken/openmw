@@ -273,6 +273,17 @@ namespace LuaUi
         sGameElements.erase(element);
     }
 
+    void Element::setLayerVisible(std::string_view layer, bool visible)
+    {
+        const auto setVisibleOnLayer = [layer, visible](Element* element) {
+            if (element->mLayer == layer && element->mRoot)
+                element->mRoot->widget()->setVisible(visible);
+        };
+
+        forEach(false, setVisibleOnLayer);
+        forEach(true, setVisibleOnLayer);
+    }
+
     const std::vector<std::string_view>& Element::allLayoutProperties()
     {
         return LayoutKeys::allKeys;

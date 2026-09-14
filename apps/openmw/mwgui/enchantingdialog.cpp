@@ -4,8 +4,12 @@
 
 #include <MyGUI_Button.h>
 #include <MyGUI_EditBox.h>
+#include <MyGUI_InputManager.h>
+#include <MyGUI_RenderManager.h>
 #include <MyGUI_ScrollView.h>
 #include <MyGUI_UString.h>
+#include <MyGUI_Widget.h>
+#include <MyGUI_Window.h>
 
 #include <components/misc/strings/format.hpp>
 #include <components/settings/values.hpp>
@@ -27,6 +31,20 @@
 #include "itemwidget.hpp"
 
 #include "sortfilteritemmodel.hpp"
+
+namespace
+{
+    constexpr size_t kEnchantmentNameLimit = 48;
+
+    MyGUI::IntCoord getCenteredWindowCoord(const MyGUI::IntSize& viewSize, const MyGUI::IntSize& windowSize)
+    {
+        const int w = windowSize.width;
+        const int h = windowSize.height;
+        const int x = (viewSize.width - w) / 2;
+        const int y = (viewSize.height - h) / 2;
+        return { x, y, w, h };
+    }
+}
 
 namespace MWGui
 {
@@ -58,19 +76,67 @@ namespace MWGui
         mSoulBox->eventMouseButtonClick += MyGUI::newDelegate(this, &EnchantingDialog::onSelectSoul);
         mBuyButton->eventMouseButtonClick += MyGUI::newDelegate(this, &EnchantingDialog::onBuyButtonClicked);
         mTypeButton->eventMouseButtonClick += MyGUI::newDelegate(this, &EnchantingDialog::onTypeButtonClicked);
+        mName->setMaxTextLength(kEnchantmentNameLimit);
         mName->eventEditSelectAccept += MyGUI::newDelegate(this, &EnchantingDialog::onAccept);
+        mName->eventEditTextChange += MyGUI::newDelegate(this, &EnchantingDialog::onNameEdited);
+        mTypeButton->clearUserStrings();
 
+        if (Settings::gui().mControllerMenus)
+        {
+            mName->setEditStatic(true);
+            mName->setNeedKeyFocus(true);
+            mItemBox->setNeedKeyFocus(true);
+            mSoulBox->setNeedKeyFocus(true);
+            mTypeButton->setNeedKeyFocus(true);
+
+            MyGUI::Widget* highlightParent = mMainWidget->getClientWidget();
+            if (!highlightParent)
+                highlightParent = mMainWidget;
+            mControllerFocusHighlight = highlightParent->createWidget<MyGUI::Widget>(
+                "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+            mControllerFocusHighlight->setNeedMouseFocus(false);
+            mControllerFocusHighlight->setDepth(1);
+            mControllerFocusHighlight->setVisible(false);
+        }
+
+        mControllerButtons = {};
         mControllerButtons.mA = "#{Interface:Select}";
+        mControllerButtons.mX = "#{Interface:Buy}";
+        mControllerButtons.mY = "#{Interface:Info}";
         mControllerButtons.mB = "#{Interface:Cancel}";
-        mControllerButtons.mY = "#{OMWEngine:EnchantType}";
-        mControllerButtons.mL1 = "#{Interface:Item}";
-        mControllerButtons.mR1 = "#{Interface:Soul}";
     }
 
     void EnchantingDialog::onOpen()
     {
-        center();
-        MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mName);
+        if (MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>(false))
+        {
+            const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            window->setCoord(getCenteredWindowCoord(viewSize, window->getSize()));
+        }
+        if (Settings::gui().mControllerMenus)
+            setControllerFocusWidget(mItemBox);
+        else
+            MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mName);
+    }
+
+    void EnchantingDialog::onFrame(float /*dt*/)
+    {
+        checkReferenceAvailable();
+
+        if (!Settings::gui().mControllerMenus)
+            return;
+
+        MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
+        const bool keyboardVisible = winMgr->isVirtualKeyboardVisible();
+        if (mKeyboardWasVisible && !keyboardVisible)
+            setControllerFocusWidget(mName);
+        mKeyboardWasVisible = keyboardVisible;
+
+        if (mControllerEffectsFocusActive)
+            setControllerEffectsFocus(true);
+
+        updateControllerFocusHighlight();
+        updateEditStaticState();
     }
 
     void EnchantingDialog::setSoulGem(const MWWorld::Ptr& gem)
@@ -101,7 +167,7 @@ namespace MWGui
         else
         {
             std::string_view name = item.getClass().getName(item);
-            mName->setCaption(MyGUI::UString(name));
+            setNameCaption(MyGUI::UString(name));
             mItemBox->setItem(item);
             mItemBox->setUserString("ToolTipType", "ItemPtr");
             mItemBox->setUserData(MWWorld::Ptr(item));
@@ -151,7 +217,7 @@ namespace MWGui
         if (ptr.isEmpty() || (ptr.getType() != ESM::REC_MISC && !ptr.getClass().isActor()))
             throw std::runtime_error("Invalid argument in EnchantingDialog::setPtr");
 
-        mName->setCaption({});
+        setNameCaption({});
 
         if (ptr.getClass().isActor())
         {
@@ -181,6 +247,8 @@ namespace MWGui
         setItem(MWWorld::Ptr());
         startEditing();
         updateLabels();
+        if (Settings::gui().mControllerMenus)
+            setControllerFocusWidget(mName);
     }
 
     void EnchantingDialog::onReferenceUnavailable()
@@ -210,9 +278,17 @@ namespace MWGui
             mItemSelectionDialog = std::make_unique<ItemSelectionDialog>("#{sEnchantItems}");
             mItemSelectionDialog->eventItemSelected += MyGUI::newDelegate(this, &EnchantingDialog::onItemSelected);
             mItemSelectionDialog->eventDialogCanceled += MyGUI::newDelegate(this, &EnchantingDialog::onItemCancel);
+            if (MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>(false))
+            {
+                const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+                const MyGUI::IntCoord dialogCoord = getCenteredWindowCoord(viewSize, window->getSize());
+                mItemSelectionDialog->setCoord(
+                    dialogCoord.left, dialogCoord.top, dialogCoord.width, dialogCoord.height);
+            }
             mItemSelectionDialog->setVisible(true);
             mItemSelectionDialog->openContainer(MWMechanics::getPlayer());
             mItemSelectionDialog->setFilter(SortFilterItemModel::Filter_OnlyEnchantable);
+            setVisibleNoStateChange(false);
         }
         else
         {
@@ -224,21 +300,31 @@ namespace MWGui
     void EnchantingDialog::onItemSelected(MWWorld::Ptr item)
     {
         mItemSelectionDialog->setVisible(false);
+        setVisibleNoStateChange(true);
+        MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
 
         setItem(item);
         MWBase::Environment::get().getWindowManager()->playSound(item.getClass().getDownSoundId(item));
         mEnchanting.nextCastStyle();
         updateLabels();
+        if (Settings::gui().mControllerMenus)
+            setControllerFocusWidget(mItemBox);
     }
 
     void EnchantingDialog::onItemCancel()
     {
         mItemSelectionDialog->setVisible(false);
+        setVisibleNoStateChange(true);
+        MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
+        if (Settings::gui().mControllerMenus)
+            setControllerFocusWidget(mItemBox);
     }
 
     void EnchantingDialog::onSoulSelected(MWWorld::Ptr item)
     {
         mItemSelectionDialog->setVisible(false);
+        setVisibleNoStateChange(true);
+        MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
 
         mEnchanting.setSoulGem(item);
         if (mEnchanting.getGemCharge() == 0)
@@ -250,11 +336,17 @@ namespace MWGui
         setSoulGem(item);
         MWBase::Environment::get().getWindowManager()->playSound(item.getClass().getDownSoundId(item));
         updateLabels();
+        if (Settings::gui().mControllerMenus)
+            setControllerFocusWidget(mSoulBox);
     }
 
     void EnchantingDialog::onSoulCancel()
     {
         mItemSelectionDialog->setVisible(false);
+        setVisibleNoStateChange(true);
+        MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
+        if (Settings::gui().mControllerMenus)
+            setControllerFocusWidget(mSoulBox);
     }
 
     void EnchantingDialog::onSelectSoul(MyGUI::Widget* /*sender*/)
@@ -264,9 +356,17 @@ namespace MWGui
             mItemSelectionDialog = std::make_unique<ItemSelectionDialog>("#{sSoulGemsWithSouls}");
             mItemSelectionDialog->eventItemSelected += MyGUI::newDelegate(this, &EnchantingDialog::onSoulSelected);
             mItemSelectionDialog->eventDialogCanceled += MyGUI::newDelegate(this, &EnchantingDialog::onSoulCancel);
+            if (MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>(false))
+            {
+                const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+                const MyGUI::IntCoord dialogCoord = getCenteredWindowCoord(viewSize, window->getSize());
+                mItemSelectionDialog->setCoord(
+                    dialogCoord.left, dialogCoord.top, dialogCoord.width, dialogCoord.height);
+            }
             mItemSelectionDialog->setVisible(true);
             mItemSelectionDialog->openContainer(MWMechanics::getPlayer());
             mItemSelectionDialog->setFilter(SortFilterItemModel::Filter_OnlyChargedSoulstones);
+            setVisibleNoStateChange(false);
 
             // MWBase::Environment::get().getWindowManager()->messageBox("#{sInventorySelectNoSoul}");
         }
@@ -299,6 +399,132 @@ namespace MWGui
 
         // To do not spam onAccept() again and again
         MWBase::Environment::get().getWindowManager()->injectKeyRelease(MyGUI::KeyCode::None);
+    }
+
+    void EnchantingDialog::openVirtualKeyboard(MyGUI::EditBox* edit)
+    {
+        if (!edit)
+            return;
+
+        MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
+        if (winMgr->isVirtualKeyboardVisible())
+            return;
+
+        edit->setEditStatic(false);
+        winMgr->setKeyFocusWidget(edit);
+        winMgr->toggleVirtualKeyboard();
+    }
+
+    void EnchantingDialog::setControllerFocusWidget(MyGUI::Widget* widget)
+    {
+        if (!widget)
+            return;
+
+        if (widget == mItemBox || widget == mSoulBox)
+            mNameReturnFocus = widget;
+
+        if (mControllerEffectsFocusActive)
+            setControllerEffectsFocusActive(false);
+        else
+            setControllerEffectsFocus(false);
+        MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(widget);
+        updateControllerFocusHighlight();
+    }
+
+    void EnchantingDialog::setControllerEffectsFocusActive(bool active)
+    {
+        if (mControllerEffectsFocusActive == active)
+            return;
+
+        mControllerEffectsFocusActive = active;
+        setControllerEffectsFocus(active);
+
+        if (active)
+        {
+            MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
+            winMgr->setControllerTooltipVisible(Settings::gui().mControllerTooltips);
+            winMgr->setCursorVisible(!winMgr->getControllerTooltipVisible());
+        }
+
+        updateControllerFocusHighlight();
+    }
+
+    void EnchantingDialog::updateControllerFocusHighlight()
+    {
+        if (!mControllerFocusHighlight || !Settings::gui().mControllerMenus)
+            return;
+
+        if (mControllerEffectsFocusActive)
+        {
+            mControllerFocusHighlight->setVisible(false);
+            return;
+        }
+
+        MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
+        const bool shouldHighlight = focus == mName || focus == mItemBox || focus == mSoulBox || focus == mTypeButton;
+        if (!shouldHighlight)
+        {
+            mControllerFocusHighlight->setVisible(false);
+            return;
+        }
+
+        const MyGUI::IntCoord focusCoord = focus->getAbsoluteCoord();
+        MyGUI::Widget* highlightParent = mControllerFocusHighlight->getParent();
+        const MyGUI::IntCoord baseCoord
+            = highlightParent ? highlightParent->getAbsoluteCoord() : mMainWidget->getAbsoluteCoord();
+        mControllerFocusHighlight->setCoord(
+            focusCoord.left - baseCoord.left, focusCoord.top - baseCoord.top, focusCoord.width, focusCoord.height);
+        mControllerFocusHighlight->setVisible(true);
+    }
+
+    void EnchantingDialog::updateEditStaticState()
+    {
+        MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
+        const bool shouldStatic = !winMgr->isVirtualKeyboardVisible();
+        if (mName->getEditStatic() != shouldStatic)
+            mName->setEditStatic(shouldStatic);
+    }
+
+    void EnchantingDialog::onNameEdited(MyGUI::EditBox* sender)
+    {
+        const size_t length = sender->getCaption().size();
+        if (mSuppressNameLimitMessage)
+        {
+            mNameHitLimit = length >= kEnchantmentNameLimit;
+            return;
+        }
+
+        if (length < kEnchantmentNameLimit)
+        {
+            mNameHitLimit = false;
+            return;
+        }
+
+        if (!mNameHitLimit)
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("You've hit the character limit");
+            mNameHitLimit = true;
+        }
+    }
+
+    void EnchantingDialog::setNameCaption(const MyGUI::UString& caption)
+    {
+        mSuppressNameLimitMessage = true;
+        mName->setCaption(caption);
+        mSuppressNameLimitMessage = false;
+        mNameHitLimit = caption.size() >= kEnchantmentNameLimit;
+    }
+
+    MyGUI::Widget* EnchantingDialog::getControllerFocusTooltipWidget() const
+    {
+        if (mControllerEffectsFocusActive)
+            return getControllerEffectsTooltipWidget();
+
+        MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
+        if (focus == mName || focus == mItemBox || focus == mSoulBox || focus == mTypeButton)
+            return focus;
+
+        return nullptr;
     }
 
     void EnchantingDialog::onBuyButtonClicked(MyGUI::Widget* /*sender*/)
@@ -393,19 +619,161 @@ namespace MWGui
 
     bool EnchantingDialog::onControllerButtonEvent(const SDL_ControllerButtonEvent& arg)
     {
+        MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
+
+        if (mControllerEffectsFocusActive)
+        {
+            if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP && isControllerEffectsAtTop())
+            {
+                setControllerEffectsFocusActive(false);
+                if (isControllerEffectsRightColumn())
+                {
+                    mTypeReturnToEffects = true;
+                    mTypeReturnEffectsRightColumn = true;
+                    mTypeReturnFocus = nullptr;
+                    setControllerFocusWidget(mTypeButton);
+                }
+                else
+                    setControllerFocusWidget(mItemBox);
+                return true;
+            }
+            if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT && mEffects.empty())
+            {
+                setControllerEffectsFocusActive(false);
+                mTypeReturnToEffects = true;
+                mTypeReturnEffectsRightColumn = false;
+                mTypeReturnFocus = nullptr;
+                setControllerFocusWidget(mTypeButton);
+                return true;
+            }
+            if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP || arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN
+                || arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT
+                || arg.button == SDL_CONTROLLER_BUTTON_A)
+                return EffectEditorBase::onControllerButtonEvent(arg);
+        }
+
+        if (arg.button == SDL_CONTROLLER_BUTTON_A)
+        {
+            if (focus == mName)
+            {
+                openVirtualKeyboard(mName);
+                return true;
+            }
+            if (focus == mItemBox)
+            {
+                onSelectItem(mItemBox);
+                return true;
+            }
+            if (focus == mSoulBox)
+            {
+                onSelectSoul(mSoulBox);
+                return true;
+            }
+            if (focus == mTypeButton)
+            {
+                onTypeButtonClicked(mTypeButton);
+                return true;
+            }
+        }
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
+        {
+            if (focus == mName)
+            {
+                MyGUI::Widget* target = mNameReturnFocus ? mNameReturnFocus : mItemBox;
+                setControllerFocusWidget(target);
+                return true;
+            }
+            if (focus == mItemBox || focus == mSoulBox || focus == mTypeButton)
+            {
+                if (focus == mTypeButton)
+                {
+                    if (mEffects.empty())
+                        return true;
+                    setControllerEffectsRightColumn(true);
+                }
+                else
+                {
+                    setControllerEffectsRightColumn(false);
+                }
+                setControllerEffectsFocusActive(true);
+                return true;
+            }
+        }
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP)
+        {
+            if (focus == mItemBox || focus == mSoulBox)
+            {
+                mNameReturnFocus = focus;
+                setControllerFocusWidget(mName);
+                return true;
+            }
+            if (focus == mTypeButton)
+                return true;
+        }
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)
+        {
+            if (focus == mSoulBox)
+            {
+                setControllerFocusWidget(mItemBox);
+                return true;
+            }
+            if (focus == mTypeButton)
+            {
+                if (mEffects.empty() && mTypeReturnToEffects)
+                {
+                    mTypeReturnToEffects = false;
+                    setControllerEffectsRightColumn(mTypeReturnEffectsRightColumn);
+                    setControllerEffectsFocusActive(true);
+                    return true;
+                }
+                if (mEffects.empty() && mTypeReturnFocus)
+                {
+                    setControllerFocusWidget(mTypeReturnFocus);
+                    return true;
+                }
+                setControllerFocusWidget(mSoulBox);
+                return true;
+            }
+            if (focus == mItemBox)
+            {
+                setControllerFocusWidget(mName);
+                return true;
+            }
+        }
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
+        {
+            if (focus == mName)
+            {
+                mTypeReturnToEffects = false;
+                mTypeReturnFocus = mName;
+                setControllerFocusWidget(mTypeButton);
+                return true;
+            }
+            if (focus == mItemBox)
+            {
+                setControllerFocusWidget(mSoulBox);
+                return true;
+            }
+            if (focus == mSoulBox)
+            {
+                mTypeReturnToEffects = false;
+                mTypeReturnFocus = mSoulBox;
+                setControllerFocusWidget(mTypeButton);
+                return true;
+            }
+        }
+
         if (arg.button == SDL_CONTROLLER_BUTTON_B)
+        {
+            if (!mName->getCaption().empty())
+            {
+                mName->setCaption({});
+                return true;
+            }
             onCancelButtonClicked(mCancelButton);
+        }
         else if (arg.button == SDL_CONTROLLER_BUTTON_X)
             onBuyButtonClicked(mBuyButton);
-        else if (arg.button == SDL_CONTROLLER_BUTTON_Y)
-            onTypeButtonClicked(mTypeButton);
-        else if (arg.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
-            onSelectItem(mItemBox);
-        else if (arg.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)
-            onSelectSoul(mSoulBox);
-        else
-            return EffectEditorBase::onControllerButtonEvent(arg);
-
         return true;
     }
 }

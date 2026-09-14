@@ -29,6 +29,11 @@ namespace SDLUtil
     class InputWrapper;
 }
 
+namespace MyGUI
+{
+    class ImageBox;
+}
+
 struct SDL_Window;
 
 namespace MWInput
@@ -103,7 +108,6 @@ namespace MWInput
         bool isIdle() const override;
 
         void executeAction(int action) override;
-        void executeActionRelease(int action) override;
 
         bool controlsDisabled() override { return mControlsDisabled; }
 
@@ -121,6 +125,8 @@ namespace MWInput
         std::unique_ptr<ControllerManager> mControllerManager;
         std::unique_ptr<SensorManager> mSensorManager;
         std::unique_ptr<GyroManager> mGyroManager;
+
+        MyGUI::ImageBox* mWaylandSoftwareCursor = nullptr;
     };
 }
 #endif

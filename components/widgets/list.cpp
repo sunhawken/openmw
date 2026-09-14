@@ -1,5 +1,7 @@
 #include "list.hpp"
 
+#include <string>
+
 #include <MyGUI_Button.h>
 #include <MyGUI_Gui.h>
 #include <MyGUI_ImageBox.h>
@@ -55,6 +57,8 @@ namespace Gui
             MyGUI::Gui::getInstance().destroyWidget(mScrollView->getChildAt(0));
         }
 
+        mItemHighlights.clear();
+
         mItemHeight = 0;
         int i = 0;
         for (const auto& item : mItems)
@@ -64,6 +68,15 @@ namespace Gui
             {
                 if (mListItemSkin.empty())
                     return;
+                MyGUI::Widget* highlight = nullptr;
+                if (!mControllerHighlightSkin.empty())
+                {
+                    highlight = mScrollView->createWidget<MyGUI::Widget>(mControllerHighlightSkin,
+                        MyGUI::IntCoord(0, mItemHeight, mScrollView->getSize().width - scrollBarWidth - 2, 24),
+                        MyGUI::Align::Left | MyGUI::Align::Top, getName() + "_highlight_" + std::to_string(i));
+                    highlight->setNeedMouseFocus(false);
+                    highlight->setVisible(false);
+                }
                 MyGUI::Button* button = mScrollView->createWidget<MyGUI::Button>(mListItemSkin,
                     MyGUI::IntCoord(0, mItemHeight, mScrollView->getSize().width - scrollBarWidth - 2, 24),
                     MyGUI::Align::Left | MyGUI::Align::Top, getName() + "_item_" + item.mName);
@@ -79,6 +92,10 @@ namespace Gui
                 button->setSize(MyGUI::IntSize(button->getSize().width, height));
                 button->setUserData(i);
 
+                if (highlight)
+                    highlight->setSize(button->getSize());
+                mItemHighlights.push_back(highlight);
+
                 mItemHeight += height;
             }
             else
@@ -89,6 +106,7 @@ namespace Gui
                 separator->setNeedMouseFocus(false);
 
                 mItemHeight += 18;
+                mItemHighlights.push_back(nullptr);
             }
             mItemHeight += item.mVPadding;
             ++i;
@@ -113,6 +131,8 @@ namespace Gui
     {
         if (key == "ListItemSkin")
             mListItemSkin = value;
+        else if (key == "ControllerHighlightSkin")
+            mControllerHighlightSkin = value;
         else
             Base::setPropertyOverride(key, value);
     }
@@ -180,5 +200,14 @@ namespace Gui
     void MWList::setViewOffset(int offset)
     {
         mScrollView->setViewOffset(MyGUI::IntPoint(0, offset));
+    }
+
+    void MWList::setItemHighlightVisible(size_t index, bool visible)
+    {
+        if (index >= mItemHighlights.size())
+            return;
+
+        if (MyGUI::Widget* highlight = mItemHighlights[index])
+            highlight->setVisible(visible);
     }
 }
