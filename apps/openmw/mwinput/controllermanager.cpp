@@ -35,6 +35,10 @@ namespace
     constexpr float kLeftStickDpadDeadzone = 0.85f;
     constexpr float kLeftStickDpadReleaseDeadzone = 0.85f;
     constexpr int kLeftStickDpadNone = -1;
+    // The SDL wrapper reports every controller under one generic device id (see sdlinputwrapper.cpp),
+    // and the binding manager stores controller bindings under this same id. Route extra joystick
+    // buttons through it so they bind and trigger like standard controller buttons.
+    constexpr int sGenericControllerDeviceId = 1;
     constexpr float kGuiTurboRepeatStartDelay = 0.25f;
     constexpr int kTriggerPressThreshold = 16000;
     constexpr int kTriggerReleaseThreshold = 8000;
@@ -775,29 +779,61 @@ namespace MWInput
     {
         // Surface extra gamepad buttons (e.g. an MMO pad's additional keys) that are not part of the
         // standard controller layout. Buttons already mapped to a standard controller button are
-        // skipped here because buttonPressed() handles them.
+        // skipped here because buttonPressed() handles them. Binding detection happens on release
+        // (mirroring standard controller buttons), so do nothing on press while detecting.
         if (!Settings::input().mEnableController || mBindingsManager->isDetectingBindingState())
             return;
         if (isMappedJoystickButton(arg.which, arg.button))
             return;
 
+        const int extendedButton = SDLUtil::sExtraControllerButtonOffset + arg.button;
         mLastControllerDeviceId = deviceID;
         mJoystickLastUsed = true;
-        MWBase::Environment::get().getLuaManager()->inputEvent({ MWBase::LuaManager::InputEvent::ControllerPressed,
-            SDLUtil::sExtraControllerButtonOffset + arg.button });
+
+        // Feed the action binder so extra buttons can trigger actions bound in Options > Controls.
+        // Controller bindings all live under the generic device id the SDL wrapper uses (see
+        // sGenericControllerDeviceId). The event's button field is a Uint8, so guard the range.
+        if (extendedButton <= 255)
+        {
+            SDL_ControllerButtonEvent evt{};
+            evt.which = sGenericControllerDeviceId;
+            evt.button = static_cast<Uint8>(extendedButton);
+            mBindingsManager->controllerButtonPressed(sGenericControllerDeviceId, evt);
+        }
+
+        MWBase::Environment::get().getLuaManager()->inputEvent(
+            { MWBase::LuaManager::InputEvent::ControllerPressed, extendedButton });
     }
 
     void ControllerManager::joyButtonReleased(int deviceID, const SDL_JoyButtonEvent& arg)
     {
-        if (!Settings::input().mEnableController || mBindingsManager->isDetectingBindingState())
+        if (!Settings::input().mEnableController)
             return;
         if (isMappedJoystickButton(arg.which, arg.button))
             return;
 
+        const int extendedButton = SDLUtil::sExtraControllerButtonOffset + arg.button;
+        SDL_ControllerButtonEvent evt{};
+        evt.which = sGenericControllerDeviceId;
+        if (extendedButton <= 255)
+            evt.button = static_cast<Uint8>(extendedButton);
+
+        // During binding detection, feed the release to the binder so the action rebinds to this
+        // extra button, then stop - exactly like the standard controller button path.
+        if (mBindingsManager->isDetectingBindingState())
+        {
+            if (extendedButton <= 255)
+                mBindingsManager->controllerButtonReleased(sGenericControllerDeviceId, evt);
+            return;
+        }
+
         mLastControllerDeviceId = deviceID;
         mJoystickLastUsed = true;
-        MWBase::Environment::get().getLuaManager()->inputEvent({ MWBase::LuaManager::InputEvent::ControllerReleased,
-            SDLUtil::sExtraControllerButtonOffset + arg.button });
+        if (extendedButton <= 255)
+            mBindingsManager->controllerButtonReleased(sGenericControllerDeviceId, evt);
+
+        MWBase::Environment::get().getLuaManager()->inputEvent(
+            { MWBase::LuaManager::InputEvent::ControllerReleased, extendedButton });
     }
 
     void ControllerManager::axisMoved(int deviceID, const SDL_ControllerAxisEvent& arg)

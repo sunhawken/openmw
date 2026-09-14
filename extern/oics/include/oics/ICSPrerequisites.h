@@ -68,7 +68,10 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define ICS_VERSION_MINOR 4
 #define ICS_VERSION_PATCH 0
 
-#define ICS_MAX_DEVICE_BUTTONS 30
+// Also used as the "unassigned" sentinel for button bindings. Raised well above the standard
+// gamepad button count so extra controller buttons (e.g. an MMO gamepad's additional keys, which
+// OpenMW surfaces as offset+rawIndex) can be bound to actions.
+#define ICS_MAX_DEVICE_BUTTONS 512
 
 namespace ICS
 {
