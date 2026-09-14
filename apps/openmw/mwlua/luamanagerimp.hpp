@@ -3,7 +3,9 @@
 
 #include <filesystem>
 #include <map>
+#include <mutex>
 #include <set>
+#include <vector>
 
 #include <osg/Stats>
 
@@ -183,6 +185,10 @@ namespace MWLua
 
         bool isSynchronizedUpdateRunning() const { return mRunningSynchronizedUpdates; }
 
+        void setCustomSkillsForStatsWindow(std::vector<MWBase::LuaManager::CustomSkillForStatsWindow> skills);
+        void clearCustomSkillsForStatsWindow();
+        std::vector<MWBase::LuaManager::CustomSkillForStatsWindow> getCustomSkillsForStatsWindow() const override;
+
     private:
         void initConfiguration(bool reload);
         LocalScripts* createLocalScripts(const MWWorld::Ptr& ptr,
@@ -256,6 +262,9 @@ namespace MWLua
         LuaUtil::InputTrigger::Registry mInputTriggers;
 
         LuaUtil::ScriptTracker mScriptTracker;
+
+        mutable std::mutex mCustomSkillsForStatsMutex;
+        std::vector<MWBase::LuaManager::CustomSkillForStatsWindow> mCustomSkillsForStatsWindow;
     };
 
 }

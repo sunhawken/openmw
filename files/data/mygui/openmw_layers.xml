@@ -8,17 +8,22 @@
     <Layer name="JournalBooks" type="ScalingLayer" pick="true">
         <Property key="Size" value="600 520"/>
     </Layer>
+    <Layer name="Dialogue" type="ScalingLayer" pick="true">
+        <Property key="Size" value="1280 720"/>
+    </Layer>
     <Layer name="Windows" overlapped="true" pick="true"/>
     <Layer name="DragAndDrop" overlapped="false" pick="false"/>
     <Layer name="DrowningBar" overlapped="false" pick="false"/>
     <Layer name="MainMenuBackground" overlapped="true" pick="true"/>
     <Layer name="MainMenu" overlapped="true" pick="true"/>
-    <Layer name="Settings" overlapped="true" pick="true"/>
+    <Layer name="Settings" type="ScalingLayer" pick="true"/>
+    <Layer name="SettingsPopup" type="ScalingLayer" pick="true"/>
     <Layer name="ControllerButtons" overlapped="true" pick="false"/>
     <Layer name="LoadingScreenBackground" overlapped="false" pick="true"/>
     <Layer name="LoadingScreen" overlapped="false" pick="true"/>
     <Layer name="Debug" overlapped="true" pick="true"/>
     <Layer name="Console" overlapped="true" pick="true"/>
+    <Layer name="SaveLoad" type="ScalingLayer" pick="true"/>
     <Layer name="Modal" overlapped="true" pick="true"/>
     <Layer name="Popup" overlapped="true" pick="true"/>
     <Layer name="Notification" overlapped="false" pick="false"/>

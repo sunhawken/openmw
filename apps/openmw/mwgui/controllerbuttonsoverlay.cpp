@@ -1,5 +1,9 @@
 #include "controllerbuttonsoverlay.hpp"
 
+#include <algorithm>
+#include <vector>
+
+#include <MyGUI_RenderManager.h>
 #include <MyGUI_Window.h>
 
 #include "../mwbase/environment.hpp"
@@ -59,6 +63,12 @@ namespace MWGui
         }
 
         getWidget(mHBox, "ButtonBox");
+        if (mHBox)
+        {
+            mDefaultOrder.reserve(mHBox->getChildCount());
+            for (size_t i = 0; i < mHBox->getChildCount(); ++i)
+                mDefaultOrder.push_back(mHBox->getChildAt(i));
+        }
     }
 
     int ControllerButtonsOverlay::getHeight()
@@ -67,16 +77,58 @@ namespace MWGui
         return window->getHeight();
     }
 
+    void ControllerButtonsOverlay::setAnchor(int margin)
+    {
+        MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>();
+        if (!window)
+            return;
+
+        const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+        const float scale = 0.85f;
+        const float targetWidth = viewSize.width * scale;
+        const float targetHeightFromWidth = targetWidth * 10.f / 16.f;
+        const float maxHeight = viewSize.height * scale;
+
+        int fixedWidth = static_cast<int>(targetWidth);
+        int fixedHeight = static_cast<int>(targetHeightFromWidth);
+        if (fixedHeight > maxHeight)
+        {
+            fixedHeight = static_cast<int>(maxHeight);
+            fixedWidth = static_cast<int>(fixedHeight * 16.f / 10.f);
+        }
+
+        const int fixedLeft = (viewSize.width - fixedWidth) / 2;
+        const int fixedTop = (viewSize.height - fixedHeight) / 2;
+
+        const int height = window->getHeight();
+        const int width = fixedWidth;
+        int left = fixedLeft;
+        int top = fixedTop + fixedHeight + margin;
+
+        if (top + height > viewSize.height)
+            top = std::max(0, viewSize.height - height);
+
+        window->setCoord(left, top, width, height);
+        if (mHBox)
+        {
+            const int horizontalPadding = 10;
+            mHBox->setCoord(MyGUI::IntCoord(horizontalPadding, 0, width - (horizontalPadding * 2), height));
+        }
+    }
+
     void ControllerButtonsOverlay::setButtons(ControllerButtons* buttons)
     {
         int buttonCount = 0;
         if (buttons != nullptr)
         {
+            updateButtonOrder(buttons->mXAfterB, buttons->mBLeftAlign, buttons->mXRightAlign);
             for (const auto& row : sButtonDefs)
                 buttonCount += updateButton(row.mButton, buttons->*(row.mField));
 
             mHBox->notifyChildrenSizeChanged();
         }
+        else
+            updateButtonOrder(false, false, false);
 
         setVisible(buttonCount > 0);
     }
@@ -102,5 +154,66 @@ namespace MWGui
             mButtons[button].mText->setCaptionWithReplacing(buttonStr);
             return 1;
         }
+    }
+
+    void ControllerButtonsOverlay::updateButtonOrder(bool xAfterB, bool bLeftAlign, bool xRightAlign)
+    {
+        if (!mHBox || mDefaultOrder.empty())
+            return;
+
+        if (mXAfterB == xAfterB && mBLeftAlign == bLeftAlign && mXRightAlign == xRightAlign)
+            return;
+
+        mXAfterB = xAfterB;
+        mBLeftAlign = bLeftAlign;
+        mXRightAlign = xRightAlign;
+        std::vector<MyGUI::Widget*> order = mDefaultOrder;
+        if (bLeftAlign)
+        {
+            auto aIt = std::find(order.begin(), order.end(), mButtons[Button_A].mHBox);
+            auto bIt = std::find(order.begin(), order.end(), mButtons[Button_B].mHBox);
+            if (aIt != order.end() && bIt != order.end() && std::next(aIt) != bIt)
+            {
+                MyGUI::Widget* bWidget = *bIt;
+                order.erase(bIt);
+                aIt = std::find(order.begin(), order.end(), mButtons[Button_A].mHBox);
+                order.insert(std::next(aIt), bWidget);
+            }
+        }
+        if (xRightAlign)
+        {
+            auto xIt = std::find(order.begin(), order.end(), mButtons[Button_X].mHBox);
+            auto spacerIt = std::find_if(order.begin(), order.end(),
+                [](MyGUI::Widget* widget) { return widget && widget->castType<Gui::Spacer>(false) != nullptr; });
+            if (xIt != order.end() && spacerIt != order.end())
+            {
+                MyGUI::Widget* xWidget = *xIt;
+                order.erase(xIt);
+                spacerIt = std::find_if(order.begin(), order.end(),
+                    [](MyGUI::Widget* widget) { return widget && widget->castType<Gui::Spacer>(false) != nullptr; });
+                order.insert(std::next(spacerIt), xWidget);
+            }
+        }
+        else if (xAfterB)
+        {
+            auto xIt = std::find(order.begin(), order.end(), mButtons[Button_X].mHBox);
+            auto bIt = std::find(order.begin(), order.end(), mButtons[Button_B].mHBox);
+            if (xIt != order.end() && bIt != order.end() && xIt != bIt)
+            {
+                MyGUI::Widget* xWidget = *xIt;
+                order.erase(xIt);
+                bIt = std::find(order.begin(), order.end(), mButtons[Button_B].mHBox);
+                order.insert(std::next(bIt), xWidget);
+            }
+        }
+
+        for (MyGUI::Widget* widget : order)
+        {
+            if (widget->getParent() == mHBox)
+                widget->detachFromWidget();
+        }
+        for (MyGUI::Widget* widget : order)
+            widget->attachToWidget(mHBox);
+        mHBox->notifyChildrenSizeChanged();
     }
 }

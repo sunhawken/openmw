@@ -18,9 +18,56 @@
 #include "../mwmechanics/npcstats.hpp"
 
 #include <components/esm3/loadclas.hpp>
+#include <components/esm3/loadnpc.hpp>
 #include <components/settings/values.hpp>
 
 #include "tooltips.hpp"
+
+namespace
+{
+    void setTrainingSkillToolTip(MyGUI::Widget* widget, const ESM::Skill& skill, const MWMechanics::NpcStats& stats)
+    {
+        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+        const ESM::Attribute* attr
+            = store.get<ESM::Attribute>().find(ESM::Attribute::indexToRefId(skill.mData.mAttribute));
+
+        widget->setUserString("ToolTipDynamic", "Stats");
+        widget->setUserString("ToolTipType", "Layout");
+        widget->setUserString("ToolTipLayout", "SkillToolTip");
+        widget->setUserString("Caption_SkillName", MyGUI::TextIterator::toTagsString(skill.mName));
+        widget->setUserString("Caption_SkillDescription", skill.mDescription);
+        widget->setUserString(
+            "Caption_SkillAttribute", "#{sGoverningAttribute}: " + MyGUI::TextIterator::toTagsString(attr->mName));
+        widget->setUserString("ImageTexture_SkillImage", skill.mIcon);
+        widget->setUserString("Range_SkillProgress", "100");
+
+        const MWMechanics::SkillValue& value = stats.getSkill(skill.mId);
+        const float base = value.getBase();
+        const float modified = value.getModified();
+        const std::string valueText = MyGUI::utility::toString(static_cast<int>(modified));
+
+        widget->setUserString("CollapsedLabel", MyGUI::TextIterator::toTagsString(skill.mName).asUTF8());
+        widget->setUserString("CollapsedValue", valueText);
+
+        if (base < 100.f)
+        {
+            MWWorld::Ptr player = MWMechanics::getPlayer();
+            float progressRequirement = stats.getSkillProgressRequirement(
+                skill.mId, *store.get<ESM::Class>().find(player.get<ESM::NPC>()->mBase->mClass));
+            int progressPercent = int(value.getProgress() / progressRequirement * 100.f + 0.5f);
+
+            widget->setUserString("Visible_SkillMaxed", "false");
+            widget->setUserString("Visible_SkillProgressVBox", "true");
+            widget->setUserString("Caption_SkillProgressText", MyGUI::utility::toString(progressPercent) + "/100");
+            widget->setUserString("RangePosition_SkillProgress", MyGUI::utility::toString(progressPercent));
+        }
+        else
+        {
+            widget->setUserString("Visible_SkillMaxed", "true");
+            widget->setUserString("Visible_SkillProgressVBox", "false");
+        }
+    }
+}
 
 namespace MWGui
 {
@@ -112,6 +159,7 @@ namespace MWGui
         const int lineHeight = Settings::gui().mFontSize + 2;
 
         mTrainingButtons.clear();
+        mTrainingHighlights.clear();
         for (size_t i = 0; i < skills.size(); ++i)
         {
             const ESM::Skill* skill = skills[i].first;
@@ -119,6 +167,17 @@ namespace MWGui
                 pcStats.getSkill(skill->mId).getBase() * gmst.find("iTrainingMod")->mValue.getInteger());
             price = std::max(1, price);
             price = MWBase::Environment::get().getMechanicsManager()->getBarterOffer(mPtr, price, true);
+
+            MyGUI::Widget* highlight = nullptr;
+            if (price <= playerGold && useControllerSelectionHighlight())
+            {
+                highlight = mTrainingOptions->createWidget<MyGUI::Widget>("ControllerHighlight",
+                    MyGUI::IntCoord(
+                        4, static_cast<int>(3 + i * lineHeight), mTrainingOptions->getWidth() - 10, lineHeight),
+                    MyGUI::Align::Default);
+                highlight->setNeedMouseFocus(false);
+                highlight->setVisible(false);
+            }
 
             MyGUI::Button* button = mTrainingOptions->createWidget<MyGUI::Button>(price <= playerGold
                     ? "SandTextButton"
@@ -134,17 +193,25 @@ namespace MWGui
 
             button->setSize(button->getTextSize().width + 12, button->getSize().height);
 
-            ToolTips::createSkillToolTip(button, skill->mId);
+            setTrainingSkillToolTip(button, *skill, pcStats);
 
             if (price <= playerGold)
+            {
                 mTrainingButtons.emplace_back(button);
+                if (highlight)
+                    mTrainingHighlights.emplace_back(highlight);
+            }
         }
 
         if (Settings::gui().mControllerMenus)
         {
             mControllerFocus = 0;
             if (mTrainingButtons.size() > 0)
+            {
                 mTrainingButtons[0]->setStateSelected(true);
+                if (useControllerSelectionHighlight() && !mTrainingHighlights.empty())
+                    mTrainingHighlights[0]->setVisible(true);
+            }
         }
 
         center();
@@ -241,6 +308,13 @@ namespace MWGui
         mTimeAdvancer.onFrame(dt);
     }
 
+    MyGUI::Widget* TrainingWindow::getControllerFocusTooltipWidget() const
+    {
+        if (mTrainingButtons.empty() || mControllerFocus >= mTrainingButtons.size())
+            return nullptr;
+        return mTrainingButtons[mControllerFocus];
+    }
+
     bool TrainingWindow::exit()
     {
         return !mTimeAdvancer.isRunning();
@@ -263,8 +337,12 @@ namespace MWGui
                 return true;
 
             setControllerFocus(mTrainingButtons, mControllerFocus, false);
+            if (useControllerSelectionHighlight() && mControllerFocus < mTrainingHighlights.size())
+                mTrainingHighlights[mControllerFocus]->setVisible(false);
             mControllerFocus = wrap(mControllerFocus, mTrainingButtons.size(), -1);
             setControllerFocus(mTrainingButtons, mControllerFocus, true);
+            if (useControllerSelectionHighlight() && mControllerFocus < mTrainingHighlights.size())
+                mTrainingHighlights[mControllerFocus]->setVisible(true);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
         {
@@ -272,10 +350,19 @@ namespace MWGui
                 return true;
 
             setControllerFocus(mTrainingButtons, mControllerFocus, false);
+            if (useControllerSelectionHighlight() && mControllerFocus < mTrainingHighlights.size())
+                mTrainingHighlights[mControllerFocus]->setVisible(false);
             mControllerFocus = wrap(mControllerFocus, mTrainingButtons.size(), 1);
             setControllerFocus(mTrainingButtons, mControllerFocus, true);
+            if (useControllerSelectionHighlight() && mControllerFocus < mTrainingHighlights.size())
+                mTrainingHighlights[mControllerFocus]->setVisible(true);
         }
 
         return true;
+    }
+
+    bool TrainingWindow::useControllerSelectionHighlight() const
+    {
+        return Settings::gui().mControllerMenus && Settings::gui().mControllerHighlightSelections;
     }
 }

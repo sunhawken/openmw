@@ -11,6 +11,7 @@ namespace LuaUi
     {
         static std::shared_ptr<Element> make(sol::table layout, bool menu, sol::optional<sol::table> options);
         static void erase(Element* element);
+        static void setLayerVisible(std::string_view layer, bool visible);
 
         template <class Callback>
         static void forEach(bool menu, Callback callback)

@@ -26,6 +26,7 @@ namespace MWGui
         MyGUI::TextBox* mPlayerGold;
 
         std::vector<MyGUI::Button*> mDestinationButtons;
+        std::vector<MyGUI::Widget*> mDestinationHighlights;
 
         MyGUI::ScrollView* mDestinationsView;
 
@@ -43,6 +44,7 @@ namespace MWGui
     private:
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
         size_t mControllerFocus = 0;
+        bool useControllerSelectionHighlight() const;
     };
 }
 

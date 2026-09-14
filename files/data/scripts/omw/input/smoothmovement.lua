@@ -31,11 +31,14 @@ local function shouldAlwaysRun(actor)
     return actor.controls.sneak or not NPC.isOnGround(actor) or NPC.isSwimming(actor)
 end
 
-local function remapToWalkRun(actor, inputMovement)
+local function remapToWalkRun(actor, inputMovement, allowRunning)
     if shouldAlwaysRun(actor) then
         return true, inputMovement
     end
     local normalizedInput, inputSpeed = inputMovement:normalize()
+    if not allowRunning then
+        return false, normalizedInput * math.min(1, inputSpeed)
+    end
     local switchPoint = 0.5
     if inputSpeed < switchPoint then
         return false, inputMovement * 2
@@ -51,7 +54,10 @@ local function computeSmoothMovement()
         input.getAxisValue(input.CONTROLLER_AXIS.MoveForwardBackward),
         input.getAxisValue(input.CONTROLLER_AXIS.MoveLeftRight)
     )
-    return remapToWalkRun(self, controllerInput)
+    local alwaysRun = settings:get('alwaysRun')
+    local invertAlwaysRun = input.isActionPressed(input.ACTION.Run)
+    local allowRunning = alwaysRun ~= invertAlwaysRun
+    return remapToWalkRun(self, controllerInput, allowRunning)
 end
 
 local function bindSmoothMove(key, axis, direction)
@@ -84,7 +90,9 @@ input.bindAction('Run', async:callback(function(_, run)
     end
     local smoothRun, movement = computeSmoothMovement()
     if movement:length2() > 0 then
-        -- ignore always run
+        -- playercontrols.lua computes the final run state as:
+        --   self.controls.run = RunActionValue ~= settings.alwaysRun
+        -- So here we convert the desired run state (from the joystick magnitude) into a Run action value.
         return smoothRun ~= settings:get('alwaysRun')
     else
         return run

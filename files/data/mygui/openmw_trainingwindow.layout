@@ -23,6 +23,7 @@
         <Widget type="AutoSizedButton" skin="MW_Button" position="246 161 60 24" name="OkButton" align="Right Top">
             <Property key="ExpandDirection" value="Left"/>
             <Property key="Caption" value="#{Interface:OK}"/>
+            <Property key="Visible" value="false"/>
         </Widget>
 
     </Widget>

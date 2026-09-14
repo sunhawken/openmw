@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_Dialog" layer="Windows" position="0 0 560 448" align="Center" name="_Main">
+    <Widget type="Window" skin="MW_Dialog" layer="Windows" position="0 0 522 305" align="Center" name="_Main">
 
-        <Widget type="HBox" position="12 9 273 30">
+        <Widget type="HBox" position="11 9 209 29">
             <Property key="Spacing" value="8"/>
 
             <Widget type="AutoSizedTextBox" skin="NormalText">
@@ -13,7 +13,7 @@
                 <UserString key="Caption_Text" value="#{sEnchantmentHelp8}"/>
             </Widget>
 
-            <Widget type="EditBox" skin="MW_TextEdit" position="0 0 30 30" name="NameEdit">
+            <Widget type="EditBox" skin="MW_TextEdit" position="0 0 29 29" name="NameEdit">
                 <UserString key="HStretch" value="true"/>
             </Widget>
 
@@ -24,7 +24,7 @@
 
         <!-- Item -->
 
-        <Widget type="HBox" position="12 48 265 59">
+        <Widget type="HBox" position="11 46 251 56">
             <Property key="Spacing" value="8"/>
 
             <Widget type="AutoSizedTextBox" skin="NormalText">
@@ -33,7 +33,7 @@
                 <UserString key="ToolTipLayout" value="TextToolTip"/>
                 <UserString key="Caption_Text" value="#{sEnchantmentHelp1}"/>
             </Widget>
-            <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="ItemBox">
+            <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 47 47" name="ItemBox">
             </Widget>
 
             <Widget type="Spacer"/>
@@ -44,13 +44,30 @@
                 <UserString key="ToolTipLayout" value="TextToolTip"/>
                 <UserString key="Caption_Text" value="#{sEnchantmentHelp2}"/>
             </Widget>
-            <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="SoulBox">
+            <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 47 47" name="SoulBox">
             </Widget>
 
         </Widget>
 
         <!-- Values -->
-        <Widget type="VBox" position="320 7 222 96">
+        <Widget type="VBox" position="304 7 201 116">
+            <!-- Price block moved here (was the Constant effect block) -->
+            <Widget type="HBox" position="11 76 209 27">
+                <Property key="Spacing" value="8"/>
+                <UserString key="HStretch" value="true"/>
+                <Widget type="AutoSizedTextBox" skin="NormalText" name="PriceTextLabel">
+                    <Property key="Caption" value="#{sBarterDialog7}"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                    <UserString key="Caption_Text" value="#{sEnchantmentHelp6}"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="PriceLabel">
+                    <Property key="Caption" value="0"/>
+                    <Property key="TextAlign" value="Right VCenter"/>
+                    <UserString key="HStretch" value="true"/>
+                </Widget>
+            </Widget>
+
             <Widget type="HBox">
                 <UserString key="HStretch" value="true"/>
                 <Widget type="AutoSizedTextBox" skin="NormalText">
@@ -93,9 +110,18 @@
                     <UserString key="HStretch" value="true"/>
                 </Widget>
             </Widget>
+
+            <!-- Constant effect moved here (was the Price block) -->
+            <Widget type="HBox">
+                <UserString key="HStretch" value="true"/>
+                <Widget type="Button" skin="MW_Button" name="TypeButton" position="0 0 201 22">
+                    <Property key="Caption" value="Constant effect"/>
+                </Widget>
+            </Widget>
+
             <Widget type="HBox" name="ChanceLayout">
                 <UserString key="HStretch" value="true"/>
-                <Widget type="AutoSizedTextBox" skin="NormalText">
+                <Widget type="AutoSizedTextBox" skin="SandText">
                     <Property key="Caption" value="#{sEnchantmentMenu6}:"/>
                 </Widget>
                 <Widget type="AutoSizedTextBox" skin="SandText" name="SuccessChance">
@@ -107,56 +133,42 @@
         </Widget>
 
         <!-- Available effects -->
-        <Widget type="TextBox" skin="NormalText" position="12 109 300 24">
+        <Widget type="TextBox" skin="NormalText" position="11 104 285 22">
             <Property key="Caption" value="#{sMagicEffects}"/>
             <UserString key="ToolTipType" value="Layout"/>
             <UserString key="ToolTipLayout" value="TextToolTip"/>
             <UserString key="Caption_Text" value="#{sEnchantmentHelp9}"/>
         </Widget>
-        <Widget type="MWList" skin="MW_SimpleList" position="12 136 202 269" name="AvailableEffects">
+        <Widget type="MWList" skin="MW_SimpleList" position="11 130 192 154" name="AvailableEffects">
         </Widget>
 
         <!-- Used effects -->
-        <Widget type="TextBox" skin="NormalText" position="226 109 300 24">
+        <Widget type="TextBox" skin="NormalText" position="215 104 235 22">
             <Property key="Caption" value="#{sEffects}"/>
             <UserString key="ToolTipType" value="Layout"/>
             <UserString key="ToolTipLayout" value="TextToolTip"/>
             <UserString key="Caption_Text" value="#{sEnchantmentHelp10}"/>
         </Widget>
-        <Widget type="Widget" skin="MW_Box" position="226 136 316 269">
-            <Widget type="ScrollView" skin="MW_ScrollViewH" position="4 4 308 261" name="UsedEffects">
+        <Widget type="Widget" skin="MW_Box" position="215 130 291 154">
+            <Widget type="ScrollView" skin="MW_ScrollView" position="3 3 283 146" name="UsedEffects">
                 <Property key="CanvasAlign" value="Left Top"/>
             </Widget>
         </Widget>
 
-        <Widget type="HBox" position="0 392 558 60">
-            <Property key="Padding" value="16"/>
-
-            <Widget type="AutoSizedButton" skin="MW_Button" name="TypeButton">
-                <Property key="Caption" value="Constant effect"/>
-                <UserString key="ToolTipType" value="Layout"/>
-                <UserString key="ToolTipLayout" value="TextToolTip"/>
-                <UserString key="Caption_Text" value="#{sEnchantmentHelp7}"/>
+        <Widget type="HBox" position="0 270 530 57">
+            <Property key="Padding" value="11"/>
+            <Widget type="HBox">
+                <UserString key="HStretch" value="true"/>
             </Widget>
-
             <Widget type="Spacer"/>
-
-            <Widget type="AutoSizedTextBox" skin="NormalText" name="PriceTextLabel">
-                <Property key="Caption" value="#{sBarterDialog7}"/>
-                <UserString key="ToolTipType" value="Layout"/>
-                <UserString key="ToolTipLayout" value="TextToolTip"/>
-                <UserString key="Caption_Text" value="#{sEnchantmentHelp6}"/>
-            </Widget>
-            <Widget type="AutoSizedTextBox" skin="SandText" name="PriceLabel">
-                <Property key="Caption" value="0"/>
-            </Widget>
-
             <Widget type="AutoSizedButton" skin="MW_Button" name="BuyButton">
                 <Property key="Caption" value="#{sBuy}"/>
+                <Property key="Visible" value="false"/>
             </Widget>
 
             <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
                 <Property key="Caption" value="#{Interface:Cancel}"/>
+                <Property key="Visible" value="false"/>
             </Widget>
         </Widget>
 

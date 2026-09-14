@@ -4,6 +4,8 @@
 #include <MyGUI_ImageBox.h>
 #include <MyGUI_Window.h>
 
+#include <components/settings/values.hpp>
+
 #include "../mwbase/environment.hpp"
 #include "../mwbase/inputmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
@@ -11,12 +13,15 @@
 namespace MWGui
 {
     InventoryTabsOverlay::InventoryTabsOverlay()
-        : WindowBase("openmw_inventory_tabs.layout")
+        : WindowBase(
+            Settings::gui().mXboxTabOrder ? "openmw_inventory_tabs_xbox.layout" : "openmw_inventory_tabs.layout")
     {
         MyGUI::Button* tab;
-        constexpr std::string_view kTabIds[] = { "TabMap", "TabInventory", "TabSpells", "TabStats" };
+        constexpr std::string_view kDefaultTabIds[] = { "TabMap", "TabInventory", "TabSpells", "TabStats" };
+        constexpr std::string_view kXboxTabIds[] = { "TabInventory", "TabSpells", "TabMap", "TabStats" };
+        const auto& tabIds = Settings::gui().mXboxTabOrder ? kXboxTabIds : kDefaultTabIds;
 
-        for (const std::string_view id : kTabIds)
+        for (const std::string_view id : tabIds)
         {
             getWidget(tab, id);
             tab->eventMouseButtonClick += MyGUI::newDelegate(this, &InventoryTabsOverlay::onTabClicked);

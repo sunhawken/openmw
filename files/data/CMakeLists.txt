@@ -11,6 +11,9 @@ set(BUILTIN_DATA_FILES
     textures/omw_menu_scroll_center_h.dds
     textures/omw_menu_scroll_center_v.dds
     textures/omw_menu_icon_active.dds
+    textures/tx_cursor.dds
+    textures/H-RESIZE.dds
+    textures/V-RESIZE.dds
     textures/omw_psx_button_circle.dds
     textures/omw_psx_button_dpad.dds
     textures/omw_psx_button_square.dds
@@ -19,11 +22,13 @@ set(BUILTIN_DATA_FILES
     textures/omw_steam_button_a.dds
     textures/omw_steam_button_b.dds
     textures/omw_steam_button_dpad.dds
+    textures/omw_steam_button_l.dds
     textures/omw_steam_button_l1.dds
     textures/omw_steam_button_l2.dds
     textures/omw_steam_button_l3.dds
     textures/omw_steam_button_lstick.dds
     textures/omw_steam_button_menu.dds
+    textures/omw_steam_button_r.dds
     textures/omw_steam_button_r1.dds
     textures/omw_steam_button_r2.dds
     textures/omw_steam_button_r3.dds
@@ -31,19 +36,37 @@ set(BUILTIN_DATA_FILES
     textures/omw_steam_button_view.dds
     textures/omw_steam_button_x.dds
     textures/omw_steam_button_y.dds
+    textures/omw_switch_button_a.dds
+    textures/omw_switch_button_b.dds
     textures/omw_switch_button_l.dds
     textures/omw_switch_button_r.dds
+    textures/omw_switch_button_x.dds
+    textures/omw_switch_button_y.dds
     textures/omw_switch_button_zl.dds
     textures/omw_switch_button_zr.dds
     textures/omw_xbox_button_lb.dds
+    textures/omw_xbox_button_lb_WHITE.dds
     textures/omw_xbox_button_lt.dds
     textures/omw_xbox_button_rb.dds
+    textures/omw_xbox_button_rb_BLACK.dds
     textures/omw_xbox_button_rt.dds
+    textures/omw_gamecube_button_a.dds
+    textures/omw_gamecube_button_b.dds
+    textures/omw_gamecube_button_x.dds
+    textures/omw_gamecube_button_y.dds
+    textures/omw_gamecube_button_lstick.dds
+    textures/omw_gamecube_button_lt.dds
+    textures/omw_gamecube_button_rt.dds
+    textures/omw_gamecube_button_Z.dds
     textures/omw/water_nm.png
 
     fonts/DejaVuFontLicense.txt
     fonts/DejaVuLGCSansMono.ttf
     fonts/DejaVuLGCSansMono.omwfont
+    fonts/MontserratMedium.ttf
+    fonts/MontserratMedium.omwfont
+    fonts/MontserratSemiBold.ttf
+    fonts/MontserratSemiBold.omwfont
     fonts/DemonicLetters.ttf
     fonts/DemonicLetters.omwfont
     fonts/DemonicLettersFontLicense.txt
@@ -157,6 +180,7 @@ set(BUILTIN_DATA_FILES
     scripts/omw/mwui/space.lua
     scripts/omw/mwui/init.lua
     scripts/omw/skillhandlers.lua
+    scripts/omw/skillframework_stats_bridge.lua
     scripts/omw/crimes.lua
     scripts/omw/ui.lua
     scripts/omw/usehandlers.lua
@@ -176,6 +200,7 @@ set(BUILTIN_DATA_FILES
     mygui/core.xml
     mygui/core_layouteditor.xml
     mygui/openmw_alchemy_window.layout
+    mygui/openmw_alchemy_window_xbox.layout
     mygui/openmw_book.layout
     mygui/openmw_box.skin.xml
     mygui/openmw_button.skin.xml
@@ -194,6 +219,8 @@ set(BUILTIN_DATA_FILES
     mygui/openmw_console.skin.xml
     mygui/openmw_container_window.layout
     mygui/openmw_controllerbuttons.layout
+    textures/tx_goldicon.dds
+    textures/weight.dds
     mygui/openmw_count_window.layout
     mygui/openmw_dialogue_window.layout
     mygui/openmw_dialogue_window.skin.xml
@@ -205,6 +232,7 @@ set(BUILTIN_DATA_FILES
     mygui/openmw_interactive_messagebox.layout
     mygui/openmw_interactive_messagebox_notransp.layout
     mygui/openmw_inventory_tabs.layout
+    mygui/openmw_inventory_tabs_xbox.layout
     mygui/openmw_inventory_window.layout
     mygui/openmw_journal.layout
     mygui/openmw_journal.skin.xml
@@ -229,6 +257,13 @@ set(BUILTIN_DATA_FILES
     mygui/openmw_text.skin.xml
     mygui/openmw_tooltips.layout
     mygui/openmw_trade_window.layout
+    mygui/openmw_virtual_keyboard.layout
+    mygui/Keyboard/de.yaml
+    mygui/Keyboard/en.yaml
+    mygui/Keyboard/fr.yaml
+    mygui/Keyboard/pl.yaml
+    mygui/Keyboard/ru.yaml
+    mygui/Keyboard/sv.yaml
     mygui/openmw_spell_buying_window.layout
     mygui/openmw_windows.skin.xml
     mygui/openmw_quickkeys_menu.layout
@@ -254,6 +289,7 @@ set(BUILTIN_DATA_FILES
     mygui/openmw_screen_fader.layout
     mygui/openmw_screen_fader_hit.layout
     mygui/openmw_edit_note.layout
+    mygui/openmw_edit_note_xbox.layout
     mygui/openmw_debug_window.layout
     mygui/openmw_debug_window.skin.xml
     mygui/openmw_postprocessor_hud.layout

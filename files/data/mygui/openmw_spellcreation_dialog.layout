@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_Dialog" layer="Windows" position="0 0 560 394" align="Center" name="_Main">
+    <Widget type="Window" skin="MW_Dialog" layer="Windows" position="0 0 479 335" align="Center" name="_Main">
 
-        <Widget type="HBox" position="12 12 250 30">
+        <Widget type="HBox" position="10 10 213 26">
             <Widget type="AutoSizedTextBox" skin="NormalText">
                 <Property key="Caption" value="#{sName}"/>
                 <UserString key="ToolTipType" value="Layout"/>
@@ -11,62 +11,62 @@
                 <UserString key="Caption_Text" value="#{sSpellmakingHelp1}"/>
             </Widget>
 
-            <Widget type="EditBox" skin="MW_TextEdit" position="0 0 30 30" name="NameEdit">
+            <Widget type="EditBox" skin="MW_TextEdit" position="0 0 26 26" name="NameEdit">
                 <UserString key="HStretch" value="true"/>
             </Widget>
 
             <Widget type="Widget"/>
         </Widget>
 
-        <Widget type="TextBox" skin="NormalText" position="280 0 300 24">
+        <Widget type="TextBox" skin="NormalText" position="238 5 255 20">
             <Property key="Caption" value="#{sEnchantmentMenu4}"/>
             <Property key="TextAlign" value="Left HCenter"/>
             <UserString key="ToolTipType" value="Layout"/>
             <UserString key="ToolTipLayout" value="TextToolTip"/>
             <UserString key="Caption_Text" value="#{sSpellmakingHelp2}"/>
         </Widget>
-        <Widget type="TextBox" skin="SandText" position="280 0 258 24" name="MagickaCost">
+        <Widget type="TextBox" skin="SandText" position="238 5 219 20" name="MagickaCost">
             <Property key="TextAlign" value="Right HCenter"/>
             <Property key="NeedMouse" value="false"/>
         </Widget>
 
-        <Widget type="TextBox" skin="NormalText" position="280 24 300 24">
+        <Widget type="TextBox" skin="NormalText" position="238 20 255 20">
             <Property key="Caption" value="#{sSpellmakingMenu1}"/>
             <Property key="TextAlign" value="Left HCenter"/>
             <UserString key="ToolTipType" value="Layout"/>
             <UserString key="ToolTipLayout" value="TextToolTip"/>
             <UserString key="Caption_Text" value="#{sSpellmakingHelp3}"/>
         </Widget>
-        <Widget type="TextBox" skin="SandText" position="280 24 258 24" name="SuccessChance">
+        <Widget type="TextBox" skin="SandText" position="238 20 219 20" name="SuccessChance">
             <Property key="TextAlign" value="Right HCenter"/>
             <Property key="NeedMouse" value="false"/>
         </Widget>
 
         <!-- Available effects -->
-        <Widget type="TextBox" skin="NormalText" position="12 48 300 24">
+        <Widget type="TextBox" skin="NormalText" position="10 41 255 20">
             <Property key="Caption" value="#{sMagicEffects}"/>
             <UserString key="ToolTipType" value="Layout"/>
             <UserString key="ToolTipLayout" value="TextToolTip"/>
             <UserString key="Caption_Text" value="#{sSpellmakingHelp5}"/>
         </Widget>
-        <Widget type="MWList" skin="MW_SimpleList" position="12 76 202 269" name="AvailableEffects">
+        <Widget type="MWList" skin="MW_SimpleList" position="10 65 172 229" name="AvailableEffects">
         </Widget>
 
         <!-- Used effects -->
-        <Widget type="TextBox" skin="NormalText" position="226 48 300 24">
+        <Widget type="TextBox" skin="NormalText" position="192 41 255 20">
             <Property key="Caption" value="#{sEffects}"/>
             <UserString key="ToolTipType" value="Layout"/>
             <UserString key="ToolTipLayout" value="TextToolTip"/>
             <UserString key="Caption_Text" value="#{sSpellmakingHelp6}"/>
         </Widget>
-        <Widget type="Widget" skin="MW_Box" position="226 76 316 269">
-            <Widget type="ScrollView" skin="MW_ScrollViewH" position="4 4 308 261" name="UsedEffects">
+        <Widget type="Widget" skin="MW_Box" position="192 65 269 229">
+            <Widget type="ScrollView" skin="MW_ScrollView" position="3 3 262 222" name="UsedEffects">
                 <Property key="CanvasAlign" value="Left Top"/>
             </Widget>
         </Widget>
 
-        <Widget type="HBox" position="0 336 558 60">
-            <Property key="Padding" value="16"/>
+        <Widget type="HBox" position="0 286 474 51">
+            <Property key="Padding" value="14"/>
 
             <Widget type="AutoSizedTextBox" skin="NormalText" name="PlayerGoldTextBox">
                 <Property key="Caption" value="#{sGold}"/>
@@ -76,23 +76,26 @@
             <Widget type="AutoSizedTextBox" skin="SandText" name="PlayerGold"/>
             <Widget type="Spacer"/>
 
-            <Widget type="AutoSizedTextBox" skin="NormalText">
+
+            <Widget type="AutoSizedButton" skin="MW_Button" name="BuyButton">
+				<Property key="Visible" value="False"/>
+                <Property key="Caption" value="#{sBuy}"/>
+            </Widget>
+
+            <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+			<Property key="Visible" value="False"/>
+                <Property key="Caption" value="#{Interface:Cancel}"/>
+            </Widget>
+			<Widget type="AutoSizedTextBox" skin="NormalText">
                 <Property key="Caption" value="#{sBarterDialog7}"/>
                 <UserString key="ToolTipType" value="Layout"/>
                 <UserString key="ToolTipLayout" value="TextToolTip"/>
                 <UserString key="Caption_Text" value="#{sSpellmakingHelp4}"/>
             </Widget>
-            <Widget type="AutoSizedTextBox" skin="SandText" name="PriceLabel">
-            </Widget>
+			<Widget type="AutoSizedTextBox" skin="SandText" name="PriceLabel">
+				<Property key="TextAlign" value="Right HCenter"/>
+			</Widget>
 
-
-            <Widget type="AutoSizedButton" skin="MW_Button" name="BuyButton">
-                <Property key="Caption" value="#{sBuy}"/>
-            </Widget>
-
-            <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
-                <Property key="Caption" value="#{Interface:Cancel}"/>
-            </Widget>
         </Widget>
 
     </Widget>

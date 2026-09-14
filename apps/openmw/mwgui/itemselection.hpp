@@ -32,6 +32,7 @@ namespace MWGui
         void setCategory(int category);
         void setFilter(int filter);
 
+        ItemView* getItemView() const { return mItemView; }
         SortFilterItemModel* getSortModel() { return mSortModel; }
 
     private:

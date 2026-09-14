@@ -41,7 +41,7 @@ namespace MWGui
         if (Settings::gui().mControllerMenus)
         {
             mDisableGamepadCursor = true;
-            mControllerButtons.mA = "#{Interface:Travel}";
+            mControllerButtons.mA = "#{Interface:Select}";
             mControllerButtons.mB = "#{Interface:Cancel}";
         }
     }
@@ -84,6 +84,15 @@ namespace MWGui
 
         const int lineHeight = Settings::gui().mFontSize + 2;
 
+        MyGUI::Widget* highlight = nullptr;
+        if (price <= playerGold && useControllerSelectionHighlight())
+        {
+            highlight = mDestinationsView->createWidget<MyGUI::Widget>(
+                "ControllerHighlight", 0, mCurrentY, 200, lineHeight, MyGUI::Align::Default);
+            highlight->setNeedMouseFocus(false);
+            highlight->setVisible(false);
+        }
+
         MyGUI::Button* toAdd = mDestinationsView->createWidget<MyGUI::Button>(
             "SandTextButton", 0, mCurrentY, 200, lineHeight, MyGUI::Align::Default);
         toAdd->setEnabled(price <= playerGold);
@@ -102,7 +111,14 @@ namespace MWGui
         toAdd->setUserData(pos);
         toAdd->eventMouseButtonClick += MyGUI::newDelegate(this, &TravelWindow::onTravelButtonClick);
         if (price <= playerGold)
+        {
             mDestinationButtons.emplace_back(toAdd);
+            if (highlight)
+            {
+                highlight->setSize(mDestinationsView->getWidth(), lineHeight);
+                mDestinationHighlights.emplace_back(highlight);
+            }
+        }
     }
 
     void TravelWindow::clearDestinations()
@@ -112,6 +128,7 @@ namespace MWGui
         while (mDestinationsView->getChildCount())
             MyGUI::Gui::getInstance().destroyWidget(mDestinationsView->getChildAt(0));
         mDestinationButtons.clear();
+        mDestinationHighlights.clear();
     }
 
     void TravelWindow::setPtr(const MWWorld::Ptr& actor)
@@ -161,7 +178,11 @@ namespace MWGui
         {
             mControllerFocus = 0;
             if (mDestinationButtons.size() > 0)
+            {
                 mDestinationButtons[0]->setStateSelected(true);
+                if (useControllerSelectionHighlight() && !mDestinationHighlights.empty())
+                    mDestinationHighlights[0]->setVisible(true);
+            }
         }
 
         // Canvas size must be expressed with VScroll disabled, otherwise MyGUI would expand the scroll area when the
@@ -278,8 +299,12 @@ namespace MWGui
                 return true;
 
             setControllerFocus(mDestinationButtons, mControllerFocus, false);
+            if (useControllerSelectionHighlight() && mControllerFocus < mDestinationHighlights.size())
+                mDestinationHighlights[mControllerFocus]->setVisible(false);
             mControllerFocus = wrap(mControllerFocus, mDestinationButtons.size(), -1);
             setControllerFocus(mDestinationButtons, mControllerFocus, true);
+            if (useControllerSelectionHighlight() && mControllerFocus < mDestinationHighlights.size())
+                mDestinationHighlights[mControllerFocus]->setVisible(true);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
         {
@@ -287,8 +312,12 @@ namespace MWGui
                 return true;
 
             setControllerFocus(mDestinationButtons, mControllerFocus, false);
+            if (useControllerSelectionHighlight() && mControllerFocus < mDestinationHighlights.size())
+                mDestinationHighlights[mControllerFocus]->setVisible(false);
             mControllerFocus = wrap(mControllerFocus, mDestinationButtons.size(), 1);
             setControllerFocus(mDestinationButtons, mControllerFocus, true);
+            if (useControllerSelectionHighlight() && mControllerFocus < mDestinationHighlights.size())
+                mDestinationHighlights[mControllerFocus]->setVisible(true);
         }
 
         // Scroll the list to keep the active item in view
@@ -301,5 +330,10 @@ namespace MWGui
         }
 
         return true;
+    }
+
+    bool TravelWindow::useControllerSelectionHighlight() const
+    {
+        return Settings::gui().mControllerMenus && Settings::gui().mControllerHighlightSelections;
     }
 }

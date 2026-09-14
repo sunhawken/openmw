@@ -666,6 +666,75 @@ namespace MWLua
         sol::table statsApi(lua, sol::create);
         auto* vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
 
+        statsApi["_setCustomSkillsForStatsWindow"] = [vfs, luaManager = context.mLuaManager](const sol::table& skills) {
+            std::vector<MWBase::LuaManager::CustomSkillForStatsWindow> parsed;
+            parsed.reserve(skills.size());
+
+            for (const auto& [_, value] : skills)
+            {
+                if (!value.is<sol::table>())
+                    continue;
+                sol::table t = value.as<sol::table>();
+
+                const std::string id = LuaUtil::getFieldOrNil(t, "id").is<std::string>()
+                    ? LuaUtil::getFieldOrNil(t, "id").as<std::string>()
+                    : std::string{};
+                const std::string name = LuaUtil::getFieldOrNil(t, "name").is<std::string>()
+                    ? LuaUtil::getFieldOrNil(t, "name").as<std::string>()
+                    : std::string{};
+                if (id.empty() || name.empty())
+                    continue;
+
+                MWBase::LuaManager::CustomSkillForStatsWindow s;
+                s.mId = id;
+                s.mName = name;
+
+                if (sol::object desc = LuaUtil::getFieldOrNil(t, "description"); desc.is<std::string>())
+                    s.mDescription = desc.as<std::string>();
+                if (sol::object icon = LuaUtil::getFieldOrNil(t, "icon"); icon.is<std::string>())
+                {
+                    s.mIconPath
+                        = Misc::ResourceHelpers::correctIconPath(VFS::Path::toNormalized(icon.as<std::string>()), *vfs);
+                }
+                if (sol::object attr = LuaUtil::getFieldOrNil(t, "attribute"); attr.is<std::string>())
+                    s.mAttributeId = attr.as<std::string>();
+                if (sol::object subsection = LuaUtil::getFieldOrNil(t, "subsection"); subsection.is<std::string>())
+                    s.mSubsection = subsection.as<std::string>();
+
+                if (sol::object base = LuaUtil::getFieldOrNil(t, "base"); base.is<int>())
+                    s.mBase = base.as<int>();
+                else if (sol::object baseNum = LuaUtil::getFieldOrNil(t, "base"); baseNum.is<double>())
+                    s.mBase = static_cast<int>(baseNum.as<double>());
+
+                if (sol::object modified = LuaUtil::getFieldOrNil(t, "modified"); modified.is<int>())
+                    s.mModified = modified.as<int>();
+                else if (sol::object modNum = LuaUtil::getFieldOrNil(t, "modified"); modNum.is<double>())
+                    s.mModified = static_cast<int>(modNum.as<double>());
+                else
+                    s.mModified = s.mBase;
+
+                if (sol::object progress = LuaUtil::getFieldOrNil(t, "progress"); progress.is<double>())
+                    s.mProgress = static_cast<float>(progress.as<double>());
+                else if (sol::object progressNum = LuaUtil::getFieldOrNil(t, "progress"); progressNum.is<int>())
+                    s.mProgress = static_cast<float>(progressNum.as<int>());
+
+                if (sol::object max = LuaUtil::getFieldOrNil(t, "maxLevel"); max.is<int>())
+                    s.mMaxLevel = max.as<int>();
+                else if (sol::object maxNum = LuaUtil::getFieldOrNil(t, "maxLevel"); maxNum.is<double>())
+                    s.mMaxLevel = static_cast<int>(maxNum.as<double>());
+
+                if (sol::object visible = LuaUtil::getFieldOrNil(t, "visible"); visible.is<bool>())
+                    s.mVisible = visible.as<bool>();
+
+                parsed.push_back(std::move(s));
+            }
+
+            luaManager->setCustomSkillsForStatsWindow(std::move(parsed));
+        };
+
+        statsApi["_clearCustomSkillsForStatsWindow"]
+            = [luaManager = context.mLuaManager]() { luaManager->clearCustomSkillsForStatsWindow(); };
+
         sol::table attributes(lua, sol::create);
         addRecordFunctionBinding<ESM::Attribute>(attributes, context);
         statsApi["Attribute"] = LuaUtil::makeReadOnly(attributes);

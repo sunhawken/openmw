@@ -5,6 +5,8 @@
 
 #include <osgViewer/Viewer>
 
+#include <cmath>
+
 namespace SDLUtil
 {
 
@@ -47,8 +49,14 @@ namespace SDLUtil
         SDL_GetWindowSize(mSDLWindow, &w, &h);
         int dw, dh;
         SDL_GL_GetDrawableSize(mSDLWindow, &dw, &dh);
-        mScaleX = static_cast<Uint16>(dw / w);
-        mScaleY = static_cast<Uint16>(dh / h);
+        if (w > 0)
+            mScaleX = static_cast<float>(dw) / static_cast<float>(w);
+        else
+            mScaleX = 1.f;
+        if (h > 0)
+            mScaleY = static_cast<float>(dh) / static_cast<float>(h);
+        else
+            mScaleY = 1.f;
     }
 
     void InputWrapper::capture(bool windowEventsOnly)
@@ -381,7 +389,7 @@ namespace SDLUtil
             return false;
 
         // this was a warp event, signal the caller to eat it.
-        if (evt.x == mWarpX && evt.y == mWarpY)
+        if (std::abs(evt.x - mWarpX) <= 1 && std::abs(evt.y - mWarpY) <= 1)
         {
             mWarpCompensate = false;
             return true;
@@ -418,16 +426,16 @@ namespace SDLUtil
     MouseMotionEvent InputWrapper::_packageMouseMotion(const SDL_Event& evt)
     {
         MouseMotionEvent packEvt = {};
-        packEvt.x = mMouseX * mScaleX;
-        packEvt.y = mMouseY * mScaleY;
+        packEvt.x = mMouseX;
+        packEvt.y = mMouseY;
         packEvt.z = mMouseZ;
 
         if (evt.type == SDL_MOUSEMOTION)
         {
-            packEvt.x = mMouseX = evt.motion.x * mScaleX;
-            packEvt.y = mMouseY = evt.motion.y * mScaleY;
-            packEvt.xrel = evt.motion.xrel * mScaleX;
-            packEvt.yrel = evt.motion.yrel * mScaleY;
+            packEvt.x = mMouseX = static_cast<Sint32>(std::lround(evt.motion.x * mScaleX));
+            packEvt.y = mMouseY = static_cast<Sint32>(std::lround(evt.motion.y * mScaleY));
+            packEvt.xrel = static_cast<Sint32>(std::lround(evt.motion.xrel * mScaleX));
+            packEvt.yrel = static_cast<Sint32>(std::lround(evt.motion.yrel * mScaleY));
             packEvt.type = SDL_MOUSEMOTION;
             if (mFirstMouseMove)
             {

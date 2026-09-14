@@ -36,6 +36,11 @@ namespace MWGui
         void setActiveControllerWindow(bool active);
         int getControllerFocus() { return mControllerFocus; }
         int getItemCount() { return mItemCount; }
+        void setControllerFocusIndex(int index);
+        void setControllerFocusToItem(const MWWorld::Ptr& item);
+        bool isControllerFocusTopRow() const;
+        bool isControllerFocusBottomRow() const;
+        void refreshControllerFocus();
         void onControllerButton(const unsigned char button);
 
     private:

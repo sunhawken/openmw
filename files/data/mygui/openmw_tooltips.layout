@@ -4,11 +4,11 @@
     <Widget type="Widget" layer="Popup" position="0 0 300 300" name="_Main">
 
         <!-- Dynamically constructed tooltip goes here -->
-        <Widget type="Widget" skin="HUD_Box_NoTransp" position="0 0 300 300" align="Stretch" name="DynamicToolTipBox">
+        <Widget type="Widget" skin="HUD_Box" position="0 0 300 300" align="Stretch" name="DynamicToolTipBox">
         </Widget>
 
         <!-- Text tooltip, one line -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 300 300" align="Stretch" name="TextToolTipOneLine">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 300 300" align="Stretch" name="TextToolTipOneLine">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
 
@@ -18,7 +18,7 @@
         </Widget>
 
         <!-- Text tooltip, multiline -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 0" align="Stretch" name="TextToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 0" align="Stretch" name="TextToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="6"/>
 
@@ -30,7 +30,7 @@
         </Widget>
 
         <!-- Faction tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 0" align="Stretch" name="FactionToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 0" align="Stretch" name="FactionToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
 
@@ -38,11 +38,12 @@
                 <Property key="MultiLine" value="true"/>
                 <Property key="WordWrap" value="true"/>
                 <Property key="TextAlign" value="Left Top"/>
+                <UserString key="HStretch" value="true"/>
             </Widget>
         </Widget>
 
         <!-- Race tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 56" align="Stretch" name="RaceToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 56" align="Stretch" name="RaceToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
             <Property key="Spacing" value="8"/>
@@ -56,20 +57,22 @@
                 <Property key="MultiLine" value="true"/>
                 <Property key="Shrink" value="true"/>
                 <Property key="WordWrap" value="true"/>
-                <Property key="TextAlign" value="Left Top"/>
+                <Property key="TextAlign" value="Center Top"/>
+                <UserString key="HStretch" value="true"/>
             </Widget>
         </Widget>
 
         <!-- Specialization tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 56" align="Stretch" name="SpecializationToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 56" align="Stretch" name="SpecializationToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
 
-            <Widget type="AutoSizedTextBox" skin="NormalText" position="8 8 140 18" align="Left Top" name="Caption">
-                <Property key="TextAlign" value="Center"/>
+            <Widget type="AutoSizedTextBox" skin="NormalText" position="8 8 0 18" align="Left Top HStretch" name="Caption">
+                <Property key="TextAlign" value="Left Top"/>
+                <UserString key="HStretch" value="true"/>
             </Widget>
 
-            <Widget type="AutoSizedEditBox" skin="SandText" position="0 30 140 18" align="Left Top" name="ColumnText">
+            <Widget type="AutoSizedEditBox" skin="SandText" position="8 30 0 18" align="Left Top" name="ColumnText">
                 <Property key="MultiLine" value="true"/>
                 <Property key="WordWrap" value="true"/>
                 <Property key="TextAlign" value="Left Top"/>
@@ -77,7 +80,7 @@
         </Widget>
 
         <!-- Class tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 78" align="Stretch" name="ClassToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 78" align="Stretch" name="ClassToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
             <Property key="Spacing" value="8"/>
@@ -91,7 +94,8 @@
                 <Property key="MultiLine" value="true"/>
                 <Property key="Shrink" value="true"/>
                 <Property key="WordWrap" value="true"/>
-                <Property key="TextAlign" value="Left Top"/>
+                <Property key="TextAlign" value="Center Top"/>
+                <UserString key="HStretch" value="true"/>
             </Widget>
 
             <Widget type="AutoSizedTextBox" skin="SandText" position="8 52 0 18" align="Left Bottom" name="ClassSpecialisation">
@@ -101,7 +105,7 @@
         </Widget>
 
         <!-- Hand-to-hand tooltip -->
-        <Widget type="HBox" skin="HUD_Box_NoTransp" position="0 0 300 300" align="Stretch" name="HandToHandToolTip">
+        <Widget type="HBox" skin="HUD_Box" position="0 0 300 300" align="Stretch" name="HandToHandToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="6"/>
 
@@ -117,7 +121,7 @@
         </Widget>
 
         <!-- Health/Magicka/Fatigue tooltip -->
-        <Widget type="HBox" skin="HUD_Box_NoTransp" position="0 0 0 0" align="Stretch" name="HealthToolTip">
+        <Widget type="HBox" skin="HUD_Box" position="0 0 0 0" align="Stretch" name="HealthToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="14"/>
             <Property key="Spacing" value="8"/>
@@ -138,7 +142,7 @@
         </Widget>
 
         <!-- Attribute tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 0" align="Stretch" name="AttributeToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 0" align="Stretch" name="AttributeToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
             <Property key="Spacing" value="8"/>
@@ -164,7 +168,7 @@
         </Widget>
 
         <!-- Skill tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 98" align="Stretch" name="SkillToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 98" align="Stretch" name="SkillToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
 
@@ -218,7 +222,7 @@
         </Widget>
 
         <!-- Skill tooltip (without progress bar) -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 52" align="Stretch" name="SkillNoProgressToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 52" align="Stretch" name="SkillNoProgressToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
 
@@ -251,7 +255,7 @@
         </Widget>
 
         <!-- Level tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 300 58" align="HStretch" name="LevelToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 300 58" align="HStretch" name="LevelToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
 
@@ -272,7 +276,7 @@
         </Widget>
 
         <!-- Birthsign tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 0" align="Stretch" name="BirthSignToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 0" align="Stretch" name="BirthSignToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="10"/>
 
@@ -305,7 +309,7 @@
         </Widget>
 
         <!-- Magic effect tooltip -->
-        <Widget type="VBox" skin="HUD_Box_NoTransp" position="0 0 0 0" align="Stretch" name="MagicEffectToolTip">
+        <Widget type="VBox" skin="HUD_Box" position="0 0 0 0" align="Stretch" name="MagicEffectToolTip">
             <Property key="AutoResize" value="true"/>
             <Property key="Padding" value="8"/>
 

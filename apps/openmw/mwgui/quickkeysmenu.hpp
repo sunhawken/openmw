@@ -47,6 +47,7 @@ namespace MWGui
         void clear() override;
 
         std::string_view getWindowIdForLua() const override { return "QuickKeys"; }
+        MyGUI::Widget* getControllerFocusTooltipWidget() const;
 
     private:
         struct keyData

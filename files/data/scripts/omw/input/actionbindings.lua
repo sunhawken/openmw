@@ -79,13 +79,16 @@ input.bindAction('Run', async:callback(function(_, value)
     local controllerInput = util.vector2(
         input.getAxisValue(input.CONTROLLER_AXIS.MoveForwardBackward),
         input.getAxisValue(input.CONTROLLER_AXIS.MoveLeftRight)
-    ):length2()
+    ):length()
     return value or controllerInput > 0.25
 end), {})
 
 input.bindAction('Use', async:callback(function()
     -- The value "0.6" shouldn't exceed the triggering threshold in BindingsManager::actionValueChanged.
     -- TODO: Move more logic from BindingsManager to Lua and consider to make this threshold configurable.
+    if input.isActionPressed(input.ACTION.ToggleSpell) or input.isActionPressed(input.ACTION.ToggleWeapon) then
+        return false
+    end
     return input.isActionPressed(input.ACTION.Use) or input.getAxisValue(input.CONTROLLER_AXIS.TriggerRight) >= 0.6
 end), {})
 

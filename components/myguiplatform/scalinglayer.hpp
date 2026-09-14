@@ -22,6 +22,7 @@ namespace MyGUIPlatform
         void renderToTarget(MyGUI::IRenderTarget* target, bool update) override;
 
         void resizeView(const MyGUI::IntSize& viewSize) override;
+        void setLayerSize(const MyGUI::IntSize& viewSize);
 
         static float getScaleFactor(const MyGUI::IntSize& layerViewSize);
 
