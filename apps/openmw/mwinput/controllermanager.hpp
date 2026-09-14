@@ -3,6 +3,7 @@
 
 #include <array>
 #include <filesystem>
+#include <set>
 #include <string>
 
 #include <components/sdlutil/events.hpp>
@@ -71,6 +72,11 @@ namespace MWInput
         // standard SDL game-controller button by the active mapping (so it is handled by the
         // controller path and must not be re-emitted as an "extra" button).
         bool isMappedJoystickButton(SDL_JoystickID which, int button) const;
+
+        // Currently-held extra (non-standard) controller buttons, stored as their extended ids
+        // (sExtraControllerButtonOffset + rawIndex). Lets input.isControllerButtonPressed() report
+        // their state so polling-based mods can use them.
+        std::set<int> mHeldExtraButtons;
 
         BindingsManager* mBindingsManager;
         MouseManager* mMouseManager;
