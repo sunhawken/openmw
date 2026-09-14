@@ -2818,14 +2818,29 @@ namespace MWWorld
         {
             const Files::MultiDirCollection& col
                 = fileCollections.getCollection(Misc::getFileExtension(file));
-            if (col.doesExist(file))
+            // Fail-safe: never let a single bad content file crash the whole game to desktop.
+            // A file listed in the load order can be missing (a mod/master the user removed),
+            // or present but unloadable (its parent master is gone, it was ordered wrong, or it
+            // is corrupt). In every such case, log the problem and skip just that file, still
+            // incrementing idx so the remaining content files keep their expected plugin index.
+            // Records that depended on the skipped file may be absent, but the game still starts.
+            if (!col.doesExist(file))
             {
-                gameContentLoader.load(col.getPath(file), idx, listener);
+                Log(Debug::Error) << "Skipping missing content file \"" << file
+                                  << "\": not found in the data directories. Records that depend on it may be absent.";
             }
             else
             {
-                std::string message = "Failed loading " + file + ": the content file does not exist";
-                throw std::runtime_error(message);
+                try
+                {
+                    gameContentLoader.load(col.getPath(file), idx, listener);
+                }
+                catch (const std::exception& e)
+                {
+                    Log(Debug::Error) << "Skipping content file \"" << file
+                                      << "\" after a load error (a required master may be missing or out of order): "
+                                      << e.what();
+                }
             }
             idx++;
         }
