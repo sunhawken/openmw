@@ -1,5 +1,6 @@
 #include "bookpage.hpp"
 
+#include <algorithm>
 #include <optional>
 
 #include "MyGUI_FactoryManager.h"
@@ -14,12 +15,17 @@
 
 namespace
 {
+    int getJournalUiFontHeight()
+    {
+        return std::max(1, Settings::gui().mJournalFontSize.get());
+    }
+
     std::optional<MyGUI::GlyphInfo> getGlyphInfo(MyGUI::IFont* font, MyGUI::Char ch)
     {
         const MyGUI::GlyphInfo* gi = font->getGlyphInfo(ch);
         if (!gi)
             return {};
-        const float scale = font->getDefaultHeight() / static_cast<float>(Settings::gui().mFontSize);
+        const float scale = font->getDefaultHeight() / static_cast<float>(getJournalUiFontHeight());
         MyGUI::GlyphInfo info = *gi;
         info.bearingX /= scale;
         info.bearingY /= scale;
@@ -631,7 +637,7 @@ namespace MWGui
             if (mPartialWhitespace.empty() && mPartialWord.empty())
                 return;
 
-            const int fontHeight = Settings::gui().mFontSize;
+            const int fontHeight = getJournalUiFontHeight();
             int spaceWidth = 0;
             int wordWidth = 0;
 
@@ -1023,6 +1029,57 @@ namespace MWGui
             mNode = nullptr;
         }
 
+        bool getFocusItemRect(MyGUI::IntRect& rect) const
+        {
+            if (!mBook || mFocusItem == nullptr)
+                return false;
+
+            bool found = false;
+            MyGUI::IntRect focusRect;
+
+            for (const TypesetBookImpl::Section& section : mBook->mSections)
+            {
+                for (const TypesetBookImpl::Line& line : section.mLines)
+                {
+                    if (line.mRect.bottom <= mViewTop || line.mRect.top >= mViewBottom)
+                        continue;
+
+                    for (const TypesetBookImpl::Run& run : line.mRuns)
+                    {
+                        if (run.mStyle != mFocusItem)
+                            continue;
+
+                        const int left = mCoord.left + section.mRect.left + line.mRect.left + run.mLeft;
+                        const int right = mCoord.left + section.mRect.left + line.mRect.left + run.mRight;
+                        const int top = mCoord.top - mViewTop + line.mRect.top;
+                        const int bottom = mCoord.top - mViewTop + line.mRect.bottom;
+
+                        MyGUI::IntRect runRect(left, top, right, bottom);
+                        if (!found)
+                        {
+                            focusRect = runRect;
+                            found = true;
+                        }
+                        else
+                        {
+                            focusRect.left = std::min(focusRect.left, runRect.left);
+                            focusRect.top = std::min(focusRect.top, runRect.top);
+                            focusRect.right = std::max(focusRect.right, runRect.right);
+                            focusRect.bottom = std::max(focusRect.bottom, runRect.bottom);
+                        }
+                    }
+                }
+            }
+
+            if (!found)
+                return false;
+
+            focusRect.left -= 2;
+            focusRect.right += 2;
+            rect = focusRect;
+            return true;
+        }
+
         void dirtyFocusItem()
         {
             if (mFocusItem != nullptr)
@@ -1354,12 +1411,14 @@ namespace MWGui
     public:
         BookPageImpl()
             : mPageDisplay(nullptr)
+            , mControllerHighlight(nullptr)
         {
         }
 
         void showPage(std::shared_ptr<TypesetBook> book, size_t page) override
         {
             mPageDisplay->showPage(std::move(book), page);
+            updateControllerHighlight();
         }
 
         void adviseLinkClicked(std::function<void(TypesetBook::InteractiveId)> linkClicked) override
@@ -1376,6 +1435,30 @@ namespace MWGui
         {
             mPageDisplay->mFocusItem = static_cast<TypesetBookImpl::StyleImpl*>(itemStyle);
             mPageDisplay->dirtyFocusItem();
+            updateControllerHighlight();
+        }
+
+        void setFocusByInteractiveId(TypesetBook::InteractiveId id) override
+        {
+            if (!mPageDisplay || !mPageDisplay->mBook)
+                return;
+
+            TypesetBookImpl::StyleImpl* focus = nullptr;
+            if (id != 0)
+            {
+                for (TypesetBookImpl::StyleImpl& style : mPageDisplay->mBook->mStyles)
+                {
+                    if (style.mInteractiveId == id)
+                    {
+                        focus = &style;
+                        break;
+                    }
+                }
+            }
+
+            mPageDisplay->mFocusItem = focus;
+            mPageDisplay->dirtyFocusItem();
+            updateControllerHighlight();
         }
 
     protected:
@@ -1391,6 +1474,11 @@ namespace MWGui
             {
                 throw std::runtime_error("BookPage unable to find page display sub widget");
             }
+
+            mControllerHighlight = createWidget<MyGUI::Widget>(
+                "ControllerHighlight", MyGUI::IntCoord(0, 0, 0, 0), MyGUI::Align::Default);
+            mControllerHighlight->setNeedMouseFocus(false);
+            mControllerHighlight->setVisible(false);
         }
 
         void onMouseLostFocus(MyGUI::Widget* /*newWidget*/) override
@@ -1412,7 +1500,29 @@ namespace MWGui
             mPageDisplay->onMouseButtonReleased(left, top, id);
         }
 
+        void updateControllerHighlight()
+        {
+            if (!mControllerHighlight)
+                return;
+
+            if (!Settings::gui().mControllerMenus || !Settings::gui().mControllerHighlightSelections)
+            {
+                mControllerHighlight->setVisible(false);
+                return;
+            }
+
+            MyGUI::IntRect rect;
+            if (mPageDisplay && mPageDisplay->getFocusItemRect(rect))
+            {
+                mControllerHighlight->setCoord(rect.left, rect.top, rect.width(), rect.height());
+                mControllerHighlight->setVisible(true);
+            }
+            else
+                mControllerHighlight->setVisible(false);
+        }
+
         PageDisplay* mPageDisplay;
+        MyGUI::Widget* mControllerHighlight;
     };
 
     void BookPage::registerMyGUIComponents()

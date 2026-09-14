@@ -84,6 +84,7 @@ namespace Gui
     {
         if (getAlign().isHStretch())
             throw std::runtime_error("AutoSizedEditBox can't have HStretch align (" + getName() + ")");
+        forceTextUpdate();
         return MyGUI::IntSize(getWidth(), getTextSize().height);
     }
 
@@ -93,6 +94,42 @@ namespace Gui
         mWasResized = false;
 
         notifySizeChange(this);
+    }
+
+    void AutoSizedEditBox::setSize(const MyGUI::IntSize& value)
+    {
+        EditBox::setSize(value);
+        if (value.width != mMaxWidth)
+        {
+            mMaxWidth = value.width;
+            mWasResized = false;
+        }
+    }
+
+    void AutoSizedEditBox::setCoord(const MyGUI::IntCoord& value)
+    {
+        EditBox::setCoord(value);
+        if (value.width != mMaxWidth)
+        {
+            mMaxWidth = value.width;
+            mWasResized = false;
+        }
+    }
+
+    void AutoSizedEditBox::setCoord(int left, int top, int width, int height)
+    {
+        EditBox::setCoord(left, top, width, height);
+        if (width != mMaxWidth)
+        {
+            mMaxWidth = width;
+            mWasResized = false;
+        }
+    }
+
+    void AutoSizedEditBox::forceTextUpdate()
+    {
+        if (auto* text = getSubWidgetText()->castType<MyGUI::EditText>(false))
+            text->updateRawData();
     }
 
     void AutoSizedEditBox::initialiseOverride()
@@ -232,14 +269,6 @@ namespace Gui
             if (hidden)
                 continue;
 
-            bool vstretch = w->getUserString("VStretch") == "true";
-            int maxHeight = getClientCoord().height - mPadding * 2;
-            int height = vstretch ? maxHeight : sizes[i].first.height;
-
-            MyGUI::IntCoord widgetCoord;
-            widgetCoord.left = curX;
-            widgetCoord.top = mPadding + (getClientCoord().height - mPadding * 2 - height) / 2;
-
             int width = 0;
             if (sizes[i].second)
             {
@@ -249,6 +278,25 @@ namespace Gui
             }
             else
                 width = sizes[i].first.width;
+
+            bool vstretch = w->getUserString("VStretch") == "true";
+            int maxHeight = getClientCoord().height - mPadding * 2;
+            int height = vstretch ? maxHeight : sizes[i].first.height;
+
+            if (!vstretch && sizes[i].second)
+            {
+                if (auto* aw = dynamic_cast<AutoSizedWidget*>(w); aw && width != sizes[i].first.width)
+                {
+                    w->setSize(MyGUI::IntSize(width, w->getHeight()));
+                    if (auto* edit = dynamic_cast<AutoSizedEditBox*>(w))
+                        edit->forceTextUpdate();
+                    height = aw->getRequestedSize().height;
+                }
+            }
+
+            MyGUI::IntCoord widgetCoord;
+            widgetCoord.left = curX;
+            widgetCoord.top = mPadding + (getClientCoord().height - mPadding * 2 - height) / 2;
 
             widgetCoord.width = width;
             widgetCoord.height = height;
@@ -386,14 +434,6 @@ namespace Gui
             if (hidden)
                 continue;
 
-            bool hstretch = w->getUserString("HStretch") == "true";
-            int maxWidth = getClientCoord().width - mPadding * 2;
-            int width = hstretch ? maxWidth : sizes[i].first.width;
-
-            MyGUI::IntCoord widgetCoord;
-            widgetCoord.top = curY;
-            widgetCoord.left = mPadding + (getClientCoord().width - mPadding * 2 - width) / 2;
-
             int height = 0;
             if (sizes[i].second)
             {
@@ -404,6 +444,25 @@ namespace Gui
             }
             else
                 height = sizes[i].first.height;
+
+            bool hstretch = w->getUserString("HStretch") == "true";
+            int maxWidth = getClientCoord().width - mPadding * 2;
+            int width = hstretch ? maxWidth : sizes[i].first.width;
+
+            if (!sizes[i].second && hstretch)
+            {
+                if (auto* aw = dynamic_cast<AutoSizedWidget*>(w); aw && width != sizes[i].first.width)
+                {
+                    w->setSize(MyGUI::IntSize(width, w->getHeight()));
+                    if (auto* edit = dynamic_cast<AutoSizedEditBox*>(w))
+                        edit->forceTextUpdate();
+                    height = aw->getRequestedSize().height;
+                }
+            }
+
+            MyGUI::IntCoord widgetCoord;
+            widgetCoord.top = curY;
+            widgetCoord.left = mPadding + (getClientCoord().width - mPadding * 2 - width) / 2;
 
             widgetCoord.height = height;
             widgetCoord.width = width;

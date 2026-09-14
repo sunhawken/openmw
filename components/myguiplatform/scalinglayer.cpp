@@ -114,6 +114,11 @@ namespace MyGUIPlatform
         // do nothing
     }
 
+    void ScalingLayer::setLayerSize(const MyGUI::IntSize& viewSize)
+    {
+        mViewSize = viewSize;
+    }
+
     void ScalingLayer::deserialization(MyGUI::xml::ElementPtr node, MyGUI::Version version)
     {
         MyGUI::OverlappedLayer::deserialization(node, version);

@@ -50,6 +50,8 @@ namespace Gui
         void scrollToTop();
         void setViewOffset(int offset);
 
+        void setItemHighlightVisible(size_t index, bool visible);
+
         void setPropertyOverride(std::string_view key, std::string_view value) override;
 
     protected:
@@ -64,6 +66,8 @@ namespace Gui
         MyGUI::ScrollView* mScrollView;
         MyGUI::Widget* mClient;
         std::string mListItemSkin;
+        std::string mControllerHighlightSkin;
+        std::vector<MyGUI::Widget*> mItemHighlights;
 
         struct ListItemData
         {

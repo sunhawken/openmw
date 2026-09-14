@@ -27,11 +27,13 @@ namespace MWGui
     {
         DialogueWindow* mWindow;
         bool mNeedMargin;
+        bool mResetHistory;
 
     public:
-        ResponseCallback(DialogueWindow* win, bool needMargin = true)
+        ResponseCallback(DialogueWindow* win, bool needMargin = true, bool resetHistory = false)
             : mWindow(win)
             , mNeedMargin(needMargin)
+            , mResetHistory(resetHistory)
         {
         }
 
@@ -70,8 +72,10 @@ namespace MWGui
 
         std::vector<MyGUI::Button*> mButtons;
         size_t mControllerFocus = 0;
+        MyGUI::Widget* mControllerFocusHighlight = nullptr;
 
         void adjustAction(MyGUI::Widget* action, int& totalHeight);
+        void updateControllerFocusHighlight();
 
         void onCancel(MyGUI::Widget* sender);
         void onPersuade(MyGUI::Widget* sender);
@@ -160,9 +164,14 @@ namespace MWGui
 
         void updateTopics();
 
+        void onOpen() override;
         void onClose() override;
 
         std::string_view getWindowIdForLua() const override { return "Dialogue"; }
+        std::string getActorName() const;
+        int getDisposition() const;
+        int getDispositionBarWidth() const;
+        bool hasActor() const;
 
     protected:
         void updateTopicsPane();
@@ -184,12 +193,20 @@ namespace MWGui
         void onReferenceUnavailable() override;
 
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
+        bool onControllerThumbstickEvent(const SDL_ControllerAxisEvent& arg) override;
 
     private:
+        friend class ResponseCallback;
+
+        void resetFixedWindowGeometry();
+        MyGUI::IntCoord getFixedWindowCoord(const MyGUI::IntSize& viewSize) const;
         void updateDisposition();
+        void updateControllerScrollButtons();
         void restock();
         void deleteLater();
         void redrawTopicsList();
+        void setTopicHighlight(size_t index, bool visible);
+        void updateLayoutSizes();
 
         bool mIsCompanion;
         std::list<std::string> mKeywords;
@@ -207,6 +224,8 @@ namespace MWGui
         MWDialogue::KeywordSearch mKeywordSearch;
 
         BookPage* mHistory;
+        MyGUI::Widget* mHistoryBox;
+        MyGUI::Widget* mHistoryContainer;
         Gui::MWList* mTopicsList;
         MyGUI::ScrollBar* mScrollBar;
         MyGUI::ProgressBar* mDispositionBar;
@@ -223,6 +242,7 @@ namespace MWGui
         void setControllerFocus(size_t index, bool focused);
         size_t mControllerFocus = 0;
         int mControllerChoice = -1;
+        float mControllerNavUpDelay = 0.f;
 
         void updateTopicFormat();
     };

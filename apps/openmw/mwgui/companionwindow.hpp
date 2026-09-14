@@ -76,6 +76,8 @@ namespace MWGui
         void onOpen() override;
 
         void onClose() override;
+
+        void resetFixedWindowGeometry();
     };
 
 }

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <MyGUI type="Layout" version="3.2.0">
-    <Widget type="Window" skin="MW_DialogNoTransp" position="0 0 600 128" align="Center" layer="Modal" name="_Main">
+    <Widget type="Window" skin="MW_DialogNoTransp" position="0 0 600 108" align="Center" layer="Modal" name="_Main">
         <Property key="Visible" value="false"/>
         <Widget type="TextBox" skin="SandText" position="0 4 592 24" align="Left Top HStretch" name="LabelText">
             <Property key="TextAlign" value="Center"/>
@@ -20,9 +20,11 @@
             <Widget type="Spacer" />
             <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 53 28" align="Left Top" name="OkButton">
                 <Property key="Caption" value="#{Interface:OK}"/>
+				<Property key="Visible" value="false"/>
             </Widget>
             <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 86 28" align="Right Top" name="CancelButton">
                 <Property key="Caption" value="#{Interface:Cancel}"/>
+				<Property key="Visible" value="false"/>
             </Widget>
             <Widget type="Spacer" />
         </Widget>

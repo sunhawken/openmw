@@ -475,6 +475,25 @@ int MWMechanics::Alchemy::addIngredient(const MWWorld::Ptr& ingredient)
     return slot;
 }
 
+int MWMechanics::Alchemy::setIngredient(size_t index, const MWWorld::Ptr& ingredient)
+{
+    if (index >= mIngredients.size())
+        return -1;
+
+    for (size_t i = 0; i < mIngredients.size(); ++i)
+    {
+        if (i != index && !mIngredients[i].isEmpty()
+            && ingredient.getCellRef().getRefId() == mIngredients[i].getCellRef().getRefId())
+        {
+            return -1;
+        }
+    }
+
+    mIngredients[index] = ingredient;
+    updateEffects();
+    return static_cast<int>(index);
+}
+
 void MWMechanics::Alchemy::removeIngredient(size_t index)
 {
     if (index < mIngredients.size())

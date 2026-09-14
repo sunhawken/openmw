@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <MyGUI type="Layout">
-    <Widget type="VBox" skin="MW_Dialog" layer="Windows" position="0 0 330 385" align="Center" name="_Main">
-        <Property key="Padding" value="8"/>
-        <Property key="Spacing" value="8"/>
+    <Widget type="VBox" skin="MW_Dialog" layer="Windows" position="0 0 330 327" align="Center" name="_Main">
+        <Property key="Padding" value="4"/>
+        <Property key="Spacing" value="4"/>
 
         <Widget type="AutoSizedTextBox" skin="SandText" name="Label">
             <Property key="Caption" value="#{sRepairServiceTitle}"/>
@@ -38,6 +38,7 @@
 
                <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
                    <Property key="Caption" value="#{Interface:Cancel}"/>
+		   <Property key="Visible" value="false"/>
                </Widget>
         </Widget>
     </Widget>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_Dialog" layer="Modal" position="0 0 491 316" align="Center" name="_Main">
+    <Widget type="Window" skin="MW_Dialog" layer="Modal" position="0 0 491 296" align="Center" name="_Main">
 
         <!-- Class list -->
         <Widget type="ListBox" skin="MW_List" position="8 8 194 138" name="ClassList"/>
@@ -73,10 +73,7 @@
         </Widget>
 
         <!-- Dialog buttons -->
-        <Widget type="HBox" position="0 276 475 28">
-            <Widget type="AutoSizedButton" skin="MW_Button" name="RerollButton">
-                <Property key="Caption" value="Reroll"/>
-            </Widget>
+        <Widget type="HBox" position="0 0 0 0">
             <Widget type="Spacer"/>
             <Widget type="AutoSizedButton" skin="MW_Button" name="BackButton">
                 <Property key="Caption" value="#{sBack}"/>

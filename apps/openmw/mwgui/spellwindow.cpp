@@ -1,6 +1,7 @@
 #include "spellwindow.hpp"
 
-#include <MyGUI_EditBox.h>
+#include <MyGUI_Gui.h>
+#include <MyGUI_ImageBox.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_RenderManager.h>
 #include <MyGUI_Window.h>
@@ -11,6 +12,7 @@
 #include <components/settings/values.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/inputmanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
@@ -42,30 +44,42 @@ namespace MWGui
     {
         mSpellIcons = std::make_unique<SpellIcons>();
 
-        MyGUI::Widget* deleteButton;
-        getWidget(deleteButton, "DeleteSpellButton");
-
         getWidget(mSpellView, "SpellView");
         getWidget(mEffectBox, "EffectsBox");
-        getWidget(mFilterEdit, "FilterEdit");
+        if (mEffectBox)
+        {
+            mEffectIcons.clear();
+            mEffectIconCoords.clear();
+        }
 
         mSpellView->eventSpellClicked += MyGUI::newDelegate(this, &SpellWindow::onModelIndexSelected);
-        mFilterEdit->eventEditTextChange += MyGUI::newDelegate(this, &SpellWindow::onFilterChanged);
-        deleteButton->eventMouseButtonClick += MyGUI::newDelegate(this, &SpellWindow::onDeleteClicked);
 
         setCoord(498, 300, 302, 300);
-
-        // Adjust the spell filtering widget size because of MyGUI limitations.
-        int filterWidth = mSpellView->getSize().width - deleteButton->getSize().width - 3;
-        mFilterEdit->setSize(filterWidth, mFilterEdit->getSize().height);
 
         if (Settings::gui().mControllerMenus)
         {
             setPinButtonVisible(false);
+            mControllerButtons = {};
             mControllerButtons.mA = "#{Interface:Select}";
             mControllerButtons.mB = "#{Interface:Back}";
-            mControllerButtons.mR3 = "#{Interface:Info}";
+            mControllerButtons.mY = "#{Interface:Info}";
+            mControllerButtons.mX = "#{Interface:Delete}";
+            mControllerButtons.mL2 = "#{Interface:Inventory}";
+            mControllerButtons.mR2 = Settings::gui().mXboxTabOrder ? "#{Interface:Map}" : "#{sStats}";
+            mDisableGamepadCursor = true;
         }
+    }
+
+    ControllerButtons* SpellWindow::getControllerButtons()
+    {
+        if (Settings::gui().mControllerMenus)
+        {
+            const bool skipMap = MWBase::Environment::get().getWindowManager()->isCrassifiedNavigationEnabled();
+            mControllerButtons.mL2 = "#{Interface:Inventory}";
+            mControllerButtons.mR2 = (Settings::gui().mXboxTabOrder && !skipMap) ? "#{Interface:Map}" : "#{sStats}";
+        }
+
+        return &mControllerButtons;
     }
 
     void SpellWindow::onPinToggled()
@@ -87,10 +101,7 @@ namespace MWGui
 
     void SpellWindow::onOpen()
     {
-        // Reset the filter focus when opening the window
-        MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
-        if (focus == mFilterEdit)
-            MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(nullptr);
+        resetFixedWindowGeometry();
 
         updateSpells();
     }
@@ -108,13 +119,25 @@ namespace MWGui
         // Update effects if the time is unpaused for any reason (e.g. the window is pinned)
         if (!MWBase::Environment::get().getWorld()->getTimeManager()->isPaused())
             mSpellIcons->updateWidgets(mEffectBox, false);
+        refreshEffectWidgets();
+        updateEffectsHighlight();
+    }
+
+    void SpellWindow::resetFixedWindowGeometry()
+    {
+        if (MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>(false))
+        {
+            MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            window->setCoord(getFixedWindowCoord(viewSize));
+        }
     }
 
     void SpellWindow::updateSpells()
     {
         mSpellIcons->updateWidgets(mEffectBox, false);
-
-        mSpellView->setModel(new SpellModel(MWMechanics::getPlayer(), mFilterEdit->getCaption()));
+        mSpellView->setModel(new SpellModel(MWMechanics::getPlayer()));
+        refreshEffectWidgets();
+        updateEffectsHighlight();
     }
 
     void SpellWindow::onEnchantedItemSelected(MWWorld::Ptr item, bool alreadyEquipped)
@@ -180,6 +203,7 @@ namespace MWGui
             std::string question{ windowManager->getGameSettingString("sQuestionDeleteSpell", "Delete %s?") };
             question = Misc::StringUtils::format(question, spell->mName);
             dialog->askForConfirmation(question);
+            dialog->setTooltipSourceWindow(this);
             dialog->eventOkClicked.clear();
             dialog->eventOkClicked += MyGUI::newDelegate(this, &SpellWindow::onDeleteSpellAccept);
             dialog->eventCancelClicked.clear();
@@ -200,22 +224,6 @@ namespace MWGui
             else
                 onSpellSelected(spell.mId);
         }
-    }
-
-    void SpellWindow::onFilterChanged(MyGUI::EditBox* sender)
-    {
-        mSpellView->setModel(new SpellModel(MWMechanics::getPlayer(), sender->getCaption()));
-    }
-
-    void SpellWindow::onDeleteClicked(MyGUI::Widget* widget)
-    {
-        SpellModel::ModelIndex selected = mSpellView->getModel()->getSelectedIndex();
-        if (selected < 0)
-            return;
-
-        const Spell& spell = mSpellView->getModel()->getItem(selected);
-        if (spell.mType != Spell::Type_EnchantedItem)
-            askDeleteSpell(spell.mId);
     }
 
     void SpellWindow::onSpellSelected(const ESM::RefId& spellId)
@@ -302,12 +310,83 @@ namespace MWGui
         }
     }
 
+    MyGUI::Widget* SpellWindow::getControllerFocusTooltipWidget() const
+    {
+        if (mEffectsFocusActive && mEffectsFocus < mEffectWidgets.size())
+        {
+            MyGUI::Widget* widget = mEffectWidgets[mEffectsFocus];
+            if (widget && widget->getVisible())
+                return widget;
+        }
+
+        return mSpellView ? mSpellView->getControllerFocusWidget() : nullptr;
+    }
+
+    MyGUI::Widget* SpellWindow::getEffectWidgetAt(const MyGUI::IntPoint& pos) const
+    {
+        for (MyGUI::Widget* widget : mEffectWidgets)
+        {
+            if (widget && widget->getVisible() && widget->getAbsoluteCoord().inside(pos))
+                return widget;
+        }
+
+        return nullptr;
+    }
+
     bool SpellWindow::onControllerButtonEvent(const SDL_ControllerButtonEvent& arg)
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_B)
+        {
             MWBase::Environment::get().getWindowManager()->exitCurrentGuiMode();
+        }
         else
+        {
+            refreshEffectWidgets();
+            const bool hasEffects = !mEffectWidgets.empty();
+
+            if (mEffectsFocusActive)
+            {
+                if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)
+                {
+                    moveEffectsFocus(-1);
+                    return true;
+                }
+                if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
+                {
+                    moveEffectsFocus(1);
+                    return true;
+                }
+                if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
+                {
+                    setEffectsFocusActive(false);
+                    return true;
+                }
+                if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP || arg.button == SDL_CONTROLLER_BUTTON_A)
+                    return true;
+            }
+            else if (arg.button == SDL_CONTROLLER_BUTTON_X)
+            {
+                SpellModel* model = mSpellView ? mSpellView->getModel() : nullptr;
+                const size_t focusIndex = mSpellView ? mSpellView->getControllerFocusIndex() : 0;
+                if (model && focusIndex < model->getItemCount())
+                {
+                    const Spell& spell = model->getItem(static_cast<int>(focusIndex));
+                    if (spell.mType != Spell::Type_EnchantedItem)
+                    {
+                        askDeleteSpell(spell.mId);
+                        return true;
+                    }
+                }
+            }
+            else if (hasEffects && arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP
+                && (mSpellView->getControllerButtonCount() == 0 || mSpellView->isControllerAtTop()))
+            {
+                setEffectsFocusActive(true);
+                return true;
+            }
+
             mSpellView->onControllerButton(arg.button);
+        }
 
         return true;
     }
@@ -317,23 +396,192 @@ namespace MWGui
         MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
         if (winMgr->getMode() == MWGui::GM_Inventory)
         {
-            // Fill the screen, or limit to a certain size on large screens. Size chosen to
-            // match the size of the stats window.
             MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-            int width = std::min(viewSize.width, StatsWindow::getIdealWidth());
-            int height = std::min(winMgr->getControllerMenuHeight(), StatsWindow::getIdealHeight());
-            int x = (viewSize.width - width) / 2;
-            int y = (viewSize.height - height) / 2;
+            MyGUI::IntCoord coord = getFixedWindowCoord(viewSize);
 
             MyGUI::Window* window = mMainWidget->castType<MyGUI::Window>();
-            window->setCoord(x, active ? y : viewSize.height + 1, width, height);
+            window->setCoord(coord.left, active ? coord.top : viewSize.height + 1, coord.width, coord.height);
 
             MWBase::Environment::get().getWindowManager()->setControllerTooltipVisible(
                 active && Settings::gui().mControllerTooltips);
         }
 
-        mSpellView->setActiveControllerWindow(active);
+        if (mEffectsFocusActive)
+            mSpellView->setActiveControllerWindow(false);
+        else
+            mSpellView->setActiveControllerWindow(active);
 
         WindowBase::setActiveControllerWindow(active);
+        updateEffectsHighlight();
+    }
+
+    void SpellWindow::refreshEffectWidgets()
+    {
+        for (MyGUI::Widget* widget : mEffectWidgets)
+        {
+            if (widget)
+                MyGUI::Gui::getInstance().destroyWidget(widget);
+        }
+        mEffectWidgets.clear();
+        mEffectIcons.clear();
+        mEffectIconCoords.clear();
+
+        if (mSpellIcons && mEffectBox)
+        {
+            std::vector<MyGUI::ImageBox*> icons;
+            mSpellIcons->getVisibleWidgets(icons);
+
+            mEffectWidgets.reserve(icons.size());
+            mEffectIcons.reserve(icons.size());
+            mEffectIconCoords.reserve(icons.size());
+            for (MyGUI::ImageBox* icon : icons)
+            {
+                if (!icon || !icon->getVisible())
+                    continue;
+
+                MyGUI::IntCoord iconCoord = icon->getCoord();
+                const int baseSize = 16;
+                if (iconCoord.width != baseSize || iconCoord.height != baseSize)
+                {
+                    const int adjustX = (iconCoord.width - baseSize) / 2;
+                    const int adjustY = (iconCoord.height - baseSize) / 2;
+                    iconCoord.left += adjustX;
+                    iconCoord.top += adjustY;
+                    iconCoord.width = baseSize;
+                    iconCoord.height = baseSize;
+                    icon->setCoord(iconCoord);
+                }
+                MyGUI::Widget* hitbox = mEffectBox->createWidget<MyGUI::Widget>({}, iconCoord, MyGUI::Align::Default);
+                hitbox->setNeedMouseFocus(true);
+                hitbox->setNeedKeyFocus(true);
+                hitbox->setDepth(icon->getDepth() + 1);
+                hitbox->setAlpha(0.f);
+
+                hitbox->setUserString("ToolTipType", "ActiveEffect");
+                hitbox->setUserString("ActiveEffectName",
+                    icon->isUserString("ActiveEffectName") ? icon->getUserString("ActiveEffectName") : "");
+                hitbox->setUserString("ActiveEffectIcon",
+                    icon->isUserString("ActiveEffectIcon") ? icon->getUserString("ActiveEffectIcon") : "");
+                hitbox->setUserString("ActiveEffectDuration",
+                    icon->isUserString("ActiveEffectDuration") ? icon->getUserString("ActiveEffectDuration") : "");
+                hitbox->setUserString("ActiveEffectText",
+                    icon->isUserString("ActiveEffectText") ? icon->getUserString("ActiveEffectText") : "");
+
+                mEffectWidgets.push_back(hitbox);
+
+                mEffectIcons.push_back(icon);
+                mEffectIconCoords.push_back(iconCoord);
+            }
+        }
+
+        if (mEffectsFocus >= mEffectWidgets.size())
+            mEffectsFocus = mEffectWidgets.empty() ? 0 : mEffectWidgets.size() - 1;
+
+        if (mEffectsFocusActive && mEffectWidgets.empty())
+            setEffectsFocusActive(false);
+    }
+
+    void SpellWindow::setEffectsFocusActive(bool active)
+    {
+        if (mEffectsFocusActive == active)
+            return;
+
+        mEffectsFocusActive = active;
+
+        if (active)
+        {
+            mPrevSpellFocus = mSpellView->getControllerFocusIndex();
+            mSpellView->setActiveControllerWindow(false);
+        }
+        else
+        {
+            refreshEffectWidgets();
+            mSpellView->setActiveControllerWindow(true);
+            mSpellView->setControllerFocusIndex(mPrevSpellFocus);
+        }
+
+        updateEffectsHighlight();
+    }
+
+    void SpellWindow::updateEffectsHighlight()
+    {
+        if (mEffectIcons.empty())
+            return;
+
+        for (size_t i = 0; i < mEffectIcons.size(); ++i)
+        {
+            if (mEffectIcons[i])
+                mEffectIcons[i]->setCoord(mEffectIconCoords[i]);
+        }
+
+        if (!mActiveControllerWindow || !mEffectsFocusActive || mEffectWidgets.empty())
+            return;
+
+        MyGUI::Widget* widget = mEffectWidgets[mEffectsFocus];
+        if (!widget || !widget->getVisible())
+            return;
+
+        const size_t i = mEffectsFocus;
+        if (i < mEffectIcons.size() && mEffectIcons[i])
+        {
+            const MyGUI::IntCoord baseCoord = mEffectIconCoords[i];
+            const int focusSize = 18;
+            const int growX = (focusSize - baseCoord.width) / 2;
+            const int growY = (focusSize - baseCoord.height) / 2;
+            const MyGUI::IntCoord focusCoord(baseCoord.left - growX, baseCoord.top - growY, focusSize, focusSize);
+            mEffectIcons[i]->setCoord(focusCoord);
+        }
+
+        if (Settings::gui().mControllerMenus)
+            MWBase::Environment::get().getWindowManager()->restoreControllerTooltips();
+    }
+
+    bool SpellWindow::moveEffectsFocus(int delta)
+    {
+        if (mEffectWidgets.empty())
+            return false;
+
+        const size_t count = mEffectWidgets.size();
+        const size_t prev = mEffectsFocus;
+        if (delta < 0)
+            mEffectsFocus = (mEffectsFocus + count - 1) % count;
+        else if (delta > 0)
+            mEffectsFocus = (mEffectsFocus + 1) % count;
+
+        if (prev != mEffectsFocus)
+        {
+            updateEffectsHighlight();
+        }
+
+        return true;
+    }
+
+    void SpellWindow::warpToEffectWidget()
+    {
+        if (!mEffectsFocusActive || mEffectWidgets.empty())
+            return;
+
+        MyGUI::Widget* widget = mEffectWidgets[mEffectsFocus];
+        if (!widget || !widget->getVisible())
+            return;
+    }
+
+    MyGUI::IntCoord SpellWindow::getFixedWindowCoord(const MyGUI::IntSize& viewSize) const
+    {
+        const float scale = 0.85f;
+        float width = viewSize.width * scale;
+        float height = width * 10.f / 16.f;
+        const float maxHeight = viewSize.height * scale;
+        if (height > maxHeight)
+        {
+            height = maxHeight;
+            width = height * 16.f / 10.f;
+        }
+
+        const int w = static_cast<int>(width);
+        const int h = static_cast<int>(height);
+        const int x = (viewSize.width - w) / 2;
+        const int y = (viewSize.height - h) / 2;
+        return { x, y, w, h };
     }
 }

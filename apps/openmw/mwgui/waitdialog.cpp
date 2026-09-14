@@ -331,11 +331,11 @@ namespace MWGui
     ControllerButtons* WaitDialog::getControllerButtons()
     {
         mControllerButtons.mX.clear();
+        if (mSleeping && mUntilHealedButton->getVisible())
+            mControllerButtons.mX = "#{Interface:UntilHealed}";
         if (mSleeping)
         {
             mControllerButtons.mA = "#{Interface:Rest}";
-            if (mUntilHealedButton->getVisible())
-                mControllerButtons.mX = "#{Interface:UntilHealed}";
         }
         else
         {

@@ -31,6 +31,19 @@
         <Child type="Widget" skin="MW_Box" offset="0 0 40 40" align="Left Stretch"/>
 
     </Resource>
+
+    <!-- Settings tooltip box with stretch border to avoid top-left corner artifacts -->
+    <Resource type="ResourceSkin" name="HUD_Box_NoTransp_Settings" size="40 40">
+
+        <!-- The interior of the box -->
+
+        <Child type="Widget" skin="DialogBG" offset="0 0 40 40" align="Stretch"/>
+
+        <!-- Borders -->
+
+        <Child type="Widget" skin="MW_Box" offset="0 0 40 40" align="Stretch"/>
+
+    </Resource>
     
     <Resource type="ResourceSkin" name="HUD_Box_NoTransp_Owned" size="40 40">
 
