@@ -753,6 +753,53 @@ namespace MWInput
         mBindingsManager->controllerButtonReleased(deviceID, arg);
     }
 
+    bool ControllerManager::isMappedJoystickButton(SDL_JoystickID which, int button) const
+    {
+        // Look up the game controller that backs this joystick instance and check whether any of its
+        // standard buttons is bound to this raw joystick button. If so, the normal controller path
+        // already emits an event for it and we must not duplicate it as an "extra" button.
+        SDL_GameController* cntrl = SDL_GameControllerFromInstanceID(which);
+        if (!cntrl)
+            return false;
+        for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b)
+        {
+            SDL_GameControllerButtonBind bind
+                = SDL_GameControllerGetBindForButton(cntrl, static_cast<SDL_GameControllerButton>(b));
+            if (bind.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON && bind.value.button == button)
+                return true;
+        }
+        return false;
+    }
+
+    void ControllerManager::joyButtonPressed(int deviceID, const SDL_JoyButtonEvent& arg)
+    {
+        // Surface extra gamepad buttons (e.g. an MMO pad's additional keys) that are not part of the
+        // standard controller layout. Buttons already mapped to a standard controller button are
+        // skipped here because buttonPressed() handles them.
+        if (!Settings::input().mEnableController || mBindingsManager->isDetectingBindingState())
+            return;
+        if (isMappedJoystickButton(arg.which, arg.button))
+            return;
+
+        mLastControllerDeviceId = deviceID;
+        mJoystickLastUsed = true;
+        MWBase::Environment::get().getLuaManager()->inputEvent({ MWBase::LuaManager::InputEvent::ControllerPressed,
+            SDLUtil::sExtraControllerButtonOffset + arg.button });
+    }
+
+    void ControllerManager::joyButtonReleased(int deviceID, const SDL_JoyButtonEvent& arg)
+    {
+        if (!Settings::input().mEnableController || mBindingsManager->isDetectingBindingState())
+            return;
+        if (isMappedJoystickButton(arg.which, arg.button))
+            return;
+
+        mLastControllerDeviceId = deviceID;
+        mJoystickLastUsed = true;
+        MWBase::Environment::get().getLuaManager()->inputEvent({ MWBase::LuaManager::InputEvent::ControllerReleased,
+            SDLUtil::sExtraControllerButtonOffset + arg.button });
+    }
+
     void ControllerManager::axisMoved(int deviceID, const SDL_ControllerAxisEvent& arg)
     {
         if (mBindingsManager->isDetectingBindingState())
