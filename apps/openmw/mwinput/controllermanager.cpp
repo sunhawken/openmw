@@ -789,6 +789,7 @@ namespace MWInput
         const int extendedButton = SDLUtil::sExtraControllerButtonOffset + arg.button;
         mLastControllerDeviceId = deviceID;
         mJoystickLastUsed = true;
+        mHeldExtraButtons.insert(extendedButton);
 
         // Feed the action binder so extra buttons can trigger actions bound in Options > Controls.
         // Controller bindings all live under the generic device id the SDL wrapper uses (see
@@ -813,6 +814,7 @@ namespace MWInput
             return;
 
         const int extendedButton = SDLUtil::sExtraControllerButtonOffset + arg.button;
+        mHeldExtraButtons.erase(extendedButton);
         SDL_ControllerButtonEvent evt{};
         evt.which = sGenericControllerDeviceId;
         if (extendedButton <= 255)
@@ -1336,6 +1338,11 @@ namespace MWInput
 
     bool ControllerManager::isButtonPressed(SDL_GameControllerButton button) const
     {
+        // Extra (non-standard) buttons aren't known to SDL's game-controller API; report their held
+        // state from our own tracking so input.isControllerButtonPressed() works for them too.
+        if (static_cast<int>(button) >= SDLUtil::sExtraControllerButtonOffset)
+            return mHeldExtraButtons.find(static_cast<int>(button)) != mHeldExtraButtons.end();
+
         SDL_GameController* cntrl = mBindingsManager->getControllerOrNull();
         if (cntrl)
             return SDL_GameControllerGetButton(cntrl, button) > 0;
