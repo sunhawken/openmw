@@ -145,12 +145,22 @@ namespace SDLUtil
                     break;
                 case SDL_KEYMAPCHANGED:
                     break;
-                case SDL_JOYHATMOTION: // As we manage everything with GameController, don't even bother with these.
+                case SDL_JOYHATMOTION: // Sticks/hats are handled via the GameController mapping.
                 case SDL_JOYAXISMOTION:
-                case SDL_JOYBUTTONDOWN:
-                case SDL_JOYBUTTONUP:
                 case SDL_JOYDEVICEADDED:
                 case SDL_JOYDEVICEREMOVED:
+                    break;
+                // Raw joystick buttons still come through even for a device opened as a game
+                // controller. We forward them so extra buttons beyond the standard controller
+                // layout (e.g. an MMO gamepad's extra keys) can be recognized; the controller
+                // manager de-duplicates the ones already mapped to standard buttons.
+                case SDL_JOYBUTTONDOWN:
+                    if (mConListener)
+                        mConListener->joyButtonPressed(evt.jbutton.which, evt.jbutton);
+                    break;
+                case SDL_JOYBUTTONUP:
+                    if (mConListener)
+                        mConListener->joyButtonReleased(evt.jbutton.which, evt.jbutton);
                     break;
                 case SDL_CONTROLLERDEVICEADDED:
                     if (mConListener)

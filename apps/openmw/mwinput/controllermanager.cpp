@@ -22,6 +22,14 @@
 #include "bindingsmanager.hpp"
 #include "mousemanager.hpp"
 
+namespace
+{
+    // The SDL wrapper reports every controller under one generic device id (see sdlinputwrapper.cpp),
+    // and the binding manager stores controller bindings under this same id. Route extra joystick
+    // buttons through it so they bind and trigger like standard controller buttons.
+    constexpr int sGenericControllerDeviceId = 1;
+}
+
 namespace MWInput
 {
     ControllerManager::ControllerManager(BindingsManager* bindingsManager, MouseManager* mouseManager,
@@ -213,6 +221,85 @@ namespace MWInput
         mBindingsManager->setPlayerControlsEnabled(!MyGUI::InputManager::getInstance().injectKeyRelease(kc));
 
         mBindingsManager->controllerButtonReleased(deviceID, arg);
+    }
+
+    bool ControllerManager::isMappedJoystickButton(SDL_JoystickID which, int button) const
+    {
+        // Look up the game controller that backs this joystick instance and check whether any of its
+        // standard buttons is bound to this raw joystick button. If so, the normal controller path
+        // already emits an event for it and we must not duplicate it as an "extra" button.
+        SDL_GameController* cntrl = SDL_GameControllerFromInstanceID(which);
+        if (!cntrl)
+            return false;
+        for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b)
+        {
+            SDL_GameControllerButtonBind bind
+                = SDL_GameControllerGetBindForButton(cntrl, static_cast<SDL_GameControllerButton>(b));
+            if (bind.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON && bind.value.button == button)
+                return true;
+        }
+        return false;
+    }
+
+    void ControllerManager::joyButtonPressed(int /*deviceID*/, const SDL_JoyButtonEvent& arg)
+    {
+        // Surface extra gamepad buttons (e.g. an MMO pad's additional keys) that are not part of the
+        // standard controller layout. Buttons already mapped to a standard controller button are
+        // skipped here because buttonPressed() handles them. Binding detection happens on release
+        // (mirroring standard controller buttons), so do nothing on press while detecting.
+        if (!Settings::input().mEnableController || mBindingsManager->isDetectingBindingState())
+            return;
+        if (isMappedJoystickButton(arg.which, arg.button))
+            return;
+
+        const int extendedButton = SDLUtil::sExtraControllerButtonOffset + arg.button;
+        mJoystickLastUsed = true;
+        mHeldExtraButtons.insert(extendedButton);
+
+        // Feed the action binder so extra buttons can trigger actions bound in Options > Controls.
+        // Controller bindings all live under the generic device id the SDL wrapper uses (see
+        // sGenericControllerDeviceId). The event's button field is a Uint8, so guard the range.
+        if (extendedButton <= 255)
+        {
+            SDL_ControllerButtonEvent evt{};
+            evt.which = sGenericControllerDeviceId;
+            evt.button = static_cast<Uint8>(extendedButton);
+            mBindingsManager->controllerButtonPressed(sGenericControllerDeviceId, evt);
+        }
+
+        MWBase::Environment::get().getLuaManager()->inputEvent(
+            { MWBase::LuaManager::InputEvent::ControllerPressed, extendedButton });
+    }
+
+    void ControllerManager::joyButtonReleased(int /*deviceID*/, const SDL_JoyButtonEvent& arg)
+    {
+        if (!Settings::input().mEnableController)
+            return;
+        if (isMappedJoystickButton(arg.which, arg.button))
+            return;
+
+        const int extendedButton = SDLUtil::sExtraControllerButtonOffset + arg.button;
+        mHeldExtraButtons.erase(extendedButton);
+        SDL_ControllerButtonEvent evt{};
+        evt.which = sGenericControllerDeviceId;
+        if (extendedButton <= 255)
+            evt.button = static_cast<Uint8>(extendedButton);
+
+        // During binding detection, feed the release to the binder so the action rebinds to this
+        // extra button, then stop - exactly like the standard controller button path.
+        if (mBindingsManager->isDetectingBindingState())
+        {
+            if (extendedButton <= 255)
+                mBindingsManager->controllerButtonReleased(sGenericControllerDeviceId, evt);
+            return;
+        }
+
+        mJoystickLastUsed = true;
+        if (extendedButton <= 255)
+            mBindingsManager->controllerButtonReleased(sGenericControllerDeviceId, evt);
+
+        MWBase::Environment::get().getLuaManager()->inputEvent(
+            { MWBase::LuaManager::InputEvent::ControllerReleased, extendedButton });
     }
 
     void ControllerManager::axisMoved(int deviceID, const SDL_ControllerAxisEvent& arg)
@@ -453,6 +540,11 @@ namespace MWInput
 
     bool ControllerManager::isButtonPressed(SDL_GameControllerButton button) const
     {
+        // Extra (non-standard) buttons aren't known to SDL's game-controller API; report their held
+        // state from our own tracking so input.isControllerButtonPressed() works for them too.
+        if (static_cast<int>(button) >= SDLUtil::sExtraControllerButtonOffset)
+            return mHeldExtraButtons.find(static_cast<int>(button)) != mHeldExtraButtons.end();
+
         SDL_GameController* cntrl = mBindingsManager->getControllerOrNull();
         if (cntrl)
             return SDL_GameControllerGetButton(cntrl, button) > 0;

@@ -354,6 +354,16 @@ namespace MWLua
                     { "Max", SDL_CONTROLLER_BUTTON_MAX },
                 }));
 
+        // Extra (non-standard) gamepad buttons - e.g. the additional keys on an MMO gamepad - are
+        // delivered through the same onControllerButtonPress / onControllerButtonRelease handlers,
+        // but with an id of (CONTROLLER_BUTTON_EXTRA_OFFSET + rawJoystickButtonIndex) so they never
+        // collide with the standard CONTROLLER_BUTTON values. Use input.extraControllerButton(n) to
+        // compute the id for raw button n, or input.isExtraControllerButton(id) to test one.
+        api["CONTROLLER_BUTTON_EXTRA_OFFSET"] = SDLUtil::sExtraControllerButtonOffset;
+        api["extraControllerButton"]
+            = [](int rawIndex) { return SDLUtil::sExtraControllerButtonOffset + rawIndex; };
+        api["isExtraControllerButton"] = [](int button) { return button >= SDLUtil::sExtraControllerButtonOffset; };
+
         api["CONTROLLER_AXIS"] = LuaUtil::makeStrictReadOnly(LuaUtil::tableFromPairs<std::string_view, int>(lua,
             {
                 { "LeftX", SDL_CONTROLLER_AXIS_LEFTX },
