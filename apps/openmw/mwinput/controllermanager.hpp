@@ -3,6 +3,7 @@
 
 #include <array>
 #include <filesystem>
+#include <set>
 #include <string>
 
 #include <components/sdlutil/events.hpp>
@@ -26,6 +27,8 @@ namespace MWInput
 
         void buttonPressed(int deviceID, const SDL_ControllerButtonEvent& arg) override;
         void buttonReleased(int deviceID, const SDL_ControllerButtonEvent& arg) override;
+        void joyButtonPressed(int deviceID, const SDL_JoyButtonEvent& arg) override;
+        void joyButtonReleased(int deviceID, const SDL_JoyButtonEvent& arg) override;
         void axisMoved(int deviceID, const SDL_ControllerAxisEvent& arg) override;
         void controllerAdded(int deviceID, const SDL_ControllerDeviceEvent& arg) override;
         void controllerRemoved(const SDL_ControllerDeviceEvent& arg) override;
@@ -59,6 +62,16 @@ namespace MWInput
         void enableGyroSensor();
 
         int getControllerType();
+
+        // True if the given raw joystick button on the given device instance is already bound to a
+        // standard SDL game-controller button by the active mapping (so it is handled by the
+        // controller path and must not be re-emitted as an "extra" button).
+        bool isMappedJoystickButton(SDL_JoystickID which, int button) const;
+
+        // Currently-held extra (non-standard) controller buttons, stored as their extended ids
+        // (sExtraControllerButtonOffset + rawIndex). Lets input.isControllerButtonPressed() report
+        // their state so polling-based mods can use them.
+        std::set<int> mHeldExtraButtons;
 
         BindingsManager* mBindingsManager;
         MouseManager* mMouseManager;

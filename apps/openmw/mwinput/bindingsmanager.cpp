@@ -1,6 +1,7 @@
 #include "bindingsmanager.hpp"
 
 #include <filesystem>
+#include <string>
 
 #include <MyGUI_EditBox.h>
 
@@ -9,6 +10,7 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/files/conversion.hpp>
+#include <components/sdlutil/events.hpp>
 #include <components/sdlutil/sdlmappings.hpp>
 
 #include "../mwbase/environment.hpp"
@@ -566,8 +568,14 @@ namespace MWInput
                 mInputBinder->getJoystickAxisBinding(c, sFakeDeviceId, ICS::Control::INCREASE));
         else if (mInputBinder->getJoystickButtonBinding(c, sFakeDeviceId, ICS::Control::INCREASE)
             != ICS_MAX_DEVICE_BUTTONS)
-            return SDLUtil::sdlControllerButtonToString(
-                mInputBinder->getJoystickButtonBinding(c, sFakeDeviceId, ICS::Control::INCREASE));
+        {
+            const unsigned int button = mInputBinder->getJoystickButtonBinding(c, sFakeDeviceId, ICS::Control::INCREASE);
+            // Extra (non-standard) gamepad buttons are stored as sExtraControllerButtonOffset + rawIndex
+            // and have no SDL name; label them by their raw index so they are recognizable in the list.
+            if (static_cast<int>(button) >= SDLUtil::sExtraControllerButtonOffset)
+                return "Button " + std::to_string(static_cast<int>(button) - SDLUtil::sExtraControllerButtonOffset);
+            return SDLUtil::sdlControllerButtonToString(button);
+        }
         else
             return "#{Interface:None}";
     }
