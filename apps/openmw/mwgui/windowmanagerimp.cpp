@@ -91,6 +91,7 @@
 #include "exposedwindow.hpp"
 #include "hud.hpp"
 #include "inventorytabsoverlay.hpp"
+#include "headhairwindow.hpp"
 #include "inventorywindow.hpp"
 #include "itemchargeview.hpp"
 #include "itemtransfer.hpp"
@@ -347,7 +348,15 @@ namespace MWGui
         mWindows.push_back(std::move(spellWindow));
         trackWindow(mSpellWindow, makeSpellsWindowSettingValues());
 
-        mGuiModeStates[GM_Inventory] = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow });
+        auto headHairWindow = std::make_unique<HeadHairWindow>(mInventoryWindow);
+        mHeadHairWindow = headHairWindow.get();
+        mWindows.push_back(std::move(headHairWindow));
+
+        // HeadHairWindow shows only with the inventory group. It is not pinnable, so it is left out
+        // of GM_None (whose non-pinned windows would otherwise linger on screen during gameplay,
+        // since updateVisible() only manages the four GW_-flagged windows there).
+        mGuiModeStates[GM_Inventory]
+            = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow, mHeadHairWindow });
         mGuiModeStates[GM_None] = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow });
 
         auto tradeWindow = std::make_unique<TradeWindow>();
