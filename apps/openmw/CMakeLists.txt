@@ -273,4 +273,20 @@ endif()
 
 if (WIN32 AND BUILD_OPENMW)
     INSTALL(TARGETS openmw RUNTIME DESTINATION ".")
+
+    # Deploy the runtime DLLs, OSG plugins and Qt libraries next to the built exes so the
+    # build directory is directly runnable (Qt, MyGUIEngine from bin/Release, the OSG
+    # runtime plugins, and the vcpkg/in-tree DLL closure are otherwise not copied for a
+    # raw build tree). See cmake/deploy-windows-runtime.ps1. Best-effort: the script always
+    # exits 0, so this never fails the build. Runs after openmw links (the last big target),
+    # by which point the launcher/wizard/cs exes exist for windeployqt.
+    find_program(OPENMW_DEPLOY_POWERSHELL NAMES powershell pwsh)
+    if (OPENMW_DEPLOY_POWERSHELL)
+        add_custom_command(TARGET openmw POST_BUILD
+            COMMAND "${OPENMW_DEPLOY_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${OpenMW_SOURCE_DIR}/cmake/deploy-windows-runtime.ps1"
+                -BuildDir "${OpenMW_BINARY_DIR}"
+            COMMENT "Deploying Windows runtime (DLLs, OSG plugins, Qt) to the build directory"
+            VERBATIM)
+    endif()
 endif()
