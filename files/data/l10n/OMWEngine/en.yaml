@@ -9,6 +9,11 @@ LogViewer: "Log Viewer"
 LuaProfiler: "Lua Profiler"
 PhysicsProfiler: "Physics Profiler"
 
+# Appearance (head/hair) window
+AppearanceTitle: "Appearance"
+AppearanceHead: "Head"
+AppearanceHair: "Hair"
+
 
 # Messages
 
