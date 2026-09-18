@@ -259,15 +259,42 @@ JiggleBreastZOffsetHigh: "Higher"
 JiggleButtZOffsetValue: "Jiggle Butt Z Offset ({value, number, ::.0})"
 JiggleButtZOffsetLow: "Lower"
 JiggleButtZOffsetHigh: "Higher"
-MaxActorsInCombatValue: "Max Actors In Combat With Player ({value})"
-MaxActorsInCombatOff: "Off"
-MaxActorsInCombatMax: "50"
-MaxAlliesInCombatValue: "Max Allies In Combat ({value})"
+JiggleGravityValue: "Jiggle Gravity ({value, number, ::.0})"
+JiggleGravityLow: "Weightless"
+JiggleGravityHigh: "Heavy Sag"
+JiggleSoftnessValue: "Jiggle Softness ({value, number, ::.0})"
+JiggleSoftnessLow: "Firm"
+JiggleSoftnessHigh: "Soft"
+JiggleQuicknessValue: "Jiggle Quickness ({value, number, ::.0})"
+JiggleQuicknessLow: "Lazy"
+JiggleQuicknessHigh: "Snappy"
+JiggleMassResponseValue: "Jiggle Mass Response ({value, number, ::.00})"
+JiggleMassResponseLow: "Uniform"
+JiggleMassResponseHigh: "Size-Driven"
+JiggleSideValue: "Jiggle Side Sway ({value, number, ::.00})"
+JiggleSideLow: "Vertical Only"
+JiggleSideHigh: "Loose Sway"
+JiggleSelfCollisionLimitValue: "Jiggle Self-Collision Limit ({value, number, ::.0})"
+JiggleSelfCollisionLimitLow: "Tight"
+JiggleSelfCollisionLimitHigh: "Loose"
+JiggleSelfCollision: "Jiggle Self-Collision"
+JiggleSelfCollisionTooltip: |-
+    Keeps jiggle and gravity sag from clipping the breast/butt bulge back into the body. When on, a jiggle bone cannot sink toward the body past the Self-Collision Limit, and its into-body motion stops there.
+    Bone-space approximation of TittyMagic's soft self-collision and distance limit.
 JiggleTogglesNote: "Enable or disable the in-engine jiggle features."
 JiggleAutoRig: "In-Game Auto Jiggle"
 JiggleAutoRigTooltip: |-
     Master switch for jiggle. When on, jiggle physics play and female bodies that lack jiggle bones are rigged automatically (so pre-rigging meshes with the Add Jiggle Bones tool is optional).
     Turning it off freezes all jiggle instantly; turning it on resumes it. Auto-rigging of a body applies when it is next loaded (reload a save or re-equip).
+JiggleTab: "Jiggle"
+JigglePlayerOnly: "Player Only"
+JigglePlayerOnlyTooltip: |-
+    Restricts all jiggle to your own character - NPCs get no jiggle at all. Leave off to jiggle every female body.
+    Applies when a body is next loaded (reload a save or re-equip).
+JiggleThigh: "Thigh Jiggle"
+JiggleThighTooltip: |-
+    Also jiggles the upper-thigh flesh, mirroring the breast jiggle with the same spring, gravity and softness settings. Auto-rigs L/R thigh jiggle bones onto female bodies that lack them.
+    Requires In-Game Auto Jiggle to be on. Applies when a body is next loaded (reload a save or re-equip).
 JiggleSeamWelding: "Jiggle Seam Fixer"
 JiggleSeamWeldingTooltip: |-
     Feathers jiggle weights to zero at mesh seams so the cracks jiggle opens between body parts/clothing are closed.
