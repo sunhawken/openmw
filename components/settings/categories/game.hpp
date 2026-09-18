@@ -80,6 +80,9 @@ namespace Settings
         // Use optional player-only naked female BBR body mesh when fully unequipped.
         SettingValue<bool> mCurvyNakedBody{ mIndex, "Game", "curvy naked body" };
         SettingValue<bool> mJiggleBoneDebug{ mIndex, "Game", "jiggle bone debug" };
+        // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
+        // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
+        SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
         // Damped-spring tuning for breast/butt jiggle-bone secondary motion.
         SettingValue<float> mJiggleBoneStiffness{ mIndex, "Game", "jiggle bone stiffness",
             makeClampSanitizerFloat(1.f, 1000.f) };
@@ -89,6 +92,40 @@ namespace Settings
             makeClampSanitizerFloat(0.f, 50.f) };
         SettingValue<float> mJiggleBoneIntensity{ mIndex, "Game", "jiggle bone intensity",
             makeClampSanitizerFloat(0.f, 20.f) };
+        // --- TittyMagic-style physics feel (ported from everlaster's VaM plugin) ---
+        // World-space gravity pull on the jiggle spring, in units/s^2. Makes the bone sag at
+        // rest and swing like a pendulum, so it responds to body orientation and motion the
+        // way TittyMagic's "gravity physics" does (sag when upright, swing forward/back/sideways
+        // when leaning) - here it emerges from a single real gravity term rather than authored
+        // pitch/roll curves. 0 = the old behaviour (no sag, motion-lag only).
+        SettingValue<float> mJiggleBoneGravity{ mIndex, "Game", "jiggle bone gravity",
+            makeClampSanitizerFloat(0.f, 2000.f) };
+        // Softness master (0-100), analogous to TittyMagic's breastSoftness. Higher = looser and
+        // bouncier: scales the effective spring and damping down together, so the bone jiggles
+        // more freely and settles slower.
+        SettingValue<float> mJiggleBoneSoftness{ mIndex, "Game", "jiggle bone softness",
+            makeClampSanitizerFloat(0.f, 100.f) };
+        // Quickness master (0-100), analogous to TittyMagic's breastQuickness. Higher = snappier:
+        // raises the effective spring so the bone reacts and returns faster.
+        SettingValue<float> mJiggleBoneQuickness{ mIndex, "Game", "jiggle bone quickness",
+            makeClampSanitizerFloat(0.f, 100.f) };
+        // How strongly a bone's own size (its rest protrusion from the parent joint) affects the
+        // feel, analogous to TittyMagic deriving physics from breast mass/volume (InvertMass).
+        // Higher = larger/heavier bulges get a softer spring, more damping and thus more sag/swing.
+        // 0 = size-independent.
+        SettingValue<float> mJiggleBoneMassResponse{ mIndex, "Game", "jiggle bone mass response",
+            makeClampSanitizerFloat(0.f, 2.f) };
+        // Side-sway: scales the horizontal (side-to-side / forward-back) part of the jiggle
+        // relative to the up-down bounce. 1.0 = uniform; 0 = vertical only; >1 = looser sway.
+        SettingValue<float> mJiggleBoneSide{ mIndex, "Game", "jiggle bone side",
+            makeClampSanitizerFloat(0.f, 3.f) };
+        // Self/body-collision containment: when on, the simulated bone cannot sink toward the body
+        // (its parent joint) past "self collision limit" units, and its inward velocity is killed at
+        // that wall - the bone-space analog of TittyMagic's soft self-collision + distance limit, so
+        // jiggle/sag can't clip the bulge back through the ribcage.
+        SettingValue<bool> mJiggleBoneSelfCollision{ mIndex, "Game", "jiggle bone self collision" };
+        SettingValue<float> mJiggleBoneSelfCollisionLimit{ mIndex, "Game", "jiggle bone self collision limit",
+            makeClampSanitizerFloat(0.f, 50.f) };
         // Extra static Z (up/down) offset applied to the breast/butt jiggle bones' rest
         // position on top of whatever bind pose their NIF already has - lets a rigged
         // mesh's bulge placement be nudged live without re-rigging/re-exporting the NIF.
@@ -102,6 +139,10 @@ namespace Settings
         // In-engine auto jiggle rigger: procedurally add breast/butt jiggle bones + weights to
         // female body meshes at load that don't already have them (so the .bat pre-rig is optional).
         SettingValue<bool> mJiggleAutoRig{ mIndex, "Game", "jiggle auto rig" };
+        // Also auto-rig L/R thigh jiggle bones (identity children of the real Bip01 L/R Thigh bones),
+        // cone-painted onto the upper-thigh flesh, so the thighs jiggle with the same spring/gravity/
+        // softness settings as the breasts. Only applies while "jiggle auto rig" is on.
+        SettingValue<bool> mJiggleThigh{ mIndex, "Game", "jiggle thigh" };
         // NIF-filename substrings (lowercase, comma-separated) the auto-rigger must skip entirely:
         // such meshes are excluded from both anchor detection and weight painting, so an odd armor
         // can neither get bad jiggle nor pollute the shared body anchor.
@@ -119,17 +160,6 @@ namespace Settings
         // rest-pose (bind) positions are within this distance, in world units.
         SettingValue<float> mJiggleSeamWeldThreshold{ mIndex, "Game", "jiggle seam weld threshold",
             makeClampSanitizerFloat(0.01f, 10.f) };
-        // Caps how many enemies can newly enter combat against the player at once (0 = no
-        // cap). Only throttles new enemies engaging the player - actors already fighting
-        // each other are unaffected, and this does not apply to allies (see below).
-        SettingValue<int> mMaxActorsInCombatWithPlayer{ mIndex, "Game", "max actors in combat with player",
-            makeClampSanitizerInt(0, 50) };
-        // Caps how many actors can newly enter combat against a target that ISN'T the player
-        // (0 = no cap) - i.e. allies/guards/companions piling onto something to help the
-        // player, as opposed to enemies piling onto the player. Independent of the setting
-        // above.
-        SettingValue<int> mMaxAlliesInCombat{ mIndex, "Game", "max allies in combat",
-            makeClampSanitizerInt(0, 50) };
     };
 }
 

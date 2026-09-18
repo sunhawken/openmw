@@ -32,8 +32,8 @@ namespace MWRender
     {
         using Rig = SceneUtil::RigGeometry;
 
-        constexpr std::array<std::string_view, 4> sJiggleBones
-            = { "bip01 l breast", "bip01 r breast", "bip01 l butt", "bip01 r butt" };
+        constexpr std::array<std::string_view, 6> sJiggleBones = { "bip01 l breast", "bip01 r breast", "bip01 l butt",
+            "bip01 r butt", "bip01 l thighjiggle", "bip01 r thighjiggle" };
 
         // Marks a bone node we injected (an identity child of its parent), so on a resync we can
         // tell it apart from an externally-rigged (.bat) jiggle bone that has its own bind offset.
@@ -52,6 +52,12 @@ namespace MWRender
         };
         constexpr Config sBreast{ "bip01 spine2", "bip01 spine2", -10.f, 14.f, true, 0.5f, 12, 9.f, 6.f, 0.25f };
         constexpr Config sButt{ "bip01 pelvis", "bip01 pelvis", -7.f, 9.f, false, 0.5f, 12, 9.f, 6.f, 0.25f };
+        // Thigh jiggle hangs from each real (animated) thigh bone and paints the upper-thigh flesh.
+        // Unlike breast/butt, "Bip01 L/R Thigh" already exists in the skeleton, so the jiggle bone
+        // gets a distinct name ("...ThighJiggle") and its landmark/parent is the thigh bone itself
+        // (per side). Band leans above the thigh's average vert Z to catch the fleshy upper thigh.
+        constexpr Config sThighL{ "bip01 l thigh", "bip01 l thigh", -4.f, 20.f, true, 0.5f, 12, 8.f, 7.f, 0.22f };
+        constexpr Config sThighR{ "bip01 r thigh", "bip01 r thigh", -4.f, 20.f, true, 0.5f, 12, 8.f, 7.f, 0.22f };
 
         struct Target
         {
@@ -59,12 +65,15 @@ namespace MWRender
             std::string_view mBoneNode; // scene-graph node name (original case; controller checks Breast/Butt)
             bool mLeft;
             const Config& mConfig;
+            bool mIsThigh; // gated separately by the "jiggle thigh" setting
         };
-        const std::array<Target, 4> sTargets = { {
-            { "bip01 l breast", "Bip01 L Breast", true, sBreast },
-            { "bip01 r breast", "Bip01 R Breast", false, sBreast },
-            { "bip01 l butt", "Bip01 L Butt", true, sButt },
-            { "bip01 r butt", "Bip01 R Butt", false, sButt },
+        const std::array<Target, 6> sTargets = { {
+            { "bip01 l breast", "Bip01 L Breast", true, sBreast, false },
+            { "bip01 r breast", "Bip01 R Breast", false, sBreast, false },
+            { "bip01 l butt", "Bip01 L Butt", true, sButt, false },
+            { "bip01 r butt", "Bip01 R Butt", false, sButt, false },
+            { "bip01 l thighjiggle", "Bip01 L ThighJiggle", true, sThighL, true },
+            { "bip01 r thighjiggle", "Bip01 R ThighJiggle", false, sThighR, true },
         } };
 
         class RigCollector : public osg::NodeVisitor
@@ -235,6 +244,9 @@ namespace MWRender
     {
         if (!objectRoot || !Settings::game().mJiggleAutoRig)
             return;
+        // Player-only mode: skip auto-rigging every NPC body, leaving jiggle to the player alone.
+        if (Settings::game().mJiggleBonePlayerOnly && !isPlayer)
+            return;
         const bool debug = Settings::game().mJiggleAutoRigDebug;
 
         RigCollector rc;
@@ -297,9 +309,12 @@ namespace MWRender
         // nodes - e.g. from a jiggle-bones-skeleton mod - are not ours; we ignore them and drive the
         // body with our own identity-child bones, whose bind pose we control. A mesh that already
         // carries jiggle WEIGHTS (rigged by the .bat) is skipped per-mesh further below.
-        std::array<bool, 4> haveOurBone = { false, false, false, false };
+        const bool thighEnabled = Settings::game().mJiggleThigh;
+        std::array<bool, 6> haveOurBone = { false, false, false, false, false, false };
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
+            if (sTargets[t].mIsThigh && !thighEnabled)
+                continue;
             SceneUtil::Bone* parent = skeleton->getBone(std::string(sTargets[t].mConfig.mParent));
             osg::Group* parentNode = parent ? parent->mNode.get() : nullptr;
             if (!parentNode)
@@ -321,9 +336,11 @@ namespace MWRender
 
         // Anchors are recomputed each pass from whatever meshes are currently attached, so a piece
         // equipped later (e.g. armor covering the chest) is painted from its own geometry.
-        std::array<std::optional<osg::Vec3f>, 4> anchors;
+        std::array<std::optional<osg::Vec3f>, 6> anchors;
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
+            if (sTargets[t].mIsThigh && !thighEnabled)
+                continue;
             const auto lz = landmarkZ(rigs, sTargets[t].mConfig.mLandmark);
             if (lz)
                 anchors[t] = findAnchor(rigs, sTargets[t].mConfig, sTargets[t].mLeft, *lz);

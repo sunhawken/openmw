@@ -517,8 +517,11 @@ namespace MWRender
         }
 
         // Jiggle physics is female-only: attach the jiggle-bone controllers just for female
-        // NPCs and the female player. Male characters get no jiggle at all.
-        setObjectRoot(smodel, true, true, false, isFemale);
+        // NPCs and the female player. Male characters get no jiggle at all. When "jiggle player
+        // only" is set, NPCs are excluded too so only the player jiggles.
+        const bool jiggleAllowed
+            = isFemale && (!Settings::game().mJiggleBonePlayerOnly || mPtr == MWMechanics::getPlayer());
+        setObjectRoot(smodel, true, true, false, jiggleAllowed);
 
         updateParts();
 
