@@ -143,6 +143,7 @@ namespace Nif
             mFlags = nif->get<uint16_t>();
         else
             nif->read(mFlags);
+        mTranslationOffset = nif->getPosition();
         nif->read(mTransform.mTranslation);
         nif->read(mTransform.mRotation);
         nif->read(mTransform.mScale);

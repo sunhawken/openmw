@@ -1320,6 +1320,12 @@
                             <UserString key="Caption_Text" value="#{OMWEngine:OptionsMenuRealTimeTooltip}"/>
                         </Widget>
                     </Widget>
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="6 962 336 24" align="Left Top" name="JiggleOffsetResetButton">
+                        <Property key="Caption" value="#{OMWEngine:JiggleResetCurrentWornOffset}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="TextToolTip"/>
+                        <UserString key="Caption_Text" value="#{OMWEngine:JiggleResetCurrentWornOffsetTooltip}"/>
+                    </Widget>
                 </Widget>
             </Widget>
         </Widget>

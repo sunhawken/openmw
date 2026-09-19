@@ -91,6 +91,22 @@ namespace Misc::JiggleZOffset
             out.push_back(std::string(meshFile) + '=' + std::to_string(breast) + ';' + std::to_string(butt));
         Settings::game().mJiggleMeshZOffsets.set(out);
     }
+
+    // Remove the saved tuning for one body mesh. The next time that naked body, clothing,
+    // or armor is equipped it will use the neutral (zero) breast/butt offset again.
+    inline void reset(std::string_view meshFile)
+    {
+        if (meshFile.empty())
+            return;
+        std::vector<std::string> out;
+        for (const std::string& entry : Settings::game().mJiggleMeshZOffsets.get())
+        {
+            const std::size_t eq = entry.rfind('=');
+            if (eq == std::string::npos || std::string_view(entry).substr(0, eq) != meshFile)
+                out.push_back(entry);
+        }
+        Settings::game().mJiggleMeshZOffsets.set(out);
+    }
 }
 
 #endif

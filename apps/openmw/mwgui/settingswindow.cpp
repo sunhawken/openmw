@@ -22,6 +22,7 @@
 #include <components/misc/constants.hpp>
 #include <components/misc/display.hpp>
 #include <components/misc/jigglezoffset.hpp>
+#include <components/misc/nifbonewriter.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
@@ -284,6 +285,7 @@ namespace MWGui
         getWidget(mWindowModeHint, "WindowModeHint");
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
+        getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
         getWidget(mMaxLights, "MaxLights");
         getWidget(mScriptFilter, "ScriptFilter");
         getWidget(mScriptList, "ScriptList");
@@ -328,6 +330,8 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onLightingMethodButtonChanged);
         mLightsResetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onLightsResetButtonClicked);
+        mJiggleOffsetResetButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleOffsetResetButtonClicked);
         mMaxLights->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onMaxLightsChanged);
 
         mWindowModeList->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onWindowModeChanged);
@@ -670,6 +674,33 @@ namespace MWGui
         configureWidgets(mMainWidget, false);
     }
 
+    void SettingsWindow::onJiggleOffsetResetButtonClicked(MyGUI::Widget* /*sender*/)
+    {
+        // This is intentionally mesh-specific: it clears only the tuning for the body mesh that
+        // is currently worn, whether that is the naked body, clothing, or armor.
+        const std::string& meshFile = Misc::JiggleZOffset::currentPlayerMesh();
+        if (meshFile.empty())
+            return;
+
+        const auto stored = Misc::JiggleZOffset::lookup(meshFile);
+        const float savedBreastZ = stored ? stored->first : 0.f;
+        if (savedBreastZ != 0.f)
+        {
+            std::string error;
+            const VFS::Manager* const vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+            if (!vfs || !Misc::NifBoneWriter::addBreastZ(*vfs, meshFile, -savedBreastZ, error))
+            {
+                Log(Debug::Warning) << "NIF breast bone mover: cannot reset " << meshFile << ": " << error;
+                return;
+            }
+        }
+        Misc::JiggleZOffset::reset(meshFile);
+        Settings::game().mJiggleBoneBreastZOffset.set(0.f);
+        Settings::game().mJiggleBoneButtZOffset.set(0.f);
+        apply();
+        configureWidgets(mMainWidget, false);
+    }
+
     void SettingsWindow::onButtonToggled(MyGUI::Widget* sender)
     {
         const std::string on = MWBase::Environment::get().getL10nManager()->getMessage("Interface", "On");
@@ -746,16 +777,42 @@ namespace MWGui
                 }
                 else if (valueType == "Float")
                 {
+                    const std::string_view settingName = getSettingName(scroller);
+                    const float oldValue = Settings::get<float>(getSettingCategory(scroller), settingName);
                     Settings::get<float>(getSettingCategory(scroller), getSettingName(scroller)).set(value);
                     argNames.emplace_back("value");
                     args.emplace_back(value);
 
-                    // Persist the breast/butt jiggle Z offset per body mesh so each mesh remembers
-                    // its own tuning (keyed by the player's current body mesh).
-                    const std::string_view sname = getSettingName(scroller);
-                    if (sname == "jiggle bone breast z offset" || sname == "jiggle bone butt z offset")
-                        Misc::JiggleZOffset::save(Misc::JiggleZOffset::currentPlayerMesh(),
-                            Settings::game().mJiggleBoneBreastZOffset, Settings::game().mJiggleBoneButtZOffset);
+                    // The breast slider is an incremental loose-NIF editor. Keep the current slider
+                    // position as the live preview, but write only the movement since its last
+                    // position into the two breast nodes on disk. The saved mesh value is the total
+                    // file edit and lets the Reset button undo it exactly.
+                    if (settingName == "jiggle bone breast z offset")
+                    {
+                        const std::string& meshFile = Misc::JiggleZOffset::currentPlayerMesh();
+                        std::string error;
+                        const VFS::Manager* const vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+                        if (!vfs || !Misc::NifBoneWriter::addBreastZ(*vfs, meshFile, value - oldValue, error))
+                        {
+                            Log(Debug::Warning) << "NIF breast bone mover: cannot edit " << meshFile << ": " << error;
+                            Settings::get<float>(getSettingCategory(scroller), settingName).set(oldValue);
+                            args.back() = oldValue;
+                        }
+                        else if (!meshFile.empty())
+                        {
+                            const auto stored = Misc::JiggleZOffset::lookup(meshFile);
+                            Misc::JiggleZOffset::save(meshFile, (stored ? stored->first : 0.f) + value - oldValue,
+                                stored ? stored->second : 0.f);
+                        }
+                    }
+                    // Butt offsets remain runtime-only and mesh-specific.
+                    else if (settingName == "jiggle bone butt z offset")
+                    {
+                        const std::string& meshFile = Misc::JiggleZOffset::currentPlayerMesh();
+                        const auto stored = Misc::JiggleZOffset::lookup(meshFile);
+                        Misc::JiggleZOffset::save(meshFile, stored ? stored->first : 0.f,
+                            Settings::game().mJiggleBoneButtZOffset);
+                    }
                 }
                 else
                 {
