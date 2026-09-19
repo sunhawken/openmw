@@ -289,10 +289,11 @@ namespace MWRender
         {
             Misc::JiggleZOffset::currentPlayerMesh() = bodyMeshFile;
             const auto stored = Misc::JiggleZOffset::lookup(bodyMeshFile);
-            // Breast offsets are already baked into the loose NIF by the in-game
-            // mover. Start its incremental editor at zero after a mesh reload so
-            // the baked translation is not applied a second time at runtime.
-            const float breast = 0.f;
+            // Restore this mesh's saved live breast/butt Z offsets. These are runtime offsets
+            // applied by JiggleBoneController. If the user baked the breast offset into the loose
+            // NIF via the Bake button, the saved runtime breast value was zeroed then, so nothing
+            // is double-applied on top of the baked translation.
+            const float breast = stored ? stored->first : 0.f;
             const float butt = stored ? stored->second : 0.f;
             Settings::game().mJiggleBoneBreastZOffset.set(breast);
             Settings::game().mJiggleBoneButtZOffset.set(butt);

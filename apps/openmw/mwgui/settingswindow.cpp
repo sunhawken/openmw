@@ -286,6 +286,7 @@ namespace MWGui
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
+        getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
         getWidget(mMaxLights, "MaxLights");
         getWidget(mScriptFilter, "ScriptFilter");
         getWidget(mScriptList, "ScriptList");
@@ -332,6 +333,8 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onLightsResetButtonClicked);
         mJiggleOffsetResetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleOffsetResetButtonClicked);
+        mBakeBreastToNifButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onBakeBreastToNifButtonClicked);
         mMaxLights->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onMaxLightsChanged);
 
         mWindowModeList->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onWindowModeChanged);
@@ -676,29 +679,56 @@ namespace MWGui
 
     void SettingsWindow::onJiggleOffsetResetButtonClicked(MyGUI::Widget* /*sender*/)
     {
-        // This is intentionally mesh-specific: it clears only the tuning for the body mesh that
-        // is currently worn, whether that is the naked body, clothing, or armor.
+        // Mesh-specific: clears only the live runtime breast/butt Z tuning for the body mesh that
+        // is currently worn (naked body, clothing, or armor). Other outfits keep their offsets.
+        // This does not touch any offset already baked into a NIF by the Bake button - to undo a
+        // bake, set the slider negative and bake again.
         const std::string& meshFile = Misc::JiggleZOffset::currentPlayerMesh();
         if (meshFile.empty())
             return;
 
-        const auto stored = Misc::JiggleZOffset::lookup(meshFile);
-        const float savedBreastZ = stored ? stored->first : 0.f;
-        if (savedBreastZ != 0.f)
-        {
-            std::string error;
-            const VFS::Manager* const vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
-            if (!vfs || !Misc::NifBoneWriter::addBreastZ(*vfs, meshFile, -savedBreastZ, error))
-            {
-                Log(Debug::Warning) << "NIF breast bone mover: cannot reset " << meshFile << ": " << error;
-                return;
-            }
-        }
         Misc::JiggleZOffset::reset(meshFile);
         Settings::game().mJiggleBoneBreastZOffset.set(0.f);
         Settings::game().mJiggleBoneButtZOffset.set(0.f);
         apply();
         configureWidgets(mMainWidget, false);
+    }
+
+    void SettingsWindow::onBakeBreastToNifButtonClicked(MyGUI::Widget* /*sender*/)
+    {
+        // Permanently bake the current live breast Z offset into the worn body's loose NIF (both
+        // Bip01 L/R Breast nodes), then zero the runtime offset so the result is visually identical
+        // after the mesh reloads. Only works for a loose, writable NIF that already carries breast
+        // bones (i.e. a pre-rigged mesh); auto-rigged bodies have no breast bones in the file.
+        const std::string& meshFile = Misc::JiggleZOffset::currentPlayerMesh();
+        if (meshFile.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox(
+                "#{OMWEngine:JiggleBakeNoMesh}");
+            return;
+        }
+
+        const float breastZ = Settings::game().mJiggleBoneBreastZOffset;
+        if (breastZ == 0.f)
+            return;
+
+        std::string error;
+        const VFS::Manager* const vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
+        if (!vfs || !Misc::NifBoneWriter::addBreastZ(*vfs, meshFile, breastZ, error))
+        {
+            Log(Debug::Warning) << "NIF breast bone mover: cannot bake " << meshFile << ": " << error;
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleBakeFailed}\n" + error);
+            return;
+        }
+
+        // Baked into the NIF: drop the runtime offset for this mesh so it isn't applied on top of
+        // the baked translation after the next mesh reload. Butt offset is left untouched.
+        const auto stored = Misc::JiggleZOffset::lookup(meshFile);
+        Misc::JiggleZOffset::save(meshFile, 0.f, stored ? stored->second : 0.f);
+        Settings::game().mJiggleBoneBreastZOffset.set(0.f);
+        apply();
+        configureWidgets(mMainWidget, false);
+        MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleBakeDone}");
     }
 
     void SettingsWindow::onButtonToggled(MyGUI::Widget* sender)
@@ -778,41 +808,19 @@ namespace MWGui
                 else if (valueType == "Float")
                 {
                     const std::string_view settingName = getSettingName(scroller);
-                    const float oldValue = Settings::get<float>(getSettingCategory(scroller), settingName);
-                    Settings::get<float>(getSettingCategory(scroller), getSettingName(scroller)).set(value);
+                    Settings::get<float>(getSettingCategory(scroller), settingName).set(value);
                     argNames.emplace_back("value");
                     args.emplace_back(value);
 
-                    // The breast slider is an incremental loose-NIF editor. Keep the current slider
-                    // position as the live preview, but write only the movement since its last
-                    // position into the two breast nodes on disk. The saved mesh value is the total
-                    // file edit and lets the Reset button undo it exactly.
-                    if (settingName == "jiggle bone breast z offset")
-                    {
-                        const std::string& meshFile = Misc::JiggleZOffset::currentPlayerMesh();
-                        std::string error;
-                        const VFS::Manager* const vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
-                        if (!vfs || !Misc::NifBoneWriter::addBreastZ(*vfs, meshFile, value - oldValue, error))
-                        {
-                            Log(Debug::Warning) << "NIF breast bone mover: cannot edit " << meshFile << ": " << error;
-                            Settings::get<float>(getSettingCategory(scroller), settingName).set(oldValue);
-                            args.back() = oldValue;
-                        }
-                        else if (!meshFile.empty())
-                        {
-                            const auto stored = Misc::JiggleZOffset::lookup(meshFile);
-                            Misc::JiggleZOffset::save(meshFile, (stored ? stored->first : 0.f) + value - oldValue,
-                                stored ? stored->second : 0.f);
-                        }
-                    }
-                    // Butt offsets remain runtime-only and mesh-specific.
-                    else if (settingName == "jiggle bone butt z offset")
-                    {
-                        const std::string& meshFile = Misc::JiggleZOffset::currentPlayerMesh();
-                        const auto stored = Misc::JiggleZOffset::lookup(meshFile);
-                        Misc::JiggleZOffset::save(meshFile, stored ? stored->first : 0.f,
-                            Settings::game().mJiggleBoneButtZOffset);
-                    }
+                    // Persist the breast/butt jiggle Z offset per body mesh so each mesh remembers
+                    // its own live tuning (keyed by the player's current body mesh). Both are
+                    // runtime offsets applied by JiggleBoneController and restored on mesh load, so
+                    // this works for auto-rigged and pre-rigged bodies alike. The breast offset can
+                    // additionally be baked permanently into a loose pre-rigged NIF via the Bake
+                    // button; baking zeroes this runtime value so it isn't double-applied.
+                    if (settingName == "jiggle bone breast z offset" || settingName == "jiggle bone butt z offset")
+                        Misc::JiggleZOffset::save(Misc::JiggleZOffset::currentPlayerMesh(),
+                            Settings::game().mJiggleBoneBreastZOffset, Settings::game().mJiggleBoneButtZOffset);
                 }
                 else
                 {

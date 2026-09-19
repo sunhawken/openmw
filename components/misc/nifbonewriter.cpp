@@ -77,6 +77,12 @@ namespace Misc::NifBoneWriter
             if (!object || !isBreastBone(object->mName)
                 || object->mTranslationOffset == std::numeric_limits<std::size_t>::max())
                 continue;
+            if (found >= zOffsets.size())
+            {
+                // More than two breast nodes (duplicate names): bail rather than overrun the array.
+                error = "the selected NIF has more than two Bip01 L/R Breast nodes";
+                return false;
+            }
             zOffsets[found++] = object->mTranslationOffset + 2 * sizeof(float);
         }
         if (found != zOffsets.size())
