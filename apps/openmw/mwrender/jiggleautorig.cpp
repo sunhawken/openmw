@@ -371,7 +371,7 @@ namespace MWRender
             boneNode->setDataVariance(osg::Object::DYNAMIC);
             boneNode->setUserValue(sAutoRigMarker, true);
             parentNode->addChild(boneNode);
-            boneNode->addUpdateCallback(new JiggleBoneController(debug));
+            boneNode->addUpdateCallback(new JiggleBoneController(debug, isPlayer));
             haveOurBone[t] = true;
             addedAny = true;
             if (debug)

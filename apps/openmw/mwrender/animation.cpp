@@ -1687,6 +1687,9 @@ namespace MWRender
             "bip01 r butt",
         };
         const bool debug = Settings::game().mJiggleBoneDebug;
+        // Tag player bones so the controller can scope the breast/butt Z-offset sliders to the
+        // player while "jiggle player only" is on (NPCs keep the offset when that toggle is off).
+        const bool isPlayer = mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr();
         for (std::string_view bone : boneNames)
         {
             auto iter = getNodeMap().find(bone);
@@ -1699,7 +1702,7 @@ namespace MWRender
             osg::MatrixTransform* node = iter->second;
             if (debug)
                 Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node;
-            node->addUpdateCallback(new JiggleBoneController(debug));
+            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer));
         }
     }
 

@@ -35,13 +35,26 @@ namespace MWRender
         }
     }
 
-    JiggleBoneController::JiggleBoneController(bool debug)
+    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer)
         : mSimWorldPos(0, 0, 0)
         , mVelocity(0, 0, 0)
         , mInitialized(false)
         , mLastSimTime(-1.0)
         , mDebug(debug)
+        , mIsPlayer(isPlayer)
     {
+    }
+
+    float JiggleBoneController::zOffsetFor(const std::string& boneName) const
+    {
+        // NPC bones drop the manual breast/butt Z offset only while "jiggle player only" is on -
+        // that toggle also scopes the player-mesh-specific Z tuning to the player. This is read live,
+        // so already-loaded NPCs stop using the offset the moment the toggle is enabled. When the
+        // toggle is off, NPCs share the same offset as the player, as before. The player's own bones
+        // always use it.
+        if (!mIsPlayer && Settings::game().mJiggleBonePlayerOnly)
+            return 0.f;
+        return manualZOffsetFor(boneName);
     }
 
     void JiggleBoneController::operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv)
@@ -69,7 +82,7 @@ namespace MWRender
             // the restoring force to ~0 after the very first frame.
             mRestLocalMatrix = node->getMatrix();
             osg::Vec3f restWorldPos = mRestLocalMatrix.getTrans() * parentWorldMatrix;
-            restWorldPos.z() += manualZOffsetFor(node->getName());
+            restWorldPos.z() += zOffsetFor(node->getName());
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
             mInitialized = true;
@@ -80,7 +93,7 @@ namespace MWRender
 
         const osg::Vec3f restTranslation = mRestLocalMatrix.getTrans();
         osg::Vec3f restWorldPos = restTranslation * parentWorldMatrix;
-        restWorldPos.z() += manualZOffsetFor(node->getName());
+        restWorldPos.z() += zOffsetFor(node->getName());
 
         // Live master off-switch: the "jiggle auto rig" toggle also freezes all jiggle motion.
         // While off, pin the bone to its rest pose and keep the sim parked at rest (tracking the
@@ -133,7 +146,7 @@ namespace MWRender
         // against a reference (~12 units) and capped, then scaled by mass-response. TittyMagic's
         // InvertMass: heavier -> softer spring, more damping (and thus more sag under gravity).
         const float restProtrusion = mRestLocalMatrix.getTrans().length();
-        const float sizeHint = std::max(restProtrusion, std::abs(manualZOffsetFor(node->getName())));
+        const float sizeHint = std::max(restProtrusion, std::abs(zOffsetFor(node->getName())));
         const float normalizedMass = std::clamp(sizeHint / 12.f, 0.f, 1.5f);
         const float massEffect = massResponse * normalizedMass;
 
