@@ -102,6 +102,10 @@ namespace Nif
         unsigned int getUserVersion() const;
         unsigned int getBethVersion() const;
 
+        // Absolute offset of the next byte to be read. This is retained by
+        // selected records that support safe in-place edits of loose NIFs.
+        std::size_t getPosition() const { return mStreamSize - static_cast<std::size_t>(Files::getStreamSizeLeft(*mStream)); }
+
         /// Convert human-readable version numbers into a number that can be compared.
         static constexpr uint32_t generateVersion(uint8_t major, uint8_t minor, uint8_t patch, uint8_t rev)
         {

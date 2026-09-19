@@ -52,6 +52,7 @@ namespace MWGui
         MyGUI::ComboBox* mMaxLights;
         MyGUI::ComboBox* mLightingMethodButton;
         MyGUI::Button* mLightsResetButton;
+        MyGUI::Button* mJiggleOffsetResetButton;
 
         MyGUI::ComboBox* mPrimaryLanguage;
         MyGUI::ComboBox* mSecondaryLanguage;
@@ -91,6 +92,7 @@ namespace MWGui
 
         void onLightingMethodButtonChanged(MyGUI::ComboBox* sender, size_t pos);
         void onLightsResetButtonClicked(MyGUI::Widget* sender);
+        void onJiggleOffsetResetButtonClicked(MyGUI::Widget* sender);
         void onMaxLightsChanged(MyGUI::ComboBox* sender, size_t pos);
 
         void onPrimaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos) { onLanguageChanged(0, sender, pos); }
