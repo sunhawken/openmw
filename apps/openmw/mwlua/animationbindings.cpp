@@ -49,6 +49,16 @@ namespace MWLua
             return anim;
         }
 
+        // For VFX *removal* it is harmless if the object no longer has an animation (it may have
+        // been disabled, despawned, or never had one) - there is simply nothing to remove. Returns
+        // null instead of throwing so a delayed removeVfx/removeAllVfx that outlives the object's
+        // animation doesn't spam "Object has no animation" errors every frame.
+        MWRender::Animation* getMutableAnimationOrNull(const Object& object)
+        {
+            auto world = MWBase::Environment::get().getWorld();
+            return world->getAnimation(object.ptr());
+        }
+
         AnimationPriorities getPriorityArgument(const sol::table& args)
         {
             auto asPriorityEnum = args.get<sol::optional<Priority>>("priority");
@@ -269,8 +279,8 @@ namespace MWLua
         api["removeVfx"] = [context](const SelfObject& object, std::string_view effectId) {
             context.mLuaManager->addAction(
                 [object = Object(object), effectId = std::string(effectId)] {
-                    MWRender::Animation* anim = getMutableAnimationOrThrow(object);
-                    anim->removeEffect(effectId);
+                    if (MWRender::Animation* anim = getMutableAnimationOrNull(object))
+                        anim->removeEffect(effectId);
                 },
                 "removeVfxAction");
         };
@@ -278,8 +288,8 @@ namespace MWLua
         api["removeAllVfx"] = [context](const SelfObject& object) {
             context.mLuaManager->addAction(
                 [object = Object(object)] {
-                    MWRender::Animation* anim = getMutableAnimationOrThrow(object);
-                    anim->removeEffects();
+                    if (MWRender::Animation* anim = getMutableAnimationOrNull(object))
+                        anim->removeEffects();
                 },
                 "removeVfxAction");
         };
