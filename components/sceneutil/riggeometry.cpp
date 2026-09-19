@@ -316,11 +316,19 @@ namespace SceneUtil
     {
         if (!mSkeleton)
         {
-            Log(Debug::Error)
-                << "Error: RigGeometry rendering with no skeleton, should have been initialized by UpdateVisitor";
-            // try to recover anyway, though rendering is likely to be incorrect.
+            // The UpdateVisitor normally links the skeleton before we cull. If it hasn't yet - e.g.
+            // the geometry was attached and culled in the same frame, or it's rendered in a
+            // character-preview scene - recover by finding the parent skeleton now. That recovery
+            // is common and harmless, so only a genuine failure to find a parent skeleton is worth
+            // an error; the recoverable case is logged at Debug to avoid spamming every frame.
             if (!initFromParentSkeleton(nv))
+            {
+                Log(Debug::Error) << "Error: RigGeometry rendering with no skeleton and no parent "
+                                     "skeleton could be found; skipping.";
                 return;
+            }
+            Log(Debug::Debug) << "RigGeometry culled before its skeleton was linked by the "
+                                 "UpdateVisitor; recovered from the parent skeleton.";
         }
 
         unsigned int traversalNumber = nv->getTraversalNumber();
