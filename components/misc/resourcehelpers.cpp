@@ -20,6 +20,7 @@ namespace
     constexpr VFS::Path::NormalizedView icons("icons");
     constexpr VFS::Path::NormalizedView materials("materials");
     constexpr VFS::Path::ExtensionView dds("dds");
+    constexpr VFS::Path::ExtensionView tga("tga");
     constexpr VFS::Path::ExtensionView kf("kf");
     constexpr VFS::Path::ExtensionView nif("nif");
     constexpr VFS::Path::ExtensionView mp3("mp3");
@@ -125,6 +126,29 @@ VFS::Path::Normalized Misc::ResourceHelpers::correctResourcePath(
         const VFS::Path::Normalized fallback = topLevelDirectories.front() / origExt.filename();
         if (vfs.exists(fallback))
             return fallback;
+    }
+
+    // Cross-format fallback: a texture may be referenced with one extension but shipped with the
+    // other in the same directory - e.g. a NIF or a normal/height map asks for X.dds while only the
+    // partner X.tga exists (or vice versa). OSG loads either format regardless of the requested
+    // name, so serve whichever file is actually present - the same visible result as converting the
+    // partner to the missing extension, without touching the disk. This catches the case the checks
+    // above miss: when the request was already .dds so no .tga was ever tried.
+    {
+        VFS::Path::Normalized partner = correctedPath;
+        bool swapped = false;
+        if (Misc::StringUtils::ciEndsWith(correctedPath.value(), ".dds"))
+            swapped = partner.changeExtension(tga);
+        else if (Misc::StringUtils::ciEndsWith(correctedPath.value(), ".tga"))
+            swapped = partner.changeExtension(dds);
+        if (swapped)
+        {
+            if (vfs.exists(partner))
+                return partner;
+            const VFS::Path::Normalized fallback = topLevelDirectories.front() / partner.filename();
+            if (vfs.exists(fallback))
+                return fallback;
+        }
     }
 
     return correctedPath;
