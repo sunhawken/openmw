@@ -1004,7 +1004,7 @@
                 <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="JiggleScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>
                     <Property key="VisibleVScroll" value="true"/>
-                    <Property key="CanvasSize" value="344 990"/>
+                    <Property key="CanvasSize" value="344 1024"/>
                     <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 330 18" align="Left Top">
                         <Property key="Caption" value="#{OMWEngine:JiggleBoneNote}"/>
                     </Widget>
@@ -1325,6 +1325,12 @@
                         <UserString key="ToolTipType" value="Layout"/>
                         <UserString key="ToolTipLayout" value="TextToolTip"/>
                         <UserString key="Caption_Text" value="#{OMWEngine:JiggleResetCurrentWornOffsetTooltip}"/>
+                    </Widget>
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="6 992 336 24" align="Left Top" name="BakeBreastToNifButton">
+                        <Property key="Caption" value="#{OMWEngine:JiggleBakeBreastToNif}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="TextToolTip"/>
+                        <UserString key="Caption_Text" value="#{OMWEngine:JiggleBakeBreastToNifTooltip}"/>
                     </Widget>
                 </Widget>
             </Widget>
