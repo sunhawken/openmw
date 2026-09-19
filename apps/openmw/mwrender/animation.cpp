@@ -689,8 +689,12 @@ namespace MWRender
             NodeMap::const_iterator found = nodeMap.find(bonename);
             if (found == nodeMap.end())
             {
-                Log(Debug::Warning) << "Warning: addAnimSource: can't find bone '" + bonename << "' in " << baseModel
-                                    << " (referenced by " << kfname << ")";
+                // Common and harmless: many vanilla .kf animations reference bones (toes,
+                // individual finger joints, ...) that a given skeleton/anim-source legitimately
+                // doesn't have; the track for the missing bone is simply skipped. Logged at Debug
+                // so it doesn't spam the normal log - run with verbose logging to see these.
+                Log(Debug::Debug) << "addAnimSource: can't find bone '" + bonename << "' in " << baseModel
+                                  << " (referenced by " << kfname << ")";
                 continue;
             }
 
