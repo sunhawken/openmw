@@ -11,6 +11,7 @@
 #include <components/esm3/loadnpc.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/statemanager.hpp"
 #include "../mwbase/world.hpp"
 
 #include "../mwmechanics/actorutil.hpp"
@@ -31,6 +32,7 @@ namespace MWGui
         , mHairLabel(nullptr)
         , mHeadIndex(0)
         , mHairIndex(0)
+        , mWorldModelDirty(false)
     {
         getWidget(mHeadLabel, "HeadLabel");
         getWidget(mHairLabel, "HairLabel");
@@ -141,13 +143,28 @@ namespace MWGui
 
         record.mHead = head;
         record.mHair = hair;
-        // Insert a dynamic override of the player's NPC record and rebuild the player model live
-        // (same mechanism character generation uses), but without touching stats. renderPlayer()
-        // updates the world model; rebuildAvatar() refreshes the inventory paperdoll preview.
+        // Insert a dynamic override of the player's NPC record. For a post-chargen player this record
+        // is dynamic, and insert() assigns it in place, so the live record the animations read now
+        // carries the new head/hair. Refresh the inventory paperdoll immediately for the preview.
         world->getStore().insert(record);
-        world->renderPlayer();
         if (mInventoryWindow)
             mInventoryWindow->rebuildAvatar();
+        // Defer the full world-model rebuild (renderPlayer) until the window hides. Doing it while
+        // the paused inventory GUI is open would add freshly-created skinned meshes that never get an
+        // update-traversal pass until the menu closes, spamming "RigGeometry rendering with no
+        // skeleton" every frame in the meantime.
+        mWorldModelDirty = true;
+    }
+
+    void HeadHairWindow::setVisible(bool visible)
+    {
+        WindowBase::setVisible(visible);
+        if (!visible && mWorldModelDirty)
+        {
+            mWorldModelDirty = false;
+            if (MWBase::Environment::get().getStateManager()->getState() != MWBase::StateManager::State_NoGame)
+                MWBase::Environment::get().getWorld()->renderPlayer();
+        }
     }
 
     void HeadHairWindow::onHeadScroll(MyGUI::ScrollBar* sender, size_t pos)
