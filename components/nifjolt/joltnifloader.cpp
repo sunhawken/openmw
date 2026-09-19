@@ -87,6 +87,7 @@ namespace NifJolt
         // TODO: investigate whether this should and could be optimized.
         args.mAnimated = pathFileNameStartsWithX(mShape->mFileName);
 
+        mSeenNodes.clear();
         for (const Nif::NiAVObject* node : roots)
             handleRoot(nif, *node, args);
 
@@ -227,6 +228,13 @@ namespace NifJolt
 
     void JoltNifLoader::handleNode(const Nif::NiAVObject& node, const Nif::Parent* parent, HandleNodeArgs args)
     {
+        // A NIF node graph can be a DAG: the same node may be reachable through several parent
+        // paths. Process each node only once per traversal - otherwise a diamond-shaped graph makes
+        // this recursion exponential and can balloon memory into the gigabytes (hanging the game)
+        // while adding the same collision geometry over and over. See mSeenNodes.
+        if (!mSeenNodes.insert(&node).second)
+            return;
+
         // TODO: allow on-the fly collision switching via toggling this flag
         if (node.mRecordType == Nif::RC_NiCollisionSwitch && !node.collisionActive())
             return;

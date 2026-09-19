@@ -66,6 +66,13 @@ namespace NifJolt
         std::unique_ptr<JPH::CompoundShapeSettings> mAvoidCompoundShape;
 
         osg::ref_ptr<Resource::PhysicsShape> mShape;
+
+        // Nodes already visited during the current collision traversal. A NIF node graph can be a
+        // DAG - a node reachable via multiple parent paths - so without this guard handleNode()
+        // reprocesses shared subtrees once per path. For a diamond-shaped graph that is exponential
+        // and can hang the loader while allocating gigabytes of duplicate collision sub-shapes on a
+        // tiny mesh. Reset at the start of each load().
+        std::set<const Nif::NiAVObject*> mSeenNodes;
     };
 
 }
