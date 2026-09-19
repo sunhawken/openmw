@@ -15,6 +15,7 @@
 #include "../mwbase/world.hpp"
 
 #include "../mwmechanics/actorutil.hpp"
+#include "../mwmechanics/creaturestats.hpp"
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -159,12 +160,23 @@ namespace MWGui
     void HeadHairWindow::setVisible(bool visible)
     {
         WindowBase::setVisible(visible);
-        if (!visible && mWorldModelDirty)
-        {
-            mWorldModelDirty = false;
-            if (MWBase::Environment::get().getStateManager()->getState() != MWBase::StateManager::State_NoGame)
-                MWBase::Environment::get().getWorld()->renderPlayer();
-        }
+        if (visible || !mWorldModelDirty)
+            return;
+
+        // The deferred rebuild only applies to the world model, so only do it when it is safe.
+        // setVisible(false) also fires while quitting, loading a game, or during the death screen,
+        // and renderPlayer() (which yanks the player out of mechanics/physics and rebuilds it) must
+        // not run then - notably it crashes if the player is dead, because the death handling still
+        // holds references to the actor. If we skip it, the record was already updated in place, so
+        // the new appearance shows the next time the player model is (re)built (e.g. on load).
+        if (MWBase::Environment::get().getStateManager()->getState() != MWBase::StateManager::State_Running)
+            return;
+        MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        if (player.isEmpty() || player.getClass().getCreatureStats(player).isDead())
+            return;
+
+        mWorldModelDirty = false;
+        MWBase::Environment::get().getWorld()->renderPlayer();
     }
 
     void HeadHairWindow::onHeadScroll(MyGUI::ScrollBar* sender, size_t pos)
