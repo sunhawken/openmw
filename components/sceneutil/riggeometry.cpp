@@ -377,7 +377,9 @@ namespace SceneUtil
 
             for (const auto& [index, weight] : influences)
             {
-                if (mNodes[index] == nullptr)
+                // Malformed NiSkinData can reference a bone index past our bone list; skip it
+                // rather than read out of bounds (mNodes/boneMatrices are sized to mData->mBones).
+                if (index >= mNodes.size() || mNodes[index] == nullptr)
                     continue;
                 const float* boneMatPtr = boneMatrices[index].ptr();
                 float* resultMatPtr = resultMat.ptr();
@@ -390,6 +392,11 @@ namespace SceneUtil
 
             for (unsigned short vertex : vertices)
             {
+                // Skip skin vertex indices that fall outside the geometry (malformed NiSkinData
+                // authored for a different vertex count). Writing past the destination vertex array
+                // corrupts the heap and crashes later in an unrelated allocation.
+                if (vertex >= positionDst->size())
+                    continue;
                 (*positionDst)[vertex] = resultMat.preMult((*positionSrc)[vertex]);
                 if (normalDst)
                     (*normalDst)[vertex] = osg::Matrixf::transform3x3((*normalSrc)[vertex], resultMat);
