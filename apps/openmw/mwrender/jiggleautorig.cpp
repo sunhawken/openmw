@@ -313,8 +313,8 @@ namespace MWRender
         std::array<bool, 6> haveOurBone = { false, false, false, false, false, false };
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
-            if (sTargets[t].mIsThigh && !thighEnabled)
-                continue;
+            // Always detect existing injected bones (even a disabled thigh's) so we never create a
+            // duplicate child on a resync.
             SceneUtil::Bone* parent = skeleton->getBone(std::string(sTargets[t].mConfig.mParent));
             osg::Group* parentNode = parent ? parent->mNode.get() : nullptr;
             if (!parentNode)
@@ -346,14 +346,34 @@ namespace MWRender
                 anchors[t] = findAnchor(rigs, sTargets[t].mConfig, sTargets[t].mLeft, *lz);
         }
 
+        // A mesh may still carry a target's jiggle weights from an earlier pass even after the
+        // skeleton was rebuilt (e.g. renderPlayer on an appearance/equipment change dropped our
+        // injected bone). Detect that so we can recreate the bone regardless of whether a fresh
+        // anchor is found this pass - otherwise those weights reference a missing bone
+        // ("RigGeometry did not find bone ...") and the flesh is mis-skinned. Anchor detection for
+        // some regions (notably thighs) can intermittently fail, which is what surfaced this.
+        std::array<bool, 6> weightsExist = { false, false, false, false, false, false };
+        for (Rig* rig : rigs)
+            for (const std::string& name : rig->getInfluenceBoneNames())
+                for (std::size_t t = 0; t < sTargets.size(); ++t)
+                    if (name == sTargets[t].mBoneLower)
+                        weightsExist[t] = true;
+
         // 1) Create any jiggle bone nodes that don't exist yet (identity children of their weighted
         //    parent bone) and attach the spring controller. Idempotent across equip/unequip resyncs.
         bool addedAny = false;
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
-            if (haveOurBone[t] || !anchors[t])
+            if (haveOurBone[t])
                 continue;
             const Target& tgt = sTargets[t];
+            const bool needForWeights = weightsExist[t]; // orphaned weights must get their bone back
+            // Don't rig a brand-new thigh when the feature is off, but do restore one that existing
+            // weights still reference. Otherwise a bone needs either a fresh anchor or live weights.
+            if (tgt.mIsThigh && !thighEnabled && !needForWeights)
+                continue;
+            if (!anchors[t] && !needForWeights)
+                continue;
 
             SceneUtil::Bone* parent = skeleton->getBone(std::string(tgt.mConfig.mParent));
             osg::MatrixTransform* parentNode = parent ? parent->mNode.get() : nullptr;
@@ -375,9 +395,15 @@ namespace MWRender
             haveOurBone[t] = true;
             addedAny = true;
             if (debug)
-                Log(Debug::Warning) << "Jiggle auto-rig: added bone " << tgt.mBoneNode << " under "
-                                    << tgt.mConfig.mParent << " anchor " << anchors[t]->x() << "," << anchors[t]->y()
-                                    << "," << anchors[t]->z();
+            {
+                if (anchors[t])
+                    Log(Debug::Warning) << "Jiggle auto-rig: added bone " << tgt.mBoneNode << " under "
+                                        << tgt.mConfig.mParent << " anchor " << anchors[t]->x() << ","
+                                        << anchors[t]->y() << "," << anchors[t]->z();
+                else
+                    Log(Debug::Warning) << "Jiggle auto-rig: restored bone " << tgt.mBoneNode << " under "
+                                        << tgt.mConfig.mParent << " for existing weights (no fresh anchor)";
+            }
         }
 
         // Rebuild the bone cache/hierarchy so newly added bones resolve by name. (Adding a child deep
