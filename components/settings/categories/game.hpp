@@ -83,6 +83,11 @@ namespace Settings
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
+        // Keep the simulation running (physics, jiggle, NPCs, time) while the Options/Settings
+        // window is open, instead of pausing - so movement and jiggle can be previewed live while
+        // adjusting sliders. The console, interactive message boxes, and having no active game
+        // still pause as normal.
+        SettingValue<bool> mOptionsMenuRealTime{ mIndex, "Game", "options menu real time" };
         // Damped-spring tuning for breast/butt jiggle-bone secondary motion.
         SettingValue<float> mJiggleBoneStiffness{ mIndex, "Game", "jiggle bone stiffness",
             makeClampSanitizerFloat(1.f, 1000.f) };
