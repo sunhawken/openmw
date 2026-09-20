@@ -203,6 +203,31 @@ namespace Settings
             mUserSettings.erase(key);
         }
 
+        // Self-heal: materialize any missing default into the user settings file so it is complete on disk.
+        // This only ADDS entries the user file is missing (using the effective default value); it never replaces
+        // an existing user value. Only writes the file when something was actually added.
+        if (!loadEditorSettings)
+        {
+            std::size_t addedDefaults = 0;
+            for (const auto& [key, value] : mDefaultSettings)
+                if (mUserSettings.emplace(key, value).second)
+                    ++addedDefaults;
+
+            if (addedDefaults > 0)
+            {
+                Log(Debug::Info) << "Writing " << addedDefaults << " missing default setting"
+                                 << (addedDefaults == 1 ? "" : "s") << " into " << settingspath;
+                try
+                {
+                    parser.saveSettingsFile(settingspath, mUserSettings);
+                }
+                catch (const std::exception& e)
+                {
+                    Log(Debug::Warning) << "Could not write missing defaults to " << settingspath << ": " << e.what();
+                }
+            }
+        }
+
         return settingspath;
     }
 
