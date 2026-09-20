@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cstdarg>
+#include <cstdint>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include <osg/Group>
@@ -693,55 +695,52 @@ namespace MWPhysics
                 actor->setStandingOnPtr(MWWorld::Ptr());
         }
 
-        // Collect all body IDs for batch removal
+        // Collect body IDs for batch removal. Jolt's RemoveBodies corrupts its broadphase quadtree
+        // (crash inside QuadTree::RemoveBodies) if the batch contains a DUPLICATE, invalid, or
+        // not-currently-added body. That can happen when the same object is queued more than once,
+        // or a body was already removed by another path. So we deduplicate here and, for the actual
+        // broadphase removal, only include bodies that are still added.
+        JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
+
         std::vector<JPH::BodyID> bodyIds;
         bodyIds.reserve(mPendingObjectRemovals.size() + mPendingDynamicRemovals.size() + mPendingActorRemovals.size()
             + mPendingHeightFieldRemovals.size());
+        std::unordered_set<std::uint32_t> seenBodies;
+
+        const auto collect = [&](JPH::BodyID id) {
+            if (id.IsInvalid())
+                return;
+            if (!seenBodies.insert(id.GetIndexAndSequenceNumber()).second)
+                return; // already collected this exact body
+            bodyIds.push_back(id);
+        };
 
         for (const auto* ref : mPendingObjectRemovals)
-        {
             if (auto it = mObjects.find(ref); it != mObjects.end())
-            {
-                JPH::BodyID id = it->second->getPhysicsBody();
-                if (!id.IsInvalid())
-                    bodyIds.push_back(id);
-            }
-        }
+                collect(it->second->getPhysicsBody());
         for (const auto* ref : mPendingDynamicRemovals)
-        {
             if (auto it = mDynamicObjects.find(ref); it != mDynamicObjects.end())
-            {
-                JPH::BodyID id = it->second->getPhysicsBody();
-                if (!id.IsInvalid())
-                    bodyIds.push_back(id);
-            }
-        }
+                collect(it->second->getPhysicsBody());
         for (const auto* ref : mPendingActorRemovals)
-        {
             if (auto it = mActors.find(ref); it != mActors.end())
-            {
-                JPH::BodyID id = it->second->getPhysicsBody();
-                if (!id.IsInvalid())
-                    bodyIds.push_back(id);
-            }
-        }
+                collect(it->second->getPhysicsBody());
         for (const auto& key : mPendingHeightFieldRemovals)
-        {
             if (auto it = mHeightFields.find(key); it != mHeightFields.end())
-            {
-                JPH::BodyID id = it->second->getPhysicsBody();
-                if (!id.IsInvalid())
-                    bodyIds.push_back(id);
-            }
-        }
+                collect(it->second->getPhysicsBody());
 
-        // Batch remove bodies from physics system
         if (!bodyIds.empty())
         {
-            JPH::BodyInterface& bodyInterface = mPhysicsSystem->GetBodyInterface();
-            bodyInterface.RemoveBodies(bodyIds.data(), static_cast<int>(bodyIds.size()));
+            // Remove only bodies still present in the broadphase - removing an already-removed body
+            // corrupts Jolt's quadtree.
+            std::vector<JPH::BodyID> toRemove;
+            toRemove.reserve(bodyIds.size());
+            for (const JPH::BodyID& id : bodyIds)
+                if (bodyInterface.IsAdded(id))
+                    toRemove.push_back(id);
+            if (!toRemove.empty())
+                bodyInterface.RemoveBodies(toRemove.data(), static_cast<int>(toRemove.size()));
 
-            // Destroy bodies after removal
+            // Destroy every collected body (each appears exactly once thanks to dedup).
             for (const JPH::BodyID& id : bodyIds)
                 bodyInterface.DestroyBody(id);
         }
