@@ -2,11 +2,17 @@
 
 #include <fstream>
 #include <map>
+#include <optional>
+#include <set>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <components/debug/debuglog.hpp>
 #include <components/fallback/validate.hpp>
 #include <components/files/configfileparser.hpp>
 #include <components/misc/strings/conversion.hpp>
+#include <components/misc/strings/lower.hpp>
 
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
@@ -34,6 +40,86 @@ namespace Files
             std::make_pair(u8"?userdata?", &FixedPath<>::getUserDataPath),
             std::make_pair(u8"?global?", &FixedPath<>::getGlobalDataPath),
         };
+
+        // If the trimmed line is `<key> = <value>` (whitespace around '=' optional), return the trimmed value;
+        // otherwise return nullopt.
+        std::optional<std::string> matchConfigKeyValue(const std::string& line, std::string_view key)
+        {
+            std::string_view sv(line);
+            const std::size_t start = sv.find_first_not_of(" \t");
+            if (start == std::string_view::npos)
+                return std::nullopt;
+            sv.remove_prefix(start);
+            if (sv.size() < key.size() || sv.substr(0, key.size()) != key)
+                return std::nullopt;
+            std::size_t p = key.size();
+            while (p < sv.size() && (sv[p] == ' ' || sv[p] == '\t'))
+                ++p;
+            if (p >= sv.size() || sv[p] != '=')
+                return std::nullopt;
+            ++p; // skip '='
+            std::string_view value = sv.substr(p);
+            const std::size_t vstart = value.find_first_not_of(" \t");
+            if (vstart == std::string_view::npos)
+                return std::string();
+            value.remove_prefix(vstart);
+            const std::size_t vend = value.find_last_not_of(" \t\r");
+            value = value.substr(0, vend + 1);
+            return std::string(value);
+        }
+
+        // Remove duplicate values for a composing key (e.g. "content") within a single openmw.cfg file, keeping the
+        // first occurrence. Preserves order, line endings and all other lines. Returns how many lines were removed;
+        // only rewrites the file when that is non-zero. Returns 0 on any I/O problem (e.g. read-only file).
+        int dedupeConfigKeyInFile(const std::filesystem::path& cfgPath, std::string_view key)
+        {
+            std::ifstream in(cfgPath, std::ios::binary);
+            if (!in.is_open())
+                return 0;
+            std::vector<std::string> lines;
+            std::string raw;
+            bool crlf = false;
+            while (std::getline(in, raw))
+            {
+                if (!raw.empty() && raw.back() == '\r')
+                {
+                    raw.pop_back();
+                    crlf = true;
+                }
+                lines.push_back(std::move(raw));
+                raw.clear();
+            }
+            in.close();
+
+            std::set<std::string> seen;
+            std::vector<std::string> out;
+            out.reserve(lines.size());
+            int removed = 0;
+            for (auto& line : lines)
+            {
+                if (const auto value = matchConfigKeyValue(line, key))
+                {
+                    // content file names are matched case-insensitively, as OpenMW does elsewhere
+                    std::string norm = Misc::StringUtils::lowerCase(*value);
+                    if (!seen.insert(std::move(norm)).second)
+                    {
+                        ++removed;
+                        continue;
+                    }
+                }
+                out.push_back(std::move(line));
+            }
+            if (removed == 0)
+                return 0;
+
+            std::ofstream o(cfgPath, std::ios::binary | std::ios::trunc);
+            if (!o.is_open())
+                return 0;
+            const char* const eol = crlf ? "\r\n" : "\n";
+            for (const auto& line : out)
+                o << line << eol;
+            return removed;
+        }
     }
 
     ConfigurationManager::ConfigurationManager(bool silent)
@@ -163,6 +249,30 @@ namespace Files
         }
 
         mSilent = silent;
+    }
+
+    void ConfigurationManager::repairUserConfig() const
+    {
+        for (const auto& dir : mActiveConfigPaths)
+        {
+            const std::filesystem::path cfg = dir / openmwCfgFile;
+            std::error_code ec;
+            if (!std::filesystem::exists(cfg, ec) || ec)
+                continue;
+            try
+            {
+                const int removed
+                    = dedupeConfigKeyInFile(cfg, "content") + dedupeConfigKeyInFile(cfg, "groundcover");
+                if (removed > 0 && !mSilent)
+                    Log(Debug::Info) << "Repaired " << cfg << ": removed " << removed
+                                     << (removed == 1 ? " duplicate content entry" : " duplicate content entries");
+            }
+            catch (const std::exception& e)
+            {
+                if (!mSilent)
+                    Log(Debug::Warning) << "Could not repair " << cfg << ": " << e.what();
+            }
+        }
     }
 
     void ConfigurationManager::addExtraConfigDirs(

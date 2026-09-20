@@ -185,9 +185,23 @@ namespace Settings
         if (!loadEditorSettings)
             Settings::StaticValues::init();
 
+        // Self-heal: a default present in defaults.bin that no SettingValue in this build registers is a stale
+        // leftover (e.g. defaults.bin newer than the running binary, or a renamed/removed setting). This used to be
+        // a fatal error ("Default setting [X] Y is not initialized") that stopped the game/launcher from starting.
+        // Instead, drop the orphaned default and any user override for it, and carry on.
+        std::vector<std::pair<std::string, std::string>> orphanedDefaults;
         for (const auto& [key, value] : originalDefaultSettings)
             if (!sInitialized.contains(key))
-                throw std::runtime_error("Default setting [" + key.first + "] " + key.second + " is not initialized");
+                orphanedDefaults.emplace_back(std::string(key.first), std::string(key.second));
+
+        for (const auto& [category, setting] : orphanedDefaults)
+        {
+            Log(Debug::Warning) << "Ignoring unknown default setting [" << category << "] " << setting
+                                << " (not used by this build). It will be dropped from the loaded configuration.";
+            const CategorySettingValueMap::key_type key(category, setting);
+            mDefaultSettings.erase(key);
+            mUserSettings.erase(key);
+        }
 
         return settingspath;
     }
