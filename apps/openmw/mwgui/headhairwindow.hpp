@@ -26,7 +26,6 @@ namespace MWGui
         explicit HeadHairWindow(InventoryWindow* inventoryWindow);
 
         void onOpen() override;
-        void setVisible(bool visible) override;
 
     private:
         void collectParts();
@@ -47,9 +46,6 @@ namespace MWGui
         std::vector<ESM::RefId> mHairs;
         int mHeadIndex;
         int mHairIndex;
-        // A change was made that still needs to be applied to the world player model; done when the
-        // window hides (menu closes) so the full rebuild happens while the world update is active.
-        bool mWorldModelDirty;
     };
 }
 

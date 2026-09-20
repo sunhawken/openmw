@@ -17,6 +17,15 @@ namespace Settings
     {
         using WithIndex::WithIndex;
 
+        SettingValue<float> mAppearanceX{ mIndex, "Windows", "appearance x" };
+        SettingValue<float> mAppearanceY{ mIndex, "Windows", "appearance y" };
+        SettingValue<float> mAppearanceW{ mIndex, "Windows", "appearance w" };
+        SettingValue<float> mAppearanceH{ mIndex, "Windows", "appearance h" };
+        SettingValue<float> mAppearanceMaximizedX{ mIndex, "Windows", "appearance maximized x" };
+        SettingValue<float> mAppearanceMaximizedY{ mIndex, "Windows", "appearance maximized y" };
+        SettingValue<float> mAppearanceMaximizedW{ mIndex, "Windows", "appearance maximized w" };
+        SettingValue<float> mAppearanceMaximizedH{ mIndex, "Windows", "appearance maximized h" };
+        SettingValue<bool> mAppearanceMaximized{ mIndex, "Windows", "appearance maximized" };
         SettingValue<float> mStatsX{ mIndex, "Windows", "stats x" };
         SettingValue<float> mStatsY{ mIndex, "Windows", "stats y" };
         SettingValue<float> mStatsW{ mIndex, "Windows", "stats w" };
