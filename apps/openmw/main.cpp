@@ -75,6 +75,10 @@ bool parseOptions(int argc, char** argv, OMW::Engine& engine, Files::Configurati
     Debug::setupLogging(cfgMgr.getLogPath(), "OpenMW");
     Log(Debug::Info) << Version::getOpenmwVersionDescription();
 
+    // Self-heal duplicate content=/groundcover= entries in the user's config files so a stray duplicate never
+    // aborts the game with "Content file specified more than once".
+    cfgMgr.repairUserConfig();
+
     Settings::Manager::load(cfgMgr);
 
     MWGui::DebugWindow::startLogRecording();
@@ -117,18 +121,18 @@ bool parseOptions(int argc, char** argv, OMW::Engine& engine, Files::Configurati
         return false;
     }
     engine.addContentFile("builtin.omwscripts");
+    // Self-heal: skip duplicate content entries (keeping first occurrence / load order) instead of aborting.
+    // The user config file itself is repaired separately (see ConfigurationManager::repairUserConfig), but this
+    // guards the in-memory list too so a duplicate never aborts startup.
     std::set<std::string> contentDedupe{ "builtin.omwscripts" };
-    for (const auto& contentFile : content)
-    {
-        if (!contentDedupe.insert(contentFile).second)
-        {
-            Log(Debug::Error) << "Content file specified more than once: " << contentFile << ". Aborting...";
-            return false;
-        }
-    }
-
     for (auto& file : content)
     {
+        if (!contentDedupe.insert(file).second)
+        {
+            Log(Debug::Warning) << "Content file specified more than once: " << file
+                                << ". Ignoring the duplicate.";
+            continue;
+        }
         engine.addContentFile(file);
     }
 

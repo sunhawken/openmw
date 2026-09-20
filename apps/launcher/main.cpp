@@ -32,6 +32,10 @@ int runLauncher(int argc, char* argv[])
 
     Debug::setupLogging(configurationManager.getLogPath(), "Launcher");
 
+    // Self-heal duplicate content=/groundcover= entries in the user's config files so a stray duplicate never
+    // blocks the launcher/game with "Content file specified more than once".
+    configurationManager.repairUserConfig();
+
     try
     {
         Platform::Application app(argc, argv);
