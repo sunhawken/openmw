@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -238,6 +239,35 @@ namespace MWRender
             }
             return weights;
         }
+
+        // Body regions that must never receive jiggle. The cone painter selects verts purely by
+        // distance to an anchor, and that anchor can drift pose-to-pose (arms/hands rest near the
+        // hips), so without this guard a thigh/breast cone can catch arm or hand flesh - which is
+        // what made a character's arms intermittently jiggle after a load/reload. Bone influence
+        // names arrive already lowercased (they are compared against lowercase config bones above).
+        bool isNoJiggleRegionBone(const std::string& lowerName)
+        {
+            static constexpr std::array<std::string_view, 9> sBanned = { "upperarm", "forearm", "hand", "finger",
+                "thumb", "clavicle", "wrist", "head", "neck" };
+            for (const std::string_view part : sBanned)
+                if (lowerName.find(part) != std::string::npos)
+                    return true;
+            return false;
+        }
+
+        // The dominant (highest-weight) existing influence for a vertex, or SIZE_MAX if none.
+        std::size_t dominantBone(const Rig::BoneWeights& vw)
+        {
+            std::size_t best = std::numeric_limits<std::size_t>::max();
+            float bestW = 0.f;
+            for (const auto& [bone, weight] : vw)
+                if (weight > bestW)
+                {
+                    bestW = weight;
+                    best = bone;
+                }
+            return best;
+        }
     }
 
     void JiggleAutoRig::run(osg::Group* objectRoot, bool isPlayer)
@@ -463,14 +493,22 @@ namespace MWRender
                 bones.push_back(info);
                 names.push_back(info.mName);
 
+                bool paintedAny = false;
                 for (const auto& [vidx, w] : weights)
                 {
                     Rig::BoneWeights& vw = perVertex[vidx];
+                    // Region guard: skip verts whose flesh belongs to arms/hands/head/neck so a
+                    // drifting anchor can never make those parts jiggle (deterministic across loads).
+                    const std::size_t dom = dominantBone(vw);
+                    if (dom < names.size() && isNoJiggleRegionBone(names[dom]))
+                        continue;
                     for (auto& [bone, weight] : vw) // make room: existing bones share (1 - w)
                         weight *= (1.f - w);
                     vw.emplace_back(newIdx, w);
+                    paintedAny = true;
                 }
-                rigChanged = true;
+                if (paintedAny)
+                    rigChanged = true;
             }
 
             if (rigChanged)
