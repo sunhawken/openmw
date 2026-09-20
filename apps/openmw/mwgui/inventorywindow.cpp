@@ -934,6 +934,12 @@ namespace MWGui
     void InventoryWindow::rebuildAvatar()
     {
         mPreview->rebuild();
+        // Appearance changes can be made while another inventory-mode panel is
+        // selected.  Update the render target now, rather than waiting for the
+        // inventory panel to be reopened, so its paperdoll is current as soon
+        // as the player switches back to it.
+        mPreview->update();
+        dirtyPreview();
     }
 
     void InventoryWindow::onInventoryUpdate(const MWWorld::Ptr& ptr)

@@ -11,11 +11,9 @@
 #include <components/esm3/loadnpc.hpp>
 
 #include "../mwbase/environment.hpp"
-#include "../mwbase/statemanager.hpp"
 #include "../mwbase/world.hpp"
 
 #include "../mwmechanics/actorutil.hpp"
-#include "../mwmechanics/creaturestats.hpp"
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -33,7 +31,6 @@ namespace MWGui
         , mHairLabel(nullptr)
         , mHeadIndex(0)
         , mHairIndex(0)
-        , mWorldModelDirty(false)
     {
         getWidget(mHeadLabel, "HeadLabel");
         getWidget(mHairLabel, "HairLabel");
@@ -146,37 +143,14 @@ namespace MWGui
         record.mHair = hair;
         // Insert a dynamic override of the player's NPC record. For a post-chargen player this record
         // is dynamic, and insert() assigns it in place, so the live record the animations read now
-        // carries the new head/hair. Refresh the inventory paperdoll immediately for the preview.
+        // carries the new head/hair.
         world->getStore().insert(record);
         if (mInventoryWindow)
             mInventoryWindow->rebuildAvatar();
-        // Defer the full world-model rebuild (renderPlayer) until the window hides. Doing it while
-        // the paused inventory GUI is open would add freshly-created skinned meshes that never get an
-        // update-traversal pass until the menu closes, spamming "RigGeometry rendering with no
-        // skeleton" every frame in the meantime.
-        mWorldModelDirty = true;
-    }
-
-    void HeadHairWindow::setVisible(bool visible)
-    {
-        WindowBase::setVisible(visible);
-        if (visible || !mWorldModelDirty)
-            return;
-
-        // The deferred rebuild only applies to the world model, so only do it when it is safe.
-        // setVisible(false) also fires while quitting, loading a game, or during the death screen,
-        // and renderPlayer() (which yanks the player out of mechanics/physics and rebuilds it) must
-        // not run then - notably it crashes if the player is dead, because the death handling still
-        // holds references to the actor. If we skip it, the record was already updated in place, so
-        // the new appearance shows the next time the player model is (re)built (e.g. on load).
-        if (MWBase::Environment::get().getStateManager()->getState() != MWBase::StateManager::State_Running)
-            return;
-        MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
-        if (player.isEmpty() || player.getClass().getCreatureStats(player).isDead())
-            return;
-
-        mWorldModelDirty = false;
-        MWBase::Environment::get().getWorld()->renderPlayer();
+        // Rebuild the existing player animation immediately. Unlike renderPlayer(), this leaves
+        // mechanics and physics alone, so it is safe while the inventory, magic, map, stats, or
+        // spell menus have paused normal world updates.
+        world->reattachPlayerCamera();
     }
 
     void HeadHairWindow::onHeadScroll(MyGUI::ScrollBar* sender, size_t pos)

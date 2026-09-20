@@ -1,26 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_Window" layer="Windows" position="0 0 320 150" name="_Main">
-        <Property key="MinSize" value="220 120"/>
+    <Widget type="Window" skin="MW_Window" layer="Windows" position="0 0 320 166" name="_Main">
+        <Property key="MinSize" value="220 136"/>
         <Property key="Caption" value="#{OMWEngine:AppearanceTitle}"/>
 
-        <!-- Head -->
-        <Widget type="TextBox" skin="NormalText" position="12 30 296 18" align="Left Top HStretch" name="HeadLabel">
-            <Property key="Caption" value="#{OMWEngine:AppearanceHead}"/>
-        </Widget>
-        <Widget type="ScrollBar" skin="MW_HScroll" position="12 50 296 18" align="Left Top HStretch" name="HeadSlider">
-            <Property key="Range" value="1"/>
-            <Property key="Page" value="1"/>
+        <!-- Match the boxed controls used by the other character windows.  MW_Window's
+             BlackBG uses the shared "transparent" texture, so menu transparency applies here too. -->
+        <Widget type="Widget" skin="MW_Box" position="8 30 304 48" align="Left Top HStretch">
+            <Widget type="TextBox" skin="NormalText" position="4 3 296 18" align="Left Top HStretch" name="HeadLabel">
+                <Property key="Caption" value="#{OMWEngine:AppearanceHead}"/>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="4 24 296 18" align="Left Top HStretch" name="HeadSlider">
+                <Property key="Range" value="1"/>
+                <Property key="Page" value="1"/>
+            </Widget>
         </Widget>
 
-        <!-- Hair -->
-        <Widget type="TextBox" skin="NormalText" position="12 78 296 18" align="Left Top HStretch" name="HairLabel">
-            <Property key="Caption" value="#{OMWEngine:AppearanceHair}"/>
-        </Widget>
-        <Widget type="ScrollBar" skin="MW_HScroll" position="12 98 296 18" align="Left Top HStretch" name="HairSlider">
-            <Property key="Range" value="1"/>
-            <Property key="Page" value="1"/>
+        <Widget type="Widget" skin="MW_Box" position="8 84 304 48" align="Left Top HStretch">
+            <Widget type="TextBox" skin="NormalText" position="4 3 296 18" align="Left Top HStretch" name="HairLabel">
+                <Property key="Caption" value="#{OMWEngine:AppearanceHair}"/>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="4 24 296 18" align="Left Top HStretch" name="HairSlider">
+                <Property key="Range" value="1"/>
+                <Property key="Page" value="1"/>
+            </Widget>
         </Widget>
     </Widget>
 </MyGUI>

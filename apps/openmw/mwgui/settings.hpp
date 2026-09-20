@@ -21,6 +21,7 @@ namespace MWGui
     };
 
     WindowSettingValues makeAlchemyWindowSettingValues();
+    WindowSettingValues makeAppearanceWindowSettingValues();
     WindowSettingValues makeBarterWindowSettingValues();
     WindowSettingValues makeCompanionWindowSettingValues();
     WindowSettingValues makeConsoleWindowSettingValues();

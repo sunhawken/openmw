@@ -351,6 +351,7 @@ namespace MWGui
         auto headHairWindow = std::make_unique<HeadHairWindow>(mInventoryWindow);
         mHeadHairWindow = headHairWindow.get();
         mWindows.push_back(std::move(headHairWindow));
+        trackWindow(mHeadHairWindow, makeAppearanceWindowSettingValues());
 
         // HeadHairWindow shows only with the inventory group. It is not pinnable, so it is left out
         // of GM_None (whose non-pinned windows would otherwise linger on screen during gameplay,
