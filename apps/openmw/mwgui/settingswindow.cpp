@@ -288,6 +288,8 @@ namespace MWGui
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
         getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
         getWidget(mMaxLights, "MaxLights");
+        getWidget(mShadowResolution, "ShadowResolution");
+        getWidget(mShadowUpdateInterval, "ShadowUpdateInterval");
         getWidget(mScriptFilter, "ScriptFilter");
         getWidget(mScriptList, "ScriptList");
         getWidget(mScriptBox, "ScriptBox");
@@ -336,6 +338,11 @@ namespace MWGui
         mBakeBreastToNifButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onBakeBreastToNifButtonClicked);
         mMaxLights->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onMaxLightsChanged);
+
+        mShadowResolution->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onShadowResolutionChanged);
+        mShadowUpdateInterval->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onShadowUpdateIntervalChanged);
 
         mWindowModeList->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onWindowModeChanged);
         mVSyncModeList->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onVSyncModeChanged);
@@ -400,6 +407,24 @@ namespace MWGui
         mWobblyShoresButton->setEnabled(waterRefraction);
 
         updateMaxLightsComboBox(mMaxLights);
+
+        {
+            const int res = Settings::shadows().mShadowMapResolution;
+            constexpr int resValues[] = { 256, 512, 1024, 2048, 4096 };
+            for (size_t i = 0; i < 5; ++i)
+            {
+                if (resValues[i] == res)
+                {
+                    mShadowResolution->setIndexSelected(i);
+                    break;
+                }
+            }
+        }
+        {
+            const int interval = Settings::shadows().mShadowUpdateInterval;
+            if (interval >= 1 && interval <= 4)
+                mShadowUpdateInterval->setIndexSelected(static_cast<size_t>(interval - 1));
+        }
 
         const Settings::WindowMode windowMode = Settings::video().mWindowMode;
         mWindowBorderButton->setEnabled(
@@ -646,6 +671,28 @@ namespace MWGui
         Settings::shaders().mMaxLights.set(8 * static_cast<int>(pos + 1));
         apply();
         configureWidgets(mMainWidget, false);
+    }
+
+    void SettingsWindow::onShadowResolutionChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
+    {
+        constexpr int resValues[] = { 256, 512, 1024, 2048, 4096 };
+        if (pos < 5)
+        {
+            Settings::shadows().mShadowMapResolution.set(resValues[pos]);
+            apply();
+        }
+    }
+
+    void SettingsWindow::onShadowUpdateIntervalChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
+    {
+        if (pos != MyGUI::ITEM_NONE)
+        {
+            Settings::shadows().mShadowUpdateInterval.set(static_cast<int>(pos + 1));
+            apply();
+
+            MWBase::Environment::get().getWindowManager()->interactiveMessageBox(
+                "#{OMWEngine:ChangeRequiresRestart}", { "#{Interface:OK}" }, true);
+        }
     }
 
     void SettingsWindow::onLightsResetButtonClicked(MyGUI::Widget* /*sender*/)
