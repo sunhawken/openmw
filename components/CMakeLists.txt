@@ -141,7 +141,7 @@ add_component_dir (sceneutil
     lightmanager lightutil positionattitudetransform workqueue pathgridutil waterutil writescene serialize optimizer
     detourdebugdraw navmesh agentpath animblendrules shadow mwshadowtechnique recastmesh shadowsbin osgacontroller rtt
     screencapture depth color riggeometryosgaextension extradata unrefqueue lightcommon lightingmethod clearcolor
-    cullsafeboundsvisitor keyframe nodecallback textkeymap glextensions
+    cullsafeboundsvisitor keyframe nodecallback textkeymap glextensions occlusionculling
     )
 
 add_component_dir (nif
@@ -338,7 +338,7 @@ add_component_dir (translation
 
 add_component_dir (terrain
     storage world buffercache defs terraingrid material terraindrawable texturemanager chunkmanager compositemaprenderer
-    quadtreeworld quadtreenode viewdata cellborder view heightcull
+    quadtreeworld quadtreenode viewdata cellborder view heightcull terrainoccluder
     )
 
 add_component_dir (loadinglistener
@@ -510,6 +510,10 @@ else ()
         )
 endif()
 
+add_component_dir(occlusionculling
+    occlusiondb types occludermesh occlusionstorage
+)
+
 set (ESM_UI ${CMAKE_CURRENT_SOURCE_DIR}/contentselector/contentselector.ui
     )
 
@@ -627,6 +631,8 @@ target_link_libraries(components
     ZLIB::ZLIB
 
     ${JOLT_LIBRARIES}
+
+    maskedoc
     )
 
 if(yaml-cpp_VERSION VERSION_GREATER_EQUAL 0.8.0)
