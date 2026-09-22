@@ -2006,7 +2006,13 @@ namespace MWPhysics
 
         if (!ragdoll->isValid())
         {
-            Log(Debug::Warning) << "Failed to create ragdoll for " << ptr.getCellRef().getRefId();
+            // Ragdoll construction failed. Restore the actor's normal (kinematic) collision body
+            // that we disabled above, so the corpse still settles/blocks normally, and let the
+            // caller fall back to the default death animation instead of freezing.
+            if (actorIt != mActors.end())
+                actorIt->second->enableCollisionBody(true);
+            Log(Debug::Verbose) << "Ragdoll construction failed for " << ptr.getCellRef().getRefId()
+                                << "; using default death animation";
             return;
         }
 
