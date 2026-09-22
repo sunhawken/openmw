@@ -2562,24 +2562,46 @@ namespace MWWorld
         if (!anim)
             return;
 
+        // Never ragdoll anything named like a "mannequin": display mannequins are meant to keep
+        // their posed stance, and forcing a physics ragdoll on them looks broken. Fall through to
+        // the normal (default death animation / posed) behaviour instead.
+        if (Misc::StringUtils::lowerCase(actor.getCellRef().getRefId().toString()).find("mannequin")
+            != std::string::npos)
+            return;
+
         SceneUtil::Skeleton* skeleton = anim->getSkeleton();
         if (!skeleton)
         {
-            Log(Debug::Warning) << "Cannot activate ragdoll: no skeleton for " << actor.getCellRef().getRefId();
+            // No skeleton to drive a ragdoll (e.g. some simple creatures like fireflies). Fall back
+            // to the engine's default death animation instead of freezing the model.
+            Log(Debug::Verbose) << "Ragdoll skipped (no skeleton) for " << actor.getCellRef().getRefId()
+                                << "; using default death animation";
             return;
         }
 
-        // Stop all animations - ragdoll will take over bone control
-        // Note: We intentionally do NOT call setActive(Inactive) here.
-        // While Inactive prevents animation updates, it also causes RigGeometry
-        // to skip skinning updates entirely. The mesh would freeze in its last
-        // animation pose instead of following the ragdoll. disableAllAnimations()
-        // is sufficient to prevent animations from overwriting ragdoll bone transforms.
-        anim->disableAllAnimations();
-
+        // Build the ragdoll FIRST, and only stop the animations once it has actually taken over.
+        // Disabling animations before the ragdoll is confirmed would leave the model with neither
+        // an animation nor a ragdoll driving its bones whenever ragdoll construction fails - that
+        // was the "frozen model" bug. On any failure we leave the animations running so the actor
+        // plays its normal death animation, exactly like the old (non-ragdoll) engine.
         mPhysics->activateRagdoll(actor, skeleton, hitImpulse);
 
-        Log(Debug::Info) << "Activated ragdoll for " << actor.getCellRef().getRefId();
+        if (mPhysics->hasRagdoll(actor))
+        {
+            // Ragdoll took over bone control - stop all animations so they don't fight it.
+            // Note: We intentionally do NOT call setActive(Inactive) here. While Inactive prevents
+            // animation updates, it also causes RigGeometry to skip skinning updates entirely, which
+            // would freeze the mesh in its last pose instead of following the ragdoll.
+            anim->disableAllAnimations();
+            Log(Debug::Info) << "Activated ragdoll for " << actor.getCellRef().getRefId();
+        }
+        else
+        {
+            // Ragdoll could not be built (invalid skeleton/bones, disabled, or at the ragdoll limit).
+            // Leave animations alone so the default death animation plays and the model never freezes.
+            Log(Debug::Verbose) << "Ragdoll not activated for " << actor.getCellRef().getRefId()
+                                << "; using default death animation";
+        }
     }
 
     bool World::hasRagdoll(const MWWorld::ConstPtr& actor) const
