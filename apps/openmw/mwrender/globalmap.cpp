@@ -1,5 +1,7 @@
 #include "globalmap.hpp"
 
+#include <algorithm>
+
 #include <osg/Geometry>
 #include <osg/Group>
 #include <osg/Image>
@@ -163,6 +165,12 @@ namespace MWRender
                             int texelX = (x - mMinX) * mCellSize + cellX;
                             int texelY = (y - mMinY) * mCellSize + cellY;
 
+                            // Backstop: never write past the (clamped) image. For an oversized
+                            // worldspace the dimensions are capped, so far-flung cells fall outside
+                            // and must be skipped rather than corrupting the heap.
+                            if (texelX < 0 || texelY < 0 || texelX >= mWidth || texelY >= mHeight)
+                                continue;
+
                             int lutIndex = 0;
                             // Converting [-128; 127] WNAM range to [0; 255] index
                             if (land != nullptr && (land->mDataTypes & ESM::Land::DATA_WNAM))
@@ -268,23 +276,50 @@ namespace MWRender
         const MWWorld::ESMStore& esmStore = *MWBase::Environment::get().getESMStore();
 
         // get the size of the world
+        // Some mods contain broken exterior cells with absurd grid coordinates (seen in the wild:
+        // 2.8M x 1.07B). Including them explodes the world bounds, which overflows the map texture
+        // size AND makes the map-generation worker loop over quadrillions of cells (hang/crash).
+        // Ignore anything outside a sane range - far larger than any real province mod (Tamriel
+        // Rebuilt, SHOTN, etc. stay within a few hundred cells of the origin).
+        constexpr int saneCellLimit = 8192;
         MWWorld::Store<ESM::Cell>::iterator it = esmStore.get<ESM::Cell>().extBegin();
         for (; it != esmStore.get<ESM::Cell>().extEnd(); ++it)
         {
-            if (it->getGridX() < mMinX)
-                mMinX = it->getGridX();
-            if (it->getGridX() > mMaxX)
-                mMaxX = it->getGridX();
-            if (it->getGridY() < mMinY)
-                mMinY = it->getGridY();
-            if (it->getGridY() > mMaxY)
-                mMaxY = it->getGridY();
+            const int gx = it->getGridX();
+            const int gy = it->getGridY();
+            if (gx < -saneCellLimit || gx > saneCellLimit || gy < -saneCellLimit || gy > saneCellLimit)
+                continue;
+            if (gx < mMinX)
+                mMinX = gx;
+            if (gx > mMaxX)
+                mMaxX = gx;
+            if (gy < mMinY)
+                mMinY = gy;
+            if (gy > mMaxY)
+                mMaxY = gy;
         }
 
         const int cellSize = Settings::map().mGlobalMapCellSize;
 
-        mWidth = cellSize * (mMaxX - mMinX + 1);
-        mHeight = cellSize * (mMaxY - mMinY + 1);
+        // Clamp the global-map texture to a sane maximum. Large modded worldspaces (Tamriel
+        // Rebuilt, SHOTN, province mods) span far more exterior cells than vanilla Morrowind, so
+        // cellSize * cellCount can overflow int and dwarf any GPU texture limit. The map worker
+        // would then allocate a wrong-sized image and write out of bounds -> heap-corruption crash
+        // in osg.dll (CreateMapWorkItem::doWork). Shrink the per-cell pixel size so the whole world
+        // still fits within maxDim (down to 1px/cell), then hard-cap the dimensions as a backstop.
+        const int cellsX = mMaxX - mMinX + 1;
+        const int cellsY = mMaxY - mMinY + 1;
+        constexpr int maxDim = 8192;
+        int effectiveCellSize = cellSize;
+        if (cellsX > 0 && cellsY > 0)
+            effectiveCellSize = std::clamp(std::min(maxDim / cellsX, maxDim / cellsY), 1, cellSize);
+
+        mWidth = std::min(effectiveCellSize * std::max(cellsX, 1), maxDim);
+        mHeight = std::min(effectiveCellSize * std::max(cellsY, 1), maxDim);
+        if (effectiveCellSize != cellSize)
+            Log(Debug::Info) << "Global map: world spans " << cellsX << "x" << cellsY
+                             << " cells; reduced map cell size from " << cellSize << " to " << effectiveCellSize
+                             << " to fit " << mWidth << "x" << mHeight;
 
         // Load color LUT texture
         constexpr VFS::Path::NormalizedView colorLutPath("textures/omw_map_color_palette.dds");
@@ -299,7 +334,7 @@ namespace MWRender
         }
 
         mWorkItem = new CreateMapWorkItem(
-            mWidth, mHeight, mMinX, mMinY, mMaxX, mMaxY, cellSize, esmStore.get<ESM::Land>(), colorLut);
+            mWidth, mHeight, mMinX, mMinY, mMaxX, mMaxY, effectiveCellSize, esmStore.get<ESM::Land>(), colorLut);
         mWorkQueue->addWorkItem(mWorkItem);
     }
 
