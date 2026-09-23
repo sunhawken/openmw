@@ -17,11 +17,58 @@
 #include <components/loadinglistener/loadinglistener.hpp>
 #include <components/lua/configuration.hpp>
 #include <components/misc/algorithm.hpp>
+#include <components/misc/strings/lower.hpp>
+#include <components/esm3/loadgmst.hpp>
+#include <components/esm3/variant.hpp>
+#include <components/settings/values.hpp>
 
 #include "../mwmechanics/spelllist.hpp"
 
 namespace
 {
+    // Runtime tes3cmd-style "clean" for Evil GMSTs. An Evil GMST is one of the 72 Tribunal/Bloodmoon
+    // game settings that the Construction Set injects into plugins with its own fixed default value.
+    // tes3cmd removes such a GMST from a plugin only when its value exactly matches that evil default
+    // (so settings a mod intentionally changed are left alone). We mirror that: drop a plugin's GMST
+    // when its id AND value match this table, letting the base game/expansion value stand.
+    enum class EvilType
+    {
+        String,
+        Float,
+        Int
+    };
+    struct EvilGmst
+    {
+        std::string_view mId; // lowercase
+        EvilType mType;
+        std::string_view mStr;
+        int mInt;
+        float mFloat;
+    };
+    constexpr EvilGmst sEvilGmsts[] = {
+#include "evilgmsts.inc"
+    };
+
+    bool isEvilGmst(const ESM::GameSetting& gmst)
+    {
+        const std::string id = Misc::StringUtils::lowerCase(gmst.mId.getRefIdString());
+        for (const EvilGmst& e : sEvilGmsts)
+        {
+            if (id != e.mId)
+                continue;
+            if (e.mType == EvilType::String)
+                return gmst.mValue.getType() == ESM::VT_String
+                    && std::string_view(gmst.mValue.getString()) == e.mStr;
+            if (e.mType == EvilType::Float)
+                return gmst.mValue.getType() == ESM::VT_Float && gmst.mValue.getFloat() == e.mFloat;
+            // EvilType::Int
+            return (gmst.mValue.getType() == ESM::VT_Int || gmst.mValue.getType() == ESM::VT_Long
+                       || gmst.mValue.getType() == ESM::VT_Short)
+                && gmst.mValue.getInteger() == e.mInt;
+        }
+        return false;
+    }
+
     struct Ref
     {
         ESM::RefNum mRefNum;
@@ -447,6 +494,31 @@ namespace MWWorld
             }
             else
             {
+                // Runtime tes3cmd-style clean: intercept GMSTs so an Evil GMST re-added by a plugin
+                // (id + value both matching the CS's injected default) is dropped, leaving the base
+                // game/expansion value in place. Only when "clean plugins" is enabled.
+                if (recName == ESM::REC_GMST && Settings::game().mCleanPlugins)
+                {
+                    ESM::GameSetting gmst;
+                    bool isDeleted = false;
+                    gmst.load(esm, isDeleted);
+                    auto& gmstStore = getWritable<ESM::GameSetting>();
+                    // Only clean when this GMST was already defined by an earlier file (i.e. the base
+                    // game or an expansion) - never drop a first (authoritative) definition.
+                    if (!isDeleted && gmstStore.search(gmst.mId) != nullptr && isEvilGmst(gmst))
+                    {
+                        Log(Debug::Verbose) << "Clean plugins: dropped Evil GMST " << gmst.mId
+                                            << " re-added by a plugin";
+                        dialogue = nullptr;
+                        continue;
+                    }
+                    gmstStore.insertStatic(gmst);
+                    if (isDeleted)
+                        gmstStore.eraseStatic(gmst.mId);
+                    dialogue = nullptr;
+                    continue;
+                }
+
                 RecordId id = it->second->load(esm);
                 if (id.mIsDeleted)
                 {

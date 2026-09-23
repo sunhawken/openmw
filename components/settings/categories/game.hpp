@@ -165,6 +165,12 @@ namespace Settings
         // rest-pose (bind) positions are within this distance, in world units.
         SettingValue<float> mJiggleSeamWeldThreshold{ mIndex, "Game", "jiggle seam weld threshold",
             makeClampSanitizerFloat(0.01f, 10.f) };
+        // Runtime "tes3cmd clean" for plugins (applied in-memory at load; restart to change).
+        // When on, an "Evil GMST" (one of the 72 Tribunal/Bloodmoon GMSTs the Construction Set
+        // injects into plugins with its own default value) is dropped when a plugin re-adds it
+        // with that exact evil value, so the base game/expansion value is preserved. GMSTs a mod
+        // intentionally changed to a different value are kept.
+        SettingValue<bool> mCleanPlugins{ mIndex, "Game", "clean plugins" };
     };
 }
 
