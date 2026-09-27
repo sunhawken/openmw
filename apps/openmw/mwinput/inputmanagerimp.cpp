@@ -1,5 +1,7 @@
 #include "inputmanagerimp.hpp"
 
+#include <cmath>
+
 #include <osgViewer/ViewerEventHandlers>
 
 #include <components/esm3/esmreader.hpp>
@@ -187,6 +189,29 @@ namespace MWInput
     int InputManager::getMouseMoveY() const
     {
         return mMouseManager->getMouseMoveY();
+    }
+
+    std::string_view InputManager::getMouseDirectionalAttackType() const
+    {
+        if (!Settings::game().mMouseDirectionalAttack)
+            return {};
+
+        const float dx = mMouseManager->getFlickX();
+        const float dy = mMouseManager->getFlickY(); // positive is downward
+
+        // Minimum decayed flick (in mouse-pixel-equivalent units) needed to register a direction.
+        constexpr float threshold = 15.f;
+        if (std::abs(dx) < threshold && std::abs(dy) < threshold)
+            return {}; // no clear flick; caller falls back to movement-based attack
+
+        if (std::abs(dx) >= std::abs(dy))
+            return "slash"; // horizontal flick = side swing (either direction)
+
+        const bool up = dy < 0.f;
+        const bool invert = Settings::game().mMouseDirectionalAttackInvert;
+        if (up)
+            return invert ? "thrust" : "chop";
+        return invert ? "chop" : "thrust";
     }
 
     void InputManager::warpMouseToWidget(MyGUI::Widget* widget)

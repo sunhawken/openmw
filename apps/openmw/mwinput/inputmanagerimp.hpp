@@ -81,6 +81,8 @@ namespace MWInput
         float getControllerAxisValue(SDL_GameControllerAxis axis) const override;
         int getMouseMoveX() const override;
         int getMouseMoveY() const override;
+
+        std::string_view getMouseDirectionalAttackType() const override;
         void warpMouseToWidget(MyGUI::Widget* widget) override;
 
         int getNumActions() override { return A_Last; }
