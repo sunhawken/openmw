@@ -271,6 +271,7 @@ namespace MWRender
         , mSoundsDisabled(disableSounds)
         , mAccurateAiming(false)
         , mAimingFactor(0.f)
+        , mHazMangchu(false)
         , mHazFormCode(-1)
     {
         mNpc = mPtr.get<ESM::NPC>()->mBase;
@@ -478,13 +479,62 @@ namespace MWRender
                 return ESM::RefId::stringRefId("Redguard");
             case 10:
                 return ESM::RefId::stringRefId("Wood Elf");
+            case 11:
+                // Drow City Denizens.esp (a master of the mod) defines this race with a full skin set.
+                return ESM::RefId::stringRefId("Ddrow");
             case 12:
                 return ESM::RefId::stringRefId("Anen Nirrera");
-            // 11 (Drow) and 13 (Mang'Chu) ship their skins as clothing rather than as a race
-            // body-part set, so there is no race to switch to; they keep the mod's clothing swap.
+            // 13 (Mang'Chu) has no race - its skin ships as clothing-tagged parts and is handled
+            // separately via buildMangchuBodyParts(); see updateBodyRaceOverride().
             default:
                 return ESM::RefId();
         }
+    }
+
+    std::vector<const ESM::BodyPart*> NpcAnimation::buildMangchuBodyParts(bool female) const
+    {
+        // The Mang'Chu form's skin ships in the mod as body parts tagged type=clothing, race=Hazaeki
+        // (delivered through the "_sg_hz_tng_*" clothing), so getBodyParts() by race can't find them.
+        // Resolve them by explicit id into the same PRT_-indexed layout getBodyParts() returns, so the
+        // naked-body attach loop in updateParts() renders them exactly like any other race's skin.
+        struct Entry
+        {
+            ESM::PartReferenceType mSlot;
+            std::string_view mMale;
+            std::string_view mFemale;
+        };
+        static const Entry entries[] = {
+            { ESM::PRT_Neck, "_sg_hz_tng_m_neck", "_sg_hz_tng_f_neck" },
+            { ESM::PRT_Cuirass, "_sg_hz_tng_m_chest", "_sg_hz_tng_f_chest" },
+            { ESM::PRT_Groin, "_sg_hz_tng_m_groin", "_sg_hz_tng_f_groin" },
+            { ESM::PRT_RHand, "_sg_hz_tng_m_hands", "_sg_hz_tng_f_hands" },
+            { ESM::PRT_LHand, "_sg_hz_tng_m_hands", "_sg_hz_tng_f_hands" },
+            { ESM::PRT_RWrist, "_sg_hz_tng_m_wrist", "_sg_hz_tng_f_wrist" },
+            { ESM::PRT_LWrist, "_sg_hz_tng_m_wrist", "_sg_hz_tng_f_wrist" },
+            { ESM::PRT_RForearm, "_sg_hz_tng_m_forearm", "_sg_hz_tng_f_forearm" },
+            { ESM::PRT_LForearm, "_sg_hz_tng_m_forearm", "_sg_hz_tng_f_forearm" },
+            { ESM::PRT_RUpperarm, "_sg_hz_tng_m_upper_arm", "_sg_hz_tng_f_upper_arm" },
+            { ESM::PRT_LUpperarm, "_sg_hz_tng_m_upper_arm", "_sg_hz_tng_f_upper_arm" },
+            { ESM::PRT_RFoot, "_sg_hz_tng_m_feet", "_sg_hz_tng_f_feet" },
+            { ESM::PRT_LFoot, "_sg_hz_tng_m_feet", "_sg_hz_tng_f_feet" },
+            { ESM::PRT_RAnkle, "_sg_hz_tng_m_ankle", "_sg_hz_tng_f_ankle" },
+            { ESM::PRT_LAnkle, "_sg_hz_tng_m_ankle", "_sg_hz_tng_f_ankle" },
+            { ESM::PRT_RKnee, "_sg_hz_tng_m_knee", "_sg_hz_tng_f_knee" },
+            { ESM::PRT_LKnee, "_sg_hz_tng_m_knee", "_sg_hz_tng_f_knee" },
+            { ESM::PRT_RLeg, "_sg_hz_tng_m_upper_leg", "_sg_hz_tng_f_upper_leg" },
+            { ESM::PRT_LLeg, "_sg_hz_tng_m_upper_leg", "_sg_hz_tng_f_upper_leg" },
+        };
+
+        std::vector<const ESM::BodyPart*> parts(ESM::PRT_Count, nullptr);
+        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+        for (const Entry& e : entries)
+        {
+            const ESM::BodyPart* bp = store.get<ESM::BodyPart>().search(
+                ESM::RefId::stringRefId(female ? e.mFemale : e.mMale));
+            if (bp)
+                parts[e.mSlot] = bp;
+        }
+        return parts;
     }
 
     ESM::RefId NpcAnimation::displayBodyRace() const
@@ -546,9 +596,10 @@ namespace MWRender
             return; // unchanged since the last frame - avoid needless rebuilds
 
         ESM::RefId race = hazFormRace(code);
+        bool mangchu = (code == 13);
 
-        // Only override when the target race actually has skin body parts loaded; otherwise leave the
-        // real race in place so an unmapped/unavailable form can't make the body vanish.
+        // Only override when the target actually has skin parts loaded; otherwise leave the real race
+        // in place so an unmapped/unavailable form can't make the body vanish.
         if (!race.empty())
         {
             bool hasParts = false;
@@ -563,12 +614,26 @@ namespace MWRender
             if (!hasParts)
                 race = ESM::RefId();
         }
+        if (mangchu)
+        {
+            bool hasParts = false;
+            for (const ESM::BodyPart* p : buildMangchuBodyParts(!mNpc->isMale()))
+            {
+                if (p)
+                {
+                    hasParts = true;
+                    break;
+                }
+            }
+            mangchu = hasParts;
+        }
 
         mHazFormCode = code;
-        if (race == mBodyRaceOverride)
+        if (race == mBodyRaceOverride && mangchu == mHazMangchu)
             return; // resolves to the same appearance - no rebuild needed
 
         mBodyRaceOverride = race;
+        mHazMangchu = mangchu;
         rebuild();
     }
 
@@ -610,7 +675,7 @@ namespace MWRender
         }
 
         // Hazaeki humanoid form: display the target race's head & hair in place of the PC's own, so
-        // the transformed appearance is complete. Keeps the PC's own part if the race lacks one.
+        // the transformed appearance is complete. Keeps the PC's own part if the form lacks one.
         if (!isWerewolf && !mBodyRaceOverride.empty())
         {
             VFS::Path::Normalized overrideHead = findRaceHeadOrHair(mBodyRaceOverride, isFemale, false);
@@ -619,6 +684,21 @@ namespace MWRender
             VFS::Path::Normalized overrideHair = findRaceHeadOrHair(mBodyRaceOverride, isFemale, true);
             if (!overrideHair.empty())
                 mHairModel = overrideHair;
+        }
+        else if (!isWerewolf && mHazMangchu)
+        {
+            // Mang'Chu head & hair are clothing-tagged parts resolved by id (first variant).
+            const auto model = [&](std::string_view id) -> VFS::Path::Normalized {
+                if (const ESM::BodyPart* bp = store.get<ESM::BodyPart>().search(ESM::RefId::stringRefId(id)))
+                    return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bp->mModel));
+                return {};
+            };
+            VFS::Path::Normalized head = model(isFemale ? "_sg_hz_tng_f_head_01" : "_sg_hz_tng_m_head_01");
+            if (!head.empty())
+                mHeadModel = head;
+            VFS::Path::Normalized hair = model(isFemale ? "_sg_hz_tng_f_hair_01" : "_sg_hz_tng_m_hair_01");
+            if (!hair.empty())
+                mHairModel = hair;
         }
 
         const std::string vampireHead = getVampireHead(mNpc->mRace, isFemale);
@@ -855,8 +935,14 @@ namespace MWRender
         // active, so the naked skin is the form's race while equipment stays the player's own.
         ESM::RefId race = (isWerewolf ? ESM::RefId::stringRefId("werewolf") : displayBodyRace());
 
-        const std::vector<const ESM::BodyPart*>& parts
-            = getBodyParts(race, !mNpc->isMale(), mViewMode == VM_FirstPerson, isWerewolf);
+        // The Mang'Chu form has no race, so its skin is resolved by explicit part ids into the same
+        // PRT_-indexed layout; every other case uses the (cached) race lookup.
+        std::vector<const ESM::BodyPart*> mangchuParts;
+        if (mHazMangchu && !isWerewolf)
+            mangchuParts = buildMangchuBodyParts(!mNpc->isMale());
+        const std::vector<const ESM::BodyPart*>& parts = (mHazMangchu && !isWerewolf)
+            ? mangchuParts
+            : getBodyParts(race, !mNpc->isMale(), mViewMode == VM_FirstPerson, isWerewolf);
 
         // BBR meshes (Curvybody for Morrowind) follow the same multi-geometry convention as Better Bodies:
         // one NIF contains "Tri Neck", "Tri Chest", "Tri Groin", etc. geometry nodes. OpenMW's
