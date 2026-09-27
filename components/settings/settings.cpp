@@ -185,10 +185,12 @@ namespace Settings
         if (!loadEditorSettings)
             Settings::StaticValues::init();
 
-        // Self-heal: a default present in defaults.bin that no SettingValue in this build registers is a stale
-        // leftover (e.g. defaults.bin newer than the running binary, or a renamed/removed setting). This used to be
-        // a fatal error ("Default setting [X] Y is not initialized") that stopped the game/launcher from starting.
-        // Instead, drop the orphaned default and any user override for it, and carry on.
+        // A default present in defaults.bin that no SettingValue in this build registers is a stale leftover
+        // (e.g. defaults.bin newer than the running binary, or a renamed/removed setting). This used to be a fatal
+        // error ("Default setting [X] Y is not initialized") that stopped the game/launcher from starting.
+        // We tolerate it so startup is not blocked: warn and drop only the orphaned DEFAULT from the in-memory
+        // defaults (so it is not treated as a real setting or re-written as a "missing default"). We deliberately
+        // never touch the user's settings.cfg here - whatever value the user has is left exactly as-is on disk.
         std::vector<std::pair<std::string, std::string>> orphanedDefaults;
         for (const auto& [key, value] : originalDefaultSettings)
             if (!sInitialized.contains(key))
@@ -197,10 +199,9 @@ namespace Settings
         for (const auto& [category, setting] : orphanedDefaults)
         {
             Log(Debug::Warning) << "Ignoring unknown default setting [" << category << "] " << setting
-                                << " (not used by this build). It will be dropped from the loaded configuration.";
+                                << " (not used by this build). Your settings.cfg value, if any, is left untouched.";
             const CategorySettingValueMap::key_type key(category, setting);
             mDefaultSettings.erase(key);
-            mUserSettings.erase(key);
         }
 
         // Self-heal: materialize any missing default into the user settings file so it is complete on disk.
