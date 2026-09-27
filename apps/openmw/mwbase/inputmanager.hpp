@@ -66,6 +66,11 @@ namespace MWBase
         virtual float getControllerAxisValue(SDL_GameControllerAxis axis) const = 0; // returns value in range [-1, 1]
         virtual int getMouseMoveX() const = 0;
         virtual int getMouseMoveY() const = 0;
+
+        // Resolves the player's recent mouse/camera flick into a melee attack type
+        // ("slash"/"chop"/"thrust"), or "" if directional attacks are disabled or no flick
+        // is detected. See "mouse directional attack" in the settings.
+        virtual std::string_view getMouseDirectionalAttackType() const = 0;
         virtual void warpMouseToWidget(MyGUI::Widget* widget) = 0;
 
         /// Actions available for binding to keyboard buttons

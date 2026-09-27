@@ -138,6 +138,25 @@
                         <Property key="Caption" value="#{OMWEngine:Crosshair}"/>
                     </Widget>
                 </Widget>
+                <Widget type="HBox" position="4 370 360 28">
+                    <Property key="Spacing" value="4"/>
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="mouse directional attack"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText">
+                        <Property key="Caption" value="#{OMWEngine:MouseDirectionalAttack} "/>
+                    </Widget>
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="mouse directional attack invert"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText">
+                        <Property key="Caption" value="#{OMWEngine:MouseDirectionalAttackInvert}"/>
+                    </Widget>
+                </Widget>
             </Widget>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Audio} "/>

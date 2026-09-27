@@ -25,6 +25,8 @@ namespace Settings
         SettingValue<bool> mShowMeleeInfo{ mIndex, "Game", "show melee info" };
         SettingValue<bool> mShowEnchantChance{ mIndex, "Game", "show enchant chance" };
         SettingValue<bool> mBestAttack{ mIndex, "Game", "best attack" };
+        SettingValue<bool> mMouseDirectionalAttack{ mIndex, "Game", "mouse directional attack" };
+        SettingValue<bool> mMouseDirectionalAttackInvert{ mIndex, "Game", "mouse directional attack invert" };
         SettingValue<int> mDifficulty{ mIndex, "Game", "difficulty", makeClampSanitizerInt(-500, 500) };
         // We have to cap it since using high values (larger than 7168) will make some quests harder or impossible to
         // complete (bug #1876)
