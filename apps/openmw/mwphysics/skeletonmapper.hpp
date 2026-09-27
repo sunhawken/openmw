@@ -2,6 +2,7 @@
 #define OPENMW_MWPHYSICS_SKELETONMAPPER_H
 
 #include <osg/MatrixTransform>
+#include <osg/ref_ptr>
 #include <osg/Quat>
 #include <osg/Vec3f>
 
@@ -36,7 +37,13 @@ namespace MWPhysics
     /// Information about an OSG bone for mapping
     struct OsgBoneInfo
     {
-        osg::MatrixTransform* node = nullptr;
+        // Owning reference: the mapper drives these bone nodes every frame while a ragdoll is active.
+        // If we held a raw pointer, tearing down or rebuilding the actor's scene graph (cell unload,
+        // death cleanup, animation rebuild) would free the node while this mapper still ran, and the
+        // next dynamic_cast on the dangling vtable would crash with "Access violation - no RTTI data!".
+        // Holding a ref_ptr keeps the node alive for the mapper's lifetime; OSG detaches freed parents
+        // from surviving children, so the getNumParents() guards below stay correct.
+        osg::ref_ptr<osg::MatrixTransform> node;
         std::string name;
         int osgParentIndex = -1;        // Index in the OsgBoneInfo vector
         int joltMappedIndex = -1;       // Corresponding Jolt skeleton joint index (-1 if unmapped)

@@ -831,7 +831,7 @@ namespace MWPhysics
             }
 
             // Apply to OSG node
-            auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(info.node);
+            auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(info.node.get());
             if (nifTransform)
             {
                 nifTransform->setRotation(localMat.getRotate());
@@ -864,7 +864,7 @@ namespace MWPhysics
         osg::Matrix localOsg = toOsgMatrix(localTransform);
 
         // Apply to OSG node
-        auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(info.node);
+        auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(info.node.get());
         if (nifTransform)
         {
             nifTransform->setRotation(localOsg.getRotate());
