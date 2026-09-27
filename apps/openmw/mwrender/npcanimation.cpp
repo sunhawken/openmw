@@ -10,6 +10,7 @@
 #include <components/debug/debuglog.hpp>
 
 #include <components/misc/rng.hpp>
+#include <components/misc/strings/algorithm.hpp>
 
 #include <components/misc/resourcehelpers.hpp>
 
@@ -273,6 +274,8 @@ namespace MWRender
         , mAimingFactor(0.f)
         , mHazMangchu(false)
         , mHazFormCode(-1)
+        , mHazHeadRoll(0)
+        , mHazHairRoll(0)
     {
         mNpc = mPtr.get<ESM::NPC>()->mBase;
 
@@ -546,7 +549,10 @@ namespace MWRender
     {
         const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
         const ESM::BodyPart::MeshPart wanted = hair ? ESM::BodyPart::MP_Hair : ESM::BodyPart::MP_Head;
-        const ESM::BodyPart* fallback = nullptr;
+        // Collect every candidate so the form can pick a random head/hair (as the mod used to via its
+        // random clothing variants). Same-sex parts are preferred, opposite-sex as a fallback set.
+        std::vector<const ESM::BodyPart*> sameSex;
+        std::vector<const ESM::BodyPart*> otherSex;
         for (const ESM::BodyPart& bp : store.get<ESM::BodyPart>())
         {
             if (bp.mData.mFlags & ESM::BodyPart::BPF_NotPlayable)
@@ -559,14 +565,14 @@ namespace MWRender
                 continue;
             if (ESM::isFirstPersonBodyPart(bp))
                 continue;
-            if (isFemalePart(&bp) == female)
-                return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bp.mModel));
-            if (!fallback)
-                fallback = &bp; // opposite-sex fallback, matching getBodyParts()' behaviour
+            (isFemalePart(&bp) == female ? sameSex : otherSex).push_back(&bp);
         }
-        if (fallback)
-            return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(fallback->mModel));
-        return {};
+        const std::vector<const ESM::BodyPart*>& pick = !sameSex.empty() ? sameSex : otherSex;
+        if (pick.empty())
+            return {};
+        // Head and hair use independent rolls, so any head can pair with any hair (not fixed pairs).
+        const std::size_t index = static_cast<std::size_t>(hair ? mHazHairRoll : mHazHeadRoll) % pick.size();
+        return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(pick[index]->mModel));
     }
 
     void NpcAnimation::updateBodyRaceOverride()
@@ -634,6 +640,13 @@ namespace MWRender
 
         mBodyRaceOverride = race;
         mHazMangchu = mangchu;
+        // Re-roll head and hair independently on each form change (mirrors the mod's random pick, but
+        // decoupled so any head can pair with any hair rather than fixed head/hair pairs).
+        if (!race.empty() || mangchu)
+        {
+            mHazHeadRoll = Misc::Rng::rollDice(1000);
+            mHazHairRoll = Misc::Rng::rollDice(1000);
+        }
         rebuild();
     }
 
@@ -687,16 +700,22 @@ namespace MWRender
         }
         else if (!isWerewolf && mHazMangchu)
         {
-            // Mang'Chu head & hair are clothing-tagged parts resolved by id (first variant).
-            const auto model = [&](std::string_view id) -> VFS::Path::Normalized {
-                if (const ESM::BodyPart* bp = store.get<ESM::BodyPart>().search(ESM::RefId::stringRefId(id)))
-                    return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bp->mModel));
-                return {};
+            // Mang'Chu head & hair are clothing-tagged parts (no race), so gather all "_sg_hz_tng_*"
+            // head/hair variants by id prefix and pick one with the per-form random roll.
+            const auto pickByPrefix = [&](std::string_view prefix, int roll) -> VFS::Path::Normalized {
+                std::vector<const ESM::BodyPart*> cands;
+                for (const ESM::BodyPart& bp : store.get<ESM::BodyPart>())
+                    if (Misc::StringUtils::ciStartsWith(bp.mId.getRefIdString(), prefix))
+                        cands.push_back(&bp);
+                if (cands.empty())
+                    return {};
+                const std::size_t index = static_cast<std::size_t>(roll) % cands.size();
+                return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(cands[index]->mModel));
             };
-            VFS::Path::Normalized head = model(isFemale ? "_sg_hz_tng_f_head_01" : "_sg_hz_tng_m_head_01");
+            VFS::Path::Normalized head = pickByPrefix(isFemale ? "_sg_hz_tng_f_head_" : "_sg_hz_tng_m_head_", mHazHeadRoll);
             if (!head.empty())
                 mHeadModel = head;
-            VFS::Path::Normalized hair = model(isFemale ? "_sg_hz_tng_f_hair_01" : "_sg_hz_tng_m_hair_01");
+            VFS::Path::Normalized hair = pickByPrefix(isFemale ? "_sg_hz_tng_f_hair_" : "_sg_hz_tng_m_hair_", mHazHairRoll);
             if (!hair.empty())
                 mHairModel = hair;
         }

@@ -91,6 +91,8 @@ namespace MWRender
         ESM::RefId mBodyRaceOverride; // empty = use the actor's real race
         bool mHazMangchu; // Mang'Chu form (its skin has no race, so it is resolved by explicit part ids)
         int mHazFormCode; // last-applied PC_hz_ht value for the player, -1 = not yet initialised
+        int mHazHeadRoll; // random head-variant selector, re-rolled on each form change
+        int mHazHairRoll; // random hair-variant selector, re-rolled independently of the head
 
         // Player only: read PC_hz_ht / PC_hazaeki and (re)apply the body override on change.
         void updateBodyRaceOverride();
