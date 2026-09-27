@@ -39,6 +39,8 @@
 #include "../mwbase/soundmanager.hpp"
 #include "../mwbase/world.hpp"
 
+#include "../mwworld/globalvariablename.hpp"
+
 #include "actorutil.hpp"
 #include "jiggleautorig.hpp"
 #include "postprocessor.hpp"
@@ -269,6 +271,7 @@ namespace MWRender
         , mSoundsDisabled(disableSounds)
         , mAccurateAiming(false)
         , mAimingFactor(0.f)
+        , mHazFormCode(-1)
     {
         mNpc = mPtr.get<ESM::NPC>()->mBase;
 
@@ -450,6 +453,125 @@ namespace MWRender
         return -1;
     }
 
+    ESM::RefId NpcAnimation::hazFormRace(int code)
+    {
+        // PC_hz_ht form codes -> race ids, matching the Hazaeki Shapeshifter Race mod's controller
+        // (SG_HAZ_globolscript). 0 (and any unmapped code) means "no override": the player is shown
+        // as their true Hazaeki self. Creature forms never set PC_hz_ht, so they never reach here.
+        switch (code)
+        {
+            case 1:
+                return ESM::RefId::stringRefId("Argonian");
+            case 2:
+                return ESM::RefId::stringRefId("Breton");
+            case 4:
+                return ESM::RefId::stringRefId("High Elf");
+            case 5:
+                return ESM::RefId::stringRefId("Imperial");
+            case 6:
+                return ESM::RefId::stringRefId("Khajiit");
+            case 7:
+                return ESM::RefId::stringRefId("Nord");
+            case 8:
+                return ESM::RefId::stringRefId("Orc");
+            case 9:
+                return ESM::RefId::stringRefId("Redguard");
+            case 10:
+                return ESM::RefId::stringRefId("Wood Elf");
+            case 12:
+                return ESM::RefId::stringRefId("Anen Nirrera");
+            // 11 (Drow) and 13 (Mang'Chu) ship their skins as clothing rather than as a race
+            // body-part set, so there is no race to switch to; they keep the mod's clothing swap.
+            default:
+                return ESM::RefId();
+        }
+    }
+
+    ESM::RefId NpcAnimation::displayBodyRace() const
+    {
+        return mBodyRaceOverride.empty() ? mNpc->mRace : mBodyRaceOverride;
+    }
+
+    VFS::Path::Normalized NpcAnimation::findRaceHeadOrHair(const ESM::RefId& race, bool female, bool hair) const
+    {
+        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+        const ESM::BodyPart::MeshPart wanted = hair ? ESM::BodyPart::MP_Hair : ESM::BodyPart::MP_Head;
+        const ESM::BodyPart* fallback = nullptr;
+        for (const ESM::BodyPart& bp : store.get<ESM::BodyPart>())
+        {
+            if (bp.mData.mFlags & ESM::BodyPart::BPF_NotPlayable)
+                continue;
+            if (bp.mData.mType != ESM::BodyPart::MT_Skin)
+                continue;
+            if (bp.mData.mPart != wanted)
+                continue;
+            if (!(bp.mRace == race))
+                continue;
+            if (ESM::isFirstPersonBodyPart(bp))
+                continue;
+            if (isFemalePart(&bp) == female)
+                return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bp.mModel));
+            if (!fallback)
+                fallback = &bp; // opposite-sex fallback, matching getBodyParts()' behaviour
+        }
+        if (fallback)
+            return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(fallback->mModel));
+        return {};
+    }
+
+    void NpcAnimation::updateBodyRaceOverride()
+    {
+        // Only the player is ever transformed by the mod.
+        if (mPtr != MWMechanics::getPlayer())
+            return;
+
+        const MWBase::World* world = MWBase::Environment::get().getWorld();
+
+        // string_view over string literals: static lifetime, so GlobalVariableName's stored view does
+        // not dangle (and this selects the public string_view ctor, not the private const char* one).
+        constexpr std::string_view pcHazaeki = "pc_hazaeki";
+        constexpr std::string_view pcHzHt = "pc_hz_ht";
+
+        // Reading a non-existent global throws, so probe the type first. The override only applies
+        // to a Hazaeki PC (PC_hazaeki != 0) who is in a humanoid form (PC_hz_ht != 0).
+        int code = 0;
+        if (world->getGlobalVariableType(MWWorld::GlobalVariableName{ pcHazaeki }) != ' '
+            && world->getGlobalInt(MWWorld::GlobalVariableName{ pcHazaeki }) != 0
+            && world->getGlobalVariableType(MWWorld::GlobalVariableName{ pcHzHt }) != ' ')
+        {
+            code = static_cast<int>(world->getGlobalFloat(MWWorld::GlobalVariableName{ pcHzHt }));
+        }
+
+        if (code == mHazFormCode)
+            return; // unchanged since the last frame - avoid needless rebuilds
+
+        ESM::RefId race = hazFormRace(code);
+
+        // Only override when the target race actually has skin body parts loaded; otherwise leave the
+        // real race in place so an unmapped/unavailable form can't make the body vanish.
+        if (!race.empty())
+        {
+            bool hasParts = false;
+            for (const ESM::BodyPart* p : getBodyParts(race, !mNpc->isMale(), false, false))
+            {
+                if (p)
+                {
+                    hasParts = true;
+                    break;
+                }
+            }
+            if (!hasParts)
+                race = ESM::RefId();
+        }
+
+        mHazFormCode = code;
+        if (race == mBodyRaceOverride)
+            return; // resolves to the same appearance - no rebuild needed
+
+        mBodyRaceOverride = race;
+        rebuild();
+    }
+
     void NpcAnimation::updateNpcBase()
     {
         clearAnimSources();
@@ -485,6 +607,18 @@ namespace MWRender
                 mHairModel = Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bp->mModel));
             else
                 Log(Debug::Warning) << "Warning: Failed to load body part '" << hairName << "'";
+        }
+
+        // Hazaeki humanoid form: display the target race's head & hair in place of the PC's own, so
+        // the transformed appearance is complete. Keeps the PC's own part if the race lacks one.
+        if (!isWerewolf && !mBodyRaceOverride.empty())
+        {
+            VFS::Path::Normalized overrideHead = findRaceHeadOrHair(mBodyRaceOverride, isFemale, false);
+            if (!overrideHead.empty())
+                mHeadModel = overrideHead;
+            VFS::Path::Normalized overrideHair = findRaceHeadOrHair(mBodyRaceOverride, isFemale, true);
+            if (!overrideHair.empty())
+                mHairModel = overrideHair;
         }
 
         const std::string vampireHead = getVampireHead(mNpc->mRace, isFemale);
@@ -717,7 +851,9 @@ namespace MWRender
         showCarriedLeft(mShowCarriedLeft);
 
         bool isWerewolf = (getNpcType() == Type_Werewolf);
-        ESM::RefId race = (isWerewolf ? ESM::RefId::stringRefId("werewolf") : mNpc->mRace);
+        // displayBodyRace() returns the Hazaeki transformation's target race when a humanoid form is
+        // active, so the naked skin is the form's race while equipment stays the player's own.
+        ESM::RefId race = (isWerewolf ? ESM::RefId::stringRefId("werewolf") : displayBodyRace());
 
         const std::vector<const ESM::BodyPart*>& parts
             = getBodyParts(race, !mNpc->isMale(), mViewMode == VM_FirstPerson, isWerewolf);
@@ -794,6 +930,10 @@ namespace MWRender
 
     osg::Vec3f NpcAnimation::runAnimation(float timepassed)
     {
+        // Apply the Hazaeki transformation body override before running the frame. Cheap: it only
+        // reads two globals and rebuilds when the form code actually changes.
+        updateBodyRaceOverride();
+
         osg::Vec3f ret = Animation::runAnimation(timepassed);
 
         mHeadAnimationTime->update(timepassed);
