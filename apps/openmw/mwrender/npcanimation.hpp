@@ -80,6 +80,25 @@ namespace MWRender
         bool mAccurateAiming;
         float mAimingFactor;
 
+        // Hazaeki-style transformation support. When a Hazaeki player is turned into a "humanoid
+        // form" (the mod sets the MWScript global PC_hz_ht to a non-zero form code), the body, head
+        // and hair are displayed using the target race's parts, while equipment is still driven by
+        // the player's real inventory. This lets armor and clothing be worn over the transformed
+        // body - as the base race would - without the form appearance being lost. Creature forms are
+        // handled separately by the mod (full actor replacement) and never set PC_hz_ht, so they are
+        // unaffected.
+        ESM::RefId mBodyRaceOverride; // empty = use the actor's real race
+        int mHazFormCode; // last-applied PC_hz_ht value for the player, -1 = not yet initialised
+
+        // Player only: read PC_hz_ht / PC_hazaeki and (re)apply the body race override on change.
+        void updateBodyRaceOverride();
+        // Map a PC_hz_ht form code to a race id; returns an empty RefId for "no override".
+        static ESM::RefId hazFormRace(int code);
+        // First playable skin head (hair==false) or hair (hair==true) mesh for a race+sex, or empty.
+        VFS::Path::Normalized findRaceHeadOrHair(const ESM::RefId& race, bool female, bool hair) const;
+        // The race whose body/head/hair should be displayed (override if active, else the real race).
+        ESM::RefId displayBodyRace() const;
+
         void updateNpcBase();
 
         NpcType getNpcType() const;
