@@ -10,6 +10,7 @@
 #include "../mwworld/inventorystore.hpp"
 
 #include <array>
+#include <vector>
 
 namespace ESM
 {
@@ -88,9 +89,10 @@ namespace MWRender
         // handled separately by the mod (full actor replacement) and never set PC_hz_ht, so they are
         // unaffected.
         ESM::RefId mBodyRaceOverride; // empty = use the actor's real race
+        bool mHazMangchu; // Mang'Chu form (its skin has no race, so it is resolved by explicit part ids)
         int mHazFormCode; // last-applied PC_hz_ht value for the player, -1 = not yet initialised
 
-        // Player only: read PC_hz_ht / PC_hazaeki and (re)apply the body race override on change.
+        // Player only: read PC_hz_ht / PC_hazaeki and (re)apply the body override on change.
         void updateBodyRaceOverride();
         // Map a PC_hz_ht form code to a race id; returns an empty RefId for "no override".
         static ESM::RefId hazFormRace(int code);
@@ -98,6 +100,9 @@ namespace MWRender
         VFS::Path::Normalized findRaceHeadOrHair(const ESM::RefId& race, bool female, bool hair) const;
         // The race whose body/head/hair should be displayed (override if active, else the real race).
         ESM::RefId displayBodyRace() const;
+        // Body parts for the Mang'Chu form, built by explicit id (its skin ships as clothing-tagged
+        // parts rather than a race), indexed like getBodyParts()'s result. Empty if unavailable.
+        std::vector<const ESM::BodyPart*> buildMangchuBodyParts(bool female) const;
 
         void updateNpcBase();
 
