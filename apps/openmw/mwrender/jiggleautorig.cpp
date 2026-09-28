@@ -302,20 +302,22 @@ namespace MWRender
                 return false;
             }
 
-            // Reuse existing injected nodes if this actor was already processed. Otherwise make a
-            // true parent->child chain so motion accumulates naturally toward the cape hem.
+            // Reuse existing injected nodes if this actor was already processed. The three
+            // generated cape bones are siblings under the same authored torso anchor: all three
+            // identity bones share that pivot, so nesting them would stack their translations and
+            // over-amplify the hem. Progressive stiffness/mass plus gradient weights provides the
+            // intended increasing lag without cumulative transforms.
             constexpr std::array<std::string_view, 3> nodeNames = {
                 "Bip01 Cape01", "Bip01 Cape02", "Bip01 Cape03"
             };
             std::array<osg::MatrixTransform*, 3> capeNodes{};
-            osg::MatrixTransform* chainParent = parent;
             bool addedNode = false;
             for (std::size_t i = 0; i < capeNodes.size(); ++i)
             {
                 osg::MatrixTransform* found = nullptr;
-                for (unsigned int n = 0; n < chainParent->getNumChildren(); ++n)
+                for (unsigned int n = 0; n < parent->getNumChildren(); ++n)
                 {
-                    osg::Node* child = chainParent->getChild(n);
+                    osg::Node* child = parent->getChild(n);
                     if (Misc::StringUtils::ciEqual(child->getName(), std::string(nodeNames[i])))
                     {
                         found = dynamic_cast<osg::MatrixTransform*>(child);
@@ -363,13 +365,12 @@ namespace MWRender
                     }
 
                     node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, std::move(settings)));
-                    chainParent->addChild(node);
+                    parent->addChild(node);
                     found = node.get();
                     addedNode = true;
                 }
 
                 capeNodes[i] = found;
-                chainParent = found;
             }
 
             if (addedNode)
