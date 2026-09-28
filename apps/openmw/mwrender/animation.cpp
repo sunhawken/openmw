@@ -123,6 +123,12 @@ namespace
             settings.mDirect = true;
             settings.mActive = b;
         }
+        else if ((key == "jiggle_collision" || key == "wiggle_collision" || key == "wiggle_self_collision")
+            && parseWiggleBool(value, b))
+        {
+            settings.mDirect = true;
+            settings.mSelfCollision = b;
+        }
         else if ((key == "jiggle_stiffness" || key == "wiggle_stiffness" || key == "wiggle_stiff")
             && parseWiggleFloat(value, f))
         {
@@ -173,7 +179,8 @@ namespace
                 applyWiggleProperty(settings, std::string(key), std::to_string(value));
         };
 
-        for (std::string_view key : { "jiggle_enable", "jiggle_active", "wiggle_enable", "wiggle_active", "wiggle_tail" })
+        for (std::string_view key : { "jiggle_enable", "jiggle_active", "wiggle_enable", "wiggle_active", "wiggle_tail",
+                 "jiggle_collision", "wiggle_collision", "wiggle_self_collision" })
             readBoolValue(key);
         for (std::string_view key : { "jiggle_stiffness", "wiggle_stiffness", "wiggle_stiff", "jiggle_dampen",
                  "jiggle_damping", "wiggle_dampen", "wiggle_damping", "wiggle_damp", "jiggle_amplitude",
