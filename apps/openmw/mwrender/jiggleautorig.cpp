@@ -338,6 +338,11 @@ namespace MWRender
                     settings.mGravity = 0.f;
                     settings.mSelfCollision = false;
                     settings.mUseBodyResponse = false;
+                    // Keep cape motion independent of body-jiggle presentation sliders. These
+                    // reproduce the branch defaults, then the cape's own amplitude/stretch tune it.
+                    settings.mMaxDisplacementOverride = 3.f;
+                    settings.mVisualIntensityOverride = 2.5f;
+                    settings.mSideScaleOverride = 1.f;
                     settings.mAmplitude = 0.75f;
                     settings.mStretch = 2.75f;
                     // The uploaded Rose Sorceress NIF confirms X is left/right, Y is front/back,

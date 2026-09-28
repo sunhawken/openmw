@@ -29,6 +29,11 @@ namespace MWRender
         std::optional<float> mMass;
         std::optional<float> mStretch;
         std::optional<bool> mSelfCollision;
+        // Optional per-bone visual overrides. Model-specific cloth can remain functional even if
+        // body-jiggle sliders are deliberately reduced/disabled by the player.
+        std::optional<float> mMaxDisplacementOverride;
+        std::optional<float> mVisualIntensityOverride;
+        std::optional<float> mSideScaleOverride;
         bool mUseBodyResponse = true;
 
         // Optional local-space virtual point used by the spring simulation. The bone itself keeps
