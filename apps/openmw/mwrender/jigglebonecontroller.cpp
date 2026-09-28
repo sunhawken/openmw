@@ -216,17 +216,6 @@ namespace MWRender
 
         displacement = mSimWorldPos - restWorldPos;
 
-        // Runtime proof that a generated cape controller is not merely attached but
-        // actually producing secondary motion. Log once per cape bone after the
-        // simulated point has measurably departed from its animated rest target.
-        if (!mMotionVerified && Misc::StringUtils::ciFind(node->getName(), "cape") != std::string::npos
-            && displacement.length2() > 0.0025f)
-        {
-            mMotionVerified = true;
-            Log(Debug::Info) << "Rose Sorceress cape Wiggle motion VERIFIED: bone=" << node->getName()
-                             << " displacement=" << displacement.length();
-        }
-
         if (displacement.length2() > maxDisplacement * maxDisplacement)
         {
             displacement.normalize();
@@ -243,6 +232,17 @@ namespace MWRender
 
         const osg::Matrix parentWorldInverse = osg::Matrix::inverse(parentWorldMatrix);
         const osg::Vec3f newLocalTranslation = visualWorldPos * parentWorldInverse - simulationOffset;
+
+        // Runtime proof that the final transform which drives skinned cape vertices actually moved,
+        // after displacement clamp, side shaping and visual intensity have all been applied.
+        if (!mMotionVerified && Misc::StringUtils::ciFind(node->getName(), "cape") != std::string::npos
+            && (newLocalTranslation - mRestLocalMatrix.getTrans()).length2() > 0.0025f)
+        {
+            mMotionVerified = true;
+            Log(Debug::Info) << "Rose Sorceress cape Wiggle motion VERIFIED: bone=" << node->getName()
+                             << " local displacement="
+                             << (newLocalTranslation - mRestLocalMatrix.getTrans()).length();
+        }
 
         if (mDebug && (mDebugCounter++ % 60) == 0)
         {
