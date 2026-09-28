@@ -715,6 +715,15 @@ namespace NifOsg
                     {
                         node->getOrCreateUserDataContainer()->addDescription("CustomBone");
                     }
+                    // Preserve direct Wiggle Bones metadata on the loaded scene node so the
+                    // renderer-side JiggleBoneController can consume Blender/NifSkope-authored
+                    // per-bone settings. NIF string extras are otherwise intentionally ignored.
+                    else if (Misc::StringUtils::ciFind(sd->mData, "openmw_wiggle") != std::string::npos
+                        || Misc::StringUtils::ciFind(sd->mData, "wiggle_") != std::string::npos
+                        || Misc::StringUtils::ciFind(sd->mData, "jiggle_") != std::string::npos)
+                    {
+                        node->getOrCreateUserDataContainer()->addDescription(sd->mData);
+                    }
                     else if (sd->mData.rfind(extraDataIdentifer, 0) == 0)
                     {
                         extraData = sd->mData.substr(extraDataIdentifer.length());
