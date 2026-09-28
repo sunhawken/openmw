@@ -250,6 +250,8 @@ namespace MWRender
             return false;
         }
 
+        bool isCapeClothVertex(const Rig::BoneWeights& vw, const std::vector<std::string>& names);
+
         /// Runtime cloth rig for the Rose Sorceress cape. The source NIF is skinned only to the
         /// stock Better Bodies skeleton, so there are no cape bones for a secondary-motion
         /// controller to drive. Build a three-link identity chain under an authored torso anchor
