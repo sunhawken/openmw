@@ -6,6 +6,7 @@
 #include <osg/Matrix>
 #include <osg/Vec3f>
 
+#include <optional>
 #include <string>
 
 namespace osg
@@ -15,6 +16,20 @@ namespace osg
 
 namespace MWRender
 {
+    /// Per-bone overrides imported from Blender Wiggle Bones metadata.
+    /// Missing values fall back to OpenMW's live global jiggle settings.
+    struct WiggleBoneSettings
+    {
+        bool mDirect = false;
+        std::optional<bool> mActive;
+        std::optional<float> mStiffness;
+        std::optional<float> mDamping;
+        std::optional<float> mAmplitude;
+        std::optional<float> mGravity;
+        std::optional<float> mMass;
+        std::optional<float> mStretch;
+    };
+
     /// Applies a lightweight procedural spring-damper secondary-motion effect to a
     /// bone (e.g. breast/butt "jiggle bones" on body-replacer meshes), simulating
     /// physical lag as its parent bone moves. This is NOT rigid-body physics - no
@@ -34,7 +49,8 @@ namespace MWRender
         /// @param isPlayer when true, this bone belongs to the player character. While the
         /// "jiggle player only" setting is on, the manual breast/butt Z-offset sliders (player-mesh
         /// -specific tuning) are applied only to the player's bones and skipped for NPCs.
-        explicit JiggleBoneController(bool debug = false, bool isPlayer = false);
+        explicit JiggleBoneController(
+            bool debug = false, bool isPlayer = false, WiggleBoneSettings settings = {});
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
@@ -49,6 +65,7 @@ namespace MWRender
         double mLastSimTime;
         bool mDebug;
         bool mIsPlayer;
+        WiggleBoneSettings mSettings;
         int mDebugCounter = 0;
     };
 }
