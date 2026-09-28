@@ -28,6 +28,11 @@ namespace MWRender
         std::optional<float> mGravity;
         std::optional<float> mMass;
         std::optional<float> mStretch;
+
+        // Optional local-space virtual point used by the spring simulation. The bone itself keeps
+        // its authored bind transform; this only gives identity/injected bones a lever arm so parent
+        // rotation produces inertia (useful for procedural cloth/cape chains).
+        osg::Vec3f mSimulationOffset{ 0.f, 0.f, 0.f };
     };
 
     /// Applies a lightweight procedural spring-damper secondary-motion effect to a
