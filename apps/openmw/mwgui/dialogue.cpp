@@ -365,17 +365,15 @@ namespace MWGui
 
     bool DialogueWindow::exit()
     {
-        if ((MWBase::Environment::get().getDialogueManager()->isInChoice()))
-        {
-            return false;
-        }
-        else
-        {
-            resetReference();
-            MWBase::Environment::get().getDialogueManager()->goodbyeSelected();
-            mTopicsList->scrollToTop();
-            return true;
-        }
+        // Always allow leaving the conversation. Vanilla blocked Goodbye/Escape while a Choice was
+        // active (so the player was forced to answer), but a broken or looping script that keeps
+        // re-adding choices with no valid answer could then trap the player in dialogue forever with
+        // no way out. Goodbye now always ends the conversation; goodbyeSelected() clears the choice
+        // state so nothing lingers.
+        resetReference();
+        MWBase::Environment::get().getDialogueManager()->goodbyeSelected();
+        mTopicsList->scrollToTop();
+        return true;
     }
 
     void DialogueWindow::onWindowResize(MyGUI::Window* sender)
@@ -727,7 +725,9 @@ namespace MWGui
             onScrollbarMoved(mScrollBar, 0);
         }
 
-        bool goodbyeEnabled = !MWBase::Environment::get().getDialogueManager()->isInChoice() || mGoodbye;
+        // Always keep the Goodbye button usable so the player can never be trapped in a dialogue,
+        // even while a Choice is active (exit() handles ending the conversation cleanly).
+        bool goodbyeEnabled = true;
         bool goodbyeWasEnabled = mGoodbyeButton->getEnabled();
         mGoodbyeButton->setEnabled(goodbyeEnabled);
         if (goodbyeEnabled && !goodbyeWasEnabled)
@@ -947,8 +947,9 @@ namespace MWGui
                 onSelectListItem(mTopicsList->getItemNameAt(mControllerFocus), static_cast<int>(mControllerFocus));
             MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("Menu Click"));
         }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_B && mChoices.empty())
+        else if (arg.button == SDL_CONTROLLER_BUTTON_B)
         {
+            // B always leaves the conversation, even during a choice, so the player can't get stuck.
             onGoodbyeActivated();
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_UP)
