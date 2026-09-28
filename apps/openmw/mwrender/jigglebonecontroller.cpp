@@ -167,8 +167,12 @@ namespace MWRender
         float stiffnessMult = (1.f - 0.60f * softness) * (0.75f + 0.85f * quickness) * (1.f - 0.30f * massEffect);
         // lerp(1 -> 0.55) as softness rises; heavier damps more.
         float dampingMult = (1.f - 0.45f * softness) * (1.f + 0.50f * massEffect);
-        const float stiffness = baseStiffness * std::max(0.05f, stiffnessMult);
-        const float damping = baseDamping * std::max(0.f, dampingMult);
+        const float stiffness = mSettings.mUseBodyResponse
+            ? baseStiffness * std::max(0.05f, stiffnessMult)
+            : baseStiffness;
+        const float damping = mSettings.mUseBodyResponse
+            ? baseDamping * std::max(0.f, dampingMult)
+            : baseDamping;
 
         // Gravity as a real world-space acceleration (down = world -Z). Because the spring solves
         // in world space, the resulting droop stays world-down and, when converted back into the

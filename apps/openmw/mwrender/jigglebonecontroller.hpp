@@ -29,6 +29,7 @@ namespace MWRender
         std::optional<float> mMass;
         std::optional<float> mStretch;
         std::optional<bool> mSelfCollision;
+        bool mUseBodyResponse = true;
 
         // Optional local-space virtual point used by the spring simulation. The bone itself keeps
         // its authored bind transform; this only gives identity/injected bones a lever arm so parent
