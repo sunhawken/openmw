@@ -310,8 +310,49 @@ namespace MWRender
             constexpr std::array<std::string_view, 3> nodeNames = {
                 "Bip01 Cape01", "Bip01 Cape02", "Bip01 Cape03"
             };
+            auto capeSettings = [](std::size_t i) {
+                WiggleBoneSettings settings;
+                settings.mDirect = true;
+                settings.mActive = true;
+                settings.mGravity = 0.f;
+                settings.mSelfCollision = false;
+                settings.mUseBodyResponse = false;
+                // Keep cape motion independent of body-jiggle presentation sliders. These
+                // reproduce the branch defaults, then the cape's own amplitude/stretch tune it.
+                settings.mMaxDisplacementOverride = 3.f;
+                settings.mVisualIntensityOverride = 2.5f;
+                settings.mSideScaleOverride = 1.f;
+                settings.mAmplitude = 0.75f;
+                settings.mStretch = 2.75f;
+                // The uploaded Rose Sorceress NIF confirms X is left/right, Y is front/back,
+                // and Z is up (the hanging cape reaches strongly into -Y). A virtual point
+                // behind (-Y) and below each identity bone gives torso rotation/acceleration
+                // a physically useful lever arm without changing the authored bind pose.
+                settings.mSimulationOffset = osg::Vec3f(0.f, -8.f, -18.f);
+                if (i == 0)
+                {
+                    settings.mStiffness = 115.f;
+                    settings.mDamping = 14.f;
+                    settings.mMass = 1.0f;
+                }
+                else if (i == 1)
+                {
+                    settings.mStiffness = 85.f;
+                    settings.mDamping = 11.f;
+                    settings.mMass = 1.15f;
+                }
+                else
+                {
+                    settings.mStiffness = 60.f;
+                    settings.mDamping = 9.f;
+                    settings.mMass = 1.30f;
+                }
+                return settings;
+            };
+
             std::array<osg::MatrixTransform*, 3> capeNodes{};
             bool addedNode = false;
+            bool attachedController = false;
             for (std::size_t i = 0; i < capeNodes.size(); ++i)
             {
                 osg::MatrixTransform* found = nullptr;
@@ -331,48 +372,19 @@ namespace MWRender
                     node->setName(std::string(nodeNames[i]));
                     node->setDataVariance(osg::Object::DYNAMIC);
                     node->setUserValue(sAutoRigMarker, true);
-
-                    WiggleBoneSettings settings;
-                    settings.mDirect = true;
-                    settings.mActive = true;
-                    settings.mGravity = 0.f;
-                    settings.mSelfCollision = false;
-                    settings.mUseBodyResponse = false;
-                    // Keep cape motion independent of body-jiggle presentation sliders. These
-                    // reproduce the branch defaults, then the cape's own amplitude/stretch tune it.
-                    settings.mMaxDisplacementOverride = 3.f;
-                    settings.mVisualIntensityOverride = 2.5f;
-                    settings.mSideScaleOverride = 1.f;
-                    settings.mAmplitude = 0.75f;
-                    settings.mStretch = 2.75f;
-                    // The uploaded Rose Sorceress NIF confirms X is left/right, Y is front/back,
-                    // and Z is up (the hanging cape reaches strongly into -Y). A virtual point
-                    // behind (-Y) and below each identity bone gives torso rotation/acceleration
-                    // a physically useful lever arm without changing the authored bind pose.
-                    settings.mSimulationOffset = osg::Vec3f(0.f, -8.f, -18.f);
-                    if (i == 0)
-                    {
-                        settings.mStiffness = 115.f;
-                        settings.mDamping = 14.f;
-                        settings.mMass = 1.0f;
-                    }
-                    else if (i == 1)
-                    {
-                        settings.mStiffness = 85.f;
-                        settings.mDamping = 11.f;
-                        settings.mMass = 1.15f;
-                    }
-                    else
-                    {
-                        settings.mStiffness = 60.f;
-                        settings.mDamping = 9.f;
-                        settings.mMass = 1.30f;
-                    }
-
-                    node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, std::move(settings)));
                     parent->addChild(node);
                     found = node.get();
                     addedNode = true;
+                }
+
+                // Permanently painted Rose Sorceress NIFs may already contain Cape01/02/03.
+                // Make those authored bones live too, even when no OPENMW_WIGGLE metadata was
+                // exported, while avoiding duplicate callbacks on runtime-generated bones.
+                if (!found->getUpdateCallback())
+                {
+                    found->setDataVariance(osg::Object::DYNAMIC);
+                    found->addUpdateCallback(new JiggleBoneController(debug, isPlayer, capeSettings(i)));
+                    attachedController = true;
                 }
 
                 capeNodes[i] = found;
@@ -410,10 +422,10 @@ namespace MWRender
             // weights untouched instead of painting them a second time.
             if (alreadyWeighted)
             {
-                if (debug && addedNode)
-                    Log(Debug::Warning) << "Cape auto-rig: restored missing runtime chain for " << meshFile
+                if (debug && (addedNode || attachedController))
+                    Log(Debug::Warning) << "Cape auto-rig: restored/activated runtime chain for " << meshFile
                                         << " without repainting existing cape weights";
-                return addedNode;
+                return addedNode || attachedController;
             }
 
             std::vector<Rig::BoneInfo> bones = rig.getBoneInfoList();
