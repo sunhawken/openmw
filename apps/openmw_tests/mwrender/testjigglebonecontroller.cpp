@@ -1,11 +1,17 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <osg/FrameStamp>
+#include <osg/Geode>
 #include <osg/Matrix>
 #include <osg/MatrixTransform>
 #include <osg/NodeVisitor>
 
 #include "apps/openmw/mwrender/jigglebonecontroller.hpp"
+#include "apps/openmw/mwrender/jiggleautorig.hpp"
+#include "components/sceneutil/riggeometry.hpp"
+#include "components/sceneutil/skeleton.hpp"
 
 namespace MWRender
 {
@@ -119,5 +125,89 @@ namespace MWRender
 
             EXPECT_NEAR(bone->getMatrix().getTrans().length(), 0.f, 1e-5f);
         }
+
+        TEST(JiggleBoneControllerTest, RoseSorceressAutoRigInjectsCapeBonesAndPreservesArmCloth)
+        {
+            osg::ref_ptr<SceneUtil::Skeleton> skeleton = new SceneUtil::Skeleton;
+
+            osg::ref_ptr<osg::MatrixTransform> spine = new osg::MatrixTransform(osg::Matrix::identity());
+            spine->setName("Bip01 Spine2");
+            skeleton->addChild(spine);
+
+            osg::ref_ptr<osg::MatrixTransform> upperArm = new osg::MatrixTransform(osg::Matrix::identity());
+            upperArm->setName("Bip01 L UpperArm");
+            skeleton->addChild(upperArm);
+
+            osg::ref_ptr<osg::Geometry> source = new osg::Geometry;
+            osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+            // Three hanging-cloth samples from shoulder to hem plus one sleeve sample.
+            vertices->push_back(osg::Vec3f(0.f, -8.f, 110.f));
+            vertices->push_back(osg::Vec3f(0.f, -14.f, 80.f));
+            vertices->push_back(osg::Vec3f(0.f, -24.f, 30.f));
+            vertices->push_back(osg::Vec3f(-30.f, -2.f, 105.f));
+            source->setVertexArray(vertices);
+
+            osg::ref_ptr<SceneUtil::RigGeometry> rig = new SceneUtil::RigGeometry;
+            rig->setName("Tri Groin Cape 0");
+            rig->setSourceGeometry(source);
+
+            std::vector<SceneUtil::RigGeometry::BoneInfo> boneInfo(2);
+            boneInfo[0].mName = "bip01 spine2";
+            boneInfo[0].mInvBindMatrix = osg::Matrixf::identity();
+            boneInfo[1].mName = "bip01 l upperarm";
+            boneInfo[1].mInvBindMatrix = osg::Matrixf::identity();
+            rig->setBoneInfo(std::move(boneInfo));
+
+            std::vector<SceneUtil::RigGeometry::BoneWeights> influences(vertices->size());
+            influences[0].emplace_back(0, 1.f);
+            influences[1].emplace_back(0, 1.f);
+            influences[2].emplace_back(0, 1.f);
+            influences[3].emplace_back(1, 1.f);
+            rig->setInfluences(influences);
+
+            osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+            geode->setName("Tri Groin Cape 0");
+            geode->setUserValue("meshFileName", std::string("meshes/rosesorceress/rose_sorceress_cape.nif"));
+            geode->addDrawable(rig);
+            skeleton->addChild(geode);
+
+            // Cape compatibility must work even with female-body auto-rigging disabled.
+            JiggleAutoRig::run(skeleton.get(), false, false);
+
+            ASSERT_NE(skeleton->getBone("bip01 cape01"), nullptr);
+            ASSERT_NE(skeleton->getBone("bip01 cape02"), nullptr);
+            ASSERT_NE(skeleton->getBone("bip01 cape03"), nullptr);
+
+            const std::vector<std::string> names = rig->getInfluenceBoneNames();
+            auto boneIndexByName = [&](std::string_view name) {
+                const auto it = std::find(names.begin(), names.end(), name);
+                return it == names.end() ? names.size() : static_cast<std::size_t>(std::distance(names.begin(), it));
+            };
+            const std::size_t cape01 = boneIndexByName("bip01 cape01");
+            const std::size_t cape02 = boneIndexByName("bip01 cape02");
+            const std::size_t cape03 = boneIndexByName("bip01 cape03");
+            ASSERT_LT(cape01, names.size());
+            ASSERT_LT(cape02, names.size());
+            ASSERT_LT(cape03, names.size());
+
+            const auto painted = rig->getPerVertexInfluences(vertices->size());
+            auto capeWeight = [&](std::size_t vertex) {
+                float total = 0.f;
+                for (const auto& [bone, weight] : painted[vertex])
+                    if (bone == cape01 || bone == cape02 || bone == cape03)
+                        total += weight;
+                return total;
+            };
+
+            EXPECT_NEAR(capeWeight(0), 0.f, 1e-5f); // shoulder attachment remains pinned
+            EXPECT_GT(capeWeight(1), 0.f);          // hanging mid-cape gets procedural motion
+            EXPECT_GT(capeWeight(2), 0.8f);        // hem gets the strongest response
+            EXPECT_NEAR(capeWeight(3), 0.f, 1e-5f); // sleeve remains authored to UpperArm
+
+            const std::size_t boneCountAfterFirstPass = rig->getBoneInfoList().size();
+            JiggleAutoRig::run(skeleton.get(), false, false);
+            EXPECT_EQ(rig->getBoneInfoList().size(), boneCountAfterFirstPass);
+        }
+
     }
 }
