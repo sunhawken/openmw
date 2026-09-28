@@ -138,14 +138,14 @@ jobs:
         cp bin/Qt6OpenGLWidgets.dll ${{ github.workspace }}/build
         cp bin/Qt6Widgets.dll ${{ github.workspace }}/build
         cp bin/Qt6Svg.dll ${{ github.workspace }}/build
-        mkdir ${{ github.workspace }}/build/styles
-        cp plugins/styles/qwindowsvistastyle.dll ${{ github.workspace }}/build/styles
-        mkdir ${{ github.workspace }}/build/platforms
-        cp plugins/platforms/qwindows.dll ${{ github.workspace }}/build/platforms
-        mkdir ${{ github.workspace }}/build/imageformats
-        cp plugins/imageformats/qsvg.dll ${{ github.workspace }}/build/imageformats
-        mkdir ${{ github.workspace }}/build/iconengines
-        cp plugins/iconengines/qsvgicon.dll ${{ github.workspace }}/build/iconengines
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/styles | Out-Null
+        Copy-Item plugins/styles/qwindowsvistastyle.dll ${{ github.workspace }}/build/styles -Force
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/platforms | Out-Null
+        Copy-Item plugins/platforms/qwindows.dll ${{ github.workspace }}/build/platforms -Force
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/imageformats | Out-Null
+        Copy-Item plugins/imageformats/qsvg.dll ${{ github.workspace }}/build/imageformats -Force
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/iconengines | Out-Null
+        Copy-Item plugins/iconengines/qsvgicon.dll ${{ github.workspace }}/build/iconengines -Force
 
     - name: Create symbol server directory structure
       working-directory: ${{ github.workspace }}/build
