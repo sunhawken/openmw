@@ -191,7 +191,9 @@ namespace
         for (const std::string& description : node.getDescriptions())
         {
             const std::string normalized = normalizedWiggleKey(description);
-            if (normalized.find("wiggle_bone") != std::string::npos || normalized.find("wiggle2") != std::string::npos)
+            if (normalized.find("openmw_wiggle") != std::string::npos
+                || normalized.find("wiggle_bone") != std::string::npos
+                || normalized.find("wiggle2") != std::string::npos)
                 settings.mDirect = true;
 
             std::size_t start = 0;
