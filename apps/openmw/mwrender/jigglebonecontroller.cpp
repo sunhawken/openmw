@@ -189,7 +189,7 @@ namespace MWRender
         // the torso) past the limit, and stop its inward velocity at that wall. Bone-space analog
         // of TittyMagic's soft self-collision + distance limit. Uses the outward radial from the
         // parent joint, so it needs no knowledge of the skeleton's axis convention.
-        if (Settings::game().mJiggleBoneSelfCollision)
+        if (mSettings.mSelfCollision.value_or(Settings::game().mJiggleBoneSelfCollision))
         {
             const float selfCollisionLimit = Settings::game().mJiggleBoneSelfCollisionLimit;
             const osg::Vec3f parentOriginWorld = parentWorldMatrix.getTrans();
