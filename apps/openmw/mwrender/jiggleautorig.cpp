@@ -321,6 +321,7 @@ namespace MWRender
                     settings.mDirect = true;
                     settings.mActive = true;
                     settings.mGravity = 0.f;
+                    settings.mSelfCollision = false;
                     settings.mAmplitude = 0.75f;
                     settings.mStretch = 2.75f;
                     // Morrowind/Better Bodies convention here is +X forward, Z up. A virtual point
