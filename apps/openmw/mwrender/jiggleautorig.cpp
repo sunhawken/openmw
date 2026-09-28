@@ -508,7 +508,7 @@ namespace MWRender
 
             Log(Debug::Info) << "Rose Sorceress cape Wiggle rig ACTIVE: " << meshFile << " drawable="
                              << rig.getName() << " anchor=" << parentBoneName << " vertices=" << verts->size()
-                             << " z=" << minZ << ".." << maxZ;
+                             << " eligible=" << eligibleVertexCount << " z=" << minZ << ".." << maxZ;
             return true;
         }
 
