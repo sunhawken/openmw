@@ -147,6 +147,10 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/iconengines | Out-Null
         Copy-Item plugins/iconengines/qsvgicon.dll ${{ github.workspace }}/build/iconengines -Force
 
+    - name: Run Rose Sorceress cape Wiggle regression tests
+      if: ${{ ! inputs.package }}
+      run: .\build\openmw-tests.exe --gtest_filter=JiggleBoneControllerTest.*
+
     - name: Create symbol server directory structure
       working-directory: ${{ github.workspace }}/build
       run: |
