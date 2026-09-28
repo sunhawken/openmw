@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <iterator>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <osg/FrameStamp>
 #include <osg/Geode>
@@ -153,9 +158,9 @@ namespace MWRender
 
             std::vector<SceneUtil::RigGeometry::BoneInfo> boneInfo(2);
             boneInfo[0].mName = "bip01 spine2";
-            boneInfo[0].mInvBindMatrix = osg::Matrixf::identity();
+            boneInfo[0].mInvBindMatrix = osg::Matrixf();
             boneInfo[1].mName = "bip01 l upperarm";
-            boneInfo[1].mInvBindMatrix = osg::Matrixf::identity();
+            boneInfo[1].mInvBindMatrix = osg::Matrixf();
             rig->setBoneInfo(std::move(boneInfo));
 
             std::vector<SceneUtil::RigGeometry::BoneWeights> influences(vertices->size());
