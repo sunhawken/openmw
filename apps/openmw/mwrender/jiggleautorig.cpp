@@ -465,8 +465,9 @@ namespace MWRender
 
     void JiggleAutoRig::run(osg::Group* objectRoot, bool isPlayer)
     {
-        if (!objectRoot || !Settings::game().mJiggleAutoRig)
+        if (!objectRoot)
             return;
+        const bool generalAutoRig = Settings::game().mJiggleAutoRig;
         // Player-only mode: skip auto-rigging every NPC body, leaving jiggle to the player alone.
         if (Settings::game().mJiggleBonePlayerOnly && !isPlayer)
             return;
@@ -476,6 +477,32 @@ namespace MWRender
         objectRoot->accept(rc);
         if (rc.mRigs.empty())
             return;
+
+        // Cape compatibility is deliberately independent of the general body auto-rigger.
+        // The uploaded Rose Sorceress cape contains no dedicated cloth bones, so without this
+        // path there is nothing for direct Wiggle support to animate. Detect only that exact mesh,
+        // inject its three-link chain, then stop here when general body auto-rig is disabled.
+        if (!generalAutoRig)
+        {
+            SkeletonFinder capeSkeletonFinder;
+            objectRoot->accept(capeSkeletonFinder);
+            if (!capeSkeletonFinder.mSkeleton)
+                return;
+
+            int capeRigged = 0;
+            for (Rig* rig : rc.mRigs)
+            {
+                osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
+                const std::string meshFile = meshFileFor(start);
+                if (rigRoseSorceressCape(
+                        *rig, *capeSkeletonFinder.mSkeleton, meshFile, isPlayer, debug))
+                    ++capeRigged;
+            }
+            if (debug && capeRigged)
+                Log(Debug::Warning) << "Cape auto-rig: processed " << capeRigged
+                                    << " Rose Sorceress cape mesh(es) with general auto-rig disabled";
+            return;
+        }
 
         // Drop blacklisted meshes up front so they take part in neither anchor detection nor
         // painting (an odd armor can't get bad jiggle nor drag the shared body anchor off).
