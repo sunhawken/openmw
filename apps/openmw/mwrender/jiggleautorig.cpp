@@ -225,29 +225,22 @@ namespace MWRender
 
         bool isRoseSorceressCapeGeometry(const Rig& rig, const std::string& meshFile)
         {
-            if (!isRoseSorceressCape(meshFile))
-                return false;
-
-            // The uploaded NIF contains a cape drawable named "Tri Groin Cape 0".
-            // Restrict procedural cloth weights to nodes that actually identify as cape
-            // geometry so any additional skinned shapes in the same NIF keep their authored
-            // body/armor skinning.
-            // The actual uploaded cloth drawable is named "Tri Groin Cape 0". Prefer the
-            // drawable's own name; some OSG/NIF layouts put that name on its immediate Geode
-            // instead, so check only the first two parents as a compatibility fallback. Do not
-            // search the whole ancestry: a file/root node named "...cape.nif" would otherwise
-            // cause every skinned drawable in the file to be repainted as cloth.
-            if (Misc::StringUtils::ciFind(rig.getName(), "tri groin cape") != std::string::npos)
-                return true;
-
+            // The uploaded final cape drawable is uniquely named "Tri Groin Cape 0".
+            // Require that exact drawable identity so other shapes are never repainted.
+            bool capeDrawable = Misc::StringUtils::ciEqual(rig.getName(), "Tri Groin Cape 0");
             const osg::Node* node = rig.getNumParents() > 0 ? rig.getParent(0) : nullptr;
-            for (int depth = 0; node && depth < 2; ++depth)
+            for (int depth = 0; !capeDrawable && node && depth < 2; ++depth)
             {
-                if (Misc::StringUtils::ciFind(node->getName(), "tri groin cape") != std::string::npos)
-                    return true;
+                capeDrawable = Misc::StringUtils::ciEqual(node->getName(), "Tri Groin Cape 0");
                 node = node->getNumParents() > 0 ? node->getParent(0) : nullptr;
             }
-            return false;
+            if (!capeDrawable)
+                return false;
+
+            // Prefer validating the source path when OpenMW's attachment path supplies it.
+            // The exact drawable-name fallback keeps this specific uploaded cape working even
+            // if that optional ancestry tag is absent in a particular attachment/reload path.
+            return meshFile.empty() || isRoseSorceressCape(meshFile);
         }
 
         bool isCapeClothVertex(const Rig::BoneWeights& vw, const std::vector<std::string>& names);
