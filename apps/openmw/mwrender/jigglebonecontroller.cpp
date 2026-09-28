@@ -215,6 +215,18 @@ namespace MWRender
         }
 
         displacement = mSimWorldPos - restWorldPos;
+
+        // Runtime proof that a generated cape controller is not merely attached but
+        // actually producing secondary motion. Log once per cape bone after the
+        // simulated point has measurably departed from its animated rest target.
+        if (!mMotionVerified && Misc::StringUtils::ciFind(node->getName(), "cape") != std::string::npos
+            && displacement.length2() > 0.0025f)
+        {
+            mMotionVerified = true;
+            Log(Debug::Info) << "Rose Sorceress cape Wiggle motion VERIFIED: bone=" << node->getName()
+                             << " displacement=" << displacement.length();
+        }
+
         if (displacement.length2() > maxDisplacement * maxDisplacement)
         {
             displacement.normalize();
