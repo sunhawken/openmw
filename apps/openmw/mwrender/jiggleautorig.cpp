@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <osg/Array>
@@ -222,6 +223,25 @@ namespace MWRender
             return Misc::StringUtils::ciFind(meshFile, "rose_sorceress_cape.nif") != std::string::npos;
         }
 
+        bool isRoseSorceressCapeGeometry(const Rig& rig, const std::string& meshFile)
+        {
+            if (!isRoseSorceressCape(meshFile))
+                return false;
+
+            // The uploaded NIF contains a cape drawable named "Tri Groin Cape 0".
+            // Restrict procedural cloth weights to nodes that actually identify as cape
+            // geometry so any additional skinned shapes in the same NIF keep their authored
+            // body/armor skinning.
+            const osg::Node* node = rig.getNumParents() > 0 ? rig.getParent(0) : nullptr;
+            while (node)
+            {
+                if (Misc::StringUtils::ciFind(node->getName(), "cape") != std::string::npos)
+                    return true;
+                node = node->getNumParents() > 0 ? node->getParent(0) : nullptr;
+            }
+            return false;
+        }
+
         /// Runtime cloth rig for the Rose Sorceress cape. The source NIF is skinned only to the
         /// stock Better Bodies skeleton, so there are no cape bones for a secondary-motion
         /// controller to drive. Build a three-link identity chain under Spine2 and smoothly move
@@ -233,7 +253,7 @@ namespace MWRender
         bool rigRoseSorceressCape(
             Rig& rig, SceneUtil::Skeleton& skeleton, const std::string& meshFile, bool isPlayer, bool debug)
         {
-            if (!isRoseSorceressCape(meshFile))
+            if (!isRoseSorceressCapeGeometry(rig, meshFile))
                 return false;
 
             const osg::Vec3Array* verts = sourceVerts(rig);
@@ -241,9 +261,8 @@ namespace MWRender
                 return false;
 
             std::vector<std::string> names = rig.getInfluenceBoneNames();
-            if (boneIndex(names, "bip01 cape01") >= 0 && boneIndex(names, "bip01 cape02") >= 0
-                && boneIndex(names, "bip01 cape03") >= 0)
-                return false;
+            const bool alreadyWeighted = boneIndex(names, "bip01 cape01") >= 0
+                && boneIndex(names, "bip01 cape02") >= 0 && boneIndex(names, "bip01 cape03") >= 0;
 
             const int spineIndex = boneIndex(names, "bip01 spine2");
             if (spineIndex < 0)
@@ -331,6 +350,18 @@ namespace MWRender
 
             if (addedNode)
                 skeleton.markDirty();
+
+            // The rig can outlive a skeleton rebuild during equipment/appearance changes.
+            // In that case the generated influences are already present, but the runtime
+            // Cape01/02/03 nodes were lost. Recreate the chain above, then leave the existing
+            // weights untouched instead of painting them a second time.
+            if (alreadyWeighted)
+            {
+                if (debug && addedNode)
+                    Log(Debug::Warning) << "Cape auto-rig: restored missing runtime chain for " << meshFile
+                                        << " without repainting existing cape weights";
+                return addedNode;
+            }
 
             std::vector<Rig::BoneInfo> bones = rig.getBoneInfoList();
             std::vector<Rig::BoneWeights> perVertex = rig.getPerVertexInfluences(verts->size());
