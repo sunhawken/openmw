@@ -252,11 +252,11 @@ namespace MWRender
 
         /// Runtime cloth rig for the Rose Sorceress cape. The source NIF is skinned only to the
         /// stock Better Bodies skeleton, so there are no cape bones for a secondary-motion
-        /// controller to drive. Build a three-link identity chain under Spine2 and smoothly move
-        /// influence from the original skinning into that chain from the shoulders toward the hem.
+        /// controller to drive. Build a three-link identity chain under an authored torso anchor
+        /// and smoothly move influence from the original skinning into that chain toward the hem.
         ///
-        /// Keeping the injected transforms identity and reusing Spine2's inverse bind preserves the
-        /// authored rest pose exactly. Each link has progressively softer direct Wiggle settings,
+        /// Keeping the injected transforms identity and reusing the selected anchor's inverse bind
+        /// preserves the authored rest pose exactly. Each link has progressively softer direct Wiggle settings,
         /// giving the lower cape more lag without requiring a Blender/NifSkope re-export.
         bool rigRoseSorceressCape(
             Rig& rig, SceneUtil::Skeleton& skeleton, const std::string& meshFile, bool isPlayer, bool debug)
@@ -342,10 +342,11 @@ namespace MWRender
                     settings.mSelfCollision = false;
                     settings.mAmplitude = 0.75f;
                     settings.mStretch = 2.75f;
-                    // Morrowind/Better Bodies convention here is +X forward, Z up. A virtual point
-                    // behind and below each identity bone makes torso rotation and acceleration move
-                    // the spring target without changing the original NIF bind pose.
-                    settings.mSimulationOffset = osg::Vec3f(-4.f, 0.f, -18.f);
+                    // The uploaded Rose Sorceress NIF confirms X is left/right, Y is front/back,
+                    // and Z is up (the hanging cape reaches strongly into -Y). A virtual point
+                    // behind (-Y) and below each identity bone gives torso rotation/acceleration
+                    // a physically useful lever arm without changing the authored bind pose.
+                    settings.mSimulationOffset = osg::Vec3f(0.f, -8.f, -18.f);
                     if (i == 0)
                     {
                         settings.mStiffness = 115.f;
@@ -449,6 +450,28 @@ namespace MWRender
 
             for (std::size_t v = 0; v < perVertex.size(); ++v)
             {
+                // The source "Tri Groin Cape 0" drawable also carries sleeve/shoulder cloth.
+                // Preserve vertices dominated by arm/clavicle bones exactly as authored; only the
+                // torso/pelvis/thigh-supported hanging cloth is eligible for procedural cape motion.
+                std::size_t dominant = std::numeric_limits<std::size_t>::max();
+                float dominantWeight = -1.f;
+                for (const auto& [bone, weight] : perVertex[v])
+                {
+                    if (weight > dominantWeight)
+                    {
+                        dominantWeight = weight;
+                        dominant = bone;
+                    }
+                }
+                if (dominant < names.size())
+                {
+                    const std::string& dominantName = names[dominant];
+                    if (dominantName.find("upperarm") != std::string::npos
+                        || dominantName.find("forearm") != std::string::npos
+                        || dominantName.find("clavicle") != std::string::npos)
+                        continue;
+                }
+
                 // 0 at the shoulder/top edge, 1 at the bottom hem.
                 const float t = std::clamp((maxZ - (*verts)[v].z()) / height, 0.f, 1.f);
                 // Leave the first ~10% rigidly attached so the cape never tears away from the body.
