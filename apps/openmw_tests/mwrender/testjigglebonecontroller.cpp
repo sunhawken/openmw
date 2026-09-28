@@ -104,7 +104,7 @@ namespace MWRender
             settings.mDirect = true;
             settings.mActive = false;
             settings.mGravity = 0.f;
-            settings.mSimulationOffset = osg::Vec3f(-4.f, 0.f, -18.f);
+            settings.mSimulationOffset = osg::Vec3f(0.f, -8.f, -18.f);
 
             osg::ref_ptr<JiggleBoneController> controller = new JiggleBoneController(false, false, settings);
             osg::ref_ptr<osg::FrameStamp> frame = new osg::FrameStamp;
