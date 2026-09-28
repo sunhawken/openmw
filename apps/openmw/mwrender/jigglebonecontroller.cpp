@@ -19,6 +19,9 @@ namespace MWRender
     {
         // dt is clamped regardless of settings, so a hitch/pause doesn't blow up the spring.
         constexpr double sMaxDeltaTime = 0.1;
+        // A one-frame jump this large is a teleport/cell transition, not normal character motion.
+        // Reset instead of feeding it into the spring and carrying a huge velocity into later frames.
+        constexpr float sTeleportResetDistance = 128.f;
 
         // Extra static world-space Z (up/down) nudge for this bone's rest position,
         // read from the live-tunable settings sliders (Physics tab) rather than baked
@@ -39,6 +42,7 @@ namespace MWRender
     JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, WiggleBoneSettings settings)
         : mSimWorldPos(0, 0, 0)
         , mVelocity(0, 0, 0)
+        , mPreviousRestWorldPos(0, 0, 0)
         , mInitialized(false)
         , mLastSimTime(-1.0)
         , mDebug(debug)
@@ -88,6 +92,7 @@ namespace MWRender
             restWorldPos.z() += zOffsetFor(node->getName());
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
+            mPreviousRestWorldPos = restWorldPos;
             mInitialized = true;
             mLastSimTime = simTime;
             traverse(node, nv);
@@ -98,6 +103,30 @@ namespace MWRender
         const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
         osg::Vec3f restWorldPos = (restTranslation + simulationOffset) * parentWorldMatrix;
         restWorldPos.z() += zOffsetFor(node->getName());
+
+        const osg::Vec3f restStep = restWorldPos - mPreviousRestWorldPos;
+        mPreviousRestWorldPos = restWorldPos;
+        if (restStep.length2() > sTeleportResetDistance * sTeleportResetDistance)
+        {
+            // Fast travel, cell transitions and scripted teleports can move an actor hundreds or
+            // thousands of units in one update. Treat that as a discontinuity: snap the simulated
+            // point to the new animated rest target and clear momentum so the cape cannot slingshot.
+            mSimWorldPos = restWorldPos;
+            mVelocity = osg::Vec3f(0, 0, 0);
+            mLastSimTime = simTime;
+            const osg::Vec3f newLocalTranslation
+                = restWorldPos * osg::Matrix::inverse(parentWorldMatrix) - simulationOffset;
+            if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
+                nifTransform->setTranslation(newLocalTranslation);
+            else
+            {
+                osg::Matrix newMatrix = mRestLocalMatrix;
+                newMatrix.setTrans(newLocalTranslation);
+                node->setMatrix(newMatrix);
+            }
+            traverse(node, nv);
+            return;
+        }
 
         // Live master off-switch: the "jiggle auto rig" toggle freezes spring motion, but must
         // leave the manual NIF bone mover active. This lets the Jiggle-tab breast slider position

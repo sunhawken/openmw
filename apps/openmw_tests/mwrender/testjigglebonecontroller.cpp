@@ -104,6 +104,44 @@ namespace MWRender
             EXPECT_GT(moved.length(), 0.01f);
         }
 
+        TEST(JiggleBoneControllerTest, LargeParentJumpResetsCapeMomentum)
+        {
+            osg::ref_ptr<osg::MatrixTransform> parent = new osg::MatrixTransform(osg::Matrix::identity());
+            osg::ref_ptr<osg::MatrixTransform> bone = new osg::MatrixTransform(osg::Matrix::identity());
+            bone->setName("Bip01 CapeTeleportTest");
+            parent->addChild(bone);
+
+            WiggleBoneSettings settings;
+            settings.mDirect = true;
+            settings.mActive = true;
+            settings.mStiffness = 100.f;
+            settings.mDamping = 10.f;
+            settings.mAmplitude = 1.f;
+            settings.mGravity = 0.f;
+            settings.mMass = 1.f;
+            settings.mStretch = 3.f;
+            settings.mSelfCollision = false;
+            settings.mUseBodyResponse = false;
+            settings.mSimulationOffset = osg::Vec3f(0.f, -8.f, -18.f);
+
+            osg::ref_ptr<JiggleBoneController> controller = new JiggleBoneController(false, false, settings);
+            osg::ref_ptr<osg::FrameStamp> frame = new osg::FrameStamp;
+            osg::NodeVisitor nv(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN);
+            nv.setFrameStamp(frame.get());
+
+            frame->setSimulationTime(0.0);
+            (*controller)(bone.get(), &nv);
+
+            // A cell transition/fast travel is a discontinuity, not physical acceleration.
+            // The cape should snap to its authored local rest pose with zero slingshot offset.
+            parent->setMatrix(osg::Matrix::translate(1000.f, -500.f, 250.f));
+            frame->setSimulationTime(1.0 / 60.0);
+            (*controller)(bone.get(), &nv);
+
+            EXPECT_TRUE(bone->getMatrix().getTrans().valid());
+            EXPECT_NEAR(bone->getMatrix().getTrans().length(), 0.f, 1e-4f);
+        }
+
         TEST(JiggleBoneControllerTest, DisabledDirectBoneReturnsToAuthoredRest)
         {
             osg::ref_ptr<osg::MatrixTransform> parent = new osg::MatrixTransform(osg::Matrix::identity());
