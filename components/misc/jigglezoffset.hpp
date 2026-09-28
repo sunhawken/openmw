@@ -1,7 +1,8 @@
 #ifndef OPENMW_COMPONENTS_MISC_JIGGLEZOFFSET_H
 #define OPENMW_COMPONENTS_MISC_JIGGLEZOFFSET_H
 
-#include <charconv>
+#include <cerrno>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -43,9 +44,14 @@ namespace Misc::JiggleZOffset
                 s.remove_prefix(1);
             while (!s.empty() && (s.back() == ' ' || s.back() == '\t'))
                 s.remove_suffix(1);
-            float v = 0.f;
-            const auto res = std::from_chars(s.data(), s.data() + s.size(), v);
-            if (res.ec != std::errc())
+            // libc++ used by current macOS runners does not provide floating-point
+            // std::from_chars on all supported deployment targets. strtof is portable here and
+            // the setting values are short, locale-independent numbers written by std::to_string.
+            const std::string text(s);
+            char* end = nullptr;
+            errno = 0;
+            const float v = std::strtof(text.c_str(), &end);
+            if (end == text.c_str() || !end || *end != '\0' || errno == ERANGE)
                 return std::nullopt;
             return v;
         };
