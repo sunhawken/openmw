@@ -1,8 +1,10 @@
 #include "animation.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <limits>
+#include <utility>
 
 #include <osg/BlendFunc>
 #include <osg/LightModel>
@@ -68,6 +70,141 @@
 
 namespace
 {
+    std::string normalizedWiggleKey(std::string key)
+    {
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+            if (c == '-' || c == ' ' || c == '.')
+                return static_cast<char>('_');
+            return static_cast<char>(std::tolower(c));
+        });
+        return key;
+    }
+
+    bool parseWiggleBool(std::string value, bool& out)
+    {
+        value = normalizedWiggleKey(std::move(value));
+        if (value == "1" || value == "true" || value == "yes" || value == "on")
+        {
+            out = true;
+            return true;
+        }
+        if (value == "0" || value == "false" || value == "no" || value == "off")
+        {
+            out = false;
+            return true;
+        }
+        return false;
+    }
+
+    bool parseWiggleFloat(const std::string& value, float& out)
+    {
+        try
+        {
+            std::size_t consumed = 0;
+            out = std::stof(value, &consumed);
+            return consumed != 0;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    void applyWiggleProperty(MWRender::WiggleBoneSettings& settings, std::string key, const std::string& value)
+    {
+        key = normalizedWiggleKey(std::move(key));
+        bool b = false;
+        float f = 0.f;
+
+        if ((key == "jiggle_enable" || key == "jiggle_active" || key == "wiggle_enable" || key == "wiggle_active"
+                || key == "wiggle_tail")
+            && parseWiggleBool(value, b))
+        {
+            settings.mDirect = true;
+            settings.mActive = b;
+        }
+        else if ((key == "jiggle_stiffness" || key == "wiggle_stiffness" || key == "wiggle_stiff")
+            && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mStiffness = f;
+        }
+        else if ((key == "jiggle_dampen" || key == "jiggle_damping" || key == "wiggle_dampen"
+                     || key == "wiggle_damping" || key == "wiggle_damp")
+            && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mDamping = f;
+        }
+        else if ((key == "jiggle_amplitude" || key == "wiggle_amplitude") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mAmplitude = f;
+        }
+        else if ((key == "jiggle_gravity" || key == "wiggle_gravity") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mGravity = f;
+        }
+        else if ((key == "jiggle_mass" || key == "wiggle_mass") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mMass = f;
+        }
+        else if ((key == "jiggle_stretch" || key == "wiggle_stretch") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mStretch = f;
+        }
+    }
+
+    MWRender::WiggleBoneSettings wiggleSettingsFromNode(const osg::Node& node)
+    {
+        MWRender::WiggleBoneSettings settings;
+
+        auto readBoolValue = [&](std::string_view key) {
+            bool value = false;
+            if (node.getUserValue(std::string(key), value))
+                applyWiggleProperty(settings, std::string(key), value ? "true" : "false");
+        };
+        auto readFloatValue = [&](std::string_view key) {
+            float value = 0.f;
+            if (node.getUserValue(std::string(key), value))
+                applyWiggleProperty(settings, std::string(key), std::to_string(value));
+        };
+
+        for (std::string_view key : { "jiggle_enable", "jiggle_active", "wiggle_enable", "wiggle_active", "wiggle_tail" })
+            readBoolValue(key);
+        for (std::string_view key : { "jiggle_stiffness", "wiggle_stiffness", "wiggle_stiff", "jiggle_dampen",
+                 "jiggle_damping", "wiggle_dampen", "wiggle_damping", "wiggle_damp", "jiggle_amplitude",
+                 "wiggle_amplitude", "jiggle_gravity", "wiggle_gravity", "jiggle_mass", "wiggle_mass",
+                 "jiggle_stretch", "wiggle_stretch" })
+            readFloatValue(key);
+
+        for (const std::string& description : node.getDescriptions())
+        {
+            const std::string normalized = normalizedWiggleKey(description);
+            if (normalized.find("wiggle_bone") != std::string::npos || normalized.find("wiggle2") != std::string::npos)
+                settings.mDirect = true;
+
+            std::size_t start = 0;
+            while (start < description.size())
+            {
+                const std::size_t end = description.find_first_of(";\n,", start);
+                const std::string token
+                    = description.substr(start, end == std::string::npos ? std::string::npos : end - start);
+                const std::size_t sep = token.find_first_of("=:");
+                if (sep != std::string::npos)
+                    applyWiggleProperty(settings, token.substr(0, sep), token.substr(sep + 1));
+                if (end == std::string::npos)
+                    break;
+                start = end + 1;
+            }
+        }
+
+        return settings;
+    }
+
     /// Removes all particle systems and related nodes in a subgraph.
     class RemoveParticlesVisitor : public osg::NodeVisitor
     {
@@ -1680,17 +1817,41 @@ namespace MWRender
 
     void Animation::attachJiggleBoneControllers()
     {
-        static constexpr std::string_view boneNames[] = {
+        static constexpr std::string_view legacyBoneNames[] = {
             "bip01 l breast",
             "bip01 r breast",
             "bip01 l butt",
             "bip01 r butt",
         };
         const bool debug = Settings::game().mJiggleBoneDebug;
-        // Tag player bones so the controller can scope the breast/butt Z-offset sliders to the
-        // player while "jiggle player only" is on (NPCs keep the offset when that toggle is off).
         const bool isPlayer = mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr();
-        for (std::string_view bone : boneNames)
+
+        std::unordered_set<osg::MatrixTransform*> attached;
+
+        // Direct Blender Wiggle Bones support. Exporters can preserve the add-on's
+        // properties either as OSG user values or as NiStringExtraData/node
+        // descriptions. Any bone carrying those properties opts into secondary
+        // motion regardless of its name and does not depend on OpenMW auto-rig.
+        for (const auto& [name, nodeRef] : getNodeMap())
+        {
+            osg::MatrixTransform* node = nodeRef.get();
+            if (!node)
+                continue;
+
+            WiggleBoneSettings settings = wiggleSettingsFromNode(*node);
+            if (!settings.mDirect)
+                continue;
+
+            if (debug)
+                Log(Debug::Warning) << "Wiggle Bones: direct metadata bone " << node->getName();
+
+            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, std::move(settings)));
+            attached.insert(node);
+        }
+
+        // Preserve existing zero-setup behavior for traditional breast/butt
+        // bone names. Explicit Wiggle Bones metadata wins when both match.
+        for (std::string_view bone : legacyBoneNames)
         {
             auto iter = getNodeMap().find(bone);
             if (iter == getNodeMap().end())
@@ -1699,7 +1860,11 @@ namespace MWRender
                     Log(Debug::Warning) << "Jiggle bone debug: not found: " << bone;
                 continue;
             }
+
             osg::MatrixTransform* node = iter->second;
+            if (attached.contains(node))
+                continue;
+
             if (debug)
                 Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node;
             node->addUpdateCallback(new JiggleBoneController(debug, isPlayer));

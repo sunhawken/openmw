@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <utility>
 
 namespace MWRender
 {
@@ -35,13 +36,14 @@ namespace MWRender
         }
     }
 
-    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer)
+    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, WiggleBoneSettings settings)
         : mSimWorldPos(0, 0, 0)
         , mVelocity(0, 0, 0)
         , mInitialized(false)
         , mLastSimTime(-1.0)
         , mDebug(debug)
         , mIsPlayer(isPlayer)
+        , mSettings(std::move(settings))
     {
     }
 
@@ -98,7 +100,8 @@ namespace MWRender
         // Live master off-switch: the "jiggle auto rig" toggle freezes spring motion, but must
         // leave the manual NIF bone mover active. This lets the Jiggle-tab breast slider position
         // an existing .nif breast bone live even when procedural auto-rigging is disabled.
-        if (!Settings::game().mJiggleAutoRig)
+        if ((!mSettings.mDirect && !Settings::game().mJiggleAutoRig)
+            || (mSettings.mActive && !*mSettings.mActive))
         {
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
@@ -127,10 +130,13 @@ namespace MWRender
             dt = sMaxDeltaTime;
         const float fdt = static_cast<float>(dt);
 
-        const float baseStiffness = Settings::game().mJiggleBoneStiffness;
-        const float baseDamping = Settings::game().mJiggleBoneDamping;
-        const float maxDisplacement = Settings::game().mJiggleBoneMaxDisplacement;
-        const float intensity = Settings::game().mJiggleBoneIntensity;
+        const float baseStiffness = mSettings.mStiffness.value_or(Settings::game().mJiggleBoneStiffness);
+        const float baseDamping = mSettings.mDamping.value_or(Settings::game().mJiggleBoneDamping);
+        float maxDisplacement = Settings::game().mJiggleBoneMaxDisplacement;
+        if (mSettings.mStretch)
+            maxDisplacement *= std::max(0.f, *mSettings.mStretch);
+        const float intensity
+            = Settings::game().mJiggleBoneIntensity * std::max(0.f, mSettings.mAmplitude.value_or(1.f));
 
         // --- TittyMagic-style feel: softness / quickness / per-bone mass modulate the base
         // spring, and a real world-space gravity term makes the bone sag + swing. ---
@@ -166,11 +172,13 @@ namespace MWRender
         // (rotating) parent's local frame, becomes an orientation-dependent forward/back/side shift
         // - reproducing TittyMagic's whole up/down/forward/back/left-right gravity family from one
         // physical term. Heavier+softer bones sag more since equilibrium droop = gravity/stiffness.
-        const float gravity = Settings::game().mJiggleBoneGravity;
+        const float gravity = mSettings.mGravity.value_or(Settings::game().mJiggleBoneGravity);
         const osg::Vec3f gravityAccel(0.f, 0.f, -gravity);
+        const float mass = std::max(0.001f, mSettings.mMass.value_or(1.f));
 
         osg::Vec3f displacement = mSimWorldPos - restWorldPos;
-        const osg::Vec3f acceleration = (displacement * -stiffness) + (mVelocity * -damping) + gravityAccel;
+        const osg::Vec3f acceleration
+            = ((displacement * -stiffness) + (mVelocity * -damping) + gravityAccel) / mass;
         mVelocity += acceleration * fdt;
         mSimWorldPos += mVelocity * fdt;
 
