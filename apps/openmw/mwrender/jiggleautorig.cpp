@@ -340,6 +340,7 @@ namespace MWRender
                     settings.mActive = true;
                     settings.mGravity = 0.f;
                     settings.mSelfCollision = false;
+                    settings.mUseBodyResponse = false;
                     settings.mAmplitude = 0.75f;
                     settings.mStretch = 2.75f;
                     // The uploaded Rose Sorceress NIF confirms X is left/right, Y is front/back,
