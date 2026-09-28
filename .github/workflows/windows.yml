@@ -120,9 +120,13 @@ jobs:
 
     - name: Copy missing DLLs
       run: |
-        cp ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/Release/MyGUIEngine.dll ${{ github.workspace }}/build
-        cp -Filter *.dll -Recurse ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/osgPlugins-3.6.5 ${{ github.workspace }}/build
-        cp ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/*.dll ${{ github.workspace }}/build
+        $vcpkgBin = "${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin"
+        $buildDir = "${{ github.workspace }}/build"
+        Copy-Item "$vcpkgBin/Release/MyGUIEngine.dll" $buildDir -Force
+        $osgPluginDst = Join-Path $buildDir "osgPlugins-3.6.5"
+        New-Item -ItemType Directory -Force -Path $osgPluginDst | Out-Null
+        Copy-Item "$vcpkgBin/osgPlugins-3.6.5/*.dll" $osgPluginDst -Force
+        Copy-Item "$vcpkgBin/*.dll" $buildDir -Force
 
     - name: Copy Qt DLLs
       working-directory: ${{ github.workspace }}/deps/Qt/${{ env.QT_VER }}/msvc2019_64
