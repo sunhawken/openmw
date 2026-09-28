@@ -74,6 +74,7 @@ namespace MWRender
         bool mIsPlayer;
         WiggleBoneSettings mSettings;
         int mDebugCounter = 0;
+        bool mMotionVerified = false;
     };
 }
 
