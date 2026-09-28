@@ -232,13 +232,18 @@ namespace MWRender
             // Restrict procedural cloth weights to nodes that actually identify as cape
             // geometry so any additional skinned shapes in the same NIF keep their authored
             // body/armor skinning.
-            if (Misc::StringUtils::ciFind(rig.getName(), "cape") != std::string::npos)
+            // The actual uploaded cloth drawable is named "Tri Groin Cape 0". Prefer the
+            // drawable's own name; some OSG/NIF layouts put that name on its immediate Geode
+            // instead, so check only the first two parents as a compatibility fallback. Do not
+            // search the whole ancestry: a file/root node named "...cape.nif" would otherwise
+            // cause every skinned drawable in the file to be repainted as cloth.
+            if (Misc::StringUtils::ciFind(rig.getName(), "tri groin cape") != std::string::npos)
                 return true;
 
             const osg::Node* node = rig.getNumParents() > 0 ? rig.getParent(0) : nullptr;
-            while (node)
+            for (int depth = 0; node && depth < 2; ++depth)
             {
-                if (Misc::StringUtils::ciFind(node->getName(), "cape") != std::string::npos)
+                if (Misc::StringUtils::ciFind(node->getName(), "tri groin cape") != std::string::npos)
                     return true;
                 node = node->getNumParents() > 0 ? node->getParent(0) : nullptr;
             }
