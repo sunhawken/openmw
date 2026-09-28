@@ -234,27 +234,27 @@ jobs:
 
     - name: Run components tests
       if: ${{ ! inputs.package }}
-      run: build/components-tests.exe
+      run: .\build\components-tests.exe
 
     - name: Run OpenMW tests
       if: ${{ ! inputs.package }}
-      run: build/openmw-tests.exe
+      run: .\build\openmw-tests.exe
 
     - name: Run OpenMW-CS tests
       if: ${{ ! inputs.package }}
-      run: build/openmw-cs-tests.exe
+      run: .\build\openmw-cs-tests.exe
 
     - name: Run detournavigator navmeshtilescache benchmark
       if: ${{ ! inputs.package }}
-      run: build/openmw_detournavigator_navmeshtilescache_benchmark.exe
+      run: .\build\openmw_detournavigator_navmeshtilescache_benchmark.exe
 
     - name: Run settings access benchmark
       if: ${{ ! inputs.package }}
-      run: build/openmw_settings_access_benchmark.exe
+      run: .\build\openmw_settings_access_benchmark.exe
 
     - name: Run esm refid benchmark
       if: ${{ ! inputs.package }}
-      run: build/openmw_esm_refid_benchmark.exe
+      run: .\build\openmw_esm_refid_benchmark.exe
 
     - name: Create prerelease
       if: ${{ inputs.release }}
