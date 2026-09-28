@@ -28,7 +28,7 @@ namespace MWRender
             settings.mMass = 1.f;
             settings.mStretch = 3.f;
             settings.mSelfCollision = false;
-            settings.mSimulationOffset = osg::Vec3f(-4.f, 0.f, -18.f);
+            settings.mSimulationOffset = osg::Vec3f(0.f, -8.f, -18.f);
 
             osg::ref_ptr<JiggleBoneController> controller = new JiggleBoneController(false, false, settings);
 
