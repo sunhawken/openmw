@@ -135,11 +135,13 @@ namespace MWRender
 
         const float baseStiffness = mSettings.mStiffness.value_or(Settings::game().mJiggleBoneStiffness);
         const float baseDamping = mSettings.mDamping.value_or(Settings::game().mJiggleBoneDamping);
-        float maxDisplacement = Settings::game().mJiggleBoneMaxDisplacement;
+        float maxDisplacement
+            = mSettings.mMaxDisplacementOverride.value_or(Settings::game().mJiggleBoneMaxDisplacement);
         if (mSettings.mStretch)
             maxDisplacement *= std::max(0.f, *mSettings.mStretch);
-        const float intensity
-            = Settings::game().mJiggleBoneIntensity * std::max(0.f, mSettings.mAmplitude.value_or(1.f));
+        const float baseVisualIntensity
+            = mSettings.mVisualIntensityOverride.value_or(Settings::game().mJiggleBoneIntensity);
+        const float intensity = baseVisualIntensity * std::max(0.f, mSettings.mAmplitude.value_or(1.f));
 
         // --- TittyMagic-style feel: softness / quickness / per-bone mass modulate the base
         // spring, and a real world-space gravity term makes the bone sag + swing. ---
@@ -226,7 +228,7 @@ namespace MWRender
         // "Side sway" scales the horizontal (world XY) part of the jiggle relative to the
         // vertical bounce, so side-to-side / forward-back motion can be emphasised or damped
         // independently of up-down. 1.0 = uniform (old behaviour); 0 = vertical bounce only.
-        const float side = Settings::game().mJiggleBoneSide;
+        const float side = mSettings.mSideScaleOverride.value_or(Settings::game().mJiggleBoneSide);
         const osg::Vec3f shapedDisplacement(displacement.x() * side, displacement.y() * side, displacement.z());
         const osg::Vec3f visualWorldPos = restWorldPos + shapedDisplacement * intensity;
 
