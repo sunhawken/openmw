@@ -578,9 +578,6 @@ namespace MWRender
         if (!objectRoot)
             return;
         const bool generalAutoRig = Settings::game().mJiggleAutoRig;
-        // Player-only mode: skip auto-rigging every NPC body, leaving jiggle to the player alone.
-        if (Settings::game().mJiggleBonePlayerOnly && !isPlayer)
-            return;
         const bool debug = Settings::game().mJiggleAutoRigDebug;
 
         RigCollector rc;
@@ -607,7 +604,10 @@ namespace MWRender
         if (debug && capeRigged)
             Log(Debug::Warning) << "Cape auto-rig: processed " << capeRigged << " Rose Sorceress cape mesh(es)";
 
-        if (!generalAutoRig || !allowBodyAutoRig)
+        // "Jiggle player only" scopes the body auto-rigger, not model-specific cloth.
+        // Cape compatibility above must still run for NPCs, inventory previews and other
+        // actor instances that use the same equipped mesh.
+        if ((Settings::game().mJiggleBonePlayerOnly && !isPlayer) || !generalAutoRig || !allowBodyAutoRig)
             return;
 
         // Drop blacklisted meshes up front so they take part in neither anchor detection nor
