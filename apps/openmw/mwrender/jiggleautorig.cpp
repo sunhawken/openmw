@@ -438,40 +438,34 @@ namespace MWRender
                 names.push_back(lower);
             }
 
+            // Derive the cloth length from eligible hanging-cloth vertices only. The source
+            // drawable also contains sleeves/shoulders; including those in maxZ would shift the
+            // gradient and loosen the actual cape attachment edge.
             float minZ = std::numeric_limits<float>::max();
             float maxZ = std::numeric_limits<float>::lowest();
-            for (const osg::Vec3f& p : *verts)
+            std::size_t eligibleVertexCount = 0;
+            for (std::size_t v = 0; v < perVertex.size(); ++v)
             {
-                minZ = std::min(minZ, p.z());
-                maxZ = std::max(maxZ, p.z());
+                if (!isCapeClothVertex(perVertex[v], names))
+                    continue;
+                minZ = std::min(minZ, (*verts)[v].z());
+                maxZ = std::max(maxZ, (*verts)[v].z());
+                ++eligibleVertexCount;
             }
             const float height = maxZ - minZ;
-            if (height < 1e-3f)
+            if (eligibleVertexCount == 0 || height < 1e-3f)
+            {
+                Log(Debug::Error) << "Rose Sorceress cape Wiggle rig FAILED: no usable hanging-cloth vertices";
                 return false;
+            }
 
             for (std::size_t v = 0; v < perVertex.size(); ++v)
             {
                 // The source "Tri Groin Cape 0" drawable also carries sleeve/shoulder cloth.
                 // Preserve vertices dominated by arm/clavicle bones exactly as authored; only the
                 // torso/pelvis/thigh-supported hanging cloth is eligible for procedural cape motion.
-                std::size_t dominant = std::numeric_limits<std::size_t>::max();
-                float dominantWeight = -1.f;
-                for (const auto& [bone, weight] : perVertex[v])
-                {
-                    if (weight > dominantWeight)
-                    {
-                        dominantWeight = weight;
-                        dominant = bone;
-                    }
-                }
-                if (dominant < names.size())
-                {
-                    const std::string& dominantName = names[dominant];
-                    if (dominantName.find("upperarm") != std::string::npos
-                        || dominantName.find("forearm") != std::string::npos
-                        || dominantName.find("clavicle") != std::string::npos)
-                        continue;
-                }
+                if (!isCapeClothVertex(perVertex[v], names))
+                    continue;
 
                 // 0 at the shoulder/top edge, 1 at the bottom hem.
                 const float t = std::clamp((maxZ - (*verts)[v].z()) / height, 0.f, 1.f);
@@ -569,6 +563,18 @@ namespace MWRender
                     best = bone;
                 }
             return best;
+        }
+
+        bool isCapeClothVertex(const Rig::BoneWeights& vw, const std::vector<std::string>& names)
+        {
+            const std::size_t dominant = dominantBone(vw);
+            if (dominant >= names.size())
+                return false;
+
+            const std::string& name = names[dominant];
+            return name.find("upperarm") == std::string::npos
+                && name.find("forearm") == std::string::npos
+                && name.find("clavicle") == std::string::npos;
         }
     }
 
