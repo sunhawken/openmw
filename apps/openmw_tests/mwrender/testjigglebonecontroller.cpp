@@ -272,6 +272,68 @@ namespace MWRender
             JiggleAutoRig::run(skeleton.get(), false, false);
             EXPECT_EQ(rig->getBoneInfoList().size(), boneCountAfterFirstPass);
         }
+        TEST(JiggleBoneControllerTest, RoseSorceressAuthoredCapeBonesReceiveControllers)
+        {
+            osg::ref_ptr<SceneUtil::Skeleton> skeleton = new SceneUtil::Skeleton;
+
+            osg::ref_ptr<osg::MatrixTransform> spine = new osg::MatrixTransform(osg::Matrix::identity());
+            spine->setName("Bip01 Spine2");
+            skeleton->addChild(spine);
+
+            std::array<osg::ref_ptr<osg::MatrixTransform>, 3> capeNodes;
+            for (std::size_t i = 0; i < capeNodes.size(); ++i)
+            {
+                capeNodes[i] = new osg::MatrixTransform(osg::Matrix::identity());
+                capeNodes[i]->setName("Bip01 Cape0" + std::to_string(i + 1));
+                spine->addChild(capeNodes[i]);
+            }
+
+            osg::ref_ptr<osg::Geometry> source = new osg::Geometry;
+            osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+            vertices->push_back(osg::Vec3f(0.f, -8.f, 110.f));
+            vertices->push_back(osg::Vec3f(0.f, -14.f, 80.f));
+            vertices->push_back(osg::Vec3f(0.f, -24.f, 30.f));
+            source->setVertexArray(vertices);
+
+            osg::ref_ptr<SceneUtil::RigGeometry> rig = new SceneUtil::RigGeometry;
+            rig->setName("Tri Groin Cape 0");
+            rig->setSourceGeometry(source);
+
+            std::vector<SceneUtil::RigGeometry::BoneInfo> boneInfo(4);
+            boneInfo[0].mName = "bip01 spine2";
+            boneInfo[0].mInvBindMatrix = osg::Matrixf();
+            for (std::size_t i = 0; i < 3; ++i)
+            {
+                boneInfo[i + 1].mName = "bip01 cape0" + std::to_string(i + 1);
+                boneInfo[i + 1].mInvBindMatrix = osg::Matrixf();
+            }
+            rig->setBoneInfo(std::move(boneInfo));
+
+            std::vector<SceneUtil::RigGeometry::BoneWeights> influences(vertices->size());
+            influences[0].emplace_back(0, 1.f);
+            influences[1].emplace_back(2, 0.70f);
+            influences[1].emplace_back(0, 0.30f);
+            influences[2].emplace_back(3, 0.90f);
+            influences[2].emplace_back(0, 0.10f);
+            rig->setInfluences(influences);
+
+            osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+            geode->setName("Tri Groin Cape 0");
+            geode->setUserValue("meshFileName", std::string("meshes/rosesorceress/rose_sorceress_cape.nif"));
+            geode->addDrawable(rig);
+            skeleton->addChild(geode);
+
+            JiggleAutoRig::run(skeleton.get(), false, false);
+
+            EXPECT_NE(capeNodes[0]->getUpdateCallback(), nullptr);
+            EXPECT_NE(capeNodes[1]->getUpdateCallback(), nullptr);
+            EXPECT_NE(capeNodes[2]->getUpdateCallback(), nullptr);
+
+            // Authored weights/bones are reused, not duplicated or repainted.
+            EXPECT_EQ(rig->getBoneInfoList().size(), 4u);
+            EXPECT_EQ(spine->getNumChildren(), 3u);
+        }
+
 
     }
 }
