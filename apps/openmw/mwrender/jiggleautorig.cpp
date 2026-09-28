@@ -294,8 +294,12 @@ namespace MWRender
                     settings.mDirect = true;
                     settings.mActive = true;
                     settings.mGravity = 0.f;
-                    settings.mAmplitude = 1.f;
-                    settings.mStretch = 2.25f;
+                    settings.mAmplitude = 0.75f;
+                    settings.mStretch = 2.75f;
+                    // Morrowind/Better Bodies convention here is +X forward, Z up. A virtual point
+                    // behind and below each identity bone makes torso rotation and acceleration move
+                    // the spring target without changing the original NIF bind pose.
+                    settings.mSimulationOffset = osg::Vec3f(-4.f, 0.f, -18.f);
                     if (i == 0)
                     {
                         settings.mStiffness = 115.f;

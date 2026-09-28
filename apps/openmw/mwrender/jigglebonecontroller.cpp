@@ -83,7 +83,8 @@ namespace MWRender
             // mean "rest" drifts to wherever the spring last left off, collapsing
             // the restoring force to ~0 after the very first frame.
             mRestLocalMatrix = node->getMatrix();
-            osg::Vec3f restWorldPos = mRestLocalMatrix.getTrans() * parentWorldMatrix;
+            const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
+            osg::Vec3f restWorldPos = (mRestLocalMatrix.getTrans() + simulationOffset) * parentWorldMatrix;
             restWorldPos.z() += zOffsetFor(node->getName());
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
@@ -94,7 +95,8 @@ namespace MWRender
         }
 
         const osg::Vec3f restTranslation = mRestLocalMatrix.getTrans();
-        osg::Vec3f restWorldPos = restTranslation * parentWorldMatrix;
+        const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
+        osg::Vec3f restWorldPos = (restTranslation + simulationOffset) * parentWorldMatrix;
         restWorldPos.z() += zOffsetFor(node->getName());
 
         // Live master off-switch: the "jiggle auto rig" toggle freezes spring motion, but must
@@ -106,7 +108,8 @@ namespace MWRender
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
             mLastSimTime = simTime;
-            const osg::Vec3f newLocalTranslation = restWorldPos * osg::Matrix::inverse(parentWorldMatrix);
+            const osg::Vec3f newLocalTranslation
+                = restWorldPos * osg::Matrix::inverse(parentWorldMatrix) - simulationOffset;
             if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
                 nifTransform->setTranslation(newLocalTranslation);
             else
@@ -223,7 +226,7 @@ namespace MWRender
         const osg::Vec3f visualWorldPos = restWorldPos + shapedDisplacement * intensity;
 
         const osg::Matrix parentWorldInverse = osg::Matrix::inverse(parentWorldMatrix);
-        const osg::Vec3f newLocalTranslation = visualWorldPos * parentWorldInverse;
+        const osg::Vec3f newLocalTranslation = visualWorldPos * parentWorldInverse - simulationOffset;
 
         if (mDebug && (mDebugCounter++ % 60) == 0)
         {
