@@ -272,20 +272,39 @@ namespace MWRender
             const bool alreadyWeighted = boneIndex(names, "bip01 cape01") >= 0
                 && boneIndex(names, "bip01 cape02") >= 0 && boneIndex(names, "bip01 cape03") >= 0;
 
-            const int spineIndex = boneIndex(names, "bip01 spine2");
-            if (spineIndex < 0)
+            // Anchor the generated cloth chain to an upper-body bone the cape already uses.
+            // Reusing that exact influence's inverse bind guarantees the authored rest pose stays
+            // unchanged, and avoids assuming every cape is weighted to Bip01 Spine2.
+            static constexpr std::array<std::string_view, 7> preferredParents = {
+                "bip01 spine2", "bip01 spine1", "bip01 spine", "bip01 neck",
+                "bip01 pelvis", "bip01 l clavicle", "bip01 r clavicle"
+            };
+            int parentIndex = -1;
+            std::string_view parentBoneName;
+            for (std::string_view candidate : preferredParents)
+            {
+                const int index = boneIndex(names, candidate);
+                if (index >= 0)
+                {
+                    parentIndex = index;
+                    parentBoneName = candidate;
+                    break;
+                }
+            }
+            if (parentIndex < 0)
             {
                 if (debug)
-                    Log(Debug::Warning) << "Cape auto-rig: " << meshFile << " has no Bip01 Spine2 influence";
+                    Log(Debug::Error) << "Cape auto-rig: " << meshFile
+                                      << " has no usable torso influence for the cloth chain";
                 return false;
             }
 
-            SceneUtil::Bone* spineBone = skeleton.getBone("bip01 spine2");
-            osg::MatrixTransform* parent = spineBone ? spineBone->mNode.get() : nullptr;
+            SceneUtil::Bone* anchorBone = skeleton.getBone(std::string(parentBoneName));
+            osg::MatrixTransform* parent = anchorBone ? anchorBone->mNode.get() : nullptr;
             if (!parent)
             {
                 if (debug)
-                    Log(Debug::Warning) << "Cape auto-rig: skeleton has no Bip01 Spine2 node";
+                    Log(Debug::Error) << "Cape auto-rig: skeleton cannot resolve anchor bone " << parentBoneName;
                 return false;
             }
 
@@ -408,8 +427,8 @@ namespace MWRender
                 newBone[i] = bones.size();
                 Rig::BoneInfo info;
                 info.mName = lower;
-                info.mInvBindMatrix = bones[spineIndex].mInvBindMatrix;
-                info.mBoundSphere = bones[spineIndex].mBoundSphere;
+                info.mInvBindMatrix = bones[parentIndex].mInvBindMatrix;
+                info.mBoundSphere = bones[parentIndex].mBoundSphere;
                 bones.push_back(info);
                 names.push_back(lower);
             }
@@ -468,7 +487,8 @@ namespace MWRender
 
             if (debug)
                 Log(Debug::Warning) << "Cape auto-rig: injected 3-link Wiggle chain into " << meshFile
-                                    << " (" << verts->size() << " vertices, z=" << minZ << ".." << maxZ << ")";
+                                    << " using " << parentBoneName << " (" << verts->size()
+                                    << " vertices, z=" << minZ << ".." << maxZ << ")";
             return true;
         }
 
