@@ -232,6 +232,9 @@ namespace MWRender
             // Restrict procedural cloth weights to nodes that actually identify as cape
             // geometry so any additional skinned shapes in the same NIF keep their authored
             // body/armor skinning.
+            if (Misc::StringUtils::ciFind(rig.getName(), "cape") != std::string::npos)
+                return true;
+
             const osg::Node* node = rig.getNumParents() > 0 ? rig.getParent(0) : nullptr;
             while (node)
             {
@@ -349,7 +352,26 @@ namespace MWRender
             }
 
             if (addedNode)
+            {
                 skeleton.markDirty();
+
+                // Force the skeleton cache to rebuild now, while we still have enough context to
+                // diagnose a broken runtime rig. If any generated bone cannot be resolved, do not
+                // paint/reuse weights that would point at missing bones.
+                bool chainResolved = true;
+                for (std::string_view nodeName : nodeNames)
+                {
+                    if (!skeleton.getBone(Misc::StringUtils::lowerCase(std::string(nodeName))))
+                    {
+                        chainResolved = false;
+                        if (debug)
+                            Log(Debug::Error) << "Cape auto-rig: runtime bone chain failed to resolve "
+                                              << nodeName << " for " << meshFile;
+                    }
+                }
+                if (!chainResolved)
+                    return false;
+            }
 
             // The rig can outlive a skeleton rebuild during equipment/appearance changes.
             // In that case the generated influences are already present, but the runtime
