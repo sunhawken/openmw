@@ -33,8 +33,9 @@ namespace MWRender
     {
         using Rig = SceneUtil::RigGeometry;
 
-        constexpr std::array<std::string_view, 6> sJiggleBones = { "bip01 l breast", "bip01 r breast", "bip01 l butt",
-            "bip01 r butt", "bip01 l thighjiggle", "bip01 r thighjiggle" };
+        constexpr std::array<std::string_view, 9> sJiggleBones = { "bip01 l breast", "bip01 r breast", "bip01 l butt",
+            "bip01 r butt", "bip01 l thighjiggle", "bip01 r thighjiggle", "bip01 cape01", "bip01 cape02",
+            "bip01 cape03" };
 
         // Marks a bone node we injected (an identity child of its parent), so on a resync we can
         // tell it apart from an externally-rigged (.bat) jiggle bone that has its own bind offset.
@@ -216,6 +217,198 @@ namespace MWRender
             return false;
         }
 
+        bool isRoseSorceressCape(const std::string& meshFile)
+        {
+            return Misc::StringUtils::ciFind(meshFile, "rose_sorceress_cape.nif") != std::string::npos;
+        }
+
+        /// Runtime cloth rig for the Rose Sorceress cape. The source NIF is skinned only to the
+        /// stock Better Bodies skeleton, so there are no cape bones for a secondary-motion
+        /// controller to drive. Build a three-link identity chain under Spine2 and smoothly move
+        /// influence from the original skinning into that chain from the shoulders toward the hem.
+        ///
+        /// Keeping the injected transforms identity and reusing Spine2's inverse bind preserves the
+        /// authored rest pose exactly. Each link has progressively softer direct Wiggle settings,
+        /// giving the lower cape more lag without requiring a Blender/NifSkope re-export.
+        bool rigRoseSorceressCape(
+            Rig& rig, SceneUtil::Skeleton& skeleton, const std::string& meshFile, bool isPlayer, bool debug)
+        {
+            if (!isRoseSorceressCape(meshFile))
+                return false;
+
+            const osg::Vec3Array* verts = sourceVerts(rig);
+            if (!verts || verts->empty())
+                return false;
+
+            std::vector<std::string> names = rig.getInfluenceBoneNames();
+            if (boneIndex(names, "bip01 cape01") >= 0 && boneIndex(names, "bip01 cape02") >= 0
+                && boneIndex(names, "bip01 cape03") >= 0)
+                return false;
+
+            const int spineIndex = boneIndex(names, "bip01 spine2");
+            if (spineIndex < 0)
+            {
+                if (debug)
+                    Log(Debug::Warning) << "Cape auto-rig: " << meshFile << " has no Bip01 Spine2 influence";
+                return false;
+            }
+
+            SceneUtil::Bone* spineBone = skeleton.getBone("bip01 spine2");
+            osg::MatrixTransform* parent = spineBone ? spineBone->mNode.get() : nullptr;
+            if (!parent)
+            {
+                if (debug)
+                    Log(Debug::Warning) << "Cape auto-rig: skeleton has no Bip01 Spine2 node";
+                return false;
+            }
+
+            // Reuse existing injected nodes if this actor was already processed. Otherwise make a
+            // true parent->child chain so motion accumulates naturally toward the cape hem.
+            constexpr std::array<std::string_view, 3> nodeNames = {
+                "Bip01 Cape01", "Bip01 Cape02", "Bip01 Cape03"
+            };
+            std::array<osg::MatrixTransform*, 3> capeNodes{};
+            osg::MatrixTransform* chainParent = parent;
+            bool addedNode = false;
+            for (std::size_t i = 0; i < capeNodes.size(); ++i)
+            {
+                osg::MatrixTransform* found = nullptr;
+                for (unsigned int n = 0; n < chainParent->getNumChildren(); ++n)
+                {
+                    osg::Node* child = chainParent->getChild(n);
+                    if (Misc::StringUtils::ciEqual(child->getName(), std::string(nodeNames[i])))
+                    {
+                        found = dynamic_cast<osg::MatrixTransform*>(child);
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    osg::ref_ptr<osg::MatrixTransform> node = new osg::MatrixTransform(osg::Matrix::identity());
+                    node->setName(std::string(nodeNames[i]));
+                    node->setDataVariance(osg::Object::DYNAMIC);
+                    node->setUserValue(sAutoRigMarker, true);
+
+                    WiggleBoneSettings settings;
+                    settings.mDirect = true;
+                    settings.mActive = true;
+                    settings.mGravity = 0.f;
+                    settings.mAmplitude = 1.f;
+                    settings.mStretch = 2.25f;
+                    if (i == 0)
+                    {
+                        settings.mStiffness = 115.f;
+                        settings.mDamping = 14.f;
+                        settings.mMass = 1.0f;
+                    }
+                    else if (i == 1)
+                    {
+                        settings.mStiffness = 85.f;
+                        settings.mDamping = 11.f;
+                        settings.mMass = 1.15f;
+                    }
+                    else
+                    {
+                        settings.mStiffness = 60.f;
+                        settings.mDamping = 9.f;
+                        settings.mMass = 1.30f;
+                    }
+
+                    node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, std::move(settings)));
+                    chainParent->addChild(node);
+                    found = node.get();
+                    addedNode = true;
+                }
+
+                capeNodes[i] = found;
+                chainParent = found;
+            }
+
+            if (addedNode)
+                skeleton.markDirty();
+
+            std::vector<Rig::BoneInfo> bones = rig.getBoneInfoList();
+            std::vector<Rig::BoneWeights> perVertex = rig.getPerVertexInfluences(verts->size());
+
+            std::array<std::size_t, 3> newBone{};
+            for (std::size_t i = 0; i < newBone.size(); ++i)
+            {
+                const std::string lower = Misc::StringUtils::lowerCase(std::string(nodeNames[i]));
+                const int existing = boneIndex(names, lower);
+                if (existing >= 0)
+                {
+                    newBone[i] = static_cast<std::size_t>(existing);
+                    continue;
+                }
+
+                newBone[i] = bones.size();
+                Rig::BoneInfo info;
+                info.mName = lower;
+                info.mInvBindMatrix = bones[spineIndex].mInvBindMatrix;
+                info.mBoundSphere = bones[spineIndex].mBoundSphere;
+                bones.push_back(info);
+                names.push_back(lower);
+            }
+
+            float minZ = std::numeric_limits<float>::max();
+            float maxZ = std::numeric_limits<float>::lowest();
+            for (const osg::Vec3f& p : *verts)
+            {
+                minZ = std::min(minZ, p.z());
+                maxZ = std::max(maxZ, p.z());
+            }
+            const float height = maxZ - minZ;
+            if (height < 1e-3f)
+                return false;
+
+            for (std::size_t v = 0; v < perVertex.size(); ++v)
+            {
+                // 0 at the shoulder/top edge, 1 at the bottom hem.
+                const float t = std::clamp((maxZ - (*verts)[v].z()) / height, 0.f, 1.f);
+                // Leave the first ~10% rigidly attached so the cape never tears away from the body.
+                const float movable = std::clamp((t - 0.10f) / 0.90f, 0.f, 1.f);
+                if (movable <= 0.f)
+                    continue;
+
+                // Smooth overlapping three-segment basis along the cape length.
+                const auto lobe = [](float x, float center, float width) {
+                    return std::max(0.f, 1.f - std::abs(x - center) / width);
+                };
+                float w0 = lobe(t, 0.30f, 0.33f);
+                float w1 = lobe(t, 0.60f, 0.34f);
+                float w2 = lobe(t, 0.90f, 0.34f);
+                const float sum = w0 + w1 + w2;
+                if (sum <= 1e-4f)
+                    continue;
+
+                // Cap generated influence at 90%; preserving some authored weights keeps the neck/
+                // shoulder attachment stable while still allowing strong motion at the hem.
+                const float generated = 0.90f * movable;
+                w0 = generated * w0 / sum;
+                w1 = generated * w1 / sum;
+                w2 = generated * w2 / sum;
+
+                for (auto& [bone, weight] : perVertex[v])
+                    weight *= (1.f - generated);
+                if (w0 > 0.001f)
+                    perVertex[v].emplace_back(newBone[0], w0);
+                if (w1 > 0.001f)
+                    perVertex[v].emplace_back(newBone[1], w1);
+                if (w2 > 0.001f)
+                    perVertex[v].emplace_back(newBone[2], w2);
+            }
+
+            rig.setBoneInfo(std::move(bones));
+            rig.setInfluences(perVertex);
+            rig.reinitialize();
+
+            if (debug)
+                Log(Debug::Warning) << "Cape auto-rig: injected 3-link Wiggle chain into " << meshFile
+                                    << " (" << verts->size() << " vertices, z=" << minZ << ".." << maxZ << ")";
+            return true;
+        }
+
         std::unordered_map<std::size_t, float> coneWeights(
             const osg::Vec3Array& verts, const osg::Vec3f& anchor, const Config& cfg, bool left)
         {
@@ -337,6 +530,19 @@ namespace MWRender
         if (!sf.mSkeleton)
             return;
         SceneUtil::Skeleton* skeleton = sf.mSkeleton;
+
+        // The Rose Sorceress cape ships without dedicated cloth bones. Auto-rig that exact mesh
+        // before the normal body-region pass so it gets a reusable three-link secondary-motion chain.
+        int capeRigged = 0;
+        for (Rig* rig : rigs)
+        {
+            osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
+            const std::string meshFile = meshFileFor(start);
+            if (rigRoseSorceressCape(*rig, *skeleton, meshFile, isPlayer, debug))
+                ++capeRigged;
+        }
+        if (debug && capeRigged)
+            Log(Debug::Warning) << "Cape auto-rig: processed " << capeRigged << " Rose Sorceress cape mesh(es)";
 
         // Detect only the jiggle bones WE injected on an earlier pass (marked identity children of
         // the parent bone) so a resync doesn't recreate them. Pre-existing skeleton jiggle bone
