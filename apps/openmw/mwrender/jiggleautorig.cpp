@@ -293,9 +293,8 @@ namespace MWRender
             }
             if (parentIndex < 0)
             {
-                if (debug)
-                    Log(Debug::Error) << "Cape auto-rig: " << meshFile
-                                      << " has no usable torso influence for the cloth chain";
+                Log(Debug::Error) << "Rose Sorceress cape Wiggle rig FAILED: " << meshFile
+                                  << " has no usable torso influence for the cloth chain";
                 return false;
             }
 
@@ -303,8 +302,8 @@ namespace MWRender
             osg::MatrixTransform* parent = anchorBone ? anchorBone->mNode.get() : nullptr;
             if (!parent)
             {
-                if (debug)
-                    Log(Debug::Error) << "Cape auto-rig: skeleton cannot resolve anchor bone " << parentBoneName;
+                Log(Debug::Error) << "Rose Sorceress cape Wiggle rig FAILED: skeleton cannot resolve anchor bone "
+                                  << parentBoneName;
                 return false;
             }
 
@@ -395,7 +394,11 @@ namespace MWRender
                     }
                 }
                 if (!chainResolved)
+                {
+                    Log(Debug::Error) << "Rose Sorceress cape Wiggle rig FAILED: generated Cape01/02/03 chain "
+                                      << "did not resolve in the actor skeleton";
                     return false;
+                }
             }
 
             // The rig can outlive a skeleton rebuild during equipment/appearance changes.
@@ -485,10 +488,9 @@ namespace MWRender
             rig.setInfluences(perVertex);
             rig.reinitialize();
 
-            if (debug)
-                Log(Debug::Warning) << "Cape auto-rig: injected 3-link Wiggle chain into " << meshFile
-                                    << " using " << parentBoneName << " (" << verts->size()
-                                    << " vertices, z=" << minZ << ".." << maxZ << ")";
+            Log(Debug::Info) << "Rose Sorceress cape Wiggle rig ACTIVE: " << meshFile << " drawable="
+                             << rig.getName() << " anchor=" << parentBoneName << " vertices=" << verts->size()
+                             << " z=" << minZ << ".." << maxZ;
             return true;
         }
 
