@@ -676,7 +676,7 @@ endif()
 
 # UnitTests
 if (BUILD_UNITTESTS)
-    add_subdirectory( apps/openmw_test_suite )
+    add_subdirectory(apps/openmw_tests)
 endif()
 
 if (BUILD_BENCHMARKS)
@@ -777,7 +777,7 @@ if (WIN32)
         endif()
 
         if (BUILD_UNITTESTS)
-            target_compile_options(openmw_test_suite PRIVATE ${WARNINGS})
+            target_compile_options(openmw-tests PRIVATE ${WARNINGS})
         endif()
 
         if (BUILD_BENCHMARKS)
