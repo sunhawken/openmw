@@ -72,6 +72,7 @@ namespace MWRender
 
         osg::Vec3f mSimWorldPos;
         osg::Vec3f mVelocity;
+        osg::Vec3f mPreviousRestWorldPos;
         osg::Matrix mRestLocalMatrix;
         bool mInitialized;
         double mLastSimTime;
