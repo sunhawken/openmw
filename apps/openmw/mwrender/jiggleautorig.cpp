@@ -572,7 +572,7 @@ namespace MWRender
         }
     }
 
-    void JiggleAutoRig::run(osg::Group* objectRoot, bool isPlayer)
+    void JiggleAutoRig::run(osg::Group* objectRoot, bool isPlayer, bool allowBodyAutoRig)
     {
         if (!objectRoot)
             return;
@@ -587,31 +587,27 @@ namespace MWRender
         if (rc.mRigs.empty())
             return;
 
-        // Cape compatibility is deliberately independent of the general body auto-rigger.
-        // The uploaded Rose Sorceress cape contains no dedicated cloth bones, so without this
-        // path there is nothing for direct Wiggle support to animate. Detect only that exact mesh,
-        // inject its three-link chain, then stop here when general body auto-rig is disabled.
-        if (!generalAutoRig)
-        {
-            SkeletonFinder capeSkeletonFinder;
-            objectRoot->accept(capeSkeletonFinder);
-            if (!capeSkeletonFinder.mSkeleton)
-                return;
-
-            int capeRigged = 0;
-            for (Rig* rig : rc.mRigs)
-            {
-                osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
-                const std::string meshFile = meshFileFor(start);
-                if (rigRoseSorceressCape(
-                        *rig, *capeSkeletonFinder.mSkeleton, meshFile, isPlayer, debug))
-                    ++capeRigged;
-            }
-            if (debug && capeRigged)
-                Log(Debug::Warning) << "Cape auto-rig: processed " << capeRigged
-                                    << " Rose Sorceress cape mesh(es) with general auto-rig disabled";
+        // Model-specific cloth compatibility is independent of female body auto-rigging.
+        // This makes the Rose Sorceress cape work on any NPC skeleton that can wear/preview it,
+        // while breast/butt/thigh generation remains female-only at the NpcAnimation call site.
+        SkeletonFinder capeSkeletonFinder;
+        objectRoot->accept(capeSkeletonFinder);
+        if (!capeSkeletonFinder.mSkeleton)
             return;
+
+        int capeRigged = 0;
+        for (Rig* rig : rc.mRigs)
+        {
+            osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
+            const std::string meshFile = meshFileFor(start);
+            if (rigRoseSorceressCape(*rig, *capeSkeletonFinder.mSkeleton, meshFile, isPlayer, debug))
+                ++capeRigged;
         }
+        if (debug && capeRigged)
+            Log(Debug::Warning) << "Cape auto-rig: processed " << capeRigged << " Rose Sorceress cape mesh(es)";
+
+        if (!generalAutoRig || !allowBodyAutoRig)
+            return;
 
         // Drop blacklisted meshes up front so they take part in neither anchor detection nor
         // painting (an odd armor can't get bad jiggle nor drag the shared body anchor off).
@@ -666,19 +662,6 @@ namespace MWRender
         if (!sf.mSkeleton)
             return;
         SceneUtil::Skeleton* skeleton = sf.mSkeleton;
-
-        // The Rose Sorceress cape ships without dedicated cloth bones. Auto-rig that exact mesh
-        // before the normal body-region pass so it gets a reusable three-link secondary-motion chain.
-        int capeRigged = 0;
-        for (Rig* rig : rigs)
-        {
-            osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
-            const std::string meshFile = meshFileFor(start);
-            if (rigRoseSorceressCape(*rig, *skeleton, meshFile, isPlayer, debug))
-                ++capeRigged;
-        }
-        if (debug && capeRigged)
-            Log(Debug::Warning) << "Cape auto-rig: processed " << capeRigged << " Rose Sorceress cape mesh(es)";
 
         // Detect only the jiggle bones WE injected on an earlier pass (marked identity children of
         // the parent bone) so a resync doesn't recreate them. Pre-existing skeleton jiggle bone

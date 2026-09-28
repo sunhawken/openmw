@@ -12,7 +12,7 @@ namespace MWRender
     /// breast/butt jiggle bones + proximity weights to a female body at load when the
     /// meshes don't already carry them, so pre-rigging with the .bat tool is optional.
     ///
-    /// The caller (NpcAnimation) invokes this only for female actors, after the body
+    /// The caller (NpcAnimation) invokes this after actor body/equipment parts are attached. Female-body
     /// parts have been attached under @p objectRoot - including on every equip/unequip,
     /// so it doubles as a resync: it is idempotent (won't re-create existing bones or
     /// re-paint meshes that already carry them) and paints any newly attached part that
@@ -30,7 +30,9 @@ namespace MWRender
         /// @param isPlayer when true, the actor's body mesh is recorded as the "current player mesh"
         /// and its saved per-mesh Z offset (if any) is pushed into the live breast/butt Z sliders,
         /// so the sliders track whichever body mesh the player is currently using.
-        void run(osg::Group* objectRoot, bool isPlayer = false);
+        /// @param allowBodyAutoRig false skips female-body breast/butt/thigh generation while
+        /// still allowing model-specific cloth compatibility such as the Rose Sorceress cape.
+        void run(osg::Group* objectRoot, bool isPlayer = false, bool allowBodyAutoRig = true);
     }
 }
 
