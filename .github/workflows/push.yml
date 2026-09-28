@@ -7,6 +7,13 @@ on:
 env:
   BUILD_TYPE: RelWithDebInfo
 
+# Only the newest commit on a branch is useful for this long multi-platform
+# validation workflow. Cancel superseded runs so rapid cape/physics iterations
+# do not leave the current in-game candidate waiting behind stale builds.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   Ubuntu:
     runs-on: ubuntu-latest
