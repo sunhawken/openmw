@@ -106,8 +106,7 @@ jobs:
         -D LuaJit_INCLUDE_DIR='${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/include/luajit'
         -D LuaJit_LIBRARY='${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/lib/lua51.lib'
         -D BUILD_BENCHMARKS=${{ ! inputs.package }}
-        -D BUILD_COMPONENTS_TESTS=${{ ! inputs.package }}
-        -D BUILD_OPENMW_TESTS=${{ ! inputs.package }}
+        -D BUILD_UNITTESTS=${{ ! inputs.package }}
         -D BUILD_OPENCS_TESTS=${{ ! inputs.package }}
         -D OPENMW_USE_SYSTEM_SQLITE3=OFF
         -D OPENMW_USE_SYSTEM_YAML_CPP=OFF
@@ -235,10 +234,6 @@ jobs:
     - name: Add install directory to PATH
       shell: bash
       run: echo '${{ github.workspace }}/install' >> ${GITHUB_PATH}
-
-    - name: Run components tests
-      if: ${{ ! inputs.package }}
-      run: .\build\components-tests.exe
 
     - name: Run OpenMW tests
       if: ${{ ! inputs.package }}
