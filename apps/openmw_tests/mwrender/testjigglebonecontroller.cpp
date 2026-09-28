@@ -174,9 +174,30 @@ namespace MWRender
             // Cape compatibility must work even with female-body auto-rigging disabled.
             JiggleAutoRig::run(skeleton.get(), false, false);
 
-            ASSERT_NE(skeleton->getBone("bip01 cape01"), nullptr);
-            ASSERT_NE(skeleton->getBone("bip01 cape02"), nullptr);
-            ASSERT_NE(skeleton->getBone("bip01 cape03"), nullptr);
+            SceneUtil::Bone* capeBone01 = skeleton->getBone("bip01 cape01");
+            SceneUtil::Bone* capeBone02 = skeleton->getBone("bip01 cape02");
+            SceneUtil::Bone* capeBone03 = skeleton->getBone("bip01 cape03");
+            ASSERT_NE(capeBone01, nullptr);
+            ASSERT_NE(capeBone02, nullptr);
+            ASSERT_NE(capeBone03, nullptr);
+
+            // All generated segments must share the authored torso pivot. Nesting the
+            // identity bones would stack translations and exaggerate lower-cape motion.
+            ASSERT_NE(capeBone01->mNode.get(), nullptr);
+            ASSERT_NE(capeBone02->mNode.get(), nullptr);
+            ASSERT_NE(capeBone03->mNode.get(), nullptr);
+            ASSERT_EQ(capeBone01->mNode->getNumParents(), 1u);
+            ASSERT_EQ(capeBone02->mNode->getNumParents(), 1u);
+            ASSERT_EQ(capeBone03->mNode->getNumParents(), 1u);
+            EXPECT_EQ(capeBone01->mNode->getParent(0), spine.get());
+            EXPECT_EQ(capeBone02->mNode->getParent(0), spine.get());
+            EXPECT_EQ(capeBone03->mNode->getParent(0), spine.get());
+
+            // Existence alone is not enough: every generated cape segment must be driven
+            // by a runtime update callback so the skinned vertices can actually lag/move.
+            EXPECT_NE(capeBone01->mNode->getUpdateCallback(), nullptr);
+            EXPECT_NE(capeBone02->mNode->getUpdateCallback(), nullptr);
+            EXPECT_NE(capeBone03->mNode->getUpdateCallback(), nullptr);
 
             const std::vector<std::string> names = rig->getInfluenceBoneNames();
             auto boneIndexByName = [&](std::string_view name) {
