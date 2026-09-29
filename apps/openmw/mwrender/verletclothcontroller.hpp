@@ -35,6 +35,11 @@ namespace MWRender
         int mIterations = 8;
         int mSubsteps = 2;
         float mMaxStep = 12.f;
+        // 0 = use the global "verlet pin count" setting.
+        int mPinCount = 0;
+        // Also collide with thigh/calf capsules (skirts, long hair) and keep particles above the floor.
+        bool mCollideLegs = false;
+        bool mGround = false;
     };
 
     /// Drives a sequential bone chain using Verlet integration and fixed-distance
@@ -54,15 +59,22 @@ namespace MWRender
         std::vector<osg::Vec3f> restWorldPositions(const osg::Matrix& rootParentWorld) const;
         void writeBoneTransforms(const osg::Matrix& rootParentWorld);
         void initializeBodyCollisionNodes(osg::MatrixTransform* node);
-        std::vector<osg::Vec3f> bodyCollisionPoints() const;
         void solveBodyCollision(int pinCount, float radius, float margin);
+        void solveGround(int pinCount);
 
         std::vector<osg::ref_ptr<osg::MatrixTransform>> mChain;
         std::vector<osg::Matrix> mRestLocalMatrices;
         std::vector<osg::Vec3f> mPositions;
         std::vector<osg::Vec3f> mPreviousPositions;
         std::vector<float> mSegmentLengths;
-        std::vector<osg::ref_ptr<osg::MatrixTransform>> mBodyCollisionNodes;
+        struct BodyCapsule
+        {
+            osg::ref_ptr<osg::MatrixTransform> mA;
+            osg::ref_ptr<osg::MatrixTransform> mB;
+            float mRadiusScale;
+        };
+        std::vector<BodyCapsule> mBodyCapsules;
+        osg::ref_ptr<osg::Node> mGroundNode;
         bool mBodyCollisionInitialized = false;
 
         VerletClothSettings mSettings;
