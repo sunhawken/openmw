@@ -183,6 +183,8 @@ namespace MWRender
         const float movementInfluence = Settings::game().mVerletMovementInfluence;
         const float idleDamping = Settings::game().mVerletIdleDamping;
         const bool idleWind = Settings::game().mVerletIdleWind;
+        const int pinCount = std::clamp(Settings::game().mVerletPinCount.get(), 1,
+            static_cast<int>(mPositions.size()) - 1);
 
         const float subDt = static_cast<float>(dt / static_cast<double>(substeps));
         const float anchorSpeed = static_cast<float>(anchorDelta.length() / std::max(dt, 1e-6));
@@ -193,11 +195,15 @@ namespace MWRender
 
         for (int substep = 0; substep < substeps; ++substep)
         {
-            // Particle 0 is pinned to the animated skeleton attachment point.
-            mPositions[0] = anchor;
-            mPreviousPositions[0] = anchor;
+            // Pin the authored attachment region. For capes this keeps the
+            // shoulder/upper-arm area from being dragged by the lower cloth.
+            for (int i = 0; i < pinCount; ++i)
+            {
+                mPositions[static_cast<std::size_t>(i)] = restPositions[static_cast<std::size_t>(i)];
+                mPreviousPositions[static_cast<std::size_t>(i)] = restPositions[static_cast<std::size_t>(i)];
+            }
 
-            for (std::size_t i = 1; i < mPositions.size(); ++i)
+            for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
             {
                 const osg::Vec3f current = mPositions[i];
                 osg::Vec3f velocity = (mPositions[i] - mPreviousPositions[i]) * friction;
@@ -230,9 +236,10 @@ namespace MWRender
             // equivalent of the source project's Polygon::ConstraintPolygon().
             for (int iteration = 0; iteration < iterations; ++iteration)
             {
-                mPositions[0] = anchor;
+                for (int pinned = 0; pinned < pinCount; ++pinned)
+                    mPositions[static_cast<std::size_t>(pinned)] = restPositions[static_cast<std::size_t>(pinned)];
 
-                for (std::size_t i = 1; i < mPositions.size(); ++i)
+                for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
                 {
                     osg::Vec3f delta = mPositions[i] - mPositions[i - 1];
                     const float distance = delta.length();
@@ -242,10 +249,10 @@ namespace MWRender
                     const float restLength = mSegmentLengths[i - 1];
                     const osg::Vec3f correction = delta * ((distance - restLength) / distance);
 
-                    if (i == 1)
+                    if (i == static_cast<std::size_t>(pinCount))
                     {
-                        // The root is pinned, so the second particle takes the
-                        // entire correction.
+                        // The previous particle is pinned, so the first free
+                        // particle takes the entire correction.
                         mPositions[i] -= correction;
                     }
                     else
@@ -265,7 +272,8 @@ namespace MWRender
             Log(Debug::Info) << "Verlet cloth: root=" << node->getName() << " particles=" << mPositions.size()
                              << " tip displacement=" << tipDistance << " friction=" << frictionBase
                              << " gravity=" << gravity << " wind=" << effectiveWindStrength
-                             << " rootSpeed=" << anchorSpeed << " globalOverride=" << useGlobal;
+                             << " rootSpeed=" << anchorSpeed << " pinCount=" << pinCount
+                             << " globalOverride=" << useGlobal;
         }
 
         traverse(node, nv);
