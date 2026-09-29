@@ -89,6 +89,7 @@ namespace MWRender
         }
 
         mPreviousAnchor = mPositions.empty() ? osg::Vec3f() : mPositions.front();
+        mPreviousRootParentWorld = rootParentWorld;
         mLastSimTime = simTime;
         mInitialized = true;
     }
@@ -99,6 +100,7 @@ namespace MWRender
         mPreviousPositions = mPositions;
         if (!mPositions.empty())
             mPreviousAnchor = mPositions.front();
+        mPreviousRootParentWorld = rootParentWorld;
         mLastSimTime = simTime;
         writeBoneTransforms(rootParentWorld);
     }
@@ -367,6 +369,8 @@ namespace MWRender
         const int softRootCount = std::clamp(mSettings.mSoftRootCount, 0, maxSoftRootCount);
         const float softRootStrength = std::clamp(mSettings.mSoftRootStrength, 0.f, 1.f);
         const float velocityDeadzone = std::max(0.f, mSettings.mVelocityDeadzone);
+        const float rotationCarry = std::clamp(mSettings.mRotationCarry, 0.f, 1.f);
+        const float lateralMemory = std::clamp(mSettings.mLateralMemory, 0.f, 1.f);
 
         // Quintic smootherstep has zero slope at both ends, which removes the
         // visible rigid->physics hinge better than a linear/cubic transition.
@@ -397,17 +401,32 @@ namespace MWRender
         const float friction = std::pow(effectiveFrictionBase, subDt * sReferenceFps);
         const float effectiveWindStrength = (!idleWind && stationary) ? 0.f : windStrength;
 
-        // The attachment point is animated with the actor.  Carry every free
-        // particle by that same world-space displacement before simulating its
-        // lag.  Leaving the free particles at their old world positions while
-        // only pinning the root stretches the entire chain on every walking
-        // frame; the distance solver then straightens it into the familiar
-        // "shoot backwards / flat cape" failure.
+        // Carry the free particles with the animated parent frame before
+        // simulating their relative motion. Translation carry is always applied;
+        // optional rotation carry prevents extreme turns from shearing the shell
+        // into a flat plane while still allowing inertial secondary motion.
+        const osg::Matrix frameDelta = osg::Matrix::inverse(mPreviousRootParentWorld) * rootParentWorld;
         for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
         {
-            mPositions[i] += anchorDelta;
-            mPreviousPositions[i] += anchorDelta;
+            const osg::Vec3f translatedPosition = mPositions[i] + anchorDelta;
+            const osg::Vec3f translatedPrevious = mPreviousPositions[i] + anchorDelta;
+
+            if (rotationCarry > 0.f)
+            {
+                const osg::Vec3f fullyCarriedPosition = mPositions[i] * frameDelta;
+                const osg::Vec3f fullyCarriedPrevious = mPreviousPositions[i] * frameDelta;
+                mPositions[i] = translatedPosition * (1.f - rotationCarry)
+                    + fullyCarriedPosition * rotationCarry;
+                mPreviousPositions[i] = translatedPrevious * (1.f - rotationCarry)
+                    + fullyCarriedPrevious * rotationCarry;
+            }
+            else
+            {
+                mPositions[i] = translatedPosition;
+                mPreviousPositions[i] = translatedPrevious;
+            }
         }
+        mPreviousRootParentWorld = rootParentWorld;
 
         for (int substep = 0; substep < substeps; ++substep)
         {
@@ -508,6 +527,28 @@ namespace MWRender
                 solveGround(pinCount);
             }
 
+            // Actor-local lateral shape memory preserves the authored
+            // width/depth of the chain shell while leaving vertical swing free.
+            // Apply the same correction to history so shape preservation does not
+            // become artificial velocity on the next substep.
+            if (lateralMemory > 0.f)
+            {
+                const osg::Matrix rootParentInverse = osg::Matrix::inverse(rootParentWorld);
+                for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
+                {
+                    const osg::Vec3f currentLocal = mPositions[i] * rootParentInverse;
+                    const osg::Vec3f restLocal = restPositions[i] * rootParentInverse;
+                    osg::Vec3f correctedLocal = currentLocal;
+                    correctedLocal.x() += (restLocal.x() - currentLocal.x()) * lateralMemory;
+                    correctedLocal.y() += (restLocal.y() - currentLocal.y()) * lateralMemory;
+
+                    const osg::Vec3f correctedWorld = correctedLocal * rootParentWorld;
+                    const osg::Vec3f correction = correctedWorld - mPositions[i];
+                    mPositions[i] += correction;
+                    mPreviousPositions[i] += correction;
+                }
+            }
+
             // Kill only sub-millimetre-scale residual motion when the actor is
             // stationary. Real swinging/falling remains far above this threshold.
             if (stationary && velocityDeadzone > 0.f)
@@ -534,6 +575,7 @@ namespace MWRender
                              << " rootSpeed=" << anchorSpeed << " pinCount=" << pinCount
                              << " softRootCount=" << softRootCount << " velocityDeadzone=" << velocityDeadzone
                              << " contactSlop=" << mSettings.mContactSlop
+                             << " rotationCarry=" << rotationCarry << " lateralMemory=" << lateralMemory
                              << " bodyCollision=" << bodyCollision << " bodyRadius=" << bodyCollisionRadius
                              << " globalOverride=" << useGlobal;
         }
