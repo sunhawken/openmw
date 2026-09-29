@@ -50,6 +50,7 @@
 #include <components/sceneutil/visitor.hpp>
 
 #include <components/settings/values.hpp>
+#include <components/misc/jigglepolicy.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/luamanager.hpp"
@@ -1986,6 +1987,8 @@ namespace MWRender
         };
         const bool debug = Settings::game().mJiggleBoneDebug;
         const bool isPlayer = mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr();
+        const std::string actorName = std::string(mPtr.getClass().getName(mPtr));
+        const bool jiggleActorEnabled = Misc::JigglePolicy::actorEnabled(isPlayer, actorName);
 
         std::unordered_set<osg::MatrixTransform*> attached;
 
@@ -2057,7 +2060,8 @@ namespace MWRender
             if (debug)
                 Log(Debug::Warning) << "Wiggle Bones: direct metadata bone " << node->getName();
 
-            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, std::move(settings)));
+            node->addUpdateCallback(
+                new JiggleBoneController(debug, isPlayer, std::move(settings), actorName));
             attached.insert(node);
         }
 
@@ -2076,10 +2080,13 @@ namespace MWRender
             osg::MatrixTransform* node = iter->second;
             if (attached.contains(node) || hasSecondaryMotionController(node))
                 continue;
+            if (!jiggleActorEnabled)
+                continue;
 
             if (debug)
-                Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node;
-            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer));
+                Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node
+                                    << " actor=" << actorName;
+            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, {}, actorName));
         }
     }
 
