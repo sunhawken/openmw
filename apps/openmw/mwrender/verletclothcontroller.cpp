@@ -450,6 +450,27 @@ namespace MWRender
                 mPreviousPositions[i] += correction;
             }
 
+            // Apply lateral memory before integration/constraints so body and
+            // ground collision always have final authority. This avoids a
+            // frame-to-frame tug-of-war between shape preservation and contact.
+            if (lateralMemory > 0.f)
+            {
+                const osg::Matrix rootParentInverse = osg::Matrix::inverse(rootParentWorld);
+                for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
+                {
+                    const osg::Vec3f currentLocal = mPositions[i] * rootParentInverse;
+                    const osg::Vec3f restLocal = restPositions[i] * rootParentInverse;
+                    osg::Vec3f correctedLocal = currentLocal;
+                    correctedLocal.x() += (restLocal.x() - currentLocal.x()) * lateralMemory;
+                    correctedLocal.y() += (restLocal.y() - currentLocal.y()) * lateralMemory;
+
+                    const osg::Vec3f correctedWorld = correctedLocal * rootParentWorld;
+                    const osg::Vec3f correction = correctedWorld - mPositions[i];
+                    mPositions[i] += correction;
+                    mPreviousPositions[i] += correction;
+                }
+            }
+
             for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
             {
                 const osg::Vec3f current = mPositions[i];
@@ -525,28 +546,6 @@ namespace MWRender
                 if (bodyCollision)
                     solveBodyCollision(pinCount, bodyCollisionRadius, bodyCollisionMargin);
                 solveGround(pinCount);
-            }
-
-            // Actor-local lateral shape memory preserves the authored
-            // width/depth of the chain shell while leaving vertical swing free.
-            // Apply the same correction to history so shape preservation does not
-            // become artificial velocity on the next substep.
-            if (lateralMemory > 0.f)
-            {
-                const osg::Matrix rootParentInverse = osg::Matrix::inverse(rootParentWorld);
-                for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
-                {
-                    const osg::Vec3f currentLocal = mPositions[i] * rootParentInverse;
-                    const osg::Vec3f restLocal = restPositions[i] * rootParentInverse;
-                    osg::Vec3f correctedLocal = currentLocal;
-                    correctedLocal.x() += (restLocal.x() - currentLocal.x()) * lateralMemory;
-                    correctedLocal.y() += (restLocal.y() - currentLocal.y()) * lateralMemory;
-
-                    const osg::Vec3f correctedWorld = correctedLocal * rootParentWorld;
-                    const osg::Vec3f correction = correctedWorld - mPositions[i];
-                    mPositions[i] += correction;
-                    mPreviousPositions[i] += correction;
-                }
             }
 
             // Kill only sub-millimetre-scale residual motion when the actor is
