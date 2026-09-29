@@ -1451,23 +1451,25 @@ namespace MWGui
         auto* window = mMainWidget->castType<MyGUI::Window>();
         auto minSize = window->getMinSize();
 
-        // Window should be at minimum wide enough to show all tabs.
+        // Keep every top-level settings tab visible at once. This branch adds several
+        // engine-specific tabs (Physics, Jiggle, Wiggle, Verlet), so the historical
+        // minimum width is no longer enough on some resolutions/themes.
         int tabBarWidth = 0;
-        for (uint32_t i = 0; i < mSettingsTab->getItemCount(); i++)
-        {
+        for (size_t i = 0; i < mSettingsTab->getItemCount(); ++i)
             tabBarWidth += mSettingsTab->getButtonWidthAt(i);
-        }
 
-        // Need to include window margins
-        int margins = mMainWidget->getWidth() - mSettingsTab->getWidth();
-        int minimumWindowWidth = tabBarWidth + margins;
+        // Include the window chrome/margins around the tab control and a small guard
+        // for skin spacing so the final tab is not clipped by the right edge.
+        const int margins = mMainWidget->getWidth() - mSettingsTab->getWidth();
+        constexpr int tabBarGuardPixels = 8;
+        const int minimumWindowWidth = tabBarWidth + margins + tabBarGuardPixels;
 
         if (minimumWindowWidth > minSize.width)
         {
             minSize.width = minimumWindowWidth;
             window->setMinSize(minSize);
 
-            // Make a dummy call to setSize so MyGUI can apply any resize resulting from the change in MinSize
+            // Make a dummy call to setSize so MyGUI can apply any resize resulting from the change in MinSize.
             mMainWidget->setSize(mMainWidget->getSize());
         }
     }
