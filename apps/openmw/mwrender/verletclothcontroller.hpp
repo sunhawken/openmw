@@ -53,12 +53,17 @@ namespace MWRender
         void resetToRest(const osg::Matrix& rootParentWorld, double simTime);
         std::vector<osg::Vec3f> restWorldPositions(const osg::Matrix& rootParentWorld) const;
         void writeBoneTransforms(const osg::Matrix& rootParentWorld);
+        void initializeBodyCollisionNodes(osg::MatrixTransform* node);
+        std::vector<osg::Vec3f> bodyCollisionPoints() const;
+        void solveBodyCollision(int pinCount, float radius, float margin);
 
         std::vector<osg::ref_ptr<osg::MatrixTransform>> mChain;
         std::vector<osg::Matrix> mRestLocalMatrices;
         std::vector<osg::Vec3f> mPositions;
         std::vector<osg::Vec3f> mPreviousPositions;
         std::vector<float> mSegmentLengths;
+        std::vector<osg::ref_ptr<osg::MatrixTransform>> mBodyCollisionNodes;
+        bool mBodyCollisionInitialized = false;
 
         VerletClothSettings mSettings;
         osg::Vec3f mPreviousAnchor;
