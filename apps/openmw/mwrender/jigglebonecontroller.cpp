@@ -3,6 +3,7 @@
 #include <components/debug/debuglog.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/jigglepolicy.hpp>
+#include <components/misc/jigglezoffset.hpp>
 #include <components/nifosg/matrixtransform.hpp>
 #include <components/settings/values.hpp>
 
