@@ -1,4 +1,5 @@
 name: Siff Linux runtime
+# Dedicated runtime smoke-test workflow for the Siff Verlet branch.
 
 on:
   push:
