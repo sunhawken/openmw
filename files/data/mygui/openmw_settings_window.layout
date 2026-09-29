@@ -156,6 +156,7 @@
                         <Property key="Caption" value="#{OMWEngine:MouseDirectionalAttackInvert}"/>
                     </Widget>
                 </Widget>
+            </Widget>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Audio} "/>
                 <Widget type="TextBox" skin="NormalText" position="4 4 352 18" align="Left Top">
@@ -1456,7 +1457,6 @@
                     </Widget>
                     </Widget>
                 </Widget>
-            </Widget>
             <Widget type="TabItem">
                 <Property key="Caption" value=" Wiggle "/>
                 <Widget type="Widget" position="6 12 344 80" align="Left Top">
