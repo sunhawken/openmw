@@ -21,6 +21,8 @@
 #include <components/debug/debuglog.hpp>
 #include <components/misc/jigglezoffset.hpp>
 #include <components/misc/strings/algorithm.hpp>
+#include <components/misc/jigglepolicy.hpp>
+#include <components/misc/jigglezoffset.hpp>
 #include <components/misc/strings/lower.hpp>
 #include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/skeleton.hpp>
@@ -591,7 +593,8 @@ namespace MWRender
         }
     }
 
-    void JiggleAutoRig::run(osg::Group* objectRoot, bool isPlayer, bool allowBodyAutoRig)
+    void JiggleAutoRig::run(
+        osg::Group* objectRoot, bool isPlayer, bool allowBodyAutoRig, std::string_view actorName)
     {
         if (!objectRoot)
             return;
@@ -625,7 +628,7 @@ namespace MWRender
         // "Jiggle player only" scopes the body auto-rigger, not model-specific cloth.
         // Cape compatibility above must still run for NPCs, inventory previews and other
         // actor instances that use the same equipped mesh.
-        if ((Settings::game().mJiggleBonePlayerOnly && !isPlayer) || !generalAutoRig || !allowBodyAutoRig)
+        if (!Misc::JigglePolicy::actorEnabled(isPlayer, actorName) || !generalAutoRig || !allowBodyAutoRig)
             return;
 
         // Drop blacklisted meshes up front so they take part in neither anchor detection nor
@@ -659,9 +662,18 @@ namespace MWRender
         // outfit has no saved value yet it snaps to 0 (a clean default) rather than leaving the
         // previous outfit's offset in place. The settings window writes slider changes back keyed to
         // this same mesh (see mwgui/settingswindow.cpp).
-        if (isPlayer && !bodyMeshFile.empty())
+        if (!bodyMeshFile.empty())
         {
-            Misc::JiggleZOffset::currentPlayerMesh() = bodyMeshFile;
+            Misc::JiggleZOffset::setCurrentActorMesh(isPlayer, actorName, bodyMeshFile);
+
+            if (!isPlayer)
+            {
+                if (debug)
+                    Log(Debug::Warning) << "Jiggle auto-rig: actor " << actorName
+                                        << " current body mesh " << bodyMeshFile;
+            }
+            else
+            {
             const auto stored = Misc::JiggleZOffset::lookup(bodyMeshFile);
             // Restore this mesh's saved live breast/butt Z offsets. These are runtime offsets
             // applied by JiggleBoneController. If the user baked the breast offset into the loose
@@ -674,6 +686,7 @@ namespace MWRender
             if (debug)
                 Log(Debug::Warning) << "Jiggle auto-rig: snapped Z offsets to " << bodyMeshFile << " breast=" << breast
                                     << " butt=" << butt << (stored ? " (saved)" : " (default)");
+            }
         }
 
         SkeletonFinder sf;
@@ -769,7 +782,7 @@ namespace MWRender
             boneNode->setDataVariance(osg::Object::DYNAMIC);
             boneNode->setUserValue(sAutoRigMarker, true);
             parentNode->addChild(boneNode);
-            boneNode->addUpdateCallback(new JiggleBoneController(debug, isPlayer));
+            boneNode->addUpdateCallback(new JiggleBoneController(debug, isPlayer, {}, std::string(actorName)));
             haveOurBone[t] = true;
             addedAny = true;
             if (debug)
