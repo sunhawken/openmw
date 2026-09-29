@@ -3,7 +3,10 @@
 #include "animation.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <iomanip>
 #include <limits>
+#include <utility>
 
 #include <osg/BlendFunc>
 #include <osg/Material>
@@ -50,6 +53,7 @@
 #include <components/sceneutil/visitor.hpp>
 
 #include <components/settings/values.hpp>
+#include <components/misc/jigglepolicy.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/luamanager.hpp"
@@ -63,12 +67,303 @@
 #include "../mwmechanics/weapontype.hpp"
 
 #include "actorutil.hpp"
+#include "jigglebonecontroller.hpp"
+#include "verletclothcontroller.hpp"
 #include "rotatecontroller.hpp"
 #include "util.hpp"
 #include "vismask.hpp"
 
 namespace
 {
+    std::string normalizedWiggleKey(std::string key)
+    {
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+            if (c == '-' || c == ' ' || c == '.')
+                return static_cast<char>('_');
+            return static_cast<char>(std::tolower(c));
+        });
+        return key;
+    }
+
+    bool parseWiggleBool(std::string value, bool& out)
+    {
+        value = normalizedWiggleKey(std::move(value));
+        if (value == "1" || value == "true" || value == "yes" || value == "on")
+        {
+            out = true;
+            return true;
+        }
+        if (value == "0" || value == "false" || value == "no" || value == "off")
+        {
+            out = false;
+            return true;
+        }
+        return false;
+    }
+
+    bool parseWiggleFloat(const std::string& value, float& out)
+    {
+        try
+        {
+            std::size_t consumed = 0;
+            out = std::stof(value, &consumed);
+            return consumed != 0;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    void applyWiggleProperty(MWRender::WiggleBoneSettings& settings, std::string key, const std::string& value)
+    {
+        key = normalizedWiggleKey(std::move(key));
+        bool b = false;
+        float f = 0.f;
+
+        if ((key == "jiggle_enable" || key == "jiggle_active" || key == "wiggle_enable" || key == "wiggle_active"
+                || key == "wiggle_tail")
+            && parseWiggleBool(value, b))
+        {
+            settings.mDirect = true;
+            settings.mActive = b;
+        }
+        else if ((key == "jiggle_collision" || key == "wiggle_collision" || key == "wiggle_self_collision")
+            && parseWiggleBool(value, b))
+        {
+            settings.mDirect = true;
+            settings.mSelfCollision = b;
+        }
+        else if ((key == "jiggle_stiffness" || key == "wiggle_stiffness" || key == "wiggle_stiff")
+            && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mStiffness = f;
+        }
+        else if ((key == "jiggle_dampen" || key == "jiggle_damping" || key == "wiggle_dampen"
+                     || key == "wiggle_damping" || key == "wiggle_damp")
+            && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mDamping = f;
+        }
+        else if ((key == "jiggle_amplitude" || key == "wiggle_amplitude") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mAmplitude = f;
+        }
+        else if ((key == "jiggle_gravity" || key == "wiggle_gravity") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mGravity = f;
+        }
+        else if ((key == "jiggle_mass" || key == "wiggle_mass") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mMass = f;
+        }
+        else if ((key == "jiggle_stretch" || key == "wiggle_stretch") && parseWiggleFloat(value, f))
+        {
+            settings.mDirect = true;
+            settings.mStretch = f;
+        }
+    }
+
+    MWRender::WiggleBoneSettings wiggleSettingsFromNode(const osg::Node& node)
+    {
+        MWRender::WiggleBoneSettings settings;
+
+        auto readBoolValue = [&](std::string_view key) {
+            bool value = false;
+            if (node.getUserValue(std::string(key), value))
+                applyWiggleProperty(settings, std::string(key), value ? "true" : "false");
+        };
+        auto readFloatValue = [&](std::string_view key) {
+            float value = 0.f;
+            if (node.getUserValue(std::string(key), value))
+                applyWiggleProperty(settings, std::string(key), std::to_string(value));
+        };
+
+        for (std::string_view key : { "jiggle_enable", "jiggle_active", "wiggle_enable", "wiggle_active", "wiggle_tail",
+                 "jiggle_collision", "wiggle_collision", "wiggle_self_collision" })
+            readBoolValue(key);
+        for (std::string_view key : { "jiggle_stiffness", "wiggle_stiffness", "wiggle_stiff", "jiggle_dampen",
+                 "jiggle_damping", "wiggle_dampen", "wiggle_damping", "wiggle_damp", "jiggle_amplitude",
+                 "wiggle_amplitude", "jiggle_gravity", "wiggle_gravity", "jiggle_mass", "wiggle_mass",
+                 "jiggle_stretch", "wiggle_stretch" })
+            readFloatValue(key);
+
+        for (const std::string& description : node.getDescriptions())
+        {
+            const std::string normalized = normalizedWiggleKey(description);
+            if (normalized.find("openmw_wiggle") != std::string::npos
+                || normalized.find("wiggle_bone") != std::string::npos
+                || normalized.find("wiggle2") != std::string::npos)
+                settings.mDirect = true;
+
+            std::size_t start = 0;
+            while (start < description.size())
+            {
+                const std::size_t end = description.find_first_of(";\n,", start);
+                const std::string token
+                    = description.substr(start, end == std::string::npos ? std::string::npos : end - start);
+                const std::size_t sep = token.find_first_of("=:");
+                if (sep != std::string::npos)
+                    applyWiggleProperty(settings, token.substr(0, sep), token.substr(sep + 1));
+                if (end == std::string::npos)
+                    break;
+                start = end + 1;
+            }
+        }
+
+        return settings;
+    }
+
+    bool parseVerletInt(const std::string& value, int& out)
+    {
+        try
+        {
+            std::size_t consumed = 0;
+            out = std::stoi(value, &consumed);
+            return consumed != 0;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    void applyVerletProperty(MWRender::VerletClothSettings& settings, std::string key, const std::string& value)
+    {
+        key = normalizedWiggleKey(std::move(key));
+
+        bool b = false;
+        float f = 0.f;
+        int i = 0;
+
+        if ((key == "verlet_cloth" || key == "verlet_active") && parseWiggleBool(value, b))
+            settings.mEnabled = b;
+        else if (key == "verlet_count" && parseVerletInt(value, i))
+            settings.mCount = std::max(0, i);
+        else if (key == "verlet_friction" && parseWiggleFloat(value, f))
+            settings.mFriction = f;
+        else if (key == "verlet_gravity" && parseWiggleFloat(value, f))
+            settings.mGravity = f;
+        else if ((key == "verlet_wind" || key == "verlet_wind_strength") && parseWiggleFloat(value, f))
+            settings.mWindStrength = f;
+        else if (key == "verlet_wind_frequency" && parseWiggleFloat(value, f))
+            settings.mWindFrequency = f;
+        else if (key == "verlet_iterations" && parseVerletInt(value, i))
+            settings.mIterations = i;
+        else if (key == "verlet_substeps" && parseVerletInt(value, i))
+            settings.mSubsteps = i;
+        else if (key == "verlet_max_step" && parseWiggleFloat(value, f))
+            settings.mMaxStep = f;
+    }
+
+    bool hasSecondaryMotionController(osg::Node* node)
+    {
+        if (!node)
+            return false;
+
+        osg::Callback* cb = node->getUpdateCallback();
+        while (cb)
+        {
+            if (dynamic_cast<MWRender::VerletClothController*>(cb)
+                || dynamic_cast<MWRender::JiggleBoneController*>(cb))
+                return true;
+            cb = cb->getNestedCallback();
+        }
+        return false;
+    }
+
+    MWRender::VerletClothSettings verletSettingsFromNode(const osg::Node& node)
+    {
+        MWRender::VerletClothSettings settings;
+
+        bool b = false;
+        if (node.getUserValue("verlet_cloth", b) || node.getUserValue("verlet_active", b))
+            settings.mEnabled = b;
+
+        int count = 0;
+        if (node.getUserValue("verlet_count", count))
+            settings.mCount = count;
+
+        auto readFloat = [&](std::string_view key) {
+            float value = 0.f;
+            if (node.getUserValue(std::string(key), value))
+                applyVerletProperty(settings, std::string(key), std::to_string(value));
+        };
+        for (std::string_view key : { "verlet_friction", "verlet_gravity", "verlet_wind",
+                 "verlet_wind_strength", "verlet_wind_frequency", "verlet_max_step" })
+            readFloat(key);
+
+        for (const std::string& description : node.getDescriptions())
+        {
+            const std::string normalized = normalizedWiggleKey(description);
+            if (normalized.find("openmw_verlet_cloth") != std::string::npos)
+                settings.mEnabled = true;
+
+            std::size_t start = 0;
+            while (start < description.size())
+            {
+                const std::size_t end = description.find_first_of(";\n,", start);
+                const std::string token
+                    = description.substr(start, end == std::string::npos ? std::string::npos : end - start);
+                const std::size_t sep = token.find_first_of("=:");
+                if (sep != std::string::npos)
+                    applyVerletProperty(settings, token.substr(0, sep), token.substr(sep + 1));
+                if (end == std::string::npos)
+                    break;
+                start = end + 1;
+            }
+        }
+
+        return settings;
+    }
+
+    std::vector<std::string> numberedVerletChainNames(const std::string& rootName, int count)
+    {
+        std::vector<std::string> names;
+        if (count <= 0)
+            return names;
+
+        std::size_t digitStart = rootName.size();
+        while (digitStart > 0 && std::isdigit(static_cast<unsigned char>(rootName[digitStart - 1])))
+            --digitStart;
+
+        if (digitStart == rootName.size())
+        {
+            names.push_back(rootName);
+            return names;
+        }
+
+        const std::string prefix = rootName.substr(0, digitStart);
+        const std::string digits = rootName.substr(digitStart);
+        const int width = static_cast<int>(digits.size());
+
+        int startNumber = 0;
+        try
+        {
+            startNumber = std::stoi(digits);
+        }
+        catch (...)
+        {
+            names.push_back(rootName);
+            return names;
+        }
+
+        names.reserve(static_cast<std::size_t>(count));
+        for (int offset = 0; offset < count; ++offset)
+        {
+            std::string number = std::to_string(startNumber + offset);
+            if (static_cast<int>(number.size()) < width)
+                number.insert(number.begin(), static_cast<std::size_t>(width - number.size()), '0');
+            names.push_back(prefix + number);
+        }
+        return names;
+    }
+
     /// Removes all particle systems and related nodes in a subgraph.
     class RemoveParticlesVisitor : public osg::NodeVisitor
     {
@@ -692,8 +987,12 @@ namespace MWRender
             NodeMap::const_iterator found = nodeMap.find(bonename);
             if (found == nodeMap.end())
             {
-                Log(Debug::Warning) << "Warning: addAnimSource: can't find bone '" + bonename << "' in " << baseModel
-                                    << " (referenced by " << kfname << ")";
+                // Common and harmless: many vanilla .kf animations reference bones (toes,
+                // individual finger joints, ...) that a given skeleton/anim-source legitimately
+                // doesn't have; the track for the missing bone is simply skipped. Logged at Debug
+                // so it doesn't spam the normal log - run with verbose logging to see these.
+                Log(Debug::Debug) << "addAnimSource: can't find bone '" + bonename << "' in " << baseModel
+                                  << " (referenced by " << kfname << ")";
                 continue;
             }
 
@@ -1323,6 +1622,12 @@ namespace MWRender
         resetActiveGroups();
     }
 
+    void Animation::disableAllAnimations()
+    {
+        mStates.clear();
+        resetActiveGroups();
+    }
+
     float Animation::getVelocity(std::string_view groupname) const
     {
         if (!mAccumRoot)
@@ -1602,7 +1907,8 @@ namespace MWRender
         }
     }
 
-    void Animation::setObjectRoot(const std::string& model, bool forceskeleton, bool baseonly, bool isCreature)
+    void Animation::setObjectRoot(
+        const std::string& model, bool forceskeleton, bool baseonly, bool isCreature, bool enableJiggleBones)
     {
         osg::ref_ptr<osg::StateSet> previousStateset;
         if (mObjectRoot)
@@ -1713,6 +2019,130 @@ namespace MWRender
         mObjectRoot->addCullCallback(mLightListCallback);
         if (mTransparencyUpdater)
             mObjectRoot->addCullCallback(mTransparencyUpdater);
+
+        // Jiggle bones are character-body behavior. Keep them off generic animated
+        // objects and creatures; NpcAnimation opts in for both NPCs and the player.
+        if (enableJiggleBones)
+            attachJiggleBoneControllers();
+    }
+
+    void Animation::attachJiggleBoneControllers()
+    {
+        // Equipment can inject BONE-marked secondary-motion chains after the
+        // actor root has already been created. Always refresh the cached node
+        // map before scanning, and make repeated scans idempotent below.
+        mNodeMap.clear();
+        mNodeMapCreated = false;
+
+        static constexpr std::string_view legacyBoneNames[] = {
+            "bip01 l breast",
+            "bip01 r breast",
+            "bip01 l butt",
+            "bip01 r butt",
+        };
+        const bool debug = Settings::game().mJiggleBoneDebug;
+        const bool isPlayer = mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr();
+        const std::string actorName = std::string(mPtr.getClass().getName(mPtr));
+        const bool jiggleActorEnabled = Misc::JigglePolicy::actorEnabled(isPlayer, actorName);
+
+        std::unordered_set<osg::MatrixTransform*> attached;
+
+        // Runtime Verlet cloth chains. A root such as v_01 can opt in with
+        // OPENMW_VERLET_CLOTH / verlet_cloth=true and verlet_count=N. The
+        // sequentially-numbered bones are simulated together, so none of the
+        // member bones should also receive independent JiggleBoneControllers.
+        for (const auto& [name, nodeRef] : getNodeMap())
+        {
+            osg::MatrixTransform* root = nodeRef.get();
+            if (!root || attached.contains(root) || hasSecondaryMotionController(root))
+                continue;
+
+            VerletClothSettings clothSettings = verletSettingsFromNode(*root);
+            if (!clothSettings.mEnabled || clothSettings.mCount < 2)
+                continue;
+
+            const std::vector<std::string> chainNames
+                = numberedVerletChainNames(root->getName(), clothSettings.mCount);
+            std::vector<osg::ref_ptr<osg::MatrixTransform>> chain;
+            chain.reserve(chainNames.size());
+
+            bool complete = chainNames.size() == static_cast<std::size_t>(clothSettings.mCount);
+            for (const std::string& chainName : chainNames)
+            {
+                auto iter = getNodeMap().find(chainName);
+                if (iter == getNodeMap().end() || !iter->second)
+                {
+                    complete = false;
+                    if (debug)
+                        Log(Debug::Warning) << "Verlet cloth: missing chain bone " << chainName
+                                            << " for root " << root->getName();
+                    break;
+                }
+                chain.push_back(iter->second);
+            }
+
+            if (!complete || chain.size() < 2)
+                continue;
+
+            if (debug)
+                Log(Debug::Info) << "Verlet cloth: attached root=" << root->getName()
+                                 << " particles=" << chain.size();
+
+            root->addUpdateCallback(new VerletClothController(std::move(chain), clothSettings, debug));
+
+            for (const std::string& chainName : chainNames)
+            {
+                auto iter = getNodeMap().find(chainName);
+                if (iter != getNodeMap().end() && iter->second)
+                    attached.insert(iter->second.get());
+            }
+        }
+
+        // Direct Blender Wiggle Bones support. Exporters can preserve the add-on's
+        // properties either as OSG user values or as NiStringExtraData/node
+        // descriptions. Any bone carrying those properties opts into secondary
+        // motion regardless of its name and does not depend on OpenMW auto-rig.
+        for (const auto& [name, nodeRef] : getNodeMap())
+        {
+            osg::MatrixTransform* node = nodeRef.get();
+            if (!node || hasSecondaryMotionController(node))
+                continue;
+
+            WiggleBoneSettings settings = wiggleSettingsFromNode(*node);
+            if (!settings.mDirect)
+                continue;
+
+            if (debug)
+                Log(Debug::Warning) << "Wiggle Bones: direct metadata bone " << node->getName();
+
+            node->addUpdateCallback(
+                new JiggleBoneController(debug, isPlayer, std::move(settings), actorName));
+            attached.insert(node);
+        }
+
+        // Preserve existing zero-setup behavior for traditional breast/butt
+        // bone names. Explicit Wiggle Bones metadata wins when both match.
+        for (std::string_view bone : legacyBoneNames)
+        {
+            auto iter = getNodeMap().find(bone);
+            if (iter == getNodeMap().end())
+            {
+                if (debug)
+                    Log(Debug::Warning) << "Jiggle bone debug: not found: " << bone;
+                continue;
+            }
+
+            osg::MatrixTransform* node = iter->second;
+            if (attached.contains(node) || hasSecondaryMotionController(node))
+                continue;
+            if (!jiggleActorEnabled)
+                continue;
+
+            if (debug)
+                Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node
+                                    << " actor=" << actorName;
+            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, {}, actorName));
+        }
     }
 
     osg::Group* Animation::getObjectRoot()

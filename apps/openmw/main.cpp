@@ -1,5 +1,12 @@
 // Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
 // See WASM_ADAPTATIONS.md at the repository root for details of the changes.
+// IMPORTANT: Jolt must be initialized before any Jolt types are used anywhere
+// This includes types like JPH::Ref<> used in headers. We initialize it at the
+// very start of main() before any other code runs.
+#include <Jolt/Jolt.h>
+#include <Jolt/RegisterTypes.h>
+#include <Jolt/Core/Factory.h>
+
 #include <components/debug/debugging.hpp>
 #ifdef __EMSCRIPTEN__
 #include <unicode/putil.h>
@@ -73,6 +80,10 @@ bool parseOptions(int argc, char** argv, OMW::Engine& engine, Files::Configurati
     Debug::setupLogging(cfgMgr.getLogPath(), "OpenMW");
     Log(Debug::Info) << Version::getOpenmwVersionDescription();
 
+    // Self-heal duplicate content=/groundcover= entries in the user's config files so a stray duplicate never
+    // aborts the game with "Content file specified more than once".
+    cfgMgr.repairUserConfig();
+
     Settings::Manager::load(cfgMgr);
 
     MWGui::DebugWindow::startLogRecording();
@@ -115,18 +126,18 @@ bool parseOptions(int argc, char** argv, OMW::Engine& engine, Files::Configurati
         return false;
     }
     engine.addContentFile("builtin.omwscripts");
+    // Self-heal: skip duplicate content entries (keeping first occurrence / load order) instead of aborting.
+    // The user config file itself is repaired separately (see ConfigurationManager::repairUserConfig), but this
+    // guards the in-memory list too so a duplicate never aborts startup.
     std::set<std::string> contentDedupe{ "builtin.omwscripts" };
-    for (const auto& contentFile : content)
-    {
-        if (!contentDedupe.insert(contentFile).second)
-        {
-            Log(Debug::Error) << "Content file specified more than once: " << contentFile << ". Aborting...";
-            return false;
-        }
-    }
-
     for (auto& file : content)
     {
+        if (!contentDedupe.insert(file).second)
+        {
+            Log(Debug::Warning) << "Content file specified more than once: " << file
+                                << ". Ignoring the duplicate.";
+            continue;
+        }
         engine.addContentFile(file);
     }
 
@@ -275,7 +286,25 @@ extern "C" int SDL_main(int argc, char** argv)
 int main(int argc, char** argv)
 #endif
 {
-    return Debug::wrapApplication(&runApplication, argc, argv, "OpenMW");
+    // Initialize Jolt Physics FIRST before any Jolt types are used
+    // This must happen before any code that might use JPH::Ref<> or other Jolt types
+    JPH::RegisterDefaultAllocator();
+    JPH::Factory::sInstance = new JPH::Factory();
+    JPH::RegisterTypes();
+
+    int result = Debug::wrapApplication(&runApplication, argc, argv, "OpenMW");
+
+#ifndef __EMSCRIPTEN__
+    // Clean up Jolt global state after all other cleanup is complete
+    // This must happen AFTER the Engine is destroyed to avoid use-after-free
+    JPH::UnregisterTypes();
+    delete JPH::Factory::sInstance;
+    JPH::Factory::sInstance = nullptr;
+#endif
+    // On the web the Engine is deliberately leaked and keeps running from browser callbacks
+    // after main() returns, so the Jolt factory and type registry must stay alive.
+
+    return result;
 }
 
 // Platform specific for Windows when there is no console built into the executable.

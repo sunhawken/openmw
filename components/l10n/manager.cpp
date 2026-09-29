@@ -82,7 +82,11 @@ namespace L10n
             Log(Debug::Verbose) << "Fallback language file \"l10n/" << name << "/" << ctx.getFallbackLocale().getName()
                                 << ".yaml\" is enabled";
 
-        if (localeCount == 0)
+        // Only warn if NOTHING loaded - not even the fallback (usually English). When none of the
+        // user's preferred languages have a file but the fallback does (line above), the context
+        // still works in the fallback language, so warning there is just noise for every mod that
+        // ships English-only l10n while the player's preferred locale is non-English.
+        if (localeCount == 0 && !ctx.isLoaded(ctx.getFallbackLocale()))
         {
             Log(Debug::Warning) << "No language files for the preferred languages found in \"l10n/" << name << "\"";
         }

@@ -19,6 +19,12 @@ namespace Settings
         using WithIndex::WithIndex;
 
         SettingValue<float> mScalingFactor{ mIndex, "GUI", "scaling factor", makeClampSanitizerFloat(0.5f, 8) };
+        SettingValue<float> mDialogueInterfaceScaling{ mIndex, "GUI", "dialogue interface scaling",
+            makeClampSanitizerFloat(0.f, 8) };
+        SettingValue<float> mSettingsInterfaceScaling{ mIndex, "GUI", "settings interface scaling",
+            makeClampSanitizerFloat(0.f, 8) };
+        SettingValue<bool> mUseRecommendedScalingDefaults{ mIndex, "GUI", "use recommended scaling defaults", true };
+        SettingValue<bool> mSettingsWindowIgnoreScaling{ mIndex, "GUI", "settings window ignore scaling", false };
         SettingValue<int> mFontSize{ mIndex, "GUI", "font size", makeClampSanitizerInt(12, 18) };
         SettingValue<float> mMenuTransparency{ mIndex, "GUI", "menu transparency", makeClampSanitizerFloat(0, 1) };
         SettingValue<float> mTooltipDelay{ mIndex, "GUI", "tooltip delay", makeMaxSanitizerFloat(0) };

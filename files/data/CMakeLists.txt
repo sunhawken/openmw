@@ -55,6 +55,9 @@ set(BUILTIN_DATA_FILES
     # Default animation blending config
     animations/animation-config.yaml
 
+    # Physics collision shape mappings for dynamic objects
+    collision-shapes.yaml
+
     # Month names and date formatting
     l10n/Calendar/de.yaml
     l10n/Calendar/en.yaml
@@ -218,6 +221,7 @@ set(BUILTIN_DATA_FILES
     mygui/openmw_dialogue_window.layout
     mygui/openmw_dialogue_window.skin.xml
     mygui/openmw_edit.skin.xml
+    mygui/openmw_head_hair_window.layout
     mygui/openmw_hud_box.skin.xml
     mygui/openmw_hud_energybar.skin.xml
     mygui/openmw_hud.layout

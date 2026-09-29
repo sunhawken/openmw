@@ -239,6 +239,11 @@ namespace MWLua
         };
         std::vector<CallbackWithData> mQueuedCallbacks;
 
+        // Number of consecutive frames LuaManager::update() has thrown. Used to throttle the error log and
+        // to recover: on failure the transient Lua queues are flushed so a single poison entry can't keep
+        // aborting the whole update every frame (which previously required the player to save/reload).
+        int mUpdateErrorFrames = 0;
+
         // Queued actions that should be done in main thread. Processed by applyQueuedChanges().
         class DelayedAction
         {

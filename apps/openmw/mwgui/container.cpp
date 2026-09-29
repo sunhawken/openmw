@@ -45,6 +45,7 @@ namespace MWGui
         , mTreatNextOpenAsLoot(false)
     {
         getWidget(mDisposeCorpseButton, "DisposeCorpseButton");
+        getWidget(mTransferButton, "TransferButton");
         getWidget(mTakeButton, "TakeButton");
         getWidget(mCloseButton, "CloseButton");
 
@@ -56,6 +57,8 @@ namespace MWGui
             += MyGUI::newDelegate(this, &ContainerWindow::onDisposeCorpseButtonClicked);
         mCloseButton->eventMouseButtonClick += MyGUI::newDelegate(this, &ContainerWindow::onCloseButtonClicked);
         mTakeButton->eventMouseButtonClick += MyGUI::newDelegate(this, &ContainerWindow::onTakeAllButtonClicked);
+        mTransferButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &ContainerWindow::onTransferAllButtonClicked);
 
         setCoord(200, 0, 600, 300);
 
@@ -180,6 +183,9 @@ namespace MWGui
         }
 
         mDisposeCorpseButton->setVisible(loot);
+        // "Transfer All" (deposit the player's items) only makes sense for a real storage container,
+        // not when looting a corpse or pickpocketing an NPC.
+        mTransferButton->setVisible(!mPtr.getClass().isActor());
         mModel = model.get();
         auto sortModel = std::make_unique<SortFilterItemModel>(std::move(model));
         mSortModel = sortModel.get();
@@ -275,6 +281,51 @@ namespace MWGui
         }
 
         MWBase::Environment::get().getWindowManager()->removeGuiMode(GM_Container);
+    }
+
+    void ContainerWindow::onTransferAllButtonClicked(MyGUI::Widget* /*sender*/)
+    {
+        if (!mModel)
+            return;
+        if (mDragAndDrop != nullptr && mDragAndDrop->mIsOnDragAndDrop)
+            return;
+
+        // Move everything the player is carrying (except worn/equipped gear) into this container.
+        ItemModel* playerModel = MWBase::Environment::get().getWindowManager()->getInventoryWindow()->getModel();
+        if (!playerModel)
+            return;
+
+        MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        MWWorld::InventoryStore& invStore = player.getClass().getInventoryStore(player);
+
+        playerModel->update();
+
+        bool playedSound = false;
+        for (size_t i = 0; i < playerModel->getItemCount(); ++i)
+        {
+            const ItemStack item = playerModel->getItem(static_cast<ItemModel::ModelIndex>(i));
+
+            // Keep worn/equipped gear on the player so this can't accidentally strip them.
+            if (invStore.isEquipped(item.mBase))
+                continue;
+
+            // Respect whether the target container will accept this item (ownership, etc.).
+            if (!mModel->onDropItem(item.mBase, static_cast<int>(item.mCount)))
+                continue;
+
+            if (!playedSound)
+            {
+                const ESM::RefId& sound = item.mBase.getClass().getDownSoundId(item.mBase);
+                MWBase::Environment::get().getWindowManager()->playSound(sound);
+                playedSound = true;
+            }
+
+            playerModel->moveItem(item, item.mCount, mModel, false);
+        }
+
+        mModel->update();
+        playerModel->update();
+        mItemView->update();
     }
 
     void ContainerWindow::onDisposeCorpseButtonClicked(MyGUI::Widget* /*sender*/)
