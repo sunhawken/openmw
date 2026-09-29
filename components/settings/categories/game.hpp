@@ -82,9 +82,33 @@ namespace Settings
         // Use optional player-only naked female BBR body mesh when fully unequipped.
         SettingValue<bool> mCurvyNakedBody{ mIndex, "Game", "curvy naked body" };
         SettingValue<bool> mJiggleBoneDebug{ mIndex, "Game", "jiggle bone debug" };
-        // Live master toggle for ordinary Jiggle/Wiggle bone controllers. Verlet cloth is separate
-        // and keeps running when this is disabled.
-        SettingValue<bool> mJiggleBoneControllers{ mIndex, "Game", "jiggle bone controllers" };
+        // Live master toggle for Blender-authored/direct Wiggle controllers only.
+        // Ordinary Jiggle/auto-rig physics is intentionally unaffected.
+        SettingValue<bool> mWiggleBoneControllers{ mIndex, "Game", "wiggle controllers" };
+
+        // Runtime Verlet cloth controls. Model-authored metadata remains the default;
+        // enabling global overrides makes these values live-tunable from the Verlet tab.
+        SettingValue<bool> mVerletEnabled{ mIndex, "Game", "verlet enabled" };
+        SettingValue<bool> mVerletUseGlobalSettings{ mIndex, "Game", "verlet use global settings" };
+        SettingValue<float> mVerletFriction{ mIndex, "Game", "verlet friction",
+            makeClampSanitizerFloat(0.f, 1.f) };
+        SettingValue<float> mVerletGravity{ mIndex, "Game", "verlet gravity",
+            makeClampSanitizerFloat(0.f, 50.f) };
+        SettingValue<float> mVerletWindStrength{ mIndex, "Game", "verlet wind strength",
+            makeClampSanitizerFloat(0.f, 50.f) };
+        SettingValue<float> mVerletWindFrequency{ mIndex, "Game", "verlet wind frequency",
+            makeClampSanitizerFloat(0.f, 10.f) };
+        SettingValue<int> mVerletIterations{ mIndex, "Game", "verlet iterations",
+            makeClampSanitizerInt(1, 32) };
+        SettingValue<int> mVerletSubsteps{ mIndex, "Game", "verlet substeps",
+            makeClampSanitizerInt(1, 8) };
+        SettingValue<float> mVerletMaxStep{ mIndex, "Game", "verlet max step",
+            makeClampSanitizerFloat(0.01f, 50.f) };
+        SettingValue<bool> mVerletIdleWind{ mIndex, "Game", "verlet idle wind" };
+        SettingValue<float> mVerletMovementInfluence{ mIndex, "Game", "verlet movement influence",
+            makeClampSanitizerFloat(0.f, 4.f) };
+        SettingValue<float> mVerletIdleDamping{ mIndex, "Game", "verlet idle damping",
+            makeClampSanitizerFloat(0.f, 1.f) };
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
