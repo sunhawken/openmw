@@ -241,9 +241,6 @@ namespace MWRender
         primitive->mGeometry->setDataVariance(osg::Object::STATIC);
         primitive->mGeometry->setStateSet(stateSet);
 
-        MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(
-            primitive->mGeometry, "debug");
-
         return primitive;
     }
 
@@ -279,9 +276,6 @@ namespace MWRender
         primitive->mGeometry->setDataVariance(osg::Object::STATIC);
         primitive->mGeometry->setStateSet(stateSet);
 
-        MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(
-            primitive->mGeometry, "debug");
-
         return primitive;
     }
 
@@ -298,6 +292,12 @@ namespace MWRender
         {
             // Handle for a batch of triangles
             BatchImpl* batchPtr = static_cast<BatchImpl*>(geometry_lods[lod].mTriangleBatch.GetPtr());
+            if (!batchPtr->mShadersCreated)
+            {
+                MWBase::Environment::get().getResourceSystem()->getSceneManager()->recreateShaders(
+                    batchPtr->mGeometry, "debug");
+                batchPtr->mShadersCreated = true;
+            }
             osg::ref_ptr<osg::MatrixTransform> transformNode = new osg::MatrixTransform();
 
             // Set the transformation matrix for this instance
