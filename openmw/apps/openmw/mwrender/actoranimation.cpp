@@ -16,6 +16,8 @@
 #include <components/sceneutil/lightcommon.hpp>
 #include <components/sceneutil/lightmanager.hpp>
 #include <components/sceneutil/lightutil.hpp>
+#include <components/sceneutil/skeleton.hpp>
+#include <components/sceneutil/util.hpp>
 #include <components/sceneutil/visitor.hpp>
 
 #include <components/misc/resourcehelpers.hpp>
@@ -40,6 +42,69 @@
 
 namespace MWRender
 {
+    namespace
+    {
+        class EquipmentCustomBoneVisitor : public osg::NodeVisitor
+        {
+        public:
+            EquipmentCustomBoneVisitor()
+                : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+            {
+            }
+
+            void apply(osg::Node& node) override
+            {
+                // A BONE NiStringExtraData marker is loaded as the CustomBone
+                // description. Treat the first marked node as the root of the
+                // authored custom-bone subtree; cloning it also clones its
+                // numbered Verlet descendants.
+                if (SceneUtil::hasUserDescription(&node, "CustomBone"))
+                {
+                    if (node.getNumParents() != 0)
+                        mFound.emplace_back(&node, node.getParent(0));
+                    return;
+                }
+
+                traverse(node);
+            }
+
+            std::vector<std::pair<osg::Node*, osg::Group*>> mFound;
+        };
+
+        bool injectEquipmentCustomBones(const osg::Node* source, osg::Group* actorRoot)
+        {
+            if (!source || !actorRoot)
+                return false;
+
+            osg::ref_ptr<osg::Node> mutableSource = const_cast<osg::Node*>(source);
+            EquipmentCustomBoneVisitor visitor;
+            mutableSource->accept(visitor);
+
+            bool injected = false;
+            for (const auto& [customRoot, sourceParent] : visitor.mFound)
+            {
+                // Do not inject the same authored chain repeatedly when updateParts()
+                // rebuilds equipment.
+                SceneUtil::FindByNameVisitor existingVisitor(customRoot->getName());
+                actorRoot->accept(existingVisitor);
+                if (existingVisitor.mFoundNode)
+                    continue;
+
+                SceneUtil::FindByNameVisitor parentVisitor(sourceParent->getName());
+                actorRoot->accept(parentVisitor);
+                osg::Group* targetParent = parentVisitor.mFoundNode;
+                if (!targetParent)
+                    continue;
+
+                osg::Node* copy = static_cast<osg::Node*>(
+                    customRoot->clone(osg::CopyOp::DEEP_COPY_NODES));
+                targetParent->addChild(copy);
+                injected = true;
+            }
+
+            return injected;
+        }
+    }
 
     ActorAnimation::ActorAnimation(
         const MWWorld::Ptr& ptr, osg::ref_ptr<osg::Group> parentNode, Resource::ResourceSystem* resourceSystem)
@@ -91,18 +156,47 @@ namespace MWRender
     {
         osg::ref_ptr<const osg::Node> templateNode = mResourceSystem->getSceneManager()->getTemplate(model);
 
+        // Equipment/body-part NIFs can carry BONE-marked custom bones used by
+        // their own skinning (for example v_01..v_08 Verlet cape bones).
+        // SceneUtil::attach binds the part's RigGeometry to the actor skeleton by
+        // bone name, so those custom bones must exist in the actor skeleton first.
+        const bool injectedCustomBones = injectEquipmentCustomBones(templateNode.get(), mObjectRoot.get());
+        if (injectedCustomBones)
+        {
+            if (mSkeleton)
+                mSkeleton->markDirty();
+
+            // getNodeMap() is cached. Rebuild it so the newly injected chain can
+            // be found both by skinning and by the Verlet metadata controller.
+            mNodeMap.clear();
+            mNodeMapCreated = false;
+        }
+
         const NodeMap& nodeMap = getNodeMap();
         auto found = nodeMap.find(bonename);
         if (found == nodeMap.end())
             throw std::runtime_error("Can't find attachment node " + std::string{ bonename });
+
+        osg::ref_ptr<osg::Node> attached;
         if (isLight)
         {
             osg::Quat rotation(osg::DegreesToRadians(-90.f), osg::Vec3f(1, 0, 0));
-            return SceneUtil::attach(
+            attached = SceneUtil::attach(
                 templateNode, mObjectRoot, bonefilter, found->second, mResourceSystem->getSceneManager(), &rotation);
         }
-        return SceneUtil::attach(
-            std::move(templateNode), mObjectRoot, bonefilter, found->second, mResourceSystem->getSceneManager());
+        else
+        {
+            attached = SceneUtil::attach(
+                std::move(templateNode), mObjectRoot, bonefilter, found->second, mResourceSystem->getSceneManager());
+        }
+
+        // setObjectRoot() runs before equipment is attached. Once a part has
+        // injected a custom chain, scan again so OPENMW_VERLET_CLOTH on that
+        // chain becomes active immediately.
+        if (injectedCustomBones)
+            attachJiggleBoneControllers();
+
+        return attached;
     }
 
     VFS::Path::Normalized ActorAnimation::getShieldMesh(const MWWorld::ConstPtr& shield, bool female) const

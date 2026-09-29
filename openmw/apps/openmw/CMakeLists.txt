@@ -18,12 +18,12 @@ set(OPENMW_HEADERS
 source_group(apps/openmw FILES main.cpp androidmain.cpp ${OPENMW_SOURCES} ${OPENMW_HEADERS} ${OPENMW_RESOURCES})
 
 add_openmw_dir (mwrender
-    actors objects renderingmanager animation rotatecontroller sky skyutil npcanimation esm4npcanimation vismask
+    actors objects renderingmanager animation rotatecontroller jigglebonecontroller verletclothcontroller jiggleautorig sky skyutil npcanimation esm4npcanimation vismask
     creatureanimation effectmanager util renderinginterface pathgrid rendermode weaponanimation screenshotmanager
-    bulletdebugdraw globalmap characterpreview camera localmap water terrainstorage ripplesimulation
+    joltdebugdraw globalmap characterpreview camera localmap water terrainstorage ripplesimulation
     renderbin actoranimation landmanager navmesh actorspaths recastmesh fogmanager objectpaging groundcover
     postprocessor pingpongcull luminancecalculator pingpongcanvas transparentpass precipitationocclusion ripples
-    actorutil distortion animationpriority bonegroup blendmask animblendcontroller
+    actorutil distortion animationpriority bonegroup blendmask animblendcontroller occlusionculling
     )
 
 add_openmw_dir (mwinput
@@ -33,7 +33,7 @@ add_openmw_dir (mwinput
 
 add_openmw_dir (mwgui
     layout textinput widgets race class birth review windowmanagerimp console dialogue
-    windowbase statswindow messagebox journalwindow charactercreation
+    windowbase statswindow messagebox journalwindow charactercreation headhairwindow
     mapwindow windowpinnablebase tooltips scrollwindow bookwindow resourceskin
     formatting inventorywindow container hud countdialog tradewindow settingswindow
     confirmationdialog alchemywindow referenceinterface spellwindow mainmenu quickkeysmenu
@@ -87,9 +87,9 @@ add_openmw_dir (mwworld
     )
 
 add_openmw_dir (mwphysics
-    physicssystem trace collisiontype actor convert object heightfield closestnotmerayresultcallback
-    contacttestresultcallback stepper movementsolver projectile
-    actorconvexcallback raycasting mtphysics contacttestwrapper projectileconvexcallback
+    physicssystem trace collisiontype actor convert object heightfield collisionshapeconfig
+    stepper movementsolver projectile raycasting mtphysics water dynamicobject
+    ragdollbuilder ragdollwrapper skeletonmapper
     )
 
 add_openmw_dir (mwclass
@@ -279,4 +279,20 @@ endif()
 
 if (WIN32 AND BUILD_OPENMW)
     INSTALL(TARGETS openmw RUNTIME DESTINATION ".")
+
+    # Deploy the runtime DLLs, OSG plugins and Qt libraries next to the built exes so the
+    # build directory is directly runnable (Qt, MyGUIEngine from bin/Release, the OSG
+    # runtime plugins, and the vcpkg/in-tree DLL closure are otherwise not copied for a
+    # raw build tree). See cmake/deploy-windows-runtime.ps1. Best-effort: the script always
+    # exits 0, so this never fails the build. Runs after openmw links (the last big target),
+    # by which point the launcher/wizard/cs exes exist for windeployqt.
+    find_program(OPENMW_DEPLOY_POWERSHELL NAMES powershell pwsh)
+    if (OPENMW_DEPLOY_POWERSHELL)
+        add_custom_command(TARGET openmw POST_BUILD
+            COMMAND "${OPENMW_DEPLOY_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${OpenMW_SOURCE_DIR}/cmake/deploy-windows-runtime.ps1"
+                -BuildDir "${OpenMW_BINARY_DIR}"
+            COMMENT "Deploying Windows runtime (DLLs, OSG plugins, Qt) to the build directory"
+            VERBATIM)
+    endif()
 endif()

@@ -256,62 +256,94 @@ namespace MWLua
             MWBase::Environment::get().getWorldModel()->registerPtr(mPlayer);
         }
 
-        mObjectLists.update();
-
-        for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mQueuedAutoStartedScripts)
+        // The body below used to be able to throw all the way out to the Lua worker thread, which logged
+        // "Failed to update LuaManager" and aborted the whole update for that frame. If the cause was a
+        // persistent poison entry in one of the transient queues (a bad event/callback that re-threw every
+        // frame before its queue was cleared), every Lua mod stayed broken until the player saved and
+        // reloaded. Now we catch it here, flush the transient queues so the offending entry cannot recur,
+        // and throttle the log - so the game self-heals and keeps running instead of needing a reload.
+        try
         {
-            if (LocalScripts* scripts = asLocal(ptr))
-                scripts->addAutoStartedScripts();
-        }
-        mQueuedAutoStartedScripts.clear();
+            mObjectLists.update();
 
-        std::erase_if(mActiveLocalScripts, [](const LuaUtil::ScriptsContainerWeakPtr& ptr) {
-            LocalScripts* l = asLocal(ptr);
-            return l == nullptr || l->getPtrOrEmpty().isEmpty() || l->getPtrOrEmpty().mRef->isDeleted();
-        });
+            for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mQueuedAutoStartedScripts)
+            {
+                if (LocalScripts* scripts = asLocal(ptr))
+                    scripts->addAutoStartedScripts();
+            }
+            mQueuedAutoStartedScripts.clear();
 
-        mGlobalScripts.statsNextFrame();
-        for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mActiveLocalScripts)
-            asLocal(ptr)->statsNextFrame();
+            std::erase_if(mActiveLocalScripts, [](const LuaUtil::ScriptsContainerWeakPtr& ptr) {
+                LocalScripts* l = asLocal(ptr);
+                return l == nullptr || l->getPtrOrEmpty().isEmpty() || l->getPtrOrEmpty().mRef->isDeleted();
+            });
 
-        // Multiplayer (omw-mp/1): inject frames received since last frame as MP_* global events
-        // BEFORE finalizeEventBatch so they are delivered by callEventHandlers this same frame.
-        MWMP::NetManager::instance().pumpInboundToLua(mLuaEvents);
-
-        mLuaEvents.finalizeEventBatch();
-
-        MWWorld::DateTimeManager& timeManager = *MWBase::Environment::get().getWorld()->getTimeManager();
-        if (!timeManager.isPaused())
-        {
-            mMenuScripts.processTimers(timeManager.getSimulationTime(), timeManager.getGameTime());
-            mGlobalScripts.processTimers(timeManager.getSimulationTime(), timeManager.getGameTime());
+            mGlobalScripts.statsNextFrame();
             for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mActiveLocalScripts)
-                asLocal(ptr)->processTimers(timeManager.getSimulationTime(), timeManager.getGameTime());
+                asLocal(ptr)->statsNextFrame();
+
+            // Multiplayer (omw-mp/1): inject frames received since last frame as MP_* global events
+            // BEFORE finalizeEventBatch so they are delivered by callEventHandlers this same frame.
+            MWMP::NetManager::instance().pumpInboundToLua(mLuaEvents);
+
+            mLuaEvents.finalizeEventBatch();
+
+            MWWorld::DateTimeManager& timeManager = *MWBase::Environment::get().getWorld()->getTimeManager();
+            if (!timeManager.isPaused())
+            {
+                mMenuScripts.processTimers(timeManager.getSimulationTime(), timeManager.getGameTime());
+                mGlobalScripts.processTimers(timeManager.getSimulationTime(), timeManager.getGameTime());
+                for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mActiveLocalScripts)
+                    asLocal(ptr)->processTimers(timeManager.getSimulationTime(), timeManager.getGameTime());
+            }
+
+            // Run event handlers for events that were sent before `finalizeEventBatch`.
+            mLuaEvents.callEventHandlers();
+
+            mLua.protectedCall([&](LuaUtil::LuaView& lua) {
+                // Run queued callbacks
+                for (CallbackWithData& c : mQueuedCallbacks)
+                    c.mCallback.tryCall(c.mArg);
+                mQueuedCallbacks.clear();
+
+                // Run engine handlers
+                mEngineEvents.callEngineHandlers();
+                bool isPaused = timeManager.isPaused();
+
+                float frameDuration = MWBase::Environment::get().getFrameDuration();
+                for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mActiveLocalScripts)
+                    asLocal(ptr)->update(isPaused ? 0 : frameDuration);
+                mGlobalScripts.update(isPaused ? 0 : frameDuration);
+
+                mScriptTracker.unloadInactiveScripts(lua);
+            });
+
+            // Multiplayer: everything queued by openmw.mp during this frame goes out in one batch.
+            MWMP::NetManager::instance().flushOutbound();
+
+            mUpdateErrorFrames = 0; // a clean frame; resume normal logging next time something fails
         }
+        catch (const std::exception& e)
+        {
+            mUpdateErrorFrames++;
+            constexpr int logLimit = 3;
+            const std::string_view what = e.what();
+            if (mUpdateErrorFrames <= logLimit)
+                Log(Debug::Error) << "LuaManager update failed"
+                                  << (what.empty() ? " (a script, event or callback threw with no message)"
+                                                   : ": " + std::string(what))
+                                  << "; dropping queued Lua work this frame so the game keeps running.";
+            else if (mUpdateErrorFrames == logLimit + 1)
+                Log(Debug::Error) << "LuaManager update keeps failing; suppressing further messages until it "
+                                     "recovers.";
 
-        // Run event handlers for events that were sent before `finalizeEventBatch`.
-        mLuaEvents.callEventHandlers();
-
-        mLua.protectedCall([&](LuaUtil::LuaView& lua) {
-            // Run queued callbacks
-            for (CallbackWithData& c : mQueuedCallbacks)
-                c.mCallback.tryCall(c.mArg);
+            // Flush transient queues so a poison entry (the usual cause of a per-frame failure) cannot keep
+            // re-throwing. This is what lets the game recover on its own instead of requiring save/reload.
             mQueuedCallbacks.clear();
-
-            // Run engine handlers
-            mEngineEvents.callEngineHandlers();
-            bool isPaused = timeManager.isPaused();
-
-            float frameDuration = MWBase::Environment::get().getFrameDuration();
-            for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mActiveLocalScripts)
-                asLocal(ptr)->update(isPaused ? 0 : frameDuration);
-            mGlobalScripts.update(isPaused ? 0 : frameDuration);
-
-            mScriptTracker.unloadInactiveScripts(lua);
-        });
-
-        // Multiplayer: everything queued by openmw.mp during this frame goes out in one batch.
-        MWMP::NetManager::instance().flushOutbound();
+            mQueuedAutoStartedScripts.clear();
+            mEngineEvents.clear();
+            mLuaEvents.clear();
+        }
     }
 
     void LuaManager::objectTeleported(const MWWorld::Ptr& ptr)

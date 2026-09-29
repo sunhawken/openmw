@@ -106,12 +106,11 @@ jobs:
         -D LuaJit_INCLUDE_DIR='${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/include/luajit'
         -D LuaJit_LIBRARY='${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/lib/lua51.lib'
         -D BUILD_BENCHMARKS=${{ ! inputs.package }}
-        -D BUILD_COMPONENTS_TESTS=${{ ! inputs.package }}
-        -D BUILD_OPENMW_TESTS=${{ ! inputs.package }}
+        -D BUILD_UNITTESTS=${{ ! inputs.package }}
         -D BUILD_OPENCS_TESTS=${{ ! inputs.package }}
         -D OPENMW_USE_SYSTEM_SQLITE3=OFF
         -D OPENMW_USE_SYSTEM_YAML_CPP=OFF
-        -D OPENMW_LTO_BUILD=ON
+        -D OPENMW_LTO_BUILD=${{ inputs.package && 'ON' || 'OFF' }}
         ${{ inputs.package && '-D "VCREDIST64=$env:VCToolsRedistDir/vc_redist.x64.exe"' || '' }}
         -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
 
@@ -120,9 +119,13 @@ jobs:
 
     - name: Copy missing DLLs
       run: |
-        cp ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/Release/MyGUIEngine.dll ${{ github.workspace }}/build
-        cp -Filter *.dll -Recurse ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/osgPlugins-3.6.5 ${{ github.workspace }}/build
-        cp ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/*.dll ${{ github.workspace }}/build
+        $vcpkgBin = "${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin"
+        $buildDir = "${{ github.workspace }}/build"
+        Copy-Item "$vcpkgBin/Release/MyGUIEngine.dll" $buildDir -Force
+        $osgPluginDst = Join-Path $buildDir "osgPlugins-3.6.5"
+        New-Item -ItemType Directory -Force -Path $osgPluginDst | Out-Null
+        Copy-Item "$vcpkgBin/osgPlugins-3.6.5/*.dll" $osgPluginDst -Force
+        Copy-Item "$vcpkgBin/*.dll" $buildDir -Force
 
     - name: Copy Qt DLLs
       working-directory: ${{ github.workspace }}/deps/Qt/${{ env.QT_VER }}/msvc2019_64
@@ -134,14 +137,18 @@ jobs:
         cp bin/Qt6OpenGLWidgets.dll ${{ github.workspace }}/build
         cp bin/Qt6Widgets.dll ${{ github.workspace }}/build
         cp bin/Qt6Svg.dll ${{ github.workspace }}/build
-        mkdir ${{ github.workspace }}/build/styles
-        cp plugins/styles/qwindowsvistastyle.dll ${{ github.workspace }}/build/styles
-        mkdir ${{ github.workspace }}/build/platforms
-        cp plugins/platforms/qwindows.dll ${{ github.workspace }}/build/platforms
-        mkdir ${{ github.workspace }}/build/imageformats
-        cp plugins/imageformats/qsvg.dll ${{ github.workspace }}/build/imageformats
-        mkdir ${{ github.workspace }}/build/iconengines
-        cp plugins/iconengines/qsvgicon.dll ${{ github.workspace }}/build/iconengines
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/styles | Out-Null
+        Copy-Item plugins/styles/qwindowsvistastyle.dll ${{ github.workspace }}/build/styles -Force
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/platforms | Out-Null
+        Copy-Item plugins/platforms/qwindows.dll ${{ github.workspace }}/build/platforms -Force
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/imageformats | Out-Null
+        Copy-Item plugins/imageformats/qsvg.dll ${{ github.workspace }}/build/imageformats -Force
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/iconengines | Out-Null
+        Copy-Item plugins/iconengines/qsvgicon.dll ${{ github.workspace }}/build/iconengines -Force
+
+    - name: Run Rose Sorceress cape Wiggle regression tests
+      if: ${{ ! inputs.package }}
+      run: .\build\openmw-tests.exe --gtest_filter=JiggleBoneControllerTest.*
 
     - name: Create symbol server directory structure
       working-directory: ${{ github.workspace }}/build
@@ -228,29 +235,25 @@ jobs:
       shell: bash
       run: echo '${{ github.workspace }}/install' >> ${GITHUB_PATH}
 
-    - name: Run components tests
-      if: ${{ ! inputs.package }}
-      run: build/components-tests.exe
-
     - name: Run OpenMW tests
       if: ${{ ! inputs.package }}
-      run: build/openmw-tests.exe
+      run: .\build\openmw-tests.exe
 
     - name: Run OpenMW-CS tests
       if: ${{ ! inputs.package }}
-      run: build/openmw-cs-tests.exe
+      run: .\build\openmw-cs-tests.exe
 
     - name: Run detournavigator navmeshtilescache benchmark
       if: ${{ ! inputs.package }}
-      run: build/openmw_detournavigator_navmeshtilescache_benchmark.exe
+      run: .\build\openmw_detournavigator_navmeshtilescache_benchmark.exe
 
     - name: Run settings access benchmark
       if: ${{ ! inputs.package }}
-      run: build/openmw_settings_access_benchmark.exe
+      run: .\build\openmw_settings_access_benchmark.exe
 
     - name: Run esm refid benchmark
       if: ${{ ! inputs.package }}
-      run: build/openmw_esm_refid_benchmark.exe
+      run: .\build\openmw_esm_refid_benchmark.exe
 
     - name: Create prerelease
       if: ${{ inputs.release }}

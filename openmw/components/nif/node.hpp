@@ -2,13 +2,18 @@
 #define OPENMW_COMPONENTS_NIF_NODE_HPP
 
 #include <array>
+#include <cstddef>
+#include <limits>
 #include <unordered_map>
 
 #include <osg/Plane>
 
 #include "base.hpp"
 
-class btCollisionShape;
+namespace JPH
+{
+    class MeshShapeSettings;
+}
 
 namespace Nif
 {
@@ -83,6 +88,9 @@ namespace Nif
         // Node flags. Interpretation depends on the record type.
         uint32_t mFlags;
         NiTransform mTransform;
+        // Byte offset of mTransform.mTranslation in the source NIF. Set while
+        // reading so a loose-file editor can change only the translation.
+        std::size_t mTranslationOffset{ std::numeric_limits<std::size_t>::max() };
         osg::Vec3f mVelocity;
         NiPropertyList mProperties;
         BoundingVolume mBounds;
@@ -151,7 +159,7 @@ namespace Nif
         void read(NIFStream* nif) override;
         void post(Reader& nif) override;
 
-        virtual std::unique_ptr<btCollisionShape> getCollisionShape() const
+        virtual std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const
         {
             throw std::runtime_error("NiGeometry::getCollisionShape() called on base class");
         }
@@ -164,7 +172,7 @@ namespace Nif
 
     struct NiTriShape : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct BSSegmentedTriShape : NiTriShape
@@ -185,17 +193,17 @@ namespace Nif
 
     struct NiTriStrips : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct NiLines : NiTriBasedGeom
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct NiParticles : NiGeometry
     {
-        std::unique_ptr<btCollisionShape> getCollisionShape() const override;
+        std::unique_ptr<JPH::MeshShapeSettings> getCollisionShape() const override;
     };
 
     struct BSLODTriShape : NiTriShape
