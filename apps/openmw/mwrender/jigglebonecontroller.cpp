@@ -39,7 +39,8 @@ namespace MWRender
         }
     }
 
-    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, WiggleBoneSettings settings)
+    JiggleBoneController::JiggleBoneController(
+        bool debug, bool isPlayer, WiggleBoneSettings settings, std::string actorName)
         : mSimWorldPos(0, 0, 0)
         , mVelocity(0, 0, 0)
         , mPreviousRestWorldPos(0, 0, 0)
@@ -47,6 +48,7 @@ namespace MWRender
         , mLastSimTime(-1.0)
         , mDebug(debug)
         , mIsPlayer(isPlayer)
+        , mActorName(std::move(actorName))
         , mSettings(std::move(settings))
     {
     }
@@ -60,6 +62,18 @@ namespace MWRender
         // always use it.
         if (!mIsPlayer && Settings::game().mJiggleBonePlayerOnly)
             return 0.f;
+
+        const std::string meshFile = Misc::JiggleZOffset::currentActorMesh(mIsPlayer, mActorName);
+        if (!meshFile.empty())
+        {
+            if (const auto stored = Misc::JiggleZOffset::lookupForActor(mIsPlayer, mActorName, meshFile))
+            {
+                if (Misc::StringUtils::ciFind(boneName, "breast") != std::string::npos)
+                    return stored->first;
+                if (Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos)
+                    return stored->second;
+            }
+        }
         return manualZOffsetFor(boneName);
     }
 
