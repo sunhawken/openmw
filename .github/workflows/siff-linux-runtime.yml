@@ -1,0 +1,51 @@
+name: Siff Linux runtime
+
+on:
+  push:
+    branches:
+      - siff-verlet-physics
+
+jobs:
+  siff-linux-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Add OpenMW PPA
+        run: sudo add-apt-repository ppa:openmw/openmw; sudo apt-get update
+      - name: Install build dependencies
+        run: sudo CI/install_debian_deps.sh gcc openmw-deps openmw-deps-dynamic
+      - name: Configure engine-only build
+        run: >
+          cmake .
+          -D CMAKE_BUILD_TYPE=RelWithDebInfo
+          -D OPENMW_USE_SYSTEM_RECASTNAVIGATION=ON
+          -D USE_SYSTEM_TINYXML=ON
+          -D BUILD_OPENCS=OFF
+          -D BUILD_OPENCS_TESTS=OFF
+          -D BUILD_LAUNCHER=OFF
+          -D BUILD_WIZARD=OFF
+          -D BUILD_UNITTESTS=OFF
+          -D BUILD_BENCHMARKS=OFF
+      - name: Build OpenMW only
+        run: cmake --build . --target openmw -- -j2
+      - name: Smoke test executable
+        run: ./openmw --version
+      - name: Package portable runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p siff-linux-runtime/bin siff-linux-runtime/lib siff-linux-runtime/osgPlugins-3.6.5
+          cp ./openmw siff-linux-runtime/bin/openmw
+          cp -a ./resources siff-linux-runtime/
+          ldd ./openmw | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' | sort -u > /tmp/openmw-libs.txt
+          while read -r lib; do cp -L "$lib" siff-linux-runtime/lib/ || true; done < /tmp/openmw-libs.txt
+          if [ -d /usr/lib/x86_64-linux-gnu/osgPlugins-3.6.5 ]; then
+            cp -a /usr/lib/x86_64-linux-gnu/osgPlugins-3.6.5/. siff-linux-runtime/osgPlugins-3.6.5/
+          fi
+          tar -czf siff-linux-runtime.tar.gz siff-linux-runtime
+      - name: Upload runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: siff-linux-runtime
+          path: siff-linux-runtime.tar.gz
+          retention-days: 1
