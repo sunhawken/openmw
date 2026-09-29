@@ -1122,7 +1122,7 @@
                 <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="JiggleScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>
                     <Property key="VisibleVScroll" value="true"/>
-                    <Property key="CanvasSize" value="344 1024"/>
+                    <Property key="CanvasSize" value="344 1054"/>
                     <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 330 18" align="Left Top">
                         <Property key="Caption" value="#{OMWEngine:JiggleBoneNote}"/>
                     </Widget>
@@ -1428,6 +1428,16 @@
                     <Widget type="HBox" position="6 926 336 28">
                         <Widget type="AutoSizedButton" skin="MW_Button">
                             <UserString key="SettingCategory" value="Game"/>
+                            <UserString key="SettingName" value="jiggle bone controllers"/>
+                            <UserString key="SettingType" value="CheckButton"/>
+                        </Widget>
+                        <Widget type="AutoSizedTextBox" skin="SandText">
+                            <Property key="Caption" value="Enable Wiggle / Jiggle Controllers"/>
+                        </Widget>
+                    </Widget>
+                    <Widget type="HBox" position="6 956 336 28">
+                        <Widget type="AutoSizedButton" skin="MW_Button">
+                            <UserString key="SettingCategory" value="Game"/>
                             <UserString key="SettingName" value="options menu real time"/>
                             <UserString key="SettingType" value="CheckButton"/>
                         </Widget>
@@ -1438,13 +1448,13 @@
                             <UserString key="Caption_Text" value="#{OMWEngine:OptionsMenuRealTimeTooltip}"/>
                         </Widget>
                     </Widget>
-                    <Widget type="AutoSizedButton" skin="MW_Button" position="6 962 336 24" align="Left Top" name="JiggleOffsetResetButton">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="6 992 336 24" align="Left Top" name="JiggleOffsetResetButton">
                         <Property key="Caption" value="#{OMWEngine:JiggleResetCurrentWornOffset}"/>
                         <UserString key="ToolTipType" value="Layout"/>
                         <UserString key="ToolTipLayout" value="TextToolTip"/>
                         <UserString key="Caption_Text" value="#{OMWEngine:JiggleResetCurrentWornOffsetTooltip}"/>
                     </Widget>
-                    <Widget type="AutoSizedButton" skin="MW_Button" position="6 992 336 24" align="Left Top" name="BakeBreastToNifButton">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="6 1022 336 24" align="Left Top" name="BakeBreastToNifButton">
                         <Property key="Caption" value="#{OMWEngine:JiggleBakeBreastToNif}"/>
                         <UserString key="ToolTipType" value="Layout"/>
                         <UserString key="ToolTipLayout" value="TextToolTip"/>
