@@ -8,6 +8,9 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include <unordered_map>
+
+#include <components/misc/strings/algorithm.hpp>
 
 #include <components/settings/values.hpp>
 
@@ -24,6 +27,38 @@ namespace Misc::JiggleZOffset
     {
         static std::string sMesh;
         return sMesh;
+    }
+
+    inline std::unordered_map<std::string, std::string>& currentActorMeshes()
+    {
+        static std::unordered_map<std::string, std::string> sMeshes;
+        return sMeshes;
+    }
+
+    inline std::string normalizedActorScope(bool isPlayer, std::string_view actorName)
+    {
+        if (isPlayer)
+            return "player";
+        std::string clean = Misc::StringUtils::lowerCase(std::string(actorName));
+        for (char& c : clean)
+            if (c == '|' || c == '=' || c == ',')
+                c = '_';
+        return "npc:" + clean;
+    }
+
+    inline void setCurrentActorMesh(bool isPlayer, std::string_view actorName, std::string_view meshFile)
+    {
+        const std::string scope = normalizedActorScope(isPlayer, actorName);
+        currentActorMeshes()[scope] = std::string(meshFile);
+        if (isPlayer)
+            currentPlayerMesh() = std::string(meshFile);
+    }
+
+    inline std::string currentActorMesh(bool isPlayer, std::string_view actorName)
+    {
+        const std::string scope = normalizedActorScope(isPlayer, actorName);
+        const auto it = currentActorMeshes().find(scope);
+        return it == currentActorMeshes().end() ? std::string() : it->second;
     }
 
     inline std::optional<std::pair<float, float>> parseEntry(std::string_view entry, std::string_view meshFile)
@@ -73,6 +108,66 @@ namespace Misc::JiggleZOffset
                 return parsed;
         }
         return std::nullopt;
+    }
+
+    inline std::optional<std::pair<float, float>> lookupScoped(
+        std::string_view scope, std::string_view meshFile)
+    {
+        if (scope.empty() || meshFile.empty())
+            return std::nullopt;
+        const std::string key = std::string(scope) + "|" + std::string(meshFile);
+        for (const std::string& entry : Settings::game().mJiggleScopedMeshZOffsets.get())
+        {
+            if (auto parsed = parseEntry(entry, key))
+                return parsed;
+        }
+        return std::nullopt;
+    }
+
+    inline std::optional<std::pair<float, float>> lookupForActor(
+        bool isPlayer, std::string_view actorName, std::string_view meshFile)
+    {
+        const std::string scope = normalizedActorScope(isPlayer, actorName);
+        if (auto value = lookupScoped(scope, meshFile))
+            return value;
+        return lookup(meshFile);
+    }
+
+    inline void saveScoped(std::string_view scope, std::string_view meshFile, float breast, float butt)
+    {
+        if (scope.empty() || meshFile.empty())
+            return;
+        const std::string key = std::string(scope) + "|" + std::string(meshFile);
+        std::vector<std::string> out;
+        bool replaced = false;
+        for (const std::string& entry : Settings::game().mJiggleScopedMeshZOffsets.get())
+        {
+            const std::size_t eq = entry.rfind('=');
+            if (eq != std::string::npos && std::string_view(entry).substr(0, eq) == key)
+            {
+                out.push_back(key + '=' + std::to_string(breast) + ';' + std::to_string(butt));
+                replaced = true;
+            }
+            else
+                out.push_back(entry);
+        }
+        if (!replaced)
+            out.push_back(key + '=' + std::to_string(breast) + ';' + std::to_string(butt));
+        Settings::game().mJiggleScopedMeshZOffsets.set(out);
+    }
+
+    inline void resetScoped(std::string_view entryKey)
+    {
+        if (entryKey.empty())
+            return;
+        std::vector<std::string> out;
+        for (const std::string& entry : Settings::game().mJiggleScopedMeshZOffsets.get())
+        {
+            const std::size_t eq = entry.rfind('=');
+            if (eq == std::string::npos || std::string_view(entry).substr(0, eq) != entryKey)
+                out.push_back(entry);
+        }
+        Settings::game().mJiggleScopedMeshZOffsets.set(out);
     }
 
     // Save (or replace) the offsets for a body mesh; persists to settings.cfg.
