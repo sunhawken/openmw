@@ -191,9 +191,12 @@ namespace MWRender
         if (mBodyCapsules.empty() || radius <= 0.f)
             return;
 
-        auto worldPos = [](const osg::MatrixTransform* bone) {
+        auto worldPos = [](const osg::MatrixTransform* bone) -> osg::Vec3f {
             const osg::NodePathList paths = bone->getParentalNodePaths();
-            return paths.empty() ? osg::Vec3f() : osg::computeLocalToWorld(paths[0]).getTrans();
+            if (paths.empty())
+                return osg::Vec3f();
+            const osg::Vec3d p = osg::computeLocalToWorld(paths[0]).getTrans();
+            return osg::Vec3f(static_cast<float>(p.x()), static_cast<float>(p.y()), static_cast<float>(p.z()));
         };
 
         for (const BodyCapsule& capsule : mBodyCapsules)
