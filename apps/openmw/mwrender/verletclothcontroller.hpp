@@ -54,9 +54,37 @@ namespace MWRender
         // 0 = translation only, 1 = full parent-frame transform.
         float mRotationCarry = 0.f;
 
-        // Actor-local XY shape memory. Preserves authored width/depth while leaving
-        // vertical swing and chain-length motion free.
+        // Horizontal shape memory. Head/Pelvis local XY is not reliably the
+        // lateral plane; preserve width/depth perpendicular to world gravity.
         float mLateralMemory = 0.f;
+        // 0 disables this emergency bound; ordinary secondary motion stays free.
+        float mMaxLateralDeviation = 0.f;
+
+        // Opt-in for rigs authored for timing-independent Siff stability.
+        bool mStableTiming = false;
+        bool mProjectVelocity = false;
+        // Bone origins can lie inside a coarse body capsule even when the skinned
+        // surface is outside it. Do not make the authored attachment impossible.
+        bool mRestCollisionFit = false;
+
+        // Bounded reaction to parent translation acceleration. Unlike a second
+        // anchor-displacement force, this produces starts/stops/jump lag without
+        // continually pulling a steadily moving chain into a flat plane.
+        float mInertia = 0.f;
+        float mInertiaMaxAcceleration = 1800.f;
+
+        // Air resistance uses world velocity, so steady movement has a visible
+        // trailing force as well as the start/stop acceleration response.
+        float mAirDrag = 0.f;
+        float mAirDragMaxAcceleration = 1500.f;
+        // Bend the volume reference with airflow; rigid bind-pose guards would
+        // otherwise suppress the very trailing movement produced by air drag.
+        float mAirShapeResponse = 0.f;
+
+        // 0 disables sleep. Settled cloth wakes on parent/collider movement.
+        float mSleepSpeed = 0.f;
+        float mSleepDelay = 0.6f;
+        float mSleepAmplitude = 0.f;
 
         // Also collide with thigh/calf capsules (skirts, long hair) and keep particles above the floor.
         bool mCollideLegs = false;
@@ -80,6 +108,7 @@ namespace MWRender
         std::vector<osg::Vec3f> restWorldPositions(const osg::Matrix& rootParentWorld) const;
         void writeBoneTransforms(const osg::Matrix& rootParentWorld);
         void initializeBodyCollisionNodes(osg::MatrixTransform* node);
+        void updateCollisionWorld(const std::vector<osg::Vec3f>& restPositions, float radius, float margin);
         void solveBodyCollision(int pinCount, float radius, float margin);
         void solveGround(int pinCount);
 
@@ -95,12 +124,34 @@ namespace MWRender
             float mRadiusScale;
         };
         std::vector<BodyCapsule> mBodyCapsules;
+        struct WorldCapsule
+        {
+            osg::Vec3f mA;
+            osg::Vec3f mB;
+            float mRadiusScale;
+            std::vector<float> mParticleRadii;
+        };
+        std::vector<WorldCapsule> mWorldCapsules;
+        std::vector<std::vector<unsigned char>> mBodyContacts;
+        std::vector<unsigned char> mGroundContacts;
+        float mGroundZ = 0.f;
+        bool mHasGround = false;
         osg::ref_ptr<osg::Node> mGroundNode;
         bool mBodyCollisionInitialized = false;
 
         VerletClothSettings mSettings;
         osg::Vec3f mPreviousAnchor;
         osg::Matrix mPreviousRootParentWorld;
+        osg::Vec3f mPreviousRootVelocity;
+        osg::Vec3f mFilteredRootAcceleration;
+        osg::Vec3f mFilteredRootVelocity;
+        float mPreviousStep = 0.f;
+        bool mRootVelocityInitialized = false;
+        bool mSleeping = false;
+        float mSleepTime = 0.f;
+        float mSleepWindowTime = 0.f;
+        std::vector<osg::Vec3f> mSleepMinPositions;
+        std::vector<osg::Vec3f> mSleepMaxPositions;
         bool mInitialized = false;
         double mLastSimTime = -1.0;
         bool mDebug = false;
