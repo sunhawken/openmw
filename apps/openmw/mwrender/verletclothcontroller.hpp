@@ -50,6 +50,14 @@ namespace MWRender
         float mVelocityDeadzone = 0.6f;
         float mContactSlop = 0.08f;
 
+        // Carry a fraction of the parent bone's frame rotation into the particles.
+        // 0 = translation only, 1 = full parent-frame transform.
+        float mRotationCarry = 0.f;
+
+        // Actor-local XY shape memory. Preserves authored width/depth while leaving
+        // vertical swing and chain-length motion free.
+        float mLateralMemory = 0.f;
+
         // Also collide with thigh/calf capsules (skirts, long hair) and keep particles above the floor.
         bool mCollideLegs = false;
         bool mGround = false;
@@ -92,6 +100,7 @@ namespace MWRender
 
         VerletClothSettings mSettings;
         osg::Vec3f mPreviousAnchor;
+        osg::Matrix mPreviousRootParentWorld;
         bool mInitialized = false;
         double mLastSimTime = -1.0;
         bool mDebug = false;
