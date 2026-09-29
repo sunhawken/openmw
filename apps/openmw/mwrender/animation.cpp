@@ -256,6 +256,12 @@ namespace
             settings.mSubsteps = i;
         else if (key == "verlet_max_step" && parseWiggleFloat(value, f))
             settings.mMaxStep = f;
+        else if (key == "verlet_pin_count" && parseVerletInt(value, i))
+            settings.mPinCount = std::max(0, i);
+        else if (key == "verlet_collide_legs" && parseWiggleBool(value, b))
+            settings.mCollideLegs = b;
+        else if (key == "verlet_ground" && parseWiggleBool(value, b))
+            settings.mGround = b;
     }
 
     bool hasSecondaryMotionController(osg::Node* node)
