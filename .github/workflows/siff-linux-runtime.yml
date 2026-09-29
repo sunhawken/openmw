@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - siff-verlet-physics
+      - fix-options-top-level-tabs
 
 jobs:
   siff-linux-runtime:
