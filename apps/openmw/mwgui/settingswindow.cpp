@@ -287,6 +287,27 @@ namespace MWGui
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
         getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
+        getWidget(mJiggleAdvancedPanelToggle, "JiggleAdvancedPanelToggle");
+        getWidget(mJiggleAdvancedPanel, "JiggleAdvancedPanel");
+        getWidget(mJiggleMeshScopeCombo, "JiggleMeshScopeCombo");
+        getWidget(mJiggleMeshPathInput, "JiggleMeshPathInput");
+        getWidget(mJiggleNpcNameInput, "JiggleNpcNameInput");
+        getWidget(mJiggleBreastOffsetInput, "JiggleBreastOffsetInput");
+        getWidget(mJiggleButtOffsetInput, "JiggleButtOffsetInput");
+        getWidget(mJiggleMeshOffsetList, "JiggleMeshOffsetList");
+        getWidget(mJiggleBlacklistList, "JiggleBlacklistList");
+        getWidget(mJiggleNpcRuleList, "JiggleNpcRuleList");
+        getWidget(mJiggleUseCurrentMeshButton, "JiggleUseCurrentMeshButton");
+        getWidget(mJiggleSaveMeshOffsetButton, "JiggleSaveMeshOffsetButton");
+        getWidget(mJiggleRemoveMeshOffsetButton, "JiggleRemoveMeshOffsetButton");
+        getWidget(mJiggleAddBlacklistButton, "JiggleAddBlacklistButton");
+        getWidget(mJiggleRemoveBlacklistButton, "JiggleRemoveBlacklistButton");
+        getWidget(mJiggleEnableNpcButton, "JiggleEnableNpcButton");
+        getWidget(mJiggleDisableNpcButton, "JiggleDisableNpcButton");
+        getWidget(mJiggleClearNpcRuleButton, "JiggleClearNpcRuleButton");
+        mJiggleAdvancedPanel->setVisible(false);
+        mJiggleMeshScopeCombo->setIndexSelected(0);
+        refreshJiggleAdvancedPanel();
         getWidget(mMaxLights, "MaxLights");
         getWidget(mShadowResolution, "ShadowResolution");
         getWidget(mShadowUpdateInterval, "ShadowUpdateInterval");
@@ -337,6 +358,24 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleOffsetResetButtonClicked);
         mBakeBreastToNifButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onBakeBreastToNifButtonClicked);
+        mJiggleAdvancedPanelToggle->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleAdvancedPanelToggleClicked);
+        mJiggleUseCurrentMeshButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleUseCurrentMeshClicked);
+        mJiggleSaveMeshOffsetButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleSaveMeshOffsetClicked);
+        mJiggleRemoveMeshOffsetButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleRemoveMeshOffsetClicked);
+        mJiggleAddBlacklistButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleAddBlacklistClicked);
+        mJiggleRemoveBlacklistButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleRemoveBlacklistClicked);
+        mJiggleEnableNpcButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleEnableNpcClicked);
+        mJiggleDisableNpcButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleDisableNpcClicked);
+        mJiggleClearNpcRuleButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleClearNpcRuleClicked);
         mMaxLights->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onMaxLightsChanged);
 
         mShadowResolution->eventComboChangePosition
@@ -499,6 +538,177 @@ namespace MWGui
     void SettingsWindow::onTabChanged(MyGUI::TabControl* /*sender*/, size_t /*index*/)
     {
         resetScrollbars();
+    }
+
+    void SettingsWindow::refreshJiggleAdvancedPanel()
+    {
+        if (!mJiggleMeshOffsetList || !mJiggleBlacklistList || !mJiggleNpcRuleList)
+            return;
+
+        mJiggleMeshOffsetList->removeAllItems();
+        for (const std::string& entry : Settings::game().mJiggleMeshZOffsets.get())
+            mJiggleMeshOffsetList->addItem("Any: " + entry, std::string("any|") + entry);
+        for (const std::string& entry : Settings::game().mJiggleScopedMeshZOffsets.get())
+            mJiggleMeshOffsetList->addItem(entry, std::string("scoped|") + entry);
+
+        mJiggleBlacklistList->removeAllItems();
+        for (const std::string& entry : Settings::game().mJiggleAutoRigBlacklist.get())
+            mJiggleBlacklistList->addItem(entry, entry);
+
+        mJiggleNpcRuleList->removeAllItems();
+        for (const std::string& name : Settings::game().mJiggleNpcEnabledNames.get())
+            mJiggleNpcRuleList->addItem("[ON] " + name, std::string("on|") + name);
+        for (const std::string& name : Settings::game().mJiggleNpcDisabledNames.get())
+            mJiggleNpcRuleList->addItem("[OFF] " + name, std::string("off|") + name);
+    }
+
+    void SettingsWindow::onJiggleAdvancedPanelToggleClicked(MyGUI::Widget*)
+    {
+        const bool visible = !mJiggleAdvancedPanel->getVisible();
+        mJiggleAdvancedPanel->setVisible(visible);
+        mJiggleAdvancedPanelToggle->setCaption(visible ? "Hide Mesh / NPC Setup" : "Show Mesh / NPC Setup");
+    }
+
+    void SettingsWindow::onJiggleUseCurrentMeshClicked(MyGUI::Widget*)
+    {
+        mJiggleMeshPathInput->setOnlyText(Misc::JiggleZOffset::currentPlayerMesh());
+    }
+
+    void SettingsWindow::onJiggleSaveMeshOffsetClicked(MyGUI::Widget*)
+    {
+        const std::string mesh = mJiggleMeshPathInput->getOnlyText().asUTF8();
+        if (mesh.empty())
+            return;
+
+        auto parseOr = [](const std::string& text, float fallback) {
+            if (text.empty())
+                return fallback;
+            try { return std::stof(text); }
+            catch (...) { return fallback; }
+        };
+        const float breast = parseOr(mJiggleBreastOffsetInput->getOnlyText().asUTF8(),
+            Settings::game().mJiggleBoneBreastZOffset);
+        const float butt = parseOr(mJiggleButtOffsetInput->getOnlyText().asUTF8(),
+            Settings::game().mJiggleBoneButtZOffset);
+
+        const size_t scope = mJiggleMeshScopeCombo->getIndexSelected();
+        if (scope == 0)
+            Misc::JiggleZOffset::save(mesh, breast, butt);
+        else if (scope == 1)
+            Misc::JiggleZOffset::saveScoped("player", mesh, breast, butt);
+        else
+        {
+            const std::string npcName = mJiggleNpcNameInput->getOnlyText().asUTF8();
+            if (npcName.empty())
+                return;
+            Misc::JiggleZOffset::saveScoped(
+                Misc::JiggleZOffset::normalizedActorScope(false, npcName), mesh, breast, butt);
+        }
+        refreshJiggleAdvancedPanel();
+    }
+
+    void SettingsWindow::onJiggleRemoveMeshOffsetClicked(MyGUI::Widget*)
+    {
+        const size_t index = mJiggleMeshOffsetList->getIndexSelected();
+        if (index == MyGUI::ITEM_NONE)
+            return;
+        const std::string* data = mJiggleMeshOffsetList->getItemDataAt<std::string>(index);
+        if (!data)
+            return;
+        if (data->rfind("any|", 0) == 0)
+        {
+            const std::string entry = data->substr(4);
+            const std::size_t eq = entry.rfind('=');
+            if (eq != std::string::npos)
+                Misc::JiggleZOffset::reset(std::string_view(entry).substr(0, eq));
+        }
+        else if (data->rfind("scoped|", 0) == 0)
+        {
+            const std::string entry = data->substr(7);
+            const std::size_t eq = entry.rfind('=');
+            if (eq != std::string::npos)
+                Misc::JiggleZOffset::resetScoped(std::string_view(entry).substr(0, eq));
+        }
+        refreshJiggleAdvancedPanel();
+    }
+
+    void SettingsWindow::onJiggleAddBlacklistClicked(MyGUI::Widget*)
+    {
+        std::string mesh = Misc::StringUtils::lowerCase(mJiggleMeshPathInput->getOnlyText().asUTF8());
+        if (mesh.empty())
+            return;
+        std::vector<std::string> list = Settings::game().mJiggleAutoRigBlacklist.get();
+        if (std::find(list.begin(), list.end(), mesh) == list.end())
+            list.push_back(mesh);
+        Settings::game().mJiggleAutoRigBlacklist.set(list);
+        refreshJiggleAdvancedPanel();
+    }
+
+    void SettingsWindow::onJiggleRemoveBlacklistClicked(MyGUI::Widget*)
+    {
+        const size_t index = mJiggleBlacklistList->getIndexSelected();
+        if (index == MyGUI::ITEM_NONE)
+            return;
+        const std::string* selected = mJiggleBlacklistList->getItemDataAt<std::string>(index);
+        if (!selected)
+            return;
+        std::vector<std::string> out;
+        for (const std::string& item : Settings::game().mJiggleAutoRigBlacklist.get())
+            if (!Misc::StringUtils::ciEqual(item, *selected))
+                out.push_back(item);
+        Settings::game().mJiggleAutoRigBlacklist.set(out);
+        refreshJiggleAdvancedPanel();
+    }
+
+    namespace
+    {
+        void updateNpcRule(std::string_view name, bool enabled, bool clear)
+        {
+            if (name.empty())
+                return;
+            auto enabledNames = Settings::game().mJiggleNpcEnabledNames.get();
+            auto disabledNames = Settings::game().mJiggleNpcDisabledNames.get();
+            const auto removeName = [&](std::vector<std::string>& list) {
+                list.erase(std::remove_if(list.begin(), list.end(),
+                               [&](const std::string& item) { return Misc::StringUtils::ciEqual(item, name); }),
+                    list.end());
+            };
+            removeName(enabledNames);
+            removeName(disabledNames);
+            if (!clear)
+                (enabled ? enabledNames : disabledNames).push_back(std::string(name));
+            Settings::game().mJiggleNpcEnabledNames.set(enabledNames);
+            Settings::game().mJiggleNpcDisabledNames.set(disabledNames);
+        }
+    }
+
+    void SettingsWindow::onJiggleEnableNpcClicked(MyGUI::Widget*)
+    {
+        updateNpcRule(mJiggleNpcNameInput->getOnlyText().asUTF8(), true, false);
+        refreshJiggleAdvancedPanel();
+    }
+
+    void SettingsWindow::onJiggleDisableNpcClicked(MyGUI::Widget*)
+    {
+        updateNpcRule(mJiggleNpcNameInput->getOnlyText().asUTF8(), false, false);
+        refreshJiggleAdvancedPanel();
+    }
+
+    void SettingsWindow::onJiggleClearNpcRuleClicked(MyGUI::Widget*)
+    {
+        std::string name = mJiggleNpcNameInput->getOnlyText().asUTF8();
+        const size_t index = mJiggleNpcRuleList->getIndexSelected();
+        if (name.empty() && index != MyGUI::ITEM_NONE)
+        {
+            if (const std::string* data = mJiggleNpcRuleList->getItemDataAt<std::string>(index))
+            {
+                const std::size_t sep = data->find('|');
+                if (sep != std::string::npos)
+                    name = data->substr(sep + 1);
+            }
+        }
+        updateNpcRule(name, true, true);
+        refreshJiggleAdvancedPanel();
     }
 
     void SettingsWindow::onOkButtonClicked(MyGUI::Widget* /*sender*/)
