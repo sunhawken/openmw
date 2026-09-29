@@ -25,14 +25,17 @@ namespace Misc::JigglePolicy
         if (isPlayer)
             return Settings::game().mJigglePlayerEnabled;
 
-        if (Settings::game().mJiggleBonePlayerOnly)
-            return false;
-
-        // Explicit per-NPC rules win over the default.
+        // Explicit per-NPC rules are highest priority. This intentionally lets
+        // "Force ON" opt a named NPC in even while the legacy Player Only switch
+        // is enabled, which makes selective NPC setup practical.
         if (containsName(Settings::game().mJiggleNpcDisabledNames.get(), actorName))
             return false;
         if (containsName(Settings::game().mJiggleNpcEnabledNames.get(), actorName))
             return true;
+
+        if (Settings::game().mJiggleBonePlayerOnly)
+            return false;
+
         return Settings::game().mJiggleNpcDefaultEnabled;
     }
 }
