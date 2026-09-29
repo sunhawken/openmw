@@ -4,7 +4,7 @@
         <Property key="Caption" value="Advanced Jiggle Setup"/>
         <Property key="MinSize" value="520 450"/>
         <Widget type="AutoSizedTextBox" skin="NormalText" position="12 8 540 36">
-            <Property key="Caption" value="Configure Jiggle per mesh and per NPC. Changes are saved with OpenMW settings."/>
+            <Property key="Caption" value="Configure Jiggle per mesh, per NPC and glute physics. Changes are saved with OpenMW settings."/>
         </Widget>
         <Widget type="TabControl" skin="TabControl" position="12 48 546 392" align="Stretch" name="JiggleSetupTabs">
             <Property key="ButtonAutoWidth" value="true"/>
@@ -92,6 +92,202 @@
                     <Property key="Caption" value="Clear Override"/>
                 </Widget>
                 <Widget type="ListBox" skin="MW_List" position="8 196 510 156" name="JiggleNpcRuleList"/>
+            </Widget>
+
+            <Widget type="TabItem">
+                <Property key="Caption" value=" Glute Physics "/>
+                <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 530 352" align="Stretch" name="JiggleGluteScrollView">
+                    <Property key="CanvasAlign" value="Left Top"/>
+                    <Property key="VisibleVScroll" value="true"/>
+                    <Property key="CanvasSize" value="510 660"/>
+                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 490 36" align="Left Top">
+                        <Property key="Caption" value="Naturalis (BootyMagic) glute physics for butt jiggle bones. Defaults match Naturalis; changes apply live."/>
+                    </Widget>
+                    <Widget type="HBox" position="6 46 490 28">
+                        <Widget type="AutoSizedButton" skin="MW_Button">
+                            <UserString key="SettingCategory" value="Game"/>
+                            <UserString key="SettingName" value="jiggle glute physics"/>
+                            <UserString key="SettingType" value="CheckButton"/>
+                        </Widget>
+                        <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Glute Physics (separate from breast tuning)"/></Widget>
+                    </Widget>
+                    <Widget type="HBox" position="6 78 490 28">
+                        <Widget type="AutoSizedButton" skin="MW_Button">
+                            <UserString key="SettingCategory" value="Game"/>
+                            <UserString key="SettingName" value="jiggle glute auto mass"/>
+                            <UserString key="SettingType" value="CheckButton"/>
+                        </Widget>
+                        <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Auto Glute Weight from bone size"/></Widget>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 116 490 18" align="Left Top" name="JiggleGluteSoftnessText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 136 490 18" align="Left Top" name="JiggleGluteSoftnessSlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute softness"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/>
+                        <UserString key="SettingMax" value="100"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteSoftnessText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteSoftnessValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 156 490 18" align="Left Top">
+                        <Property key="Caption" value="Firm"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 156 490 18" align="Left Top">
+                        <Property key="Caption" value="Soft"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 178 490 18" align="Left Top" name="JiggleGluteQuicknessText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 198 490 18" align="Left Top" name="JiggleGluteQuicknessSlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute quickness"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="-1"/>
+                        <UserString key="SettingMax" value="1"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteQuicknessText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteQuicknessValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 218 490 18" align="Left Top">
+                        <Property key="Caption" value="Slow"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 218 490 18" align="Left Top">
+                        <Property key="Caption" value="Quick"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 240 490 18" align="Left Top" name="JiggleGluteMassText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 260 490 18" align="Left Top" name="JiggleGluteMassSlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute mass"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="1"/>
+                        <UserString key="SettingMax" value="3"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteMassText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteMassValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 280 490 18" align="Left Top">
+                        <Property key="Caption" value="Light"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 280 490 18" align="Left Top">
+                        <Property key="Caption" value="Heavy (when Auto Weight is off)"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 302 490 18" align="Left Top" name="JiggleGluteGravityText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 322 490 18" align="Left Top" name="JiggleGluteGravitySlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute gravity"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/>
+                        <UserString key="SettingMax" value="2"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteGravityText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteGravityValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 342 490 18" align="Left Top">
+                        <Property key="Caption" value="No Sag"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 342 490 18" align="Left Top">
+                        <Property key="Caption" value="Heavy Sag"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 364 490 18" align="Left Top" name="JiggleGluteDepthInText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 384 490 18" align="Left Top" name="JiggleGluteDepthInSlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute depth in"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/>
+                        <UserString key="SettingMax" value="2"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteDepthInText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteDepthInValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 404 490 18" align="Left Top">
+                        <Property key="Caption" value="Stiff"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 404 490 18" align="Left Top">
+                        <Property key="Caption" value="Deep Push In"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 426 490 18" align="Left Top" name="JiggleGluteDepthOutText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 446 490 18" align="Left Top" name="JiggleGluteDepthOutSlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute depth out"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/>
+                        <UserString key="SettingMax" value="2"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteDepthOutText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteDepthOutValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 466 490 18" align="Left Top">
+                        <Property key="Caption" value="Stiff"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 466 490 18" align="Left Top">
+                        <Property key="Caption" value="Loose Pull Out"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 488 490 18" align="Left Top" name="JiggleGluteUpDownAngleText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 508 490 18" align="Left Top" name="JiggleGluteUpDownAngleSlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute up down angle"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="-15"/>
+                        <UserString key="SettingMax" value="15"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteUpDownAngleText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteUpDownAngleValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 528 490 18" align="Left Top">
+                        <Property key="Caption" value="Down"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 528 490 18" align="Left Top">
+                        <Property key="Caption" value="Up"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 550 490 18" align="Left Top" name="JiggleGluteLeftRightAngleText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 570 490 18" align="Left Top" name="JiggleGluteLeftRightAngleSlider">
+                        <Property key="Range" value="1000"/>
+                        <Property key="Page" value="50"/>
+                        <UserString key="SettingType" value="Slider"/>
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle glute left right angle"/>
+                        <UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="-30"/>
+                        <UserString key="SettingMax" value="30"/>
+                        <UserString key="SettingLabelWidget" value="JiggleGluteLeftRightAngleText"/>
+                        <UserString key="SettingLabelCaption" value="JiggleGluteLeftRightAngleValue"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 590 490 18" align="Left Top">
+                        <Property key="Caption" value="Apart"/>
+                        <Property key="TextAlign" value="Left"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandText" position="6 590 490 18" align="Left Top">
+                        <Property key="Caption" value="Together"/>
+                        <Property key="TextAlign" value="Right"/>
+                    </Widget>
+                </Widget>
             </Widget>
         </Widget>
         <Widget type="AutoSizedButton" skin="MW_Button" position="442 454 116 28" align="Right Bottom" name="JiggleAdvancedCloseButton">

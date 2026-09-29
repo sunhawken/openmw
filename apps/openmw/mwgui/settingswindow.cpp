@@ -240,6 +240,19 @@ namespace MWGui
         if (!labelWidgetName.empty())
         {
             MyGUI::TextBox* textBox;
+            // Sliders in the separate Advanced Jiggle Setup window (e.g. Glute Physics) have their
+            // labels in that window's layout, which uses its own widget-name prefix.
+            if (mJiggleAdvancedLayout)
+            {
+                for (MyGUI::Widget* w = scroller; w != nullptr; w = w->getParent())
+                {
+                    if (w == mJiggleAdvancedLayout->mMainWidget)
+                    {
+                        mJiggleAdvancedLayout->getWidget(textBox, labelWidgetName);
+                        return textBox;
+                    }
+                }
+            }
             getWidget(textBox, labelWidgetName);
             return textBox;
         }
@@ -577,6 +590,8 @@ namespace MWGui
         if (visible)
         {
             refreshJiggleAdvancedPanel();
+            // Resync the Glute Physics sliders/toggles with the current settings values.
+            configureWidgets(mJiggleAdvancedLayout->mMainWidget, false);
             WindowBase::clampWindowCoordinates(mJiggleAdvancedWindow);
         }
         mJiggleAdvancedLayout->setVisible(visible);
