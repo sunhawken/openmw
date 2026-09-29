@@ -109,7 +109,7 @@ namespace MWRender
 
         // Live master switch for Blender-authored/direct Wiggle only.
         // Legacy/auto-rig Jiggle controllers remain independent.
-        if (mSettings.mDirect && !Settings::game().mWiggleBoneControllers)
+        if (mSettings.mDirect && !Settings::game().mWiggleEnabled)
         {
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
