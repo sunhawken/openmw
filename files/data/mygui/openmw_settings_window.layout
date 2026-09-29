@@ -1475,7 +1475,7 @@
                 <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="VerletScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>
                     <Property key="VisibleVScroll" value="true"/>
-                    <Property key="CanvasSize" value="344 1020"/>
+                    <Property key="CanvasSize" value="344 1200"/>
 
                     <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 330 36" align="Left Top">
                         <Property key="Caption" value="Runtime cloth controls for capes, skirts, hair and tails. NIF values are used unless Global Overrides is enabled."/>
@@ -1593,18 +1593,46 @@
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 718 330 36"><Property key="Caption" value="Higher = more of the shoulder/upper-arm region stays rigid."/></Widget>
 
-                    <Widget type="TextBox" skin="NormalText" position="6 768 330 18" name="VerletMaxStepText"/>
-                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 788 330 18" name="VerletMaxStepSlider">
+                    <Widget type="HBox" position="6 768 336 28">
+                        <Widget type="AutoSizedButton" skin="MW_Button">
+                            <UserString key="SettingCategory" value="Game"/>
+                            <UserString key="SettingName" value="verlet body collision"/>
+                            <UserString key="SettingType" value="CheckButton"/>
+                        </Widget>
+                        <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Body Collision"/></Widget>
+                    </Widget>
+
+                    <Widget type="TextBox" skin="NormalText" position="6 806 330 18" name="VerletBodyRadiusText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 826 330 18" name="VerletBodyRadiusSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet body collision radius"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="4"/><UserString key="SettingMax" value="24"/>
+                        <UserString key="SettingLabelWidget" value="VerletBodyRadiusText"/><UserString key="SettingLabelCaption" value="Body Collision Radius: {0}"/>
+                    </Widget>
+
+                    <Widget type="TextBox" skin="NormalText" position="6 864 330 18" name="VerletBodyMarginText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 884 330 18" name="VerletBodyMarginSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet body collision margin"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="6"/>
+                        <UserString key="SettingLabelWidget" value="VerletBodyMarginText"/><UserString key="SettingLabelCaption" value="Collision Padding: {0}"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 904 330 36"><Property key="Caption" value="Capsules follow Pelvis, Spine, Spine1, Spine2 and Neck. Raise radius/padding if the cape still clips."/></Widget>
+
+                    <Widget type="TextBox" skin="NormalText" position="6 958 330 18" name="VerletMaxStepText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 978 330 18" name="VerletMaxStepSlider">
                         <Property key="Range" value="1000"/><Property key="Page" value="25"/>
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet max step"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0.25"/><UserString key="SettingMax" value="15"/>
                         <UserString key="SettingLabelWidget" value="VerletMaxStepText"/><UserString key="SettingLabelCaption" value="Max Step: {0}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 808 330 36"><Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/></Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 998 330 36"><Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/></Widget>
 
-                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 860 330 60">
-                        <Property key="Caption" value="Recommended cape start: Gravity 4.0, Friction 0.94, Wind 3.0, Frequency 0.22, Movement Pull 1.0, Idle Retention 0.82, Iterations 18, Substeps 6, Max Step 3.0."/>
+                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 1050 330 80">
+                        <Property key="Caption" value="Recommended cape start: Gravity 4.0, Friction 0.94, Wind 3.0, Movement Pull 1.0, Idle Retention 0.82, Pins 3, Body Collision ON, Radius 12, Padding 1.5, Iterations 18, Substeps 6, Max Step 3.0."/>
                     </Widget>
                 </Widget>
             </Widget>
