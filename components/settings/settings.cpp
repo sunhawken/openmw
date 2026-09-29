@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "settings.hpp"
 #include "parser.hpp"
 #include "values.hpp"
@@ -6,6 +8,10 @@
 #include <filesystem>
 #include <sstream>
 #include <system_error>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #if !(defined(_MSC_VER) && (_MSC_VER >= 1924)) && !(defined(__GNUC__) && __GNUC__ >= 11) || defined(__clang__)         \
     || defined(__apple_build_version__)
@@ -183,6 +189,24 @@ namespace Settings
     {
         SettingsFileParser parser;
         parser.saveSettingsFile(file, mUserSettings);
+#ifdef __EMSCRIPTEN__
+        // The user settings file lives on IDBFS (/userdata/config/openmw); flush to IndexedDB
+        // now so Options-menu changes survive a reload/crash (the JS timer only syncs every 15s).
+        EM_ASM({
+            try
+            {
+                // Route through the serialized guard (index.html) so overlapping saves
+                // don't race the IDBFS reconciliation and drop writes; fall back to raw.
+                if (typeof window !== 'undefined' && globalThis.__omwSyncfs)
+                    globalThis.__omwSyncfs();
+                else if (typeof FS !== 'undefined' && FS.syncfs)
+                    FS.syncfs(false, function() {});
+            }
+            catch (e)
+            {
+            }
+        });
+#endif
     }
 
     const std::string& Manager::getString(std::string_view setting, std::string_view category)

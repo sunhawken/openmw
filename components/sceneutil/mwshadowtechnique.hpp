@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 // clang-format off
 /* This file is based on OpenSceneGraph's include/osgShadow/ViewDependentShadowMap.
  * Where applicable, any changes made are covered by OpenMW's GPL 3 license, not the OSGPL.
@@ -308,6 +310,13 @@ namespace SceneUtil {
         float                                   _shadowFadeStart = 0.0f;
 
         unsigned int                            _worldMask = ~0u;
+
+        // Emscripten shadow-stabilization: identity of the VIEW camera currently being culled
+        // (main view vs water-reflection vs local-map). Set in cull() before computeShadowCameraSettings
+        // so the base-ortho grow-only latch can be keyed PER VIEW — otherwise the reflection/localmap
+        // passes drive the same global latch and slide the main view's shadow grid (swim on everything,
+        // worst with water reflection on). Not used on the desktop path.
+        const osg::Camera*                      _emsLatchViewCamera = nullptr;
 
         class DebugHUD final : public osg::Referenced
         {

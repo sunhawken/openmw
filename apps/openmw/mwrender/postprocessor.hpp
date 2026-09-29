@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_MWRENDER_POSTPROCESSOR_H
 #define OPENMW_MWRENDER_POSTPROCESSOR_H
 
@@ -187,6 +189,11 @@ namespace MWRender
 
         void enable();
 
+        // Live MSAA change: update the multisample sample count and rebuild the render FBOs
+        // WITHOUT a restart. Clamps to the renderbuffer's GL_MAX_SAMPLES. Used on the web so the
+        // Options anti-aliasing dropdown applies immediately (no page reload -> no lost-write race).
+        void setSamples(int samples);
+
         void setRenderTargetSize(int width, int height)
         {
             mWidth = width;
@@ -245,6 +252,7 @@ namespace MWRender
 
         bool mDirty = false;
         bool mReload = true;
+        bool mSamplesDirty = false; // live MSAA change pending an FBO rebuild (see setSamples)
         bool mTriggerShaderReload = false;
         bool mUsePostProcessing = false;
 
@@ -259,8 +267,10 @@ namespace MWRender
         bool mPrevPassLights = false;
 
         int mGLSLVersion;
-        int mWidth;
-        int mHeight;
+        // Initialised to a valid non-zero size so createObjectsForFrame() (called from the ctor) never
+        // builds FBO attachments at a garbage size; overwritten with the real gc size in the ctor.
+        int mWidth = 1;
+        int mHeight = 1;
         int mSamples;
 
         osg::ref_ptr<Fx::StateUpdater> mStateUpdater;

@@ -9,6 +9,9 @@
 #include <string_view>
 #include <vector>
 
+#include <osg/Vec2i>
+#include <osg/Vec3f>
+
 #include <components/misc/rng.hpp>
 #include <components/vfs/pathutil.hpp>
 
@@ -571,6 +574,30 @@ namespace MWBase
         /// Export scene graph to a file and return the filename.
         /// \param ptr object to export scene graph for (if empty, export entire scene graph)
         virtual std::filesystem::path exportSceneGraph(const MWWorld::Ptr& ptr) = 0;
+
+        /// MP: extra cell-grid centres this process is keeping simulated, in world units.
+        /// Empty for a normal client, where the player is the only anchor. Mechanics uses it so
+        /// actors near ANY anchor keep processing, instead of only those near the player.
+        virtual std::vector<osg::Vec3f> getSimAnchorPositions() const = 0;
+        /// True when this cell is an interior held for the server; its actors must keep
+        /// processing regardless of how far the local player is.
+        virtual bool isAnchoredInterior(const MWWorld::CellStore* cell) const = 0;
+        /// True when exterior cell (x, y) is within the active grid of the player or any
+        /// simulation anchor. No anchors (every normal client): the player's grid, vanilla.
+        virtual bool isWithinActiveGrids(int x, int y) const = 0;
+
+        /// MP (E5): accumulate a physics position offset on an actor, applied by the NEXT
+        /// physics step — which resolves collision, unlike moveObject/adjustPosition, and
+        /// fires no objectTeleported. The smooth-correction primitive for reconciliation;
+        /// see MWPhysics::Actor::adjustPosition. No-op for a ptr with no physics actor.
+        virtual void adjustActorPosition(const MWWorld::Ptr& actor, const osg::Vec3f& offset) = 0;
+
+        /// MP: set those anchors. Server-driven; see MWWorld::Scene::setSimAnchors.
+        /// Exteriors anchor by WORLD POSITION (a player's live pose, so coverage follows
+        /// players exactly instead of snapping to cell centres); interiors by cell id — an
+        /// interior has no coordinate, so the two lists cannot be merged.
+        virtual void setSimAnchors(const std::vector<osg::Vec3f>& anchors,
+            const std::vector<ESM::RefId>& interiors) = 0;
 
         /// Preload VFX associated with this effect list
         virtual void preloadEffects(const ESM::EffectList* effectList) = 0;

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "depth.hpp"
 
 #include <algorithm>
@@ -123,7 +125,12 @@ namespace SceneUtil
                 Log(Debug::Info) << "Using reverse-z depth buffer";
             }
             else
+#ifdef __EMSCRIPTEN__
+                // WebGL2/GLES3 never has GL_ARB_clip_control; standard depth is expected, not a problem.
+                Log(Debug::Info) << "clip_control unavailable (WebGL2): using standard depth buffer";
+#else
                 Log(Debug::Warning) << "GL_ARB_clip_control not supported: disabling reverse-z depth buffer";
+#endif
         }
         else
             Log(Debug::Info) << "Using standard depth buffer";
@@ -135,6 +142,11 @@ namespace SceneUtil
         unsigned int contextID = graphicsContext->getState()->getContextID();
         if (SceneUtil::AutoDepth::isReversed())
         {
+#ifdef __EMSCRIPTEN__
+            // WebGL2 has DEPTH32F_STENCIL8 in core (there is no GL_ARB_depth_buffer_float
+            // extension string to probe).
+            requestedFormats.push_back(GL_DEPTH32F_STENCIL8);
+#else
             if (osg::isGLExtensionSupported(contextID, "GL_ARB_depth_buffer_float"))
             {
                 requestedFormats.push_back(GL_DEPTH32F_STENCIL8);
@@ -148,6 +160,7 @@ namespace SceneUtil
                 Log(Debug::Warning) << errPreamble
                                     << "'GL_ARB_depth_buffer_float' and 'GL_NV_depth_buffer_float' unsupported.";
             }
+#endif
         }
 
         requestedFormats.push_back(GL_DEPTH24_STENCIL8);

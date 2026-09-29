@@ -1,4 +1,9 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "workqueue.hpp"
+
+#include <algorithm>
+#include <cstdlib>
 
 #include <components/debug/debuglog.hpp>
 
@@ -46,6 +51,19 @@ namespace SceneUtil
 
     void WorkQueue::start(std::size_t workerThreads)
     {
+#ifdef __EMSCRIPTEN__
+        // INLINE by default (single-threaded, work runs on the caller — see addWorkItem).
+        // Real worker threads were tried (workers do CPU asset prep, GL compile handed to the
+        // main thread via the IncrementalCompileOperation) but a worker's getTemplate()/ICO->add()
+        // runs concurrently with a MAIN-thread cache-miss getTemplate() (e.g. equipping a fresh
+        // weapon). On the single-threaded WebGL2 build a main-thread futex wait on a worker-held
+        // mutex (mSharedStateMutex / object cache / ICO) STARVES the browser event loop = hard
+        // freeze. So default to inline; OPENMW_WORKQUEUE_THREADED=1 opts back into 2 workers.
+        if (getenv("OPENMW_WORKQUEUE_THREADED") != nullptr)
+            workerThreads = std::min<std::size_t>(std::max<std::size_t>(workerThreads, 1), 2);
+        else
+            workerThreads = 1;
+#endif
         {
             const std::lock_guard lock(mMutex);
             mIsReleased = false;
@@ -75,6 +93,17 @@ namespace SceneUtil
             return;
         }
 
+#ifdef __EMSCRIPTEN__
+        // Inline by default: run the work on the caller (main thread). Avoids the worker/main
+        // getTemplate contention that freezes the browser. OPENMW_WORKQUEUE_THREADED=1 opts into
+        // real worker threads (queued below).
+        if (getenv("OPENMW_WORKQUEUE_THREADED") == nullptr)
+        {
+            item->doWork();
+            item->signalDone();
+            return;
+        }
+#endif
         std::unique_lock<std::mutex> lock(mMutex);
         if (front)
             mQueue.push_front(std::move(item));

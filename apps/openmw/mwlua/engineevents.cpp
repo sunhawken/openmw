@@ -86,6 +86,17 @@ namespace MWLua
 
         void operator()(const OnNewExterior& event) const { mGlobalScripts.onNewExterior(GCell{ &event.mCell }); }
 
+        void operator()(const OnItemTransferred& event) const
+        {
+            // The container may legitimately be gone (its cell unloaded between the
+            // transaction and the queue drain); with nothing to attribute the move to, the
+            // event is dropped — same rule as every other object-carrying engine event.
+            MWWorld::Ptr container = getPtr(event.mContainer);
+            if (container.isEmpty())
+                return;
+            mGlobalScripts.onItemTransferred(GObject(container), event.mRecordId, event.mCount, event.mAdded);
+        }
+
         void operator()(const OnAnimationTextKey& event) const
         {
             MWWorld::Ptr actor = getPtr(event.mActor);

@@ -1,0 +1,1061 @@
+// Added by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2026.
+// See WASM_ADAPTATIONS.md at the repository root for details.
+#include "luabindings.hpp"
+#include "puppets.hpp"
+
+#include <algorithm>
+#include <cstdlib>
+#include <vector>
+
+#include <osg/Vec2i>
+#include <filesystem>
+#include <fstream>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
+#include <components/debug/debuglog.hpp>
+#include <components/esm/attr.hpp>
+#include <components/esm/refid.hpp>
+#include <components/esm3/loadbsgn.hpp>
+#include <components/esm3/loadclas.hpp>
+#include <components/esm3/loadfact.hpp>
+#include <components/esm3/loadrace.hpp>
+#include <components/lua/luastate.hpp>
+#include <components/lua/serialization.hpp>
+
+#include "../mwbase/dialoguemanager.hpp"
+#include "../mwbase/environment.hpp"
+#include "../mwbase/inputmanager.hpp"
+#include "../mwbase/journal.hpp"
+#include "../mwbase/mechanicsmanager.hpp"
+#include "../mwmechanics/actorutil.hpp"
+#include "../mwbase/scriptmanager.hpp"
+#include "../mwbase/statemanager.hpp"
+#include "../mwbase/windowmanager.hpp"
+#include "../mwscript/globalscripts.hpp"
+#include "../mwgui/mode.hpp"
+#include "../mwbase/world.hpp"
+
+#include "../mwlua/context.hpp"
+#include "../mwlua/luamanagerimp.hpp"
+#include "../mwlua/object.hpp"
+
+#include "../mwinput/actions.hpp"
+
+#include "../mwmechanics/activespells.hpp"
+#include "../mwmechanics/creaturestats.hpp"
+#include "../mwmechanics/npcstats.hpp"
+#include "../mwmechanics/magiceffects.hpp"
+#include <components/esm3/loadmgef.hpp>
+
+#include "../mwworld/class.hpp"
+#include "../mwworld/esmstore.hpp"
+#include "../mwworld/player.hpp"
+
+#include "netmanager.hpp"
+
+namespace MWMP
+{
+    namespace
+    {
+        std::string getEnvString(const char* name)
+        {
+            const char* value = std::getenv(name);
+            return value ? value : "";
+        }
+
+        std::string base64Encode(std::string_view data)
+        {
+            static constexpr char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            std::string out;
+            out.reserve((data.size() + 2) / 3 * 4);
+            size_t i = 0;
+            for (; i + 2 < data.size(); i += 3)
+            {
+                uint32_t v = (static_cast<uint8_t>(data[i]) << 16) | (static_cast<uint8_t>(data[i + 1]) << 8)
+                    | static_cast<uint8_t>(data[i + 2]);
+                out.push_back(table[(v >> 18) & 63]);
+                out.push_back(table[(v >> 12) & 63]);
+                out.push_back(table[(v >> 6) & 63]);
+                out.push_back(table[v & 63]);
+            }
+            if (i + 1 == data.size())
+            {
+                uint32_t v = static_cast<uint8_t>(data[i]) << 16;
+                out.push_back(table[(v >> 18) & 63]);
+                out.push_back(table[(v >> 12) & 63]);
+                out.append("==");
+            }
+            else if (i + 2 == data.size())
+            {
+                uint32_t v = (static_cast<uint8_t>(data[i]) << 16) | (static_cast<uint8_t>(data[i + 1]) << 8);
+                out.push_back(table[(v >> 18) & 63]);
+                out.push_back(table[(v >> 12) & 63]);
+                out.push_back(table[(v >> 6) & 63]);
+                out.push_back('=');
+            }
+            return out;
+        }
+    }
+
+    sol::table initMPPackage(const MWLua::Context& context)
+    {
+        sol::state_view lua = context.sol();
+        sol::table api(lua, sol::create);
+
+        api["connect"] = [](std::string_view url) { return NetManager::instance().connect(std::string(url)); };
+        api["disconnect"] = []() { NetManager::instance().disconnect(); };
+        api["status"] = [](sol::this_state state) {
+            const NetManager& net = NetManager::instance();
+            const NetManager::Stats& stats = net.stats();
+            sol::table res(state, sol::create);
+            res["state"] = net.stateName();
+            res["bytesIn"] = stats.mBytesIn;
+            res["bytesOut"] = stats.mBytesOut;
+            res["msgsIn"] = stats.mMsgsIn;
+            res["msgsOut"] = stats.mMsgsOut;
+            res["droppedInbound"] = stats.mDroppedInbound;
+            res["malformed"] = stats.mMalformed;
+            res["buffered"] = net.bufferedAmount();
+            res["closeCode"] = net.lastCloseCode();
+            res["closeReason"] = net.lastCloseReason();
+            return res;
+        };
+        api["sendEvent"] = [serializer = context.mSerializer](std::string_view name, const sol::object& data) {
+            return NetManager::instance().sendEvent(name, LuaUtil::serialize(data, serializer));
+        };
+        api["sendJson"] = [](std::string_view json) { return NetManager::instance().sendJson(std::string(json)); };
+        // Phase 3 input tier: mp.sendInput{seq=,move=,side=,yaw=,pitch=,flags=} -> 0x0102.
+        // The player's raw intent; the peer steers the avatar from it (avatar.lua).
+        api["sendInput"] = [](const sol::table& t) {
+            return NetManager::instance().sendInput(t.get_or("seq", 0u), t.get_or("move", 0.f),
+                t.get_or("side", 0.f), t.get_or("yaw", 0.f), t.get_or("pitch", 0.f),
+                static_cast<uint8_t>(t.get_or("flags", 0)));
+        };
+
+        // Phase 3, peer only: mp.sendAvatarMoveBatch(array of {id=,lastInputSeq=,x=,y=,z=,
+        // yaw=,pitch=,flags=,animVel=}) -> 0x0105. The authoritative result of simulating
+        // the avatars; the server fans it out (0x0101 to everyone, 0x0103 to each owner).
+        api["sendAvatarMoveBatch"] = [](const sol::table& entries) {
+            std::vector<NetManager::AvatarMoveEntry> out;
+            out.reserve(entries.size());
+            for (std::size_t i = 1; i <= entries.size(); ++i)
+            {
+                const sol::optional<sol::table> e = entries[i];
+                if (!e)
+                    continue;
+                NetManager::AvatarMoveEntry entry;
+                entry.mId = static_cast<uint16_t>((*e).get_or("id", 0));
+                entry.mLastInputSeq = (*e).get_or("lastInputSeq", 0u);
+                entry.mX = (*e).get_or("x", 0.f);
+                entry.mY = (*e).get_or("y", 0.f);
+                entry.mZ = (*e).get_or("z", 0.f);
+                entry.mYaw = (*e).get_or("yaw", 0.f);
+                entry.mPitch = (*e).get_or("pitch", 0.f);
+                entry.mFlags = static_cast<uint8_t>((*e).get_or("flags", 0));
+                entry.mAnimVel = (*e).get_or("animVel", 0.f);
+                out.push_back(entry);
+            }
+            return NetManager::instance().sendAvatarMoveBatch(out);
+        };
+
+        // Movement tier (M1): mp.sendMove{x=,y=,z=,yaw=,pitch=,flags=,animVel=} -> 0x0100.
+        api["sendMove"] = [](const sol::table& t) {
+            return NetManager::instance().sendMove(t.get_or("x", 0.f), t.get_or("y", 0.f), t.get_or("z", 0.f),
+                t.get_or("yaw", 0.f), t.get_or("pitch", 0.f),
+                static_cast<uint8_t>(t.get_or("flags", 0)), t.get_or("animVel", 0.f));
+        };
+        // Actor authority tier (M4): mp.sendActorMoveBatch(epoch, {{obj=,x=,y=,z=,yaw=,pitch=,
+        // flags=,animVel=}, ...}) -> 0x0200. `obj` is a GObject; its RefNum is the wire ref.
+        api["sendActorMoveBatch"] = [](uint32_t epoch, const sol::table& list) {
+            std::vector<NetManager::ActorMoveEntry> entries;
+            entries.reserve(list.size());
+            for (auto& [_, value] : list)
+            {
+                sol::table e = value.as<sol::table>();
+                sol::object obj = e["obj"];
+                ESM::RefNum ref;
+                if (obj.is<MWLua::Object>())
+                    ref = obj.as<MWLua::Object>().id();
+                else if (e["net"].is<double>())
+                {
+                    // A runtime-spawned actor has no content RefNum anyone else shares; it is
+                    // addressed by the server's net id, marked with contentFile -2 on the wire
+                    // (netmanager.cpp decodes it back to `net`). -1 is the engine's own "dynamic".
+                    ref.mIndex = static_cast<uint32_t>(e["net"].get<double>());
+                    ref.mContentFile = -2;
+                }
+                else
+                    continue;
+                entries.push_back({ ref.mIndex, ref.mContentFile, e.get_or("x", 0.f), e.get_or("y", 0.f),
+                    e.get_or("z", 0.f), e.get_or("yaw", 0.f), e.get_or("pitch", 0.f), e.get_or("animVel", 0.f),
+                    static_cast<uint8_t>(e.get_or("flags", 0)) });
+            }
+            return NetManager::instance().sendActorMoveBatch(epoch, entries);
+        };
+        // Shared kill tally (M4 WorldKillCount; also M6 quest gates): mirror the engine's
+        // per-record death counter across clients so GetDeadCount is consistent for everyone.
+        // stringRefId, NOT deserializeText: Lua hands us a plain record id ("fargoth"), while
+        // deserializeText parses the *serialized* RefId form and so never matched a real
+        // record — every lookup silently returned 0. Same constructor mwlua/contentbindings
+        // uses for record ids.
+        api["getDeadCount"] = [](std::string_view recordId) {
+            return MWBase::Environment::get().getMechanicsManager()->countDeaths(
+                ESM::RefId::stringRefId(recordId));
+        };
+        api["setDeadCount"] = [luaManager = context.mLuaManager](std::string_view recordId, int count) {
+            ESM::RefId id = ESM::RefId::stringRefId(recordId);
+            luaManager->addAction(
+                [id, count] { MWBase::Environment::get().getMechanicsManager()->setDeaths(id, count); },
+                "MPSetDeadCount");
+        };
+        // PUPPET REGISTRY (see puppets.hpp). Lua knows which actors a remote peer simulates;
+        // the C++ magic-damage site needs that answer synchronously, because it applies damage
+        // itself and there is no Lua veto on that path the way there is for melee.
+        api["setPuppet"] = [](const sol::object& obj, bool on) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            setPuppet(obj.as<MWLua::Object>().id(), on);
+        };
+        // Which of them are PLAYERS (backlog 342): puppet.lua knows its playerId.
+        api["setPlayerPuppet"] = [](const sol::object& obj, bool on) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            setPlayerPuppet(obj.as<MWLua::Object>().id(), on);
+        };
+        api["clearPuppets"] = []() { clearPuppets(); };
+        // AVATAR REGISTRY (see puppets.hpp). The mirror image of the puppet one: on the SIM
+        // PEER these are the bodies real players drive, and engine code that reacts to "the
+        // player" needs to find them, because getPlayer() there is the peer's own idle dummy.
+        api["setAvatar"] = [](const sol::object& obj, bool on) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            setAvatar(obj.as<MWLua::Object>().id(), on);
+        };
+        // The owning player's bounty, mirrored onto their avatar so a guard has something real
+        // to react to. Bounty is player-only in the engine's own API, which is why it lives in
+        // the MP registry rather than on the avatar's NpcStats.
+        api["setAvatarBounty"] = [](const sol::object& obj, int bounty) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            setAvatarBounty(obj.as<MWLua::Object>().id(), bounty);
+        };
+        api["clearAvatars"] = []() { clearAvatars(); };
+        // Backlog 145: the owner's faction ranks on their avatar, so an NPC's disposition toward
+        // it (getDerivedDisposition with the avatar as "player") sees the same memberships the
+        // owner's own engine does. Lua's joinFaction/setFactionRank are player-only. Entries
+        // {{id, rank (1-based, as types.NPC.getFactionRank), reputation, expelled}, ...}.
+        api["setAvatarFactions"] = [luaManager = context.mLuaManager](const sol::object& obj, const sol::table& list) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            MWWorld::Ptr ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty() || !ptr.getClass().isNpc())
+                return;
+            struct Entry { ESM::RefId mId; int mRank; int mRep; bool mExpelled; };
+            std::vector<Entry> entries;
+            for (size_t i = 1; i <= list.size(); ++i)
+            {
+                sol::optional<sol::table> e = list[i];
+                sol::optional<std::string> id = e ? (*e).get<sol::optional<std::string>>("id") : sol::nullopt;
+                if (!id)
+                    continue;
+                entries.push_back({ ESM::RefId::stringRefId(*id), (*e).get_or("rank", 1), (*e).get_or("reputation", 0),
+                    (*e).get_or("expelled", false) });
+            }
+            luaManager->addAction(
+                [ptr, entries = std::move(entries)] {
+                    MWMechanics::NpcStats& stats = ptr.getClass().getNpcStats(ptr);
+                    for (const Entry& e : entries)
+                    {
+                        if (!MWBase::Environment::get().getESMStore()->get<ESM::Faction>().search(e.mId))
+                            continue;
+                        if (!stats.isInFaction(e.mId))
+                            stats.joinFaction(e.mId);
+                        stats.setFactionRank(e.mId, std::max(0, e.mRank - 1));
+                        stats.setFactionReputation(e.mId, e.mRep);
+                        if (e.mExpelled)
+                            stats.expell(e.mId, false);
+                        else
+                            stats.clearExpelled(e.mId);
+                    }
+                },
+                "MPAvatarFactions");
+        };
+        // Backlog 140: paying a fine only calmed the owner's witnesses. The engine records the
+        // paid crime id from Player.setCrimeLevel(0), which the peer never calls (avatar
+        // bounties live in the registry above), so its guards kept pursuing. Same call the
+        // owner's client makes; the peer's player is the reference the witness check in
+        // actors.cpp compares against anyway.
+        api["recordCrimePaid"] = []() { MWBase::Environment::get().getWorld()->getPlayer().recordCrimeId(); };
+        // The player's Mark (backlog 155). NpcStats keeps just the cell id and the position,
+        // which is what the doc carries: {cell=<serialized cell id, '' when none>, x, y, z}.
+        // setMark takes the same id back (an interior name, '#x,y' for an exterior); a cell this
+        // world lacks never resolves in Player::getMarkedPosition, so Recall does nothing, as vanilla.
+        api["getMark"] = [](sol::this_state state) {
+            sol::table res(state, sol::create);
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            const MWMechanics::NpcStats& stats = player.getClass().getNpcStats(player);
+            res["cell"] = stats.getMarkedCell().empty() ? std::string() : stats.getMarkedCell().serializeText();
+            res["x"] = stats.getMarkedPosition().pos[0];
+            res["y"] = stats.getMarkedPosition().pos[1];
+            res["z"] = stats.getMarkedPosition().pos[2];
+            return res;
+        };
+        api["setMark"] = [](std::string_view cell, float x, float y, float z) {
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            MWMechanics::NpcStats& stats = player.getClass().getNpcStats(player);
+            if (cell.empty())
+            {
+                stats.clearMarkedPosition();
+                return;
+            }
+            ESM::Position pos{};
+            pos.pos[0] = x;
+            pos.pos[1] = y;
+            pos.pos[2] = z;
+            stats.setMarkedPosition(ESM::RefId::deserializeText(cell), pos);
+        };
+        // Backlog 312: the shield sound of a block the avatar made on the peer since the last
+        // call ('' = none). Drained with the avatar's stats report (global.lua avatarStatsTick).
+        api["takeBlock"] = [](const sol::object& obj) -> std::string {
+            if (!obj.is<MWLua::Object>())
+                return {};
+            const MWWorld::Ptr& ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty())
+                return {};
+            return takeBlockFor(ptr.getCellRef().getRefNum());
+        };
+        // NPC voice lines (#227): DialogueManager::say(actor, topic) -- the "attack"/"flee"/
+        // "hit" barks the engine plays from AiCombat and the death path, which a puppet with
+        // its AI off never reaches. Queued like every other state-changing MP call.
+        api["say"] = [luaManager = context.mLuaManager](const sol::object& obj, std::string_view topic) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            MWWorld::Ptr ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty() || !ptr.getClass().isActor())
+                return;
+            ESM::RefId id = ESM::RefId::stringRefId(topic);
+            luaManager->addAction(
+                [ptr, id] { MWBase::Environment::get().getDialogueManager()->say(ptr, id); }, "MPSay");
+        };
+        // Backlog 73: knockdown is not in the Lua stats API; the peer reports it with the avatar
+        // bars so the owner stops driving a body that is lying on the floor.
+        api["isKnockedDown"] = [](const sol::object& obj) -> bool {
+            if (!obj.is<MWLua::Object>())
+                return false;
+            const MWWorld::Ptr& ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty() || !ptr.getClass().isActor())
+                return false;
+            // Hit recovery counts too (backlog 309): a staggered body cannot swing, so a use
+            // tap consumed then was lost, and the owner walked while the avatar stood still.
+            const MWMechanics::CreatureStats& stats = ptr.getClass().getCreatureStats(ptr);
+            return stats.getKnockedDown() || stats.getHitRecovery();
+        };
+        // Backlog 288: an NPC/creature's attack is not in the Lua stats API either. The holder
+        // samples this into bit 3 of the actor pose (the player's use bit), and puppets swing
+        // on its edges. True from AiCombat's wind-up to its release, like a held mouse button.
+        api["isAttacking"] = [](const sol::object& obj) -> bool {
+            if (!obj.is<MWLua::Object>())
+                return false;
+            const MWWorld::Ptr& ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty() || !ptr.getClass().isActor())
+                return false;
+            return ptr.getClass().getCreatureStats(ptr).getAttackingOrSpell();
+        };
+        // Backlog 230: TalkedToPc lives on CreatureStats, per engine, and no save carries it in
+        // multiplayer -- every NPC greeted a returning player as a stranger. The player script
+        // reads it off the NPCs around it, persists the set, and re-applies it on relog.
+        api["talkedTo"] = [](const sol::object& obj) -> bool {
+            if (!obj.is<MWLua::Object>())
+                return false;
+            const MWWorld::Ptr& ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty() || !ptr.getClass().isActor())
+                return false;
+            return ptr.getClass().getCreatureStats(ptr).hasTalkedToPlayer();
+        };
+        api["setTalkedTo"] = [luaManager = context.mLuaManager](const sol::object& obj) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            MWWorld::Ptr ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty() || !ptr.getClass().isActor())
+                return;
+            luaManager->addAction([ptr] { ptr.getClass().getCreatureStats(ptr).talkedToPlayer(); }, "MPSetTalkedTo");
+        };
+        // Backlog 221: the holder's "top AI package finished", written onto a client's puppet
+        // (AI off, so nothing there would ever set it) for the mwscript GetAiPackageDone pollers.
+        api["setAiPackageDone"] = [luaManager = context.mLuaManager](const sol::object& obj) {
+            if (!obj.is<MWLua::Object>())
+                return;
+            MWWorld::Ptr ptr = obj.as<MWLua::Object>().ptrOrEmpty();
+            if (ptr.isEmpty() || !ptr.getClass().isActor())
+                return;
+            luaManager->addAction(
+                [ptr] { ptr.getClass().getCreatureStats(ptr).getAiSequence().setPackageDone(true); }, "MPAiDone");
+        };
+        // Drain the harmful magic effects the engine declined to apply to THIS actor, so its
+        // puppet script can forward them to whoever owns it. Per-object on purpose: the puppet
+        // local script already has the object and already forwards melee the same way
+        // (core.sendGlobalEvent 'mpCombatHit'), so this needs no RefNum-to-object lookup in Lua.
+        // Returns an array of {effectId=string, spellId=string, magnitude=number, stat=0|1|2,
+        // beneficial=bool, index=int (the record's effect index, -1 unknown), reflected=bool}
+        // (stat: 0 health, 1 magicka, 2 fatigue).
+        api["takeMagicHits"] = [](sol::this_state state, const sol::object& obj) {
+            sol::table out(state, sol::create);
+            if (!obj.is<MWLua::Object>())
+                return out;
+            int i = 1;
+            for (const MagicHit& h : takeMagicHitsFor(obj.as<MWLua::Object>().id()))
+            {
+                sol::table e(state, sol::create);
+                e["effectId"] = h.mEffectId;
+                e["spellId"] = h.mSpellId;
+                e["magnitude"] = h.mMagnitude;
+                e["stat"] = h.mStat;
+                e["beneficial"] = h.mBeneficial;
+                e["index"] = h.mEffectIndex;
+                e["reflected"] = h.mReflected;
+                out[i++] = e;
+            }
+            return out;
+        };
+        // The guards that reached a wanted avatar since the last call (AiPursue on the peer
+        // records instead of opening a dialogue nobody is there to see). Global context only:
+        // the caller is global.lua's avatar tick, and the objects come back as GObjects.
+        api["takeArrests"] = [](sol::this_state state, const sol::object& obj) {
+            sol::table out(state, sol::create);
+            if (!obj.is<MWLua::Object>())
+                return out;
+            int i = 1;
+            for (const ESM::RefNum guard : takeArrestsFor(obj.as<MWLua::Object>().id()))
+                out[i++] = MWLua::GObject(guard);
+            return out;
+        };
+        // Crimes an avatar committed here since the last call: {bounty=<increment>, kind=<string>}.
+        api["takeCrimes"] = [](sol::this_state state, const sol::object& obj) {
+            sol::table out(state, sol::create);
+            if (!obj.is<MWLua::Object>())
+                return out;
+            int i = 1;
+            for (const Crime& c : takeCrimesFor(obj.as<MWLua::Object>().id()))
+            {
+                sol::table e(state, sol::create);
+                e["bounty"] = c.mBounty;
+                e["kind"] = c.mKind;
+                if (!c.mFaction.empty())
+                    e["faction"] = c.mFaction;
+                out[i++] = e;
+            }
+            return out;
+        };
+        // Client: whether the player's own Summon effects spawn a creature HERE (see puppets.hpp).
+        // The actor that summoned this creature, or nil (mwmp/puppets.hpp noteSummon).
+        api["summonerOf"] = [](sol::this_state state, const sol::object& obj) -> sol::object {
+            if (!obj.is<MWLua::Object>())
+                return sol::nil;
+            const ESM::RefNum master = summonerOf(obj.as<MWLua::Object>().id());
+            if (!master.isSet())
+                return sol::nil;
+            return sol::make_object(state, MWLua::GObject(master));
+        };
+        // What player-gated scripts did on this engine since the last call (puppets.hpp
+        // ScriptNote): an array of {kind='enable'|'spawn'|'position', ref=<GObject>, on=bool,
+        // recordId, count, cellKey, cellName, x, y, z}. Global context: the objects come back
+        // as GObjects, and a far-cell one may not resolve (obj:isValid() false) -- its id and
+        // cellKey still travel, which is all the relay needs.
+        api["takeScriptNotes"] = [](sol::this_state state) {
+            sol::table out(state, sol::create);
+            int i = 1;
+            for (const ScriptNote& n : takeScriptNotes())
+            {
+                sol::table e(state, sol::create);
+                e["kind"] = n.mKind;
+                if (n.mRef.isSet())
+                    e["ref"] = MWLua::GObject(n.mRef);
+                e["on"] = n.mOn;
+                if (!n.mRecordId.empty())
+                    e["recordId"] = n.mRecordId;
+                e["count"] = n.mCount;
+                e["cellKey"] = n.mCellKey;
+                e["cellName"] = n.mCellName;
+                e["x"] = n.mPos[0];
+                e["y"] = n.mPos[1];
+                e["z"] = n.mPos[2];
+                out[i++] = e;
+            }
+            return out;
+        };
+        // Backlog 219: the global scripts running here (Sleepers, VampireCheck, MoveMehra...),
+        // and a way to start one. Vanilla Lua exposes neither: getGlobalScript needs a name and
+        // nothing starts a script. Persisted on the campaign so a relog keeps them running.
+        api["runningGlobalScripts"] = [](sol::this_state state) {
+            sol::table out(state, sol::create);
+            int i = 1;
+            for (const auto& [id, desc] : MWBase::Environment::get().getScriptManager()->getGlobalScripts().getScripts())
+                if (desc->mRunning)
+                    out[i++] = id.serializeText();
+            return out;
+        };
+        api["startGlobalScript"] = [luaManager = context.mLuaManager](std::string_view id) {
+            // stringRefId, not deserializeText: the latter only resolves ids already interned
+            // (see getDeadCount above) and a script this session never ran is exactly that.
+            ESM::RefId script = ESM::RefId::stringRefId(id);
+            // Queued like setDeadCount: script bookkeeping belongs to the main update, not a
+            // Lua call in the middle of it. An unknown record logs and does nothing (addScript).
+            luaManager->addAction(
+                [script] { MWBase::Environment::get().getScriptManager()->getGlobalScripts().addScript(script); },
+                "MPStartGlobalScript");
+        };
+        api["setLocalSummons"] = [](bool enabled) { setLocalSummons(enabled); };
+        // Peer only: the world owner's level, which levelled lists roll against everywhere
+        // (mwmechanics/actors.cpp nearestAvatarLevel). 0 = no owner known, nearest avatar rules.
+        api["setPartyLevel"] = [](int level) { setPartyLevel(level); };
+        api["partyLevel"] = []() { return partyLevel(); };
+        api["setLocalSpawns"] = [](bool enabled) { setLocalSpawns(enabled); };
+        api["isEnabled"] = []() { return std::getenv("OPENMW_MP_URL") != nullptr; };
+        api["getUrl"] = []() { return getEnvString("OPENMW_MP_URL"); };
+        api["getName"] = []() { return getEnvString("OPENMW_MP_NAME"); };
+        api["getPassword"] = []() { return getEnvString("OPENMW_MP_PASS"); };
+        // Phase H: a headless simulation peer sets OPENMW_MP_SYSTEM=1. It declares system so
+        // the server keeps it out of the player list / count / maxPlayers. A normal client
+        // never sets it (getenv null), so this is false for every human.
+        api["isSystem"] = []() { return std::getenv("OPENMW_MP_SYSTEM") != nullptr; };
+        // The engine's own rest verdict (MWBase::World::RestPermitted bits: 4 = enemies nearby).
+        // Test evidence for the vanilla rule under MP: an NPC the PEER is fighting on our
+        // behalf reaches this client as a puppet carrying a Combat package (actors.lua
+        // MP_ActorAI), and that package is what enemiesNearby() counts. Read-only.
+        api["canRest"] = []() { return MWBase::Environment::get().getWorld()->canRest(); };
+        // HARNESS: the engine's own drowning inputs for the player (s149): is the body
+        // submerged by the rule updateDrowning uses, how much breath is left, god mode.
+        api["drownState"] = [](sol::this_state ts, sol::optional<sol::object> who) {
+            sol::state_view lua(ts);
+            sol::table t = lua.create_table();
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            // The player by default; any NPC when asked (the peer probing an avatar).
+            MWWorld::Ptr player = world->getPlayerPtr();
+            if (who && who->is<MWLua::Object>())
+                player = who->as<MWLua::Object>().ptr();
+            if (player.isEmpty() || !player.getClass().isNpc())
+                return t;
+            t["submerged"] = world->isSubmerged(player);
+            t["swimming"] = world->isSwimming(player);
+            t["breath"] = player.getClass().getNpcStats(player).getTimeToStartDrowning();
+            t["godmode"] = world->getGodModeState();
+            // Why a submerged avatar might NOT be drowning (s149): the mechanics loop only
+            // runs updateDrowning for an NPC that is in processing range while AI is active.
+            t["inRange"] = MWMechanics::inSimProcessingRange(player);
+            t["aiActive"] = MWBase::Environment::get().getMechanicsManager()->isAIActive();
+            t["dead"] = player.getClass().getCreatureStats(player).isDead();
+            t["waterBreathing"] = player.getClass().getCreatureStats(player).getMagicEffects()
+                .getOrDefault(ESM::MagicEffect::WaterBreathing).getMagnitude();
+            return t;
+        };
+        // HARNESS: rest or sleep for N hours exactly as the wait dialog does it (one
+        // mechanics rest + one hour of world time per hour, WaitDialog::onWaitingProgressChanged),
+        // so a scenario can prove that sleeping heals a peer-ruled body (s150). The dialog
+        // itself cannot be driven without SDL keys.
+        // INLINE, AND IT SAYS WHAT IT HEALED (backlog 460, the third try). The peer rules the
+        // bars: every 3 s player.lua MP_SelfStats queues `health.current = <the peer's bar>`
+        // as a delayed Lua write, and identity.lua claims a heal by measuring the local bar
+        // against its last report. A rest run from this harness command sits in the same
+        // onFrame as such a report about one frame in three at 1 fps, and whichever order the
+        // two land in, the read that should measure the raise sees the report's value (a
+        // pending write answers reads; a queued rest runs after the write it was meant to
+        // beat, then the NEXT report erases it). A real player's rest is C++ outside the Lua
+        // frame and is measured fine; only this path raced. So the rest runs now, on the
+        // real stat, and returns the raise it produced -- player.lua banks that straight into
+        // identity's claim (identity.bankGain), and no read is involved at all.
+        api["restHours"] = [](sol::this_state state, int hours, bool sleep) {
+            const int n = std::max(0, std::min(hours, 24 * 7));
+            const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+            const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
+            const float hp0 = stats.getHealth().getCurrent();
+            const float mp0 = stats.getMagicka().getCurrent();
+            const float ft0 = stats.getFatigue().getCurrent();
+            for (int i = 0; i < n; ++i)
+            {
+                MWBase::Environment::get().getMechanicsManager()->rest(1, sleep);
+                MWBase::Environment::get().getWorld()->advanceTime(1);
+            }
+            sol::table res(state, sol::create);
+            res["hp"] = stats.getHealth().getCurrent() - hp0;
+            res["mp"] = stats.getMagicka().getCurrent() - mp0;
+            res["ft"] = stats.getFatigue().getCurrent() - ft0;
+            return res;
+        };
+        // Phase B SSO: a one-time login ticket the boot JS lifted out of the URL fragment
+        // after the provider round trip. Empty when signing in with a password.
+        api["getLoginTicket"] = []() { return getEnvString("OPENMW_MP_TICKET"); };
+        // The character slot chosen on the HTML pre-boot tile screen (index.html sets
+        // OPENMW_MP_CHARACTER from the #mpchar fragment). Empty = last-played default.
+        api["getBootCharacter"] = []() { return getEnvString("OPENMW_MP_CHARACTER"); };
+        // The player's OWN (solo/party) world. A world change reboots the page, so Lua state
+        // dies and "the world we first landed in is ours" — true when a switch was an in-place
+        // redial — became "the PUBLIC world is ours" on the rebooted page. Going Solo then
+        // asked the public world to turn private and was refused. The launcher stamps this
+        // into the boot fragment and every switch carries it through.
+        api["getHomeUrl"] = []() { return getEnvString("OPENMW_MP_HOME"); };
+        api["getEngineHash"] = []() { return getEnvString("OPENMW_MP_ENGINEHASH"); };
+        // Backlog 299: `lowercase-name=sha256;...` for the content files the page could hash
+        // (a locker boot: the locker manifest carries each plugin's sha256). Lua cannot read
+        // files, so this is the only way a client manifest ever carries a hash. Empty otherwise.
+        api["getContentHashes"] = []() { return getEnvString("OPENMW_MP_CONTENT_SHA256"); };
+        api["vectorsEnabled"] = []() { return std::getenv("OPENMW_MP_VECTORS") != nullptr; };
+        // Test seam for the multiplayer console gate. The harness cannot press a key (no SDL
+        // injection), so without a way to REQUEST the console and then observe whether it
+        // opened, the gate could only be eyeballed in a screenshot.
+        //
+        // requestConsole() deliberately routes through the same ActionManager::toggleConsole
+        // the keybind uses, so the test exercises the real guard rather than a copy of it.
+        api["requestConsole"] = []() {
+            // A_Console == the console action id (mwinput/actions.hpp); executeAction is the
+            // same entry point the keybind uses.
+            MWBase::Environment::get().getInputManager()->executeAction(MWInput::A_Console);
+        };
+        api["isConsoleOpen"] = []() {
+            return MWBase::Environment::get().getWindowManager()->isConsoleMode();
+        };
+        // Session-tier state is decided in Lua (scripts/mp/net.lua); mirror it into NetManager.
+        api["_setState"] = [](std::string_view name) { NetManager::instance().setSessionState(name); };
+        // M2 rejoin restore: re-run the chargen record edits outside the chargen GUI.
+        // setPlayerRace already does the NpcAnimation rebuild (World::renderPlayer) +
+        // buildPlayer; deferred via addAction so the record/scene edits run in
+        // synchronizedUpdate like every other Lua-initiated world mutation.
+        api["applyChargen"] = [luaManager = context.mLuaManager](const sol::table& t) {
+            std::string race = t.get_or<std::string>("race", "");
+            std::string head = t.get_or<std::string>("head", "");
+            std::string hair = t.get_or<std::string>("hair", "");
+            std::string cls = t.get_or<std::string>("class", "");
+            std::string birthsign = t.get_or<std::string>("birthsign", "");
+            // THE NAME, which this restored everything BUT. A character created through
+            // Morrowind's own chargen carries the name the player typed, but a restored one is
+            // built by the skip-chargen boot path and keeps the engine's default ("player") —
+            // so the save screen, and anything else reading the player record, showed that
+            // instead of who they are. Invisible until a world change started rebooting the
+            // page, which made EVERY switch a restore.
+            std::string name = t.get_or<std::string>("name", "");
+            bool isMale = t.get_or("isMale", true);
+            // A CUSTOM CLASS, by content. The id in `class` is a record this engine has never
+            // seen (another engine minted it at character creation); rebuild it here exactly
+            // as the class-creation dialog does (setPlayerClass(const ESM::Class&) inserts it)
+            // so level-ups count against the right majors and the sheet names the right
+            // class. Malformed specs are skipped and the old "left as-is" path runs.
+            std::optional<ESM::Class> customClass;
+            if (sol::optional<sol::table> spec = t["classSpec"])
+            {
+                ESM::Class c;
+                c.blank();
+                c.mName = spec->get_or<std::string>("name", "");
+                c.mDescription = spec->get_or<std::string>("description", "");
+                const std::string special = spec->get_or<std::string>("specialization", "");
+                const auto& names = ESM::Class::specializationIndexToLuaId;
+                const auto it = std::find(names.begin(), names.end(), special);
+                bool ok = !c.mName.empty() && it != names.end();
+                c.mData.mSpecialization = ok ? static_cast<int32_t>(it - names.begin()) : 0;
+                c.mData.mIsPlayable = 1;
+                const auto ids = [&](const char* key, size_t n, auto&& put) {
+                    sol::optional<sol::table> l = (*spec)[key];
+                    if (!l || l->size() != n) { ok = false; return; }
+                    for (size_t i = 1; i <= n; ++i)
+                    {
+                        sol::optional<std::string> id = (*l)[i];
+                        if (!id) { ok = false; return; }
+                        const int idx = put(ESM::RefId::deserializeText(*id), i - 1);
+                        if (idx < 0) ok = false;
+                    }
+                };
+                ids("attributes", 2, [&](ESM::RefId id, size_t i) { const int x = ESM::Attribute::refIdToIndex(id); if (x >= 0) c.mData.mAttribute[i] = x; return x; });
+                ids("majorSkills", 5, [&](ESM::RefId id, size_t i) { const int x = ESM::Skill::refIdToIndex(id); if (x >= 0) c.mData.mSkills[i][1] = x; return x; });
+                ids("minorSkills", 5, [&](ESM::RefId id, size_t i) { const int x = ESM::Skill::refIdToIndex(id); if (x >= 0) c.mData.mSkills[i][0] = x; return x; });
+                if (ok)
+                    customClass = std::move(c);
+                else
+                    Log(Debug::Warning) << "[mp] chargen: custom class spec malformed, ignored";
+            }
+            luaManager->addAction(
+                [=] {
+                    MWBase::MechanicsManager* mechanics = MWBase::Environment::get().getMechanicsManager();
+                    // Name first: setPlayerRace rebuilds the player record, and the same call
+                    // chargen makes puts the name on it.
+                    if (!name.empty())
+                        mechanics->setPlayerName(name);
+                    // RESOLVE BEFORE APPLYING. Every one of these ends in buildPlayer(), which
+                    // looks the id up with Store::find() -- and find() THROWS when search()
+                    // returns null. An id that does not resolve therefore does not degrade, it
+                    // aborts this whole action, so everything sequenced AFTER the bad field
+                    // (class, birthsign, name) silently never applies.
+                    //
+                    // This is reachable, not theoretical. snapAppearance fills an empty field
+                    // from NPC.records['villager_00'] and falls back to the literal string
+                    // "none" when that record is missing -- and villager_00 is a DEMO record
+                    // present in NO retail data file (checked: absent from Morrowind.esm,
+                    // Tribunal.esm and Bloodmoon.esm), and carries no class even where it does
+                    // exist. "none" is not a missing value; it is an invalid record id.
+                    //
+                    // The fix belongs HERE and not in snapAppearance: the server REJECTS an
+                    // appearance with any empty race/head/class/name (playerstate.ts
+                    // handleAppearance), and a rejected appearance leaves doc.appearance unset,
+                    // which withholds playerRecord on every join and loses the character's
+                    // inventory and position. Sending "" instead of "none" would trade a
+                    // recoverable cosmetic default for exactly that. So the placeholder stays,
+                    // and the CONSUMER declines to apply what it cannot resolve.
+                    const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+                    const auto resolves = [&](const auto& recordStore, const std::string& id) {
+                        return !id.empty() && recordStore.search(ESM::RefId::deserializeText(id)) != nullptr;
+                    };
+                    if (resolves(store.get<ESM::Race>(), race))
+                        mechanics->setPlayerRace(ESM::RefId::deserializeText(race), isMale,
+                            ESM::RefId::deserializeText(head), ESM::RefId::deserializeText(hair));
+                    else if (!race.empty())
+                        Log(Debug::Warning) << "[mp] chargen: unknown race '" << race << "', left as-is";
+                    if (resolves(store.get<ESM::Class>(), cls))
+                        mechanics->setPlayerClass(ESM::RefId::deserializeText(cls));
+                    else if (customClass)
+                    {
+                        mechanics->setPlayerClass(*customClass);
+                        Log(Debug::Info) << "[mp] chargen: custom class '" << customClass->mName << "' rebuilt from its spec";
+                    }
+                    else if (!cls.empty())
+                        Log(Debug::Warning) << "[mp] chargen: unknown class '" << cls << "', left as-is";
+                    if (resolves(store.get<ESM::BirthSign>(), birthsign))
+                        mechanics->setPlayerBirthsign(ESM::RefId::deserializeText(birthsign));
+                    else if (!birthsign.empty())
+                        Log(Debug::Warning) << "[mp] chargen: unknown birthsign '" << birthsign << "'";
+                },
+                "MPApplyChargen");
+        };
+        // M2 respawn: same path as the console `resurrect` (statsextensions.cpp OpResurrect) —
+        // there is no vanilla Lua API to revive the player.
+        // With an object (#293): revive THAT actor instead -- the peer's scripted Resurrect
+        // reaches every other engine as ActorRevive, and there is no Lua API to stand an NPC up.
+        api["resurrect"] = [luaManager = context.mLuaManager](sol::optional<sol::object> who) {
+            MWWorld::Ptr target;
+            if (who && who->is<MWLua::Object>())
+            {
+                target = who->as<MWLua::Object>().ptrOrEmpty();
+                if (target.isEmpty() || !target.getClass().isActor())
+                    return;
+            }
+            luaManager->addAction(
+                [target] {
+                    if (!target.isEmpty())
+                    {
+                        MWBase::Environment::get().getMechanicsManager()->resurrect(target);
+                        return;
+                    }
+                    MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+                    MWBase::Environment::get().getMechanicsManager()->resurrect(player);
+                    if (MWBase::Environment::get().getStateManager()->getState() == MWBase::StateManager::State_Ended)
+                        MWBase::Environment::get().getStateManager()->resumeGame();
+                    // A slow round-trip lets the death animation finish first, and with no
+                    // save to load the engine pushes the MAIN MENU (askLoadRecent). The player
+                    // was revived behind it. Pop it.
+                    MWBase::WindowManager* wm = MWBase::Environment::get().getWindowManager();
+                    if (wm->containsMode(MWGui::GM_MainMenu))
+                        wm->removeGuiMode(MWGui::GM_MainMenu);
+                },
+                "MPResurrect");
+        };
+        // Purge every active effect on the player. The rejoin restore REBUILDS a character in
+        // place: applyChargen runs buildPlayer(), which grants this character its race and
+        // birthsign abilities, and phase 2 then writes the saved spell set over the top.
+        //
+        // Nothing in that sequence takes the OLD effects off. Spells::clear() and removeSpell()
+        // touch the spell LIST only -- neither purges what those spells already applied -- and
+        // the Lua activeSpells:remove() refuses anything without Flag_Temporary, so a constant-
+        // effect ability cannot be removed from script at all. So each rebuild layered another
+        // copy of the birthsign ability on top of the last: a Lady's Favor character (Fortify
+        // Endurance 25 + Fortify Personality 25) was seen at +175 on both and then +225 a few
+        // minutes later -- 7 copies, then 9. The character sheet shows getModified(), and base
+        // fatigue is recomputed from the MODIFIED attributes, which is why the fatigue bar
+        // tracked the inflation exactly instead of contradicting it.
+        //
+        // This is the same primitive buildPlayer() already uses on the line below its spell
+        // clear, exposed so the restore can reset to a clean slate before re-adding. The
+        // engine re-applies each ability on the next update, guarded by isSpellActive, so the
+        // count after a restore is exactly one and cannot climb.
+        api["clearActiveSpells"] = [luaManager = context.mLuaManager]() {
+            luaManager->addAction(
+                [] {
+                    MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+                    player.getClass().getCreatureStats(player).getActiveSpells().clear(player);
+                },
+                "MPClearActiveSpells");
+        };
+
+        // Backlog 256 (harness): spend a level on three attributes, the exact call the level-up
+        // dialog's OK button makes (mwgui/levelupdialog.cpp onOkButtonClicked -> E5's extracted
+        // MWMechanics::applyLevelup). A headless scenario cannot click the dialog; without this
+        // no test can raise a guest's base health mid-session. Unknown attribute ids are
+        // skipped rather than thrown: a typo in a scenario should fail its assertion, not the
+        // engine.
+        api["applyLevelup"] = [luaManager = context.mLuaManager](const sol::table& attrs) {
+            std::vector<ESM::Attribute::AttributeID> ids;
+            for (size_t i = 1; i <= attrs.size(); ++i)
+            {
+                sol::optional<std::string> name = attrs[i];
+                if (!name)
+                    continue;
+                ESM::Attribute::AttributeID id(*name);
+                if (ESM::Attribute::refIdToIndex(id) >= 0)
+                    ids.push_back(id);
+            }
+            luaManager->addAction(
+                [ids = std::move(ids)] { MWMechanics::applyLevelup(MWMechanics::getPlayer(), ids); },
+                "MPApplyLevelup");
+        };
+
+        // Backlog 257: a journal entry stamped with the day it was EARNED. quest:addJournalEntry
+        // stamps today (StampedJournalEntry::makeFromQuest reads the clock), and a session
+        // rebuilds its whole journal from the server at join -- so every entry read as
+        // written on the day of the relog. Same dedupe and index handling as addEntry
+        // (Journal::addEntryStamped); only the stamp differs.
+        api["addJournalEntryAt"] = [luaManager = context.mLuaManager](
+                                       std::string_view questId, int index, int day, int month, int dayOfMonth) {
+            ESM::RefId id = ESM::RefId::deserializeText(questId);
+            luaManager->addAction(
+                [id, index, day, month, dayOfMonth] {
+                    MWBase::Environment::get().getJournal()->addEntryAt(
+                        id, index, MWMechanics::getPlayer(), day, month, dayOfMonth);
+                },
+                "MPAddJournalEntryAt");
+        };
+
+        // M7 WorldMapExplored (PROTOCOL.md §M7): mark an exterior cell as discovered on the
+        // world map. There is no Lua binding for map state in 0.52, and the only reachable
+        // surface is GUI-side: WindowManager::addVisitedLocation (mwbase/windowmanager.hpp:243)
+        // -> MapWindow, which is what the engine itself calls when the player enters a named
+        // exterior cell (mwgui/windowmanagerimp.cpp:1181).
+        //
+        // NOTE the deliberate limit: the sibling call there, MapWindow::cellExplored, paints
+        // the global-map fog from `mLocalMapRender->getMapTexture(x, y)` — a texture that only
+        // exists for cells THIS client has actually rendered. A peer's exploration therefore
+        // transfers as the discovered-location marker, not as uncovered fog; the fog is not
+        // transferable without shipping the map texture itself.
+        api["setMapExplored"]
+            = [luaManager = context.mLuaManager](std::string_view cellName, int gridX, int gridY) {
+                  std::string name(cellName);
+                  luaManager->addAction(
+                      [name, gridX, gridY] {
+                          MWBase::Environment::get().getWindowManager()->addVisitedLocation(name, gridX, gridY);
+                      },
+                      "MPSetMapExplored");
+              };
+
+        // M8 ConsoleCommand (PROTOCOL.md §M8): run MWScript console text on this client.
+        // There is NO vanilla Lua binding for that — onConsoleCommand is a *handler* for
+        // commands the player types, not an executor — and the only public entry point is
+        // WindowManager::executeInConsole(path), which runs a file line by line. So write
+        // the payload to a scratch file (MEMFS under emscripten) and hand it over: the
+        // engine's own compiler and error reporting stay in charge.
+        api["runConsole"] = [](std::string_view script) {
+            std::filesystem::path path = std::filesystem::temp_directory_path() / "omwmp_console.txt";
+            {
+                std::ofstream out(path, std::ios::binary | std::ios::trunc);
+                if (!out)
+                    throw std::runtime_error("cannot open the console scratch file");
+                out << script << "\n";
+            }
+            MWBase::Environment::get().getWindowManager()->executeInConsole(path);
+        };
+
+        // Golden-vector dump (server codec tests): LSER-encode any serializable value -> base64.
+        api["debugSerialize"] = [serializer = context.mSerializer](const sol::object& data) {
+            return base64Encode(LuaUtil::serialize(data, serializer));
+        };
+
+        // E5/PHASE 3: mp.correctSelf(dx, dy, dz) — the smooth reconciliation primitive for
+        // the LOCAL player. It accumulates a physics offset that the NEXT physics step
+        // applies and collision-resolves (MWPhysics::Actor::adjustPosition); it never
+        // teleports, never resets physics state, and never fires objectTeleported.
+        //
+        // THE CAP IS LOAD-BEARING, not a nicety: the offset itself does not respect
+        // collision — the following step does — so an uncapped correction can push the
+        // player through geometry before physics gets a say. Anything larger than the cap
+        // is the hard-threshold snap's job (teleport, with puppet.lua's cooldowns).
+        api["correctSelf"] = [luaManager = context.mLuaManager](float dx, float dy, float dz) {
+            constexpr float maxCorrectPerCall = 48.f; // world units; ~15-30 Hz callers
+            osg::Vec3f off(dx, dy, dz);
+            const float len = off.length();
+            if (!(len > 0.f)) // also rejects NaN payloads from the network
+                return;
+            if (len > maxCorrectPerCall)
+                off *= maxCorrectPerCall / len;
+            luaManager->addAction(
+                [off] {
+                    MWBase::World* world = MWBase::Environment::get().getWorld();
+                    world->adjustActorPosition(world->getPlayerPtr(), off);
+                },
+                "MPCorrectSelf");
+        };
+
+        // SIM ANCHORS. The server tells this process which regions to keep simulated: one
+        // anchor per player, as {x, y, z} WORLD POSITIONS (the player's live pose). Only the
+        // sim peer is ever sent them — a normal client passes nothing and behaves exactly as
+        // before, with the player as the sole anchor.
+        //
+        // Positions, not grid coordinates: a cell-centre anchor covered its own cell but
+        // reached only ~3072 units into any neighbour against the 7168 processing range, so
+        // a player near a cell edge sat beside loaded-but-frozen actors. Anchoring on the
+        // player's actual position makes coverage identical to single-player.
+        //
+        // This is what lets ONE headless engine simulate several parts of the world. Without
+        // it a peer can only ever hold the region its own avatar stands in, so covering players
+        // spread across the map costs a whole ~450 MB engine process per region.
+        // `interiors` is a second, optional list of interior cell NAMES. An interior has no
+        // grid coordinate, so it cannot ride in the anchor list — and without it a peer could
+        // only ever simulate the one room its own avatar stood in, which left every indoor
+        // player unsimulated (Morrowind's opening is entirely indoors).
+        api["setSimAnchors"] = [](const sol::table& anchors, const sol::optional<sol::table>& interiors) {
+            std::vector<osg::Vec3f> out;
+            out.reserve(anchors.size());
+            for (std::size_t i = 1; i <= anchors.size(); ++i)
+            {
+                const sol::optional<sol::table> a = anchors[i];
+                if (!a)
+                    continue;
+                const sol::optional<float> x = (*a)["x"];
+                const sol::optional<float> y = (*a)["y"];
+                const sol::optional<float> z = (*a)["z"];
+                if (x && y)
+                    out.emplace_back(*x, *y, z.value_or(0.f));
+            }
+            std::vector<ESM::RefId> rooms;
+            if (interiors)
+            {
+                rooms.reserve(interiors->size());
+                for (std::size_t i = 1; i <= interiors->size(); ++i)
+                {
+                    const sol::optional<std::string> name = (*interiors)[i];
+                    if (name && !name->empty())
+                        rooms.push_back(ESM::RefId::stringRefId(*name));
+                }
+            }
+            MWBase::Environment::get().getWorld()->setSimAnchors(out, rooms);
+        };
+
+        // THE PAGE BRIDGE (PROTOCOL.md client contract). Three calls, all production:
+        //   mp.set(key, value)      Lua -> page: one string in window.omw.state[key]; the page
+        //                           polls and renders from it.
+        //   mp.emit(name, json)     Lua -> page: an event (window.omw.emit), 'ack' among them.
+        //   mp.pollCommands()       page -> Lua: drains window.omw.queue WHOLE and returns it
+        //                           as a JSON array of {id, text}. Every entry is acked.
+        // The old shape was a single Module.__omwMPCmd slot read once per frame, and a page
+        // that queued two commands in one frame silently lost one -- s51's "my attacks do
+        // nothing" was the harness overwriting its own hits. A queue cannot clobber, and an
+        // ack tells the sender the command was actually run, not merely handed over.
+#ifdef __EMSCRIPTEN__
+        api["set"] = [](std::string_view key, std::string_view value) {
+            std::string keyStr(key), valueStr(value);
+            EM_ASM(
+                {
+                    try
+                    {
+                        var w = (typeof window !== 'undefined') ? window : self;
+                        // No object literal here: EM_ASM is a variadic macro, and a comma
+                        // at brace level splits the JavaScript into macro arguments.
+                        if (!w.omw)
+                            w.omw = {};
+                        if (!w.omw.state)
+                            w.omw.state = {};
+                        w.omw.state[UTF8ToString($0)] = UTF8ToString($1);
+                    }
+                    catch (e)
+                    {
+                    }
+                },
+                keyStr.c_str(), valueStr.c_str());
+        };
+        api["emit"] = [](std::string_view name, std::string_view payload) {
+            std::string nameStr(name), payloadStr(payload);
+            EM_ASM(
+                {
+                    try
+                    {
+                        var w = (typeof window !== 'undefined') ? window : self;
+                        if (w.omw && w.omw.emit)
+                            w.omw.emit(UTF8ToString($0), JSON.parse(UTF8ToString($1)));
+                    }
+                    catch (e)
+                    {
+                    }
+                },
+                nameStr.c_str(), payloadStr.c_str());
+        };
+        // M8 session resume: the ticket has to outlive the PAGE, not just the socket —
+        // a browser reload is the canonical "rejoin in place" case. sessionStorage survives
+        // a reload of THIS tab and nothing else (#284): localStorage was shared across tabs,
+        // so a second tab (or character) on the same browser picked up the first tab's token
+        // and the two sessions fought over one resume. The token is a short-lived, single-use,
+        // server-revocable credential scoped to this origin.
+        api["setResumeToken"] = [](std::string_view token) {
+            std::string tokenStr(token);
+            EM_ASM(
+                {
+                    try
+                    {
+                        var t = UTF8ToString($0);
+                        if (t)
+                            sessionStorage.setItem('omwmp:resume', t);
+                        else
+                            sessionStorage.removeItem('omwmp:resume');
+                    }
+                    catch (e)
+                    {
+                    }
+                },
+                tokenStr.c_str());
+        };
+        api["getResumeToken"] = []() -> std::string {
+            char* token = static_cast<char*>(EM_ASM_PTR({
+                try
+                {
+                    var t = sessionStorage.getItem('omwmp:resume');
+                    return t ? stringToNewUTF8(t) : 0;
+                }
+                catch (e)
+                {
+                    return 0;
+                }
+            }));
+            if (!token)
+                return {};
+            std::string out(token);
+            std::free(token);
+            return out;
+        };
+        api["pollCommands"] = [](sol::this_state state) -> sol::object {
+            // Drains window.omw.queue whole: a JSON array of {id, text}, or nil when empty.
+            char* cmd = static_cast<char*>(EM_ASM_PTR({
+                try
+                {
+                    var w = (typeof window !== 'undefined') ? window : self;
+                    var q = w.omw && w.omw.queue;
+                    if (!q || !q.length)
+                        return 0;
+                    var batch = q.splice(0, q.length);
+                    return stringToNewUTF8(JSON.stringify(batch));
+                }
+                catch (e)
+                {
+                    return 0;
+                }
+            }));
+            if (!cmd)
+                return sol::nil;
+            sol::object res = sol::make_object(state, std::string_view(cmd));
+            std::free(cmd);
+            return res;
+        };
+#else
+        api["set"] = [](std::string_view, std::string_view) {};
+        api["emit"] = [](std::string_view, std::string_view) {};
+        api["pollCommands"] = []() { return sol::nil; };
+        api["setResumeToken"] = [](std::string_view) {};
+        api["getResumeToken"] = []() { return std::string(); };
+#endif
+
+        return LuaUtil::makeReadOnly(api);
+    }
+}

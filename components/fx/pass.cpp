@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "pass.hpp"
 
 #include <sstream>
@@ -76,6 +78,7 @@ namespace Fx
 #define OMW_NORMALS @normals
 #define OMW_USE_BINDINGS @useBindings
 #define OMW_MULTIVIEW @multiview
+#define OMW_FRAGMENT_STAGE @fragmentStage
 #define omw_In @in
 #define omw_Out @out
 #define omw_Position @position
@@ -88,6 +91,10 @@ namespace Fx
 
 @fragBinding
 
+// Samplers, point-light uniforms, the data struct and all texture-sampling helpers are only
+// needed by the fragment stage. Emitting them into the VERTEX shader put texture() calls in the
+// vertex stage, which hangs ANGLE's shader translator (used by every Chrome GL backend) on WebGL2.
+#if OMW_FRAGMENT_STAGE
 uniform @builtinSampler omw_SamplerLastShader;
 uniform @builtinSampler omw_SamplerLastPass;
 uniform @builtinSampler omw_SamplerDepth;
@@ -130,7 +137,7 @@ float omw_GetPointLightRadius(int index)
 #if @ubo
     layout(std140) uniform _data { _omw_data omw; };
 #else
-    uniform _omw_data omw;
+    @structUniform
 #endif
 
 
@@ -262,6 +269,7 @@ float omw_EstimateFogCoverageFromUV(vec2 uv)
         return 1.0;
 #endif
     }
+#endif // OMW_FRAGMENT_STAGE
 )GLSL";
 
         std::stringstream extBlock;
@@ -270,14 +278,34 @@ float omw_EstimateFogCoverageFromUV(vec2 uv)
                      << "\t#extension " << extension << ": enable" << '\n'
                      << "#endif" << '\n';
 
+#ifdef __EMSCRIPTEN__
+        // WebGL2 is GLES 3.00. Emit "#version 300 es" and use the modern (non-legacy) in/out/texture
+        // path (mLegacyGLSL is forced false in compile()) so Fx post-process shaders compile natively
+        // instead of as unsupported "#version 120". Precision qualifiers are injected below.
+        const std::string glslVersion = "300";
+        const std::string glslProfile = "es";
+#else
+        const std::string glslVersion = std::to_string(technique.getGLSLVersion());
+        const std::string glslProfile = technique.getGLSLProfile();
+#endif
         const std::vector<std::pair<std::string, std::string>> defines
             = { { "@pointLightCount", std::to_string(SceneUtil::PPLightBuffer::sMaxPPLightsArraySize) },
                   { "@apiVersion", std::to_string(Version::getPostprocessingApiRevision()) },
-                  { "@version", std::to_string(technique.getGLSLVersion()) },
+                  { "@version", glslVersion },
                   { "@multiview", Stereo::getMultiview() ? "1" : "0" },
+                  { "@fragmentStage", fragOut ? "1" : "0" },
                   { "@builtinSampler", Stereo::getMultiview() ? "sampler2DArray" : "sampler2D" },
-                  { "@profile", technique.getGLSLProfile() }, { "@extensions", extBlock.str() },
-                  { "@uboStruct", StateUpdater::getStructDefinition() }, { "@ubo", mUBO ? "1" : "0" },
+                  { "@profile", glslProfile }, { "@extensions", extBlock.str() },
+#ifdef __EMSCRIPTEN__
+                  // ANGLE/WebGL2 reads struct-member uniforms as 0, so declare the data as flat
+                  // `uniform <type> omw_<name>;` instead of a `_omw_data` struct + struct uniform.
+                  // The `omw.<member>` reads in the helpers/user shader are rewritten to `omw_<member>`
+                  // below, and StateUpdater feeds the matching flat uniform names.
+                  { "@uboStruct", StateUpdater::getFlatDefinition() }, { "@structUniform", "" },
+#else
+                  { "@uboStruct", StateUpdater::getStructDefinition() }, { "@structUniform", "uniform _omw_data omw;" },
+#endif
+                  { "@ubo", mUBO ? "1" : "0" },
                   { "@normals", technique.getNormals() ? "1" : "0" },
                   { "@reverseZ", SceneUtil::AutoDepth::isReversed() ? "1" : "0" },
                   { "@radialFog", Settings::fog().mRadialFog ? "1" : "0" },
@@ -299,14 +327,41 @@ float omw_EstimateFogCoverageFromUV(vec2 uv)
             for (size_t pos = header.find(define); pos != std::string::npos; pos = header.find(define))
                 header.replace(pos, define.size(), value);
 
-        for (const auto& target : mRenderTargets)
-            header.append("uniform sampler2D " + target + ";");
+        // Render-target samplers are a fragment-stage concern; keep them (and any texture use) out
+        // of the vertex shader (fragOut == false) — vertex-stage samplers hang ANGLE's translator.
+        // Also never emit `uniform sampler2D ;` for an empty target name: malformed GLSL that ANGLE
+        // hangs on rather than erroring.
+        if (fragOut)
+            for (const auto& target : mRenderTargets)
+                if (!target.empty())
+                    header.append("uniform sampler2D " + target + ";");
 
         for (auto& uniform : technique.getUniformMap())
             if (auto glsl = uniform->getGLSL())
                 header.append(glsl.value());
 
         header.append(preamble);
+
+#ifdef __EMSCRIPTEN__
+        // GLSL ES requires: (1) #version to be the very first line — the header template starts with a
+        // blank line, which would push #version to line 2 and silently fall back to ES 1.00; and
+        // (2) an explicit default float precision (fragment shaders have none). Strip anything before
+        // #version, then inject precision right after the version line.
+        {
+            std::size_t v = header.find("#version");
+            if (v != std::string::npos && v > 0)
+                header.erase(0, v);
+            std::size_t eol = header.find('\n');
+            if (eol != std::string::npos)
+            {
+                std::string precision = "precision highp float;\nprecision highp int;\n";
+                if (fragOut)
+                    precision += "precision highp sampler2D;\nprecision highp sampler2DShadow;\n"
+                                 "precision highp sampler2DArray;\n";
+                header.insert(eol + 1, precision);
+            }
+        }
+#endif
 
         return header;
     }
@@ -331,7 +386,12 @@ float omw_EstimateFogCoverageFromUV(vec2 uv)
 
         if (!mLegacyGLSL)
         {
+#ifndef __EMSCRIPTEN__
+            // glBindFragDataLocation is desktop-GL only — it does not exist in WebGL2/GLES3, where a
+            // shader's sole fragment output defaults to location 0. Calling it via OSG on emscripten
+            // wedges glLinkProgram (reproduced with trivial shaders on every GL backend). Skip it.
             program->addBindFragDataLocation("_omw_FragColor", 0);
+#endif
             program->addBindAttribLocation("_omw_Vertex", 0);
         }
 
@@ -357,7 +417,26 @@ float omw_EstimateFogCoverageFromUV(vec2 uv)
         if (mCompiled)
             return;
 
+#ifdef __EMSCRIPTEN__
+        // WebGL2/GLES3: always use the modern in/out/texture/_omw_* path (never legacy
+        // varying/texture2D/gl_FragColor, which are invalid in GLES 3.00). getPassHeader() emits
+        // "#version 300 es" + precision to match.
+        mLegacyGLSL = false;
+#else
         mLegacyGLSL = technique.getGLSLVersion() < 330;
+#endif
+
+        // On emscripten the data uniforms are declared flat (`omw_<member>`) instead of via a struct
+        // uniform, so rewrite every `omw.<member>` access in the assembled source to `omw_<member>`.
+        // (`omw_`-prefixed identifiers like omw_SamplerDepth / omw_TexCoord have no dot and are
+        // untouched.) No-op on desktop.
+        const auto finalizeSource = [](std::string src) -> std::string {
+#ifdef __EMSCRIPTEN__
+            for (std::size_t pos = src.find("omw."); pos != std::string::npos; pos = src.find("omw.", pos + 4))
+                src[pos + 3] = '_';
+#endif
+            return src;
+        };
 
         if (mType == Type::Pixel)
         {
@@ -365,15 +444,18 @@ float omw_EstimateFogCoverageFromUV(vec2 uv)
                 mVertex = new osg::Shader(
                     osg::Shader::VERTEX, Stereo::getMultiview() ? s_DefaultVertexMultiview : s_DefaultVertex);
 
-            mVertex->setShaderSource(getPassHeader(technique, preamble).append(mVertex->getShaderSource()));
-            mFragment->setShaderSource(getPassHeader(technique, preamble, true).append(mFragment->getShaderSource()));
+            mVertex->setShaderSource(
+                finalizeSource(getPassHeader(technique, preamble).append(mVertex->getShaderSource())));
+            mFragment->setShaderSource(
+                finalizeSource(getPassHeader(technique, preamble, true).append(mFragment->getShaderSource())));
 
             mVertex->setName(mName);
             mFragment->setName(mName);
         }
         else if (mType == Type::Compute)
         {
-            mCompute->setShaderSource(getPassHeader(technique, preamble).append(mCompute->getShaderSource()));
+            mCompute->setShaderSource(
+                finalizeSource(getPassHeader(technique, preamble).append(mCompute->getShaderSource())));
             mCompute->setName(mName);
         }
 

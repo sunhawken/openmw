@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -9,6 +11,7 @@
 #include <thread>
 #include <vector>
 
+#include <cmath>
 #include <cstdint>
 
 #include <components/debug/debuglog.hpp>
@@ -24,6 +27,328 @@
 #include "sound.hpp"
 #include "sounddecoder.hpp"
 #include "soundmanagerimp.hpp"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// ---------------------------------------------------------------------------
+// EFX over Web Audio.
+//
+// Emscripten's OpenAL (a Web Audio reimplementation) has no ALC_EXT_EFX, so on
+// desktop-parity features OpenMW falls back to crude gain/pitch tricks. Web Audio
+// has the primitives natively, and EM_JS code is emitted into the same JS module
+// scope as emscripten's `AL` library object, so we can reach each source's node
+// graph (src.gain -> [src.panner] -> ctx.gain) directly:
+//   - AL_FILTER_LOWPASS  -> a BiquadFilterNode inserted after the source gain
+//                           (underwater/muffled sounds).
+//   - AL_EFFECT_EAXREVERB + aux slot -> a ConvolverNode with an impulse response
+//     synthesized from the reverb parameters (RT60 = decay time), fed by
+//     per-source send connections (interior/underwater reverb).
+// The function-pointer surface OpenMW loads via alGetProcAddress is provided by
+// the EfxShim adapters below (LOAD_FUNC is redirected under __EMSCRIPTEN__).
+// ---------------------------------------------------------------------------
+
+// clang-format off
+EM_JS(void, omw_efx_setup, (), {
+    if (Module.__EFX) return;
+    Module.__EFX = { nextId: 1, filters: {}, effects: {}, slots: {}, src: {} };
+    // Bind effect -> slot: (re)build the convolver + impulse response from reverb params.
+    Module.__efxBind = function(slot, effect) {
+        var E = Module.__EFX;
+        var s = E.slots[slot]; if (!s) return;
+        s.effect = effect;
+        var AL_ = (typeof AL !== 'undefined') ? AL : null;
+        if (!AL_ || !AL_.currentCtx) return;
+        var actx = AL_.currentCtx.audioCtx;
+        if (!s.conv) {
+            s.conv = actx.createConvolver();
+            s.wet = actx.createGain();
+            s.conv.connect(s.wet);
+            s.wet.connect(AL_.currentCtx.gain);
+        }
+        var fx = E.effects[effect];
+        if (!fx) { s.wet.gain.value = 0; return; }
+        // Impulse response: stereo decaying noise; RT60 = decayTime, HF damping from
+        // decayHFRatio via a one-pole lowpass over the noise.
+        var dur = Math.min(Math.max(fx.decayTime || 1.5, 0.2), 8);
+        var rate = actx.sampleRate, len = Math.max(1, Math.floor(dur * rate));
+        var buf = actx.createBuffer(2, len, rate);
+        var hf = Math.min(Math.max(fx.decayHFRatio || 0.8, 0.1), 2.0);
+        var alpha = Math.min(0.95, Math.max(0.05, 1.2 - hf)); // lower ratio -> darker tail
+        for (var ch = 0; ch < 2; ch++) {
+            var d = buf.getChannelData(ch), lp = 0;
+            for (var i = 0; i < len; i++) {
+                var t = i / rate;
+                var noise = Math.random() * 2 - 1;
+                lp = lp + alpha * (noise - lp);
+                d[i] = lp * Math.exp(-6.9078 * t / dur); // -60 dB at RT60
+            }
+        }
+        s.conv.buffer = buf;
+        s.wet.gain.value = Math.min(1, (fx.gain || 0) * (fx.lateGain || 1));
+        fx.dirty = 0;
+    };
+});
+
+EM_JS(int, omw_efx_gen, (int kind), {
+    var E = Module.__EFX; var id = E.nextId++;
+    if (kind === 0) E.filters[id] = { type: 0, gain: 1, gainhf: 1 };
+    else if (kind === 1) E.effects[id] = { type: 0, gain: 0, gainhf: 0.89, decayTime: 1.49, decayHFRatio: 0.83, lateGain: 1.26 };
+    else E.slots[id] = { effect: 0, conv: null, wet: null };
+    return id;
+});
+
+EM_JS(void, omw_efx_del, (int kind, int id), {
+    var E = Module.__EFX;
+    if (kind === 0) delete E.filters[id];
+    else if (kind === 1) delete E.effects[id];
+    else { var s = E.slots[id]; if (s && s.conv) { try { s.conv.disconnect(); s.wet.disconnect(); } catch(e){} } delete E.slots[id]; }
+});
+
+EM_JS(int, omw_efx_is, (int kind, int id), {
+    var E = Module.__EFX;
+    return ((kind === 0 ? E.filters : kind === 1 ? E.effects : E.slots)[id]) ? 1 : 0;
+});
+
+// param maps: filters: 0x8001=AL_FILTER_TYPE, 1=AL_LOWPASS_GAIN, 2=AL_LOWPASS_GAINHF.
+// effects (EAXREVERB): 0x8001=AL_EFFECT_TYPE, 3=GAIN, 4=GAINHF, 6=DECAY_TIME,
+//                      7=DECAY_HFRATIO, 0xC=LATE_REVERB_GAIN (others ignored).
+EM_JS(void, omw_efx_param, (int kind, int id, int param, double value), {
+    var E = Module.__EFX;
+    if (kind === 0) {
+        var f = E.filters[id]; if (!f) return;
+        if (param === 0x8001) f.type = value|0;
+        else if (param === 1) f.gain = value;
+        else if (param === 2) f.gainhf = value;
+        // live-update any sources currently using this filter
+        for (var sid in E.src) {
+            var st = E.src[sid];
+            if (st.filterId === id && st.biquad) {
+                st.biquad.frequency.value = Math.max(200, 22050 * f.gainhf * f.gainhf);
+                st.fgain.gain.value = f.gain;
+            }
+        }
+    } else if (kind === 1) {
+        var fx = E.effects[id]; if (!fx) return;
+        if (param === 0x8001) fx.type = value|0;
+        else if (param === 3) fx.gain = value;
+        else if (param === 4) fx.gainhf = value;
+        else if (param === 6) fx.decayTime = value;
+        else if (param === 7) fx.decayHFRatio = value;
+        else if (param === 0xC) fx.lateGain = value;
+        fx.dirty = 1;
+        // if a slot is bound to this effect, refresh it
+        for (var slid in E.slots) if (E.slots[slid].effect === id) Module.__efxBind(slid|0, id);
+    }
+});
+
+EM_JS(int, omw_efx_geti, (int kind, int id, int param), {
+    var E = Module.__EFX;
+    var o = (kind === 0 ? E.filters : kind === 1 ? E.effects : E.slots)[id];
+    if (!o) return 0;
+    if (param === 0x8001) return o.type|0;
+    return 0;
+});
+
+// Bind effect -> slot (implementation lives in omw_efx_setup's Module.__efxBind).
+EM_JS(void, omw_efx_slot_effect, (int slot, int effect), {
+    if (Module.__efxBind) Module.__efxBind(slot, effect);
+});
+
+// Insert/remove the per-source direct lowpass: src.gain -> biquad -> fgain -> dest.
+EM_JS(void, omw_efx_source_direct, (int srcId, int filterId), {
+    try {
+        var E = Module.__EFX;
+        var AL_ = (typeof AL !== 'undefined') ? AL : null;
+        if (!AL_ || !AL_.currentCtx) return;
+        var s = AL_.currentCtx.sources[srcId]; if (!s) return;
+        var st = E.src[srcId] || (E.src[srcId] = {});
+        var dest = s.panner || AL_.currentCtx.gain;
+        var f = filterId ? E.filters[filterId] : null;
+        if (f && f.type === 1 /*AL_FILTER_LOWPASS*/) {
+            var actx = AL_.currentCtx.audioCtx;
+            if (!st.biquad) {
+                st.biquad = actx.createBiquadFilter();
+                st.biquad.type = 'lowpass';
+                st.fgain = actx.createGain();
+                st.biquad.connect(st.fgain);
+            }
+            st.filterId = filterId;
+            st.biquad.frequency.value = Math.max(200, 22050 * f.gainhf * f.gainhf);
+            st.fgain.gain.value = f.gain;
+            try { s.gain.disconnect(dest); } catch(e){}
+            try { st.fgain.disconnect(); } catch(e){}
+            s.gain.connect(st.biquad);
+            st.fgain.connect(dest);
+        } else if (st.biquad) {
+            st.filterId = 0;
+            try { s.gain.disconnect(st.biquad); } catch(e){}
+            try { st.fgain.disconnect(); } catch(e){}
+            try { s.gain.connect(dest); } catch(e){}
+        }
+    } catch(e){}
+});
+
+// Add/remove the per-source reverb send (src.gain -> slot convolver).
+EM_JS(void, omw_efx_source_send, (int srcId, int slotId, int filterId), {
+    try {
+        var E = Module.__EFX;
+        var AL_ = (typeof AL !== 'undefined') ? AL : null;
+        if (!AL_ || !AL_.currentCtx) return;
+        var s = AL_.currentCtx.sources[srcId]; if (!s) return;
+        var st = E.src[srcId] || (E.src[srcId] = {});
+        if (st.sendSlot && E.slots[st.sendSlot] && E.slots[st.sendSlot].conv) {
+            try { s.gain.disconnect(E.slots[st.sendSlot].conv); } catch(e){}
+            st.sendSlot = 0;
+        }
+        var slot = slotId ? E.slots[slotId] : null;
+        if (slot) {
+            if (!slot.conv) Module.__efxBind(slotId, slot.effect | 0);
+            if (slot.conv) { s.gain.connect(slot.conv); st.sendSlot = slotId; }
+        }
+    } catch(e){}
+});
+// clang-format on
+
+namespace EfxShim
+{
+    void AL_APIENTRY alGenEffects(ALsizei n, ALuint* ids)
+    {
+        for (ALsizei i = 0; i < n; ++i)
+            ids[i] = omw_efx_gen(1);
+    }
+    void AL_APIENTRY alDeleteEffects(ALsizei n, const ALuint* ids)
+    {
+        for (ALsizei i = 0; i < n; ++i)
+            omw_efx_del(1, ids[i]);
+    }
+    ALboolean AL_APIENTRY alIsEffect(ALuint id)
+    {
+        return omw_efx_is(1, id) ? AL_TRUE : AL_FALSE;
+    }
+    void AL_APIENTRY alEffecti(ALuint id, ALenum p, ALint v)
+    {
+        omw_efx_param(1, id, p, v);
+    }
+    void AL_APIENTRY alEffectiv(ALuint id, ALenum p, const ALint* v)
+    {
+        omw_efx_param(1, id, p, v[0]);
+    }
+    void AL_APIENTRY alEffectf(ALuint id, ALenum p, ALfloat v)
+    {
+        omw_efx_param(1, id, p, v);
+    }
+    void AL_APIENTRY alEffectfv(ALuint id, ALenum p, const ALfloat* v)
+    {
+        omw_efx_param(1, id, p, v[0]);
+    }
+    void AL_APIENTRY alGetEffecti(ALuint id, ALenum p, ALint* out)
+    {
+        *out = omw_efx_geti(1, id, p);
+    }
+    void AL_APIENTRY alGetEffectiv(ALuint id, ALenum p, ALint* out)
+    {
+        *out = omw_efx_geti(1, id, p);
+    }
+    void AL_APIENTRY alGetEffectf(ALuint, ALenum, ALfloat* out)
+    {
+        *out = 0.0f;
+    }
+    void AL_APIENTRY alGetEffectfv(ALuint, ALenum, ALfloat* out)
+    {
+        *out = 0.0f;
+    }
+
+    void AL_APIENTRY alGenFilters(ALsizei n, ALuint* ids)
+    {
+        for (ALsizei i = 0; i < n; ++i)
+            ids[i] = omw_efx_gen(0);
+    }
+    void AL_APIENTRY alDeleteFilters(ALsizei n, const ALuint* ids)
+    {
+        for (ALsizei i = 0; i < n; ++i)
+            omw_efx_del(0, ids[i]);
+    }
+    ALboolean AL_APIENTRY alIsFilter(ALuint id)
+    {
+        return omw_efx_is(0, id) ? AL_TRUE : AL_FALSE;
+    }
+    void AL_APIENTRY alFilteri(ALuint id, ALenum p, ALint v)
+    {
+        omw_efx_param(0, id, p, v);
+    }
+    void AL_APIENTRY alFilteriv(ALuint id, ALenum p, const ALint* v)
+    {
+        omw_efx_param(0, id, p, v[0]);
+    }
+    void AL_APIENTRY alFilterf(ALuint id, ALenum p, ALfloat v)
+    {
+        omw_efx_param(0, id, p, v);
+    }
+    void AL_APIENTRY alFilterfv(ALuint id, ALenum p, const ALfloat* v)
+    {
+        omw_efx_param(0, id, p, v[0]);
+    }
+    void AL_APIENTRY alGetFilteri(ALuint id, ALenum p, ALint* out)
+    {
+        *out = omw_efx_geti(0, id, p);
+    }
+    void AL_APIENTRY alGetFilteriv(ALuint id, ALenum p, ALint* out)
+    {
+        *out = omw_efx_geti(0, id, p);
+    }
+    void AL_APIENTRY alGetFilterf(ALuint, ALenum, ALfloat* out)
+    {
+        *out = 0.0f;
+    }
+    void AL_APIENTRY alGetFilterfv(ALuint, ALenum, ALfloat* out)
+    {
+        *out = 0.0f;
+    }
+
+    void AL_APIENTRY alGenAuxiliaryEffectSlots(ALsizei n, ALuint* ids)
+    {
+        for (ALsizei i = 0; i < n; ++i)
+            ids[i] = omw_efx_gen(2);
+    }
+    void AL_APIENTRY alDeleteAuxiliaryEffectSlots(ALsizei n, const ALuint* ids)
+    {
+        for (ALsizei i = 0; i < n; ++i)
+            omw_efx_del(2, ids[i]);
+    }
+    ALboolean AL_APIENTRY alIsAuxiliaryEffectSlot(ALuint id)
+    {
+        return omw_efx_is(2, id) ? AL_TRUE : AL_FALSE;
+    }
+    void AL_APIENTRY alAuxiliaryEffectSloti(ALuint slot, ALenum p, ALint v)
+    {
+        if (p == 0x0001 /*AL_EFFECTSLOT_EFFECT*/)
+            omw_efx_slot_effect(slot, v);
+    }
+    void AL_APIENTRY alAuxiliaryEffectSlotiv(ALuint slot, ALenum p, const ALint* v)
+    {
+        alAuxiliaryEffectSloti(slot, p, v[0]);
+    }
+    void AL_APIENTRY alAuxiliaryEffectSlotf(ALuint, ALenum, ALfloat) {}
+    void AL_APIENTRY alAuxiliaryEffectSlotfv(ALuint, ALenum, const ALfloat*) {}
+    void AL_APIENTRY alGetAuxiliaryEffectSloti(ALuint id, ALenum p, ALint* out)
+    {
+        *out = omw_efx_geti(2, id, p);
+    }
+    void AL_APIENTRY alGetAuxiliaryEffectSlotiv(ALuint id, ALenum p, ALint* out)
+    {
+        *out = omw_efx_geti(2, id, p);
+    }
+    void AL_APIENTRY alGetAuxiliaryEffectSlotf(ALuint, ALenum, ALfloat* out)
+    {
+        *out = 0.0f;
+    }
+    void AL_APIENTRY alGetAuxiliaryEffectSlotfv(ALuint, ALenum, ALfloat* out)
+    {
+        *out = 0.0f;
+    }
+}
+#endif // __EMSCRIPTEN__
 
 #ifndef ALC_ALL_DEVICES_SPECIFIER
 #define ALC_ALL_DEVICES_SPECIFIER 0x1013
@@ -63,18 +388,76 @@ namespace
         memcpy(&dest, &src, sizeof(src));
     }
 
+    // EXTENSION ENTRY POINTS ARE NOT LOOKUP-ABLE UNDER EMSCRIPTEN.
+    //
+    // emscripten's OpenAL implements NEITHER alcGetProcAddress NOR alGetProcAddress -- grep
+    // src/lib/libopenal.js, there are zero occurrences of either -- while still advertising
+    // ALC_SOFT_HRTF and ALC_SOFT_pause_device as present. So every SOFT extension looks
+    // available and none of its functions can actually be resolved.
+    //
+    // Because the link runs with -sERROR_ON_UNDEFINED_SYMBOLS=0 (link-openmw.sh) the missing
+    // imports become stubs rather than link errors. On wasm32 that was survivable by luck: the
+    // stub returned something, and the only call sites that would have dereferenced it were
+    // behind counts that come back zero. On wasm64 it is fatal at the CALL, before the result
+    // is ever used, because the stub hands JS a Number where the i64 return is expected:
+    //
+    //   TypeError: Cannot convert 32379232 to a BigInt
+    //     at MWSound::OpenALOutput::enumerateHrtf()
+    //     at MWSound::SoundManager::SoundManager(...)
+    //     at OMW::Engine::prepareEngine()
+    //
+    // Fixed here rather than at each call site: this is the one place every SOFT lookup goes
+    // through (HRTF, device pause/resume, AL_SOFT_events, reopen_device, and the EFX LOAD_FUNC
+    // macro below -- which already had to special-case emscripten for the same reason). Callers
+    // already null-check or are gated on an extension flag; the two that were not are handled
+    // where those flags are set.
     template <typename T>
     void getALCFunc(T& func, ALCdevice* device, const char* name)
     {
+#ifdef __EMSCRIPTEN__
+        (void)device;
+        (void)name;
+        func = nullptr;
+#else
         void* funcPtr = alcGetProcAddress(device, name);
         convertPointer(func, funcPtr);
+#endif
     }
 
     template <typename T>
     void getALFunc(T& func, const char* name)
     {
+#ifdef __EMSCRIPTEN__
+        (void)name;
+        func = nullptr;
+#else
         void* funcPtr = alGetProcAddress(name);
         convertPointer(func, funcPtr);
+#endif
+    }
+
+    // Route the per-source EFX state through the Web Audio shim under emscripten
+    // (emscripten's alSourcei/alSource3i don't know the EFX enums and would just
+    // raise AL_INVALID_ENUM).
+    inline void omwSetSourceDirectFilter(ALuint source, ALint filter)
+    {
+#ifdef __EMSCRIPTEN__
+        omw_efx_source_direct(source, filter);
+#else
+        // Real EFX on a desktop build. This used to call THIS FUNCTION, which is unbounded
+        // recursion -- latent only because this repo builds for the web, where the branch above
+        // is taken. Left as the real call so the file is correct rather than merely unused.
+        alSourcei(source, AL_DIRECT_FILTER, filter);
+#endif
+    }
+    inline void omwSetSourceSendFilter(ALuint source, ALuint slot, ALint filter)
+    {
+#ifdef __EMSCRIPTEN__
+        omw_efx_source_send(source, slot, filter);
+#else
+        // Same latent self-call as the direct filter above; see the note there.
+        alSource3i(source, AL_AUXILIARY_SEND_FILTER, static_cast<ALint>(slot), 0, filter);
+#endif
     }
 
     // Effect objects
@@ -182,6 +565,36 @@ namespace
 
 namespace MWSound
 {
+
+    // FINITE OR NOTHING. Emscripten's OpenAL (library_openal.js updateSourceRate) hands the
+    // doppler rate straight to WebAudio, which THROWS on a non-finite value -- and that throw
+    // unwinds the whole engine frame through the pump's re-entrancy guard: the game freezes
+    // with a live page (backlog 478; #124 s149: 'TypeError: The provided float value is
+    // non-finite' from _alSourcefv while the player drowned). OpenAL Soft on the desktop
+    // merely ignores such values, which is why nothing ever noticed. A NaN position keeps the
+    // listener's, a NaN velocity is a still one, a NaN gain is silence, a NaN pitch is 1.
+    static bool finite3(const osg::Vec3f& v)
+    {
+        return std::isfinite(v.x()) && std::isfinite(v.y()) && std::isfinite(v.z());
+    }
+    static osg::Vec3f finiteOr(const osg::Vec3f& v, const osg::Vec3f& fallback)
+    {
+        return finite3(v) ? v : fallback;
+    }
+    static float finiteOr(float v, float fallback)
+    {
+        return std::isfinite(v) ? v : fallback;
+    }
+    // ...AND SLOWER THAN SOUND. The same JS clamps the doppler closing speed at
+    // speedOfSound / dopplerFactor from above only, and AT that value the shift's denominator
+    // is zero: a finite but absurd velocity toward the listener (a physics blow-up under
+    // water) became an Infinity playback rate and the same throw (#125 s149, NaN guarded). No
+    // game object moves at 70 m/s for a reason a doppler shift should honour; treat it as still.
+    static osg::Vec3f saneVelocity(const osg::Vec3f& v)
+    {
+        constexpr float maxUnitsPerSecond = 5000.f; // ~70 m/s; the speed of sound is ~24000 u/s
+        return (finite3(v) && v.length2() <= maxUnitsPerSecond * maxUnitsPerSecond) ? v : osg::Vec3f(0.f, 0.f, 0.f);
+    }
 
     static ALenum getALFormat(ChannelConfig chans, SampleType type)
     {
@@ -334,7 +747,18 @@ namespace MWSound
 
         StreamThread()
             : mQuitNow(false)
+#ifndef __EMSCRIPTEN__
+            // Web: no background thread. Emscripten's OpenAL is JS/Web Audio — every AL call
+            // from a worker sync-proxies to the main thread. This thread holds mMutex across
+            // process() (AL calls), so if the main thread ever blocks on mMutex (add/remove/
+            // removeAll — e.g. tearing down a movie-audio stream on intro-video skip) while
+            // this thread is mid-proxy, neither can advance: the proxy needs the main loop,
+            // the main loop needs mMutex → permanent freeze. Streams are pumped inline from
+            // the main thread instead (pump(), called from OpenALOutput::finishUpdate and the
+            // engine's cooperative video branch). 6 buffers × 0.125s gives 0.75s of queue —
+            // ample for a per-frame refill.
             , mThread([this] { run(); })
+#endif
         {
         }
         ~StreamThread()
@@ -343,8 +767,27 @@ namespace MWSound
             mMutex.lock();
             mMutex.unlock();
             mCondVar.notify_all();
+#ifndef __EMSCRIPTEN__
             mThread.join();
+#endif
         }
+
+#ifdef __EMSCRIPTEN__
+        // One processing pass, run on the main thread (see ctor comment). Safe: same lock,
+        // same body as run()'s loop iteration, just no persistent lock across frames.
+        void pump()
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            auto iter = mStreams.begin();
+            while (iter != mStreams.end())
+            {
+                if ((*iter)->process() == false)
+                    iter = mStreams.erase(iter);
+                else
+                    ++iter;
+            }
+        }
+#endif
 
         // thread entry point
         void run()
@@ -710,6 +1153,20 @@ namespace MWSound
         Log(Debug::Info) << "Initializing OpenAL...";
 
         mDeviceName = devname;
+#ifdef __EMSCRIPTEN__
+        // Emscripten's alcOpenDevice only accepts nullptr or the exact string
+        // "Emscripten OpenAL"; an empty name (the default "device =" setting) returns 0,
+        // and OpenMW's fallback below is skipped because devname is empty -> no audio.
+        if (mDeviceName.empty())
+            mDeviceName = "Emscripten OpenAL";
+        mDevice = alcOpenDevice(mDeviceName.c_str());
+        if (!mDevice)
+        {
+            Log(Debug::Warning) << "Failed to open \"" << mDeviceName << "\", trying default";
+            mDevice = alcOpenDevice(nullptr);
+            mDeviceName.clear();
+        }
+#else
         mDevice = alcOpenDevice(devname.c_str());
         if (!mDevice && !devname.empty())
         {
@@ -717,6 +1174,7 @@ namespace MWSound
             mDevice = alcOpenDevice(nullptr);
             mDeviceName.clear();
         }
+#endif
 
         if (!mDevice)
         {
@@ -734,7 +1192,21 @@ namespace MWSound
                          << "  ALC Extensions: " << alcGetString(mDevice, ALC_EXTENSIONS);
 
         ALC.EXT_EFX = alcIsExtensionPresent(mDevice, "ALC_EXT_EFX");
+#ifdef __EMSCRIPTEN__
+        // Emscripten's OpenAL has no EFX; the Web Audio shim above provides it.
+        ALC.EXT_EFX = true;
+        omw_efx_setup();
+#endif
         ALC.SOFT_HRTF = alcIsExtensionPresent(mDevice, "ALC_SOFT_HRTF");
+#ifdef __EMSCRIPTEN__
+        // emscripten ADVERTISES ALC_SOFT_HRTF but provides no alcGetProcAddress to resolve
+        // alcGetStringiSOFT with (see getALCFunc above), so the extension is present in name
+        // only. Taking it at its word makes every HRTF path hold a null function pointer.
+        // HRTF is not selectable through the WebAudio backend regardless -- the engine already
+        // reports "HRTF disabled" on this platform -- so report it absent and let the existing
+        // not-supported branches do exactly what they do on hardware without it.
+        ALC.SOFT_HRTF = false;
+#endif
 
         mContextAttributes.clear();
         mContextAttributes.reserve(15);
@@ -805,14 +1277,22 @@ namespace MWSound
             alEventCallbackSOFT(&OpenALOutput::eventCallback, this);
         }
         else
+#ifdef __EMSCRIPTEN__
+            // Emscripten's OpenAL has no AL_SOFT_events (hotplug detection); audio still works.
+            // Verbose so it stays out of the normal-level console.
+            Log(Debug::Verbose) << "Audio device change detection unavailable (Emscripten OpenAL)";
+#else
             Log(Debug::Warning) << "Cannot detect audio device changes";
+#endif
         if (mDeviceName.empty() && !name.empty())
         {
             // If we opened the default device, switch devices if a new default is selected
             if (alcReopenDeviceSOFT)
                 mDefaultDeviceThread = std::make_unique<DefaultDeviceThread>(*this, name);
+#ifndef __EMSCRIPTEN__
             else
                 Log(Debug::Warning) << "Cannot switch audio devices if the default changes";
+#endif
         }
 
         if (!ALC.SOFT_HRTF)
@@ -866,7 +1346,11 @@ namespace MWSound
 
         if (ALC.EXT_EFX)
         {
+#ifdef __EMSCRIPTEN__
+#define LOAD_FUNC(x) x = &EfxShim::x
+#else
 #define LOAD_FUNC(x) getALFunc(x, #x)
+#endif
             LOAD_FUNC(alGenEffects);
             LOAD_FUNC(alDeleteEffects);
             LOAD_FUNC(alIsEffect);
@@ -957,7 +1441,11 @@ namespace MWSound
                 LoadEffect(mWaterEffect, EFX_REVERB_PRESET_UNDERWATER);
             }
 
+#ifndef __EMSCRIPTEN__
+            // (Not on emscripten: its Web Audio OpenAL doesn't know this EFX listener param
+            // and raises AL_INVALID_ENUM; the shim doesn't model air absorption anyway.)
             alListenerf(AL_METERS_PER_UNIT, 1.0f / Constants::UnitsPerMeter);
+#endif
         }
     skip_efx:
         alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
@@ -1120,26 +1608,27 @@ namespace MWSound
         if (useenv)
         {
             if (mWaterFilter)
-                alSourcei(source, AL_DIRECT_FILTER, (mListenerEnv == Env_Underwater) ? mWaterFilter : AL_FILTER_NULL);
+                omwSetSourceDirectFilter(source, (mListenerEnv == Env_Underwater) ? mWaterFilter : AL_FILTER_NULL);
             else if (mListenerEnv == Env_Underwater)
             {
                 gain *= 0.9f;
                 pitch *= 0.7f;
             }
             if (mEffectSlot)
-                alSource3i(source, AL_AUXILIARY_SEND_FILTER, mEffectSlot, 0, AL_FILTER_NULL);
+                omwSetSourceSendFilter(source, mEffectSlot, AL_FILTER_NULL);
         }
         else
         {
             if (mWaterFilter)
-                alSourcei(source, AL_DIRECT_FILTER, AL_FILTER_NULL);
+                omwSetSourceDirectFilter(source, AL_FILTER_NULL);
             if (mEffectSlot)
-                alSource3i(source, AL_AUXILIARY_SEND_FILTER, AL_EFFECTSLOT_NULL, 0, AL_FILTER_NULL);
+                omwSetSourceSendFilter(source, AL_EFFECTSLOT_NULL, AL_FILTER_NULL);
         }
 
-        alSourcef(source, AL_GAIN, gain);
-        alSourcef(source, AL_PITCH, pitch);
-        alSourcefv(source, AL_POSITION, pos.ptr());
+        const osg::Vec3f spos = finiteOr(pos, mListenerPos);
+        alSourcef(source, AL_GAIN, finiteOr(gain, 0.f));
+        alSourcef(source, AL_PITCH, finiteOr(pitch, 1.f));
+        alSourcefv(source, AL_POSITION, spos.ptr());
         alSource3f(source, AL_DIRECTION, 0.0f, 0.0f, 0.0f);
         alSource3f(source, AL_VELOCITY, 0.0f, 0.0f, 0.0f);
     }
@@ -1160,28 +1649,29 @@ namespace MWSound
         if (useenv)
         {
             if (mWaterFilter)
-                alSourcei(source, AL_DIRECT_FILTER, (mListenerEnv == Env_Underwater) ? mWaterFilter : AL_FILTER_NULL);
+                omwSetSourceDirectFilter(source, (mListenerEnv == Env_Underwater) ? mWaterFilter : AL_FILTER_NULL);
             else if (mListenerEnv == Env_Underwater)
             {
                 gain *= 0.9f;
                 pitch *= 0.7f;
             }
             if (mEffectSlot)
-                alSource3i(source, AL_AUXILIARY_SEND_FILTER, mEffectSlot, 0, AL_FILTER_NULL);
+                omwSetSourceSendFilter(source, mEffectSlot, AL_FILTER_NULL);
         }
         else
         {
             if (mWaterFilter)
-                alSourcei(source, AL_DIRECT_FILTER, AL_FILTER_NULL);
+                omwSetSourceDirectFilter(source, AL_FILTER_NULL);
             if (mEffectSlot)
-                alSource3i(source, AL_AUXILIARY_SEND_FILTER, AL_EFFECTSLOT_NULL, 0, AL_FILTER_NULL);
+                omwSetSourceSendFilter(source, AL_EFFECTSLOT_NULL, AL_FILTER_NULL);
         }
 
-        alSourcef(source, AL_GAIN, gain);
-        alSourcef(source, AL_PITCH, pitch);
-        alSourcefv(source, AL_POSITION, pos.ptr());
+        const osg::Vec3f spos = finiteOr(pos, mListenerPos), svel = saneVelocity(vel);
+        alSourcef(source, AL_GAIN, finiteOr(gain, 0.f));
+        alSourcef(source, AL_PITCH, finiteOr(pitch, 1.f));
+        alSourcefv(source, AL_POSITION, spos.ptr());
         alSource3f(source, AL_DIRECTION, 0.0f, 0.0f, 0.0f);
-        alSourcefv(source, AL_VELOCITY, vel.ptr());
+        alSourcefv(source, AL_VELOCITY, svel.ptr());
     }
 
     void OpenALOutput::updateCommon(ALuint source, const osg::Vec3f& pos, const osg::Vec3f& vel, ALfloat maxdist,
@@ -1193,11 +1683,12 @@ namespace MWSound
             pitch *= 0.7f;
         }
 
-        alSourcef(source, AL_GAIN, gain);
-        alSourcef(source, AL_PITCH, pitch);
-        alSourcefv(source, AL_POSITION, pos.ptr());
+        const osg::Vec3f spos = finiteOr(pos, mListenerPos), svel = saneVelocity(vel);
+        alSourcef(source, AL_GAIN, finiteOr(gain, 0.f));
+        alSourcef(source, AL_PITCH, finiteOr(pitch, 1.f));
+        alSourcefv(source, AL_POSITION, spos.ptr());
         alSource3f(source, AL_DIRECTION, 0.0f, 0.0f, 0.0f);
-        alSourcefv(source, AL_VELOCITY, vel.ptr());
+        alSourcefv(source, AL_VELOCITY, svel.ptr());
     }
 
     bool OpenALOutput::playSound(Sound* sound, Sound_Handle data, float offset)
@@ -1459,6 +1950,12 @@ namespace MWSound
     void OpenALOutput::finishUpdate()
     {
         alcProcessContext(alcGetCurrentContext());
+#ifdef __EMSCRIPTEN__
+        // No background StreamThread on the web (see StreamThread ctor) — refill active
+        // audio streams inline here, once per SoundManager::update.
+        if (mStreamThread)
+            mStreamThread->pump();
+#endif
     }
 
     void OpenALOutput::updateListener(
@@ -1466,9 +1963,11 @@ namespace MWSound
     {
         if (mContext)
         {
-            ALfloat orient[6] = { atdir.x(), atdir.y(), atdir.z(), updir.x(), updir.y(), updir.z() };
-            alListenerfv(AL_POSITION, pos.ptr());
-            alListenerfv(AL_VELOCITY, vel.ptr());
+            const osg::Vec3f lpos = finiteOr(pos, mListenerPos), lvel = saneVelocity(vel);
+            const osg::Vec3f lat = finiteOr(atdir, osg::Vec3f(0.f, 1.f, 0.f)), lup = finiteOr(updir, osg::Vec3f(0.f, 0.f, 1.f));
+            ALfloat orient[6] = { lat.x(), lat.y(), lat.z(), lup.x(), lup.y(), lup.z() };
+            alListenerfv(AL_POSITION, lpos.ptr());
+            alListenerfv(AL_VELOCITY, lvel.ptr());
             alListenerfv(AL_ORIENTATION, orient);
 
             if (env != mListenerEnv)
@@ -1482,14 +1981,21 @@ namespace MWSound
                     ALuint filter = (env == Env_Underwater) ? mWaterFilter : AL_FILTER_NULL;
                     for (Sound* sound : mActiveSounds)
                     {
+                        // THROUGH THE SHIM, like the streams below already were. A raw
+                        // alSourcei with AL_DIRECT_FILTER is an EFX call, and emscripten's
+                        // OpenAL is a Web Audio reimplementation that has no EFX -- so the enum
+                        // is unknown and every environment change raised
+                        // "AL error Invalid Enum (40962) @ updateListener", reported from real
+                        // play. The streams loop was already correct; this one was missed, which
+                        // is why the error appeared on entering and leaving water rather than
+                        // constantly.
                         if (sound->getUseEnv())
-                            alSourcei(GET_PTRID(sound->mHandle), AL_DIRECT_FILTER, filter);
+                            omwSetSourceDirectFilter(GET_PTRID(sound->mHandle), filter);
                     }
                     for (Stream* sound : mActiveStreams)
                     {
                         if (sound->getUseEnv())
-                            alSourcei(reinterpret_cast<OpenAL_SoundStream*>(sound->mHandle)->mSource, AL_DIRECT_FILTER,
-                                filter);
+                            omwSetSourceDirectFilter(reinterpret_cast<OpenAL_SoundStream*>(sound->mHandle)->mSource, filter);
                     }
                 }
                 // Update the environment effect
@@ -1500,8 +2006,8 @@ namespace MWSound
             getALError();
         }
 
-        mListenerPos = pos;
-        mListenerVel = vel;
+        mListenerPos = finiteOr(pos, mListenerPos);
+        mListenerVel = saneVelocity(vel);
         mListenerEnv = env;
     }
 
@@ -1533,12 +2039,19 @@ namespace MWSound
         if (mDevice == nullptr)
             return;
 
+        // Null-checked, because getALCFunc CANNOT resolve anything under emscripten (see its
+        // definition): emscripten advertises ALC_SOFT_pause_device while implementing no
+        // alcGetProcAddress, so this extension test passes and the lookup still yields nothing.
+        // The alListenerf(AL_GAIN, 0) below is the real mute on that platform and runs anyway.
         if (alcIsExtensionPresent(mDevice, "ALC_SOFT_PAUSE_DEVICE"))
         {
             LPALCDEVICEPAUSESOFT alcDevicePauseSOFT = nullptr;
             getALCFunc(alcDevicePauseSOFT, mDevice, "alcDevicePauseSOFT");
-            alcDevicePauseSOFT(mDevice);
-            getALCError(mDevice);
+            if (alcDevicePauseSOFT)
+            {
+                alcDevicePauseSOFT(mDevice);
+                getALCError(mDevice);
+            }
         }
 
         alListenerf(AL_GAIN, 0.0f);
@@ -1549,12 +2062,16 @@ namespace MWSound
         if (mDevice == nullptr)
             return;
 
+        // See pauseActiveDevice(): the lookup can legitimately come back null.
         if (alcIsExtensionPresent(mDevice, "ALC_SOFT_PAUSE_DEVICE"))
         {
             LPALCDEVICERESUMESOFT alcDeviceResumeSOFT = nullptr;
             getALCFunc(alcDeviceResumeSOFT, mDevice, "alcDeviceResumeSOFT");
-            alcDeviceResumeSOFT(mDevice);
-            getALCError(mDevice);
+            if (alcDeviceResumeSOFT)
+            {
+                alcDeviceResumeSOFT(mDevice);
+                getALCError(mDevice);
+            }
         }
 
         alListenerf(AL_GAIN, 1.0f);

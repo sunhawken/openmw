@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #version 120
 
 #if @useGPUShader4
@@ -60,6 +62,15 @@ varying vec3 passNormal;
 #if @normalMap || @diffuseParallax
 varying vec4 passTangent;
 #endif
+#if @useGLES
+// GLES has no gl_ClipVertex: emulate the water reflection/refraction clip plane by passing a
+// world-space signed distance to the fragment shader, which discards clipped fragments.
+varying float passClipDist;
+uniform vec4 clipPlane;
+#if !@particleOcclusion
+uniform mat4 osg_ViewMatrixInverse;
+#endif
+#endif
 
 #include "lib/core/vertex.h.glsl"
 
@@ -87,7 +98,11 @@ void main(void)
     gl_Position = modelToClip(gl_Vertex);
 
     vec4 viewPos = modelToView(gl_Vertex);
+#if @useGLES
+    passClipDist = dot((osg_ViewMatrixInverse * viewPos).xyz, clipPlane.xyz) + clipPlane.w;
+#else
     gl_ClipVertex = viewPos;
+#endif
     passColor = gl_Color;
     passViewPos = viewPos.xyz;
     passNormal = gl_Normal.xyz;

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "postprocessor.hpp"
 
 #include <SDL_opengl_glext.h>
@@ -122,6 +124,9 @@ namespace MWRender
         , mViewer(viewer)
         , mVFS(vfs)
         , mUsePostProcessing(Settings::postProcessing().mEnabled)
+        // MSAA real-GPU deep-dive: honor the [Video] antialiasing setting (set via ?aa=N) so
+        // hardware MSAA can be validated on real hardware. Paired with the OSG RenderStage
+        // color-only multisample-resolve fix + the __omwMsaa readback diagnostic.
         , mSamples(Settings::video().mAntialiasing)
         , mPingPongCull(new PingPongCull(this))
         , mDistortionCallback(new DistortionCallback)
@@ -176,6 +181,74 @@ namespace MWRender
         defines["distorionRTRatio"] = std::to_string(DistortionRatio);
         shaderManager.setGlobalDefines(defines);
 
+        osg::GraphicsContext* gc = viewer->getCamera()->getGraphicsContext();
+        osg::GLExtensions* ext = gc->getState()->get<osg::GLExtensions>();
+
+        // NOTE: mWidth/mHeight must be initialised from the real graphics-context size BEFORE the
+        // first createObjectsForFrame() below. Those calls build FBO_Primary (SceneCam) and size its
+        // Tex_Scene/Tex_Depth attachments via renderWidth()/renderHeight(). If they run while
+        // mWidth/mHeight are still uninitialised, the very first RenderStage::runCameraSetUp() binds a
+        // mis-sized/incomplete FBO and logs GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT (0x8cd6) — harmless on
+        // desktop GL but a fatal-looking error on WebGL2. Setting the size here makes frame 1 complete.
+        mWidth = gc->getTraits()->width;
+        mHeight = gc->getTraits()->height;
+        // NOTE (web scene render-scale): the scene camera and its viewport stay at NATIVE canvas
+        // size on purpose — MyGUI sizes itself from the master camera, and the scene rasterization
+        // extent is instead overridden per-frame at the FBO-binding site (PingPongCull), exactly
+        // like the stereo path.
+#ifdef __EMSCRIPTEN__
+        if (getenv("OPENMW_RS_DEBUG"))
+            printf("[rs] PP ctor: canvas=%dx%d scale=%.3f scene=%dx%d\n", mWidth, mHeight,
+                static_cast<float>(Settings::video().mInternalRenderScale), renderWidth(), renderHeight());
+#endif
+
+        if (!ext->glDisablei && ext->glDisableIndexedEXT)
+            ext->glDisablei = ext->glDisableIndexedEXT;
+
+#if defined(ANDROID) || defined(__EMSCRIPTEN__)
+        // GLES on Android: glEnablei/glDisablei (indexed draw-buffer color masks) are not
+        // exposed, so the pass-normals MRT feature is unavailable. Disable it quietly.
+        //
+        // WebGL2/emscripten: OES_draw_buffers_indexed makes glDisablei/glColorMaski non-null,
+        // so mNormalsSupported would latch true. But the pass-normals attachment (draw buffer 1)
+        // is only actually attached when a loaded post-process technique requests normals — and
+        // the default chain requests none, so FBO_Primary has ONLY color attachment 0. The
+        // ShaderVisitor (shadervisitor.cpp) and SceneManager (scenemanager.cpp) nonetheless
+        // decorate transparent/particle StateSets with ColorMaski(1,...) and Disablei(GL_BLEND,1),
+        // gated on the *capability* flag, not the runtime attachment count. Desktop GL treats
+        // indexed calls to an unattached buffer as harmless no-ops; WebGL2/ANGLE raises
+        // GL_INVALID_VALUE and the intended masking/blend-disable fails to land — which knocks out
+        // SRC_ALPHA blending for the transparent bin, so alpha-blended smoke/fire particles composite
+        // OPAQUELY (a low-alpha dark texel written as a solid black quad — the classic "black square"
+        // smoke bug). Force the feature off here so those decorations are never emitted and the
+        // transparent bin blends correctly against the single attachment. Pass-normals PP effects
+        // (e.g. SSAO-style normals techniques) are not in the default chain, matching Android.
+        //
+        // OMW_FORCE_NORMALS_RT (QA only): skip this guard to reproduce the pre-fix behaviour and
+        // A/B the indexed-blend smoke bug. Never set in normal runs.
+        if (getenv("OMW_FORCE_NORMALS_RT") == nullptr)
+            ext->glDisablei = nullptr;
+#endif
+
+        if (ext->glDisablei)
+            mNormalsSupported = true;
+        else
+            // Info, not Error: on Emscripten we deliberately null glDisablei above (the pass-normals
+            // MRT feature is disabled to avoid the WebGL2 indexed-blend bug), so this is expected.
+            Log(Debug::Info) << "'glDisablei' unsupported, pass normals will not be available to shaders.";
+
+        mGLSLVersion = static_cast<int>(ext->glslLanguageVersion * 100);
+        mUBO = ext->isUniformBufferObjectSupported && mGLSLVersion >= 330;
+#ifdef __EMSCRIPTEN__
+        // Protective: keep the fx uniform path off the std140 nested-struct UBO on WebGL2. WebGL2 is
+        // GLSL ES 3.00 (mGLSLVersion==300) so this is already false, but pin it so a driver reporting
+        // a higher glslLanguageVersion can't flip on the `layout(std140) uniform _data { _omw_data
+        // omw; }` path (nested struct + bool members), which ANGLE's Metal backend handles poorly.
+        // The non-UBO path uses a plain `uniform _omw_data omw;` filled by StateUpdater.
+        mUBO = false;
+#endif
+        mStateUpdater = new Fx::StateUpdater(mUBO);
+
         createObjectsForFrame(0);
         createObjectsForFrame(1);
 
@@ -185,28 +258,6 @@ namespace MWRender
         distortion->setInternal(true);
         distortion->setLocked(true);
         mInternalTechniques.push_back(std::move(distortion));
-
-        osg::GraphicsContext* gc = viewer->getCamera()->getGraphicsContext();
-        osg::GLExtensions* ext = gc->getState()->get<osg::GLExtensions>();
-
-        mWidth = gc->getTraits()->width;
-        mHeight = gc->getTraits()->height;
-
-        if (!ext->glDisablei && ext->glDisableIndexedEXT)
-            ext->glDisablei = ext->glDisableIndexedEXT;
-
-#ifdef ANDROID
-        ext->glDisablei = nullptr;
-#endif
-
-        if (ext->glDisablei)
-            mNormalsSupported = true;
-        else
-            Log(Debug::Error) << "'glDisablei' unsupported, pass normals will not be available to shaders.";
-
-        mGLSLVersion = static_cast<int>(ext->glslLanguageVersion * 100);
-        mUBO = ext->isUniformBufferObjectSupported && mGLSLVersion >= 330;
-        mStateUpdater = new Fx::StateUpdater(mUBO);
 
         addChild(mHUDCamera);
         addChild(mRootNode);
@@ -231,7 +282,14 @@ namespace MWRender
     void PostProcessor::resize()
     {
         mHUDCamera->resize(mWidth, mHeight);
+        // Master camera stays at canvas size even under the web scene render-scale — the scene
+        // rasterization extent is overridden per-frame in PingPongCull (see note in constructor).
         mViewer->getCamera()->resize(mWidth, mHeight);
+#ifdef __EMSCRIPTEN__
+        if (getenv("OPENMW_RS_DEBUG"))
+            printf("[rs] PP resize: canvas=%dx%d scale=%.3f scene=%dx%d\n", mWidth, mHeight,
+                static_cast<float>(Settings::video().mInternalRenderScale), renderWidth(), renderHeight());
+#endif
         if (Stereo::getStereo())
             Stereo::Manager::instance().screenResolutionChanged();
 
@@ -262,6 +320,16 @@ namespace MWRender
 
     void PostProcessor::enable()
     {
+#ifdef __EMSCRIPTEN__
+        // Post-processing on WebGL2/GLES. The historical hard-freeze was the multisample
+        // depth->texture resolve (WebGL2 forbids resolving MSAA depth, which PP needs as a
+        // sampleable depth texture) plus the HDR luminance float-target path. The GLES port
+        // (createObjectsForFrame: PP scene forced single-sample on web; loadChain: HDR float
+        // targets gated) makes the base + tonemap/bloom chain safe. The curated chain is now a
+        // verified web default, so PP honors the [Post Processing] setting exactly like desktop
+        // (the old OPENMW_ENABLE_PP opt-in gate has been removed). The Options-menu toggle works.
+        Log(Debug::Info) << "Post-processing enabled (GLES path).";
+#endif
         mReload = true;
         mUsePostProcessing = true;
     }
@@ -311,8 +379,16 @@ namespace MWRender
 
         size_t frame = cv->getTraversalNumber();
 
+#ifdef __EMSCRIPTEN__
+        // The scene renders at renderWidth/renderHeight (the PingPongCull viewport override), not at
+        // the camera viewport — feed the shaders the size they actually rasterize at, or every
+        // resolution-dependent effect (SSAO-ish sampling, pixel offsets) is off by the scale factor.
+        mStateUpdater->setResolution(
+            osg::Vec2f(static_cast<float>(renderWidth()), static_cast<float>(renderHeight())));
+#else
         mStateUpdater->setResolution(osg::Vec2f(
             static_cast<float>(cv->getViewport()->width()), static_cast<float>(cv->getViewport()->height())));
+#endif
 
         // per-frame data
         if (frame != mLastFrameNumber)
@@ -368,8 +444,49 @@ namespace MWRender
         }
     }
 
+    void PostProcessor::setSamples(int samples)
+    {
+        // Called from RenderingManager::processChangedSettings (Options apply) while a GL context
+        // is current, so it's safe to query the sample-count ceiling. The scene renders into
+        // FBO_Multisample (created by createObjectsForFrame when mSamples > 1), so changing the
+        // sample count + rebuilding those FBOs re-applies MSAA live — no window/context recreation.
+        if (samples < 0)
+            samples = 0;
+        if (samples > 1)
+        {
+#ifndef GL_MAX_SAMPLES
+#define GL_MAX_SAMPLES 0x8D57
+#endif
+            GLint maxSamples = 0;
+            glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+            if (maxSamples >= 1 && samples > maxSamples)
+            {
+                Log(Debug::Info) << "Antialiasing " << samples << "x exceeds GL_MAX_SAMPLES ("
+                                 << maxSamples << "x); using " << maxSamples << "x.";
+                samples = maxSamples;
+            }
+        }
+        if (samples == mSamples)
+            return;
+        mSamples = samples;
+        // Defer the FBO rebuild to update() (UPDATE traversal) — the safe point where resize()
+        // already runs — rather than mutating FBOs from inside the settings-apply call.
+        mSamplesDirty = true;
+    }
+
     void PostProcessor::reloadIfRequired()
     {
+        if (mSamplesDirty)
+        {
+            mSamplesDirty = false;
+            // Rebuild both double-buffered frames' FBOs with the new mSamples. resize() rebuilds
+            // the current frame and dirties the other; do both so MSAA changes take on the next
+            // frame regardless of which buffer draws first.
+            createObjectsForFrame(0);
+            createObjectsForFrame(1);
+            resize();
+        }
+
         if (!mReload)
             return;
 
@@ -391,6 +508,24 @@ namespace MWRender
         updateLiveReload();
 
         reloadIfRequired();
+
+#ifdef __EMSCRIPTEN__
+        // Web brightness control: SDL gamma ramps don't exist in a browser, so the Options
+        // "Gamma" slider ([Video] gamma) is applied here instead, driving the always-available
+        // 'adjustments' technique's uGamma. Re-applied every frame (a trivial CPU-side value
+        // store) so it survives chain reloads and technique recompiles without extra plumbing.
+        {
+            const float gamma = std::max(0.1f, Settings::video().mGamma.get());
+            for (auto& technique : mTechniques)
+            {
+                if (technique && technique->getName() == "adjustments")
+                {
+                    setUniform(technique, "uGamma", gamma);
+                    break;
+                }
+            }
+        }
+#endif
 
         mCanvases[frameId]->setNodeMask(~0u);
         mCanvases[!frameId]->setNodeMask(0);
@@ -439,6 +574,22 @@ namespace MWRender
         int width = renderWidth();
         int height = renderHeight();
 
+#ifdef __EMSCRIPTEN__
+        if (getenv("OPENMW_RS_DEBUG"))
+            printf("[rs] createObjectsForFrame(%zu): tex=%dx%d\n", frameId, width, height);
+#endif
+
+#ifdef __EMSCRIPTEN__
+        // WebGL2 forbids resolving a multisampled DEPTH buffer into a texture, and PP needs a
+        // sampleable depth texture (opaque depth, soft particles, distortion). Historically the
+        // first PP render hung the main thread on exactly this resolve. Render the PP scene
+        // SINGLE-SAMPLE so depth goes straight to a texture with no resolve; AA under PP is
+        // provided by SSAA (?ss=N supersampling) instead of hardware MSAA.
+        const int effectiveSamples = 1;
+#else
+        const int effectiveSamples = mSamples;
+#endif
+
         for (osg::ref_ptr<osg::Texture>& texture : textures)
         {
             if (!texture)
@@ -461,11 +612,25 @@ namespace MWRender
             texture->dirtyTextureObject();
         }
 
+#ifdef __EMSCRIPTEN__
+        // WebGL2: unsized GL_RGB/GL_RGBA color attachments can be incomplete (0x8cd6) —
+        // notably Tex_Scene (FBO_Primary/SceneCam) failed the FIRST runCameraSetUp because the
+        // image-less RTT is initially allocated via glTexImage2D with the unsized format. Force
+        // SIZED GL_RGBA8 (color-renderable) on every color target so frame 1's FBO is complete.
+        textures[Tex_Scene]->setInternalFormat(GL_RGBA8);
+
+        textures[Tex_Normal]->setSourceFormat(GL_RGBA);
+        textures[Tex_Normal]->setInternalFormat(GL_RGBA8);
+
+        textures[Tex_Distortion]->setSourceFormat(GL_RGBA);
+        textures[Tex_Distortion]->setInternalFormat(GL_RGBA8);
+#else
         textures[Tex_Normal]->setSourceFormat(GL_RGB);
         textures[Tex_Normal]->setInternalFormat(GL_RGB);
 
         textures[Tex_Distortion]->setSourceFormat(GL_RGB);
         textures[Tex_Distortion]->setInternalFormat(GL_RGB);
+#endif
 
         Stereo::setMultiviewCompatibleTextureSize(textures[Tex_Distortion], static_cast<int>(width * DistortionRatio),
             static_cast<int>(height * DistortionRatio));
@@ -495,27 +660,33 @@ namespace MWRender
         fbos[FBO_FirstPerson] = new osg::FrameBufferObject;
 
         auto fpDepthRb = createFrameBufferAttachmentFromTemplate(
-            Usage::RENDER_BUFFER, width, height, textures[Tex_Depth], mSamples);
+            Usage::RENDER_BUFFER, width, height, textures[Tex_Depth], effectiveSamples);
         fbos[FBO_FirstPerson]->setAttachment(osg::FrameBufferObject::BufferComponent::PACKED_DEPTH_STENCIL_BUFFER,
             osg::FrameBufferAttachment(fpDepthRb));
 
-        if (mSamples > 1)
+        if (effectiveSamples > 1)
         {
+#ifdef __EMSCRIPTEN__
+            // Proof that the chosen MSAA level actually reaches the scene render target: the scene
+            // is drawn into this multisample FBO. Logged so 'antialiasing = N' can be confirmed as
+            // live in the rendering engine (frame 0 build + on every live setSamples rebuild).
+            Log(Debug::Info) << "MSAA: scene render target built with " << mSamples << "x multisampling";
+#endif
             fbos[FBO_Multisample] = new osg::FrameBufferObject;
             fbos[FBO_Intercept] = new osg::FrameBufferObject;
             auto colorRB = createFrameBufferAttachmentFromTemplate(
-                Usage::RENDER_BUFFER, width, height, textures[Tex_Scene], mSamples);
+                Usage::RENDER_BUFFER, width, height, textures[Tex_Scene], effectiveSamples);
             if (mNormals && mNormalsSupported)
             {
                 auto normalRB = createFrameBufferAttachmentFromTemplate(
-                    Usage::RENDER_BUFFER, width, height, textures[Tex_Normal], mSamples);
+                    Usage::RENDER_BUFFER, width, height, textures[Tex_Normal], effectiveSamples);
                 fbos[FBO_Multisample]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER1, normalRB);
                 fbos[FBO_FirstPerson]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER1, normalRB);
                 fbos[FBO_Intercept]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER1,
                     Stereo::createMultiviewCompatibleAttachment(textures[Tex_Normal]));
             }
             auto depthRB = createFrameBufferAttachmentFromTemplate(
-                Usage::RENDER_BUFFER, width, height, textures[Tex_Depth], mSamples);
+                Usage::RENDER_BUFFER, width, height, textures[Tex_Depth], effectiveSamples);
             fbos[FBO_Multisample]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0, colorRB);
             fbos[FBO_Multisample]->setAttachment(
                 osg::FrameBufferObject::BufferComponent::PACKED_DEPTH_STENCIL_BUFFER, depthRB);
@@ -863,14 +1034,26 @@ namespace MWRender
     {
         if (Stereo::getStereo())
             return Stereo::Manager::instance().eyeResolution().x();
+#ifdef __EMSCRIPTEN__
+        // Scene render-scale (web): the whole scene FBO chain (Tex_Scene/Tex_Depth + technique
+        // targets) renders at a fraction of the canvas and the final canvas pass (mHUDCamera, still
+        // at mWidth/mHeight) upscales it. The GUI is drawn outside this chain at native canvas
+        // resolution, so lowering the Options resolution tier never blurs menus/text.
+        return std::max(1, static_cast<int>(mWidth * Settings::video().mInternalRenderScale + 0.5f));
+#else
         return mWidth;
+#endif
     }
 
     int PostProcessor::renderHeight() const
     {
         if (Stereo::getStereo())
             return Stereo::Manager::instance().eyeResolution().y();
+#ifdef __EMSCRIPTEN__
+        return std::max(1, static_cast<int>(mHeight * Settings::video().mInternalRenderScale + 0.5f));
+#else
         return mHeight;
+#endif
     }
 
     void PostProcessor::triggerShaderReload()

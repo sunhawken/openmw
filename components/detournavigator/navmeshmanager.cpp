@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "navmeshmanager.hpp"
 
 #include "debug.hpp"
@@ -7,6 +9,8 @@
 #include "settings.hpp"
 #include "settingsutils.hpp"
 #include "waitconditiontype.hpp"
+
+#include <chrono>
 
 #include <components/debug/debuglog.hpp>
 #include <components/esm/util.hpp>
@@ -105,8 +109,45 @@ namespace DetourNavigator
 
         const TilePosition playerTile = toNavMeshTilePosition(mSettings.mRecast, playerPosition);
 
-        mRecastMeshManager.setRange(makeRange(mSettings, worldspace, cellGridBounds, mMaxRadius, playerTile), guard);
         mCellGridBounds = cellGridBounds;
+        setRange(playerTile, guard);
+    }
+
+    void NavMeshManager::setSimAnchorGrids(std::vector<CellGridBounds> grids)
+    {
+        if (grids == mSimAnchorGrids)
+            return;
+        mSimAnchorGrids = std::move(grids);
+        // Force the next update() past its early-return: the player tile and the recast mesh
+        // revision may both be unchanged while the set of grids we owe tiles to is not.
+        mPlayerTile.reset();
+    }
+
+    // The range the recast mesh manager tracks and the navmesh is built for: the vanilla
+    // player-centred range, widened to enclose every sim anchor's grid (backlog 479). The anchor
+    // grids are also kept separately, because a bounding rectangle over anchors far apart covers
+    // cells nobody loaded, and update() must not post jobs for those.
+    TilesPositionsRange NavMeshManager::setRange(const TilePosition& playerTile, const UpdateGuard* guard)
+    {
+        const TilesPositionsRange playerRange
+            = makeRange(mSettings, mWorldspace, mCellGridBounds, mMaxRadius, playerTile);
+        TilesPositionsRange range = playerRange;
+        mSimAnchorRanges.clear();
+        mSimAnchorTiles.clear();
+        for (const CellGridBounds& grid : mSimAnchorGrids)
+        {
+            const TilesPositionsRange gridRange = makeCellGridRange(mSettings.mRecast, mWorldspace, grid);
+            mSimAnchorRanges.push_back(gridRange);
+            // The grid's centre tile is the anchor's centre for the distance gate. A tile is
+            // 435 u and a cell 18.8 tiles, so a 3x3 grid is 56 tiles across and no gate covers
+            // it whole: the per-centre circle (shouldAddTile, backlog 483: 1024 / centres tiles,
+            // radius 12.8 tiles = 5556 u with two centres) is drawn from the middle of the
+            // anchored CELL, which it covers with a margin into the neighbours.
+            mSimAnchorTiles.push_back((gridRange.mBegin + gridRange.mEnd) / 2);
+            range = getUnion(range, gridRange);
+        }
+        mRecastMeshManager.setRange(range, guard);
+        return playerRange;
     }
 
     bool NavMeshManager::addObject(const ObjectId id, const CollisionShape& shape, const btTransform& transform,
@@ -198,37 +239,48 @@ namespace DetourNavigator
             return;
         mLastRecastMeshManagerRevision = mRecastMeshManager.getRevision();
         mPlayerTile = playerTile;
-        mRecastMeshManager.setRange(makeRange(mSettings, mWorldspace, mCellGridBounds, mMaxRadius, playerTile), guard);
+        const TilesPositionsRange playerRange = setRange(playerTile, guard);
         const auto changedTiles = mRecastMeshManager.takeChangedTiles(guard);
         const TilesPositionsRange range = mRecastMeshManager.getLimitedObjectsRange();
+        // The worker threads gate on the same anchor list this update() posts by; without it they
+        // would drop every far anchor's job as "too far from player" the moment it was popped.
+        mAsyncNavMeshUpdater.setSimAnchorTiles(mSimAnchorTiles);
         for (const auto& [agentBounds, cached] : mCache)
-            update(agentBounds, playerTile, range, cached, changedTiles);
+            update(agentBounds, playerTile, playerRange, range, cached, changedTiles);
     }
 
     void NavMeshManager::update(const AgentBounds& agentBounds, const TilePosition& playerTile,
-        const TilesPositionsRange& range, const SharedNavMeshCacheItem& cached,
+        const TilesPositionsRange& playerRange, const TilesPositionsRange& range, const SharedNavMeshCacheItem& cached,
         const std::map<osg::Vec2i, ChangeType>& changedTiles)
     {
         std::map<osg::Vec2i, ChangeType> tilesToPost;
         const int maxTiles = mSettings.mMaxTilesNumber;
         for (const auto& [k, v] : changedTiles)
-            if (shouldAddTile(k, playerTile, maxTiles))
+            if (shouldAddTile(k, playerTile, maxTiles, mSimAnchorTiles))
                 tilesToPost.emplace(k, v);
         {
             const auto locked = cached->lockConst();
             const auto& navMesh = locked->getImpl();
-            getTilesPositions(range, [&](const TilePosition& tile) {
+            const auto visit = [&](const TilePosition& tile) {
                 if (changedTiles.find(tile) != changedTiles.end() || locked->isEmptyTile(tile))
                     return;
-                const bool shouldAdd = shouldAddTile(tile, playerTile, maxTiles);
+                const bool shouldAdd = shouldAddTile(tile, playerTile, maxTiles, mSimAnchorTiles);
                 const bool presentInNavMesh = navMesh.getTileAt(tile.x(), tile.y(), 0) != nullptr;
                 if (shouldAdd && !presentInNavMesh)
                     tilesToPost.emplace(tile, ChangeType::add);
                 else if (!shouldAdd && presentInNavMesh)
                     tilesToPost.emplace(tile, ChangeType::remove);
-            });
+            };
+            // `range` is the recast manager's (bounding) range clipped to where objects exist;
+            // walk only the player's part of it and each anchor grid's part, never the empty
+            // span between two far anchors (backlog 479). With no anchors playerRange already
+            // encloses `range`, so this is the vanilla single walk. tilesToPost is a map, so a
+            // tile two grids share is posted once.
+            getTilesPositions(getIntersection(playerRange, range), visit);
+            for (const TilesPositionsRange& anchorRange : mSimAnchorRanges)
+                getTilesPositions(getIntersection(anchorRange, range), visit);
             locked->forEachTilePosition([&](const TilePosition& tile) {
-                if (!shouldAddTile(tile, playerTile, maxTiles))
+                if (!shouldAddTile(tile, playerTile, maxTiles, mSimAnchorTiles))
                     tilesToPost.emplace(tile, ChangeType::remove);
             });
         }

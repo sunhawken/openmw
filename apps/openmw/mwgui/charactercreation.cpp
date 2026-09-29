@@ -1,4 +1,8 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "charactercreation.hpp"
+
+#include <cstdlib>
 
 #include <MyGUI_ITexture.h>
 
@@ -147,8 +151,39 @@ namespace MWGui
 
     void CharacterCreation::onFrame(float duration)
     {
+#ifdef __EMSCRIPTEN__
+        // QA deep-link (?start=<cell>) sets OPENMW_QA_AUTOCHARGEN so a new game auto-completes
+        // every chargen dialog with defaults and drops straight into the target cell — used for
+        // automated in-world render verification. Advances one dialog per frame; each handler
+        // pops its GUI mode and pushes the next. Never set for normal retail boots (stays 1:1).
+        if (getenv("OPENMW_QA_AUTOCHARGEN") != nullptr)
+        {
+            if (mNameDialog) { onNameDialogDone(mNameDialog.get()); return; }
+            if (mRaceDialog) { onRaceDialogDone(mRaceDialog.get()); return; }
+            if (mClassChoiceDialog) { onClassChoice(ClassChoiceDialog::Class_Pick); return; }
+            if (mPickClassDialog) { onPickClassDialogDone(mPickClassDialog.get()); return; }
+            if (mBirthSignDialog) { onBirthSignDialogDone(mBirthSignDialog.get()); return; }
+            if (mReviewDialog) { onReviewDialogDone(nullptr); return; }
+        }
+#endif
         if (mReviewDialog)
+        {
+#ifdef __EMSCRIPTEN__
+            // Auto-confirm the character-generation Review so the game drops straight into the
+            // playable world. The example-suite fills in sensible defaults (player/Human/Warrior),
+            // and relying on a GUI click to finish chargen is unreliable when the browser tab is
+            // backgrounded and the main loop is heavily throttled. onReviewDialogDone ignores its
+            // argument; it just removes the dialog and pops the GUI mode.
+            // Gated to the example suite (OPENMW_EXAMPLE_SUITE set by the harness for ?nomw):
+            // retail Morrowind keeps the full race/class/birthsign review — 1:1 behavior.
+            if (getenv("OPENMW_EXAMPLE_SUITE") != nullptr)
+            {
+                onReviewDialogDone(nullptr);
+                return;
+            }
+#endif
             mReviewDialog->onFrame(duration);
+        }
     }
 
     void CharacterCreation::spawnDialog(const GuiMode id)

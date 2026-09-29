@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "windowmanagerimp.hpp"
 
 #include <algorithm>
@@ -21,6 +23,30 @@
 
 #include <SDL_clipboard.h>
 #include <SDL_keyboard.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <atomic>
+
+namespace
+{
+    // Deferred video-skip request. Esc during a cooperative video, or the JS omw_skip_video()
+    // export, sets this. updateVideoPlayback() consumes it and tears the video down from ITS
+    // OWN clean stack — NOT synchronously from inside the input handler. Calling stop()->close()
+    // ->deinit() (which joins the decode threads) mid-input-dispatch, re-entrantly inside
+    // updateVideoPlayback's mInputManager->update(), was deadlocking → the intro froze on the
+    // last frame exactly when the user pressed Esc to skip. The natural-end teardown already runs
+    // from the clean stack and works; routing skip through the same point fixes it.
+    std::atomic<bool> g_videoSkipRequested{ false };
+}
+
+// JS-callable skip (index.html can bind it to a button / the harness can drive it). Sets the
+// same deferred flag as Esc, so the skip is honored on the next updateVideoPlayback tick.
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_skip_video()
+{
+    g_videoSkipRequested.store(true);
+}
+#endif
 
 #include <components/debug/debuglog.hpp>
 
@@ -209,7 +235,22 @@ namespace MWGui
         int dw, dh;
         SDL_GL_GetDrawableSize(window, &dw, &dh);
 
-        mScalingFactor = Settings::gui().mScalingFactor * (dw / w);
+        // NB: dw/w must be floating-point — integer division truncates a non-1 device-pixel ratio
+        // (e.g. drawable smaller than window) to 0, zeroing the whole GUI/local-map scale.
+#ifdef __EMSCRIPTEN__
+        // The canvas drawing buffer is device-pixel sized (index.html renders at
+        // innerWidth*devicePixelRatio, budget-capped), while the canvas DISPLAYS at the CSS window
+        // size. MyGUI sizes widgets in drawing-buffer pixels, so to keep the GUI the same on-screen
+        // size it must scale by (buffer px / CSS px) = window.__guiScale (~1 at DPR=1, ~DPR*budget
+        // on retina). SDL's dw/w is unreliable here (emscripten reports both as the canvas backing
+        // size -> ratio 1 -> GUI would shrink on retina), so read the explicit JS ratio instead.
+        (void)dw;
+        (void)w;
+        const double guiScale = EM_ASM_DOUBLE({ return globalThis.__guiScale || 1.0; });
+        mScalingFactor = Settings::gui().mScalingFactor * static_cast<float>(guiScale > 0 ? guiScale : 1.0);
+#else
+        mScalingFactor = Settings::gui().mScalingFactor * (w > 0 ? static_cast<float>(dw) / static_cast<float>(w) : 1.f);
+#endif
         constexpr VFS::Path::NormalizedView resourcePath("mygui");
         mGuiPlatform = std::make_unique<MyGUIPlatform::Platform>(viewer, guiRoot, resourceSystem->getImageManager(),
             resourceSystem->getVFS(), mScalingFactor, resourcePath, logpath / "MyGUI.log");
@@ -783,6 +824,13 @@ namespace MWGui
     void WindowManager::interactiveMessageBox(
         std::string_view message, const std::vector<std::string>& buttons, bool block, int defaultFocus)
     {
+#ifdef __EMSCRIPTEN__
+        // The blocking path below runs a NESTED synchronous render loop, which deadlocks/crashes the
+        // browser's cooperative main loop (the same reason playVideo's nested loop returns early on
+        // the web). Show the message box non-blocking; it is dismissed by the normal frame loop when
+        // the user clicks a button.
+        block = false;
+#endif
         mMessageBoxManager->createInteractiveMessageBox(message, buttons, block, defaultFocus);
         updateVisible();
 
@@ -1334,6 +1382,21 @@ namespace MWGui
 
         Settings::Manager::resetPendingChanges(filter);
 
+#ifdef __EMSCRIPTEN__
+        // The render buffer (x,y) changes with the Options resolution tier while the canvas still
+        // DISPLAYS at the CSS window size, so the GUI scaling factor must be recomputed here (it was
+        // set once at construction). buffer px / CSS px keeps the GUI a constant on-screen size:
+        // e.g. at "Half (50%)" the 640-wide buffer with mScalingFactor 0.5 gives the same 1280 logical
+        // GUI space as 100%, so windows still fit. Reads window.innerWidth directly (the JS __guiScale
+        // is only refreshed on browser resize, not tier change, so it's stale here). Self-consistent
+        // with the boot formula: at boot x==__renderW and __guiScale==__renderW/innerWidth, so no jump.
+        {
+            const double cssW = EM_ASM_DOUBLE({ return globalThis.innerWidth || 1; });
+            const float ratio = cssW > 0.0 ? static_cast<float>(x / cssW) : 1.f;
+            mScalingFactor = Settings::gui().mScalingFactor * ratio;
+            mGuiPlatform->getRenderManagerPtr()->setScalingFactor(mScalingFactor);
+        }
+#endif
         mGuiPlatform->getRenderManagerPtr()->setViewSize(x, y);
 
         // scaled size
@@ -2101,10 +2164,23 @@ namespace MWGui
 
         mVideoWidget->eventKeyButtonPressed.clear();
         mVideoBackground->eventKeyButtonPressed.clear();
+#ifdef __EMSCRIPTEN__
+        // Clear any stale deferred-skip flag so a skip requested outside a video (e.g. Esc in the
+        // menu, or a JS omw_skip_video during gameplay) can't auto-skip THIS video on frame 1.
+        g_videoSkipRequested.store(false);
+        mVideoWidget->eventMouseButtonClick.clear();
+        mVideoBackground->eventMouseButtonClick.clear();
+#endif
         if (allowSkipping)
         {
             mVideoWidget->eventKeyButtonPressed += MyGUI::newDelegate(this, &WindowManager::onVideoKeyPressed);
             mVideoBackground->eventKeyButtonPressed += MyGUI::newDelegate(this, &WindowManager::onVideoKeyPressed);
+#ifdef __EMSCRIPTEN__
+            // Click-to-skip too (more discoverable/reliable than Esc for a mouse-driven web user);
+            // routes through the same deferred-skip flag as Esc.
+            mVideoWidget->eventMouseButtonClick += MyGUI::newDelegate(this, &WindowManager::onVideoClicked);
+            mVideoBackground->eventMouseButtonClick += MyGUI::newDelegate(this, &WindowManager::onVideoClicked);
+#endif
         }
 
         enableScene(false);
@@ -2126,6 +2202,17 @@ namespace MWGui
         if (overrideSounds && mVideoWidget->hasAudioStream())
             MWBase::Environment::get().getSoundManager()->pauseSounds(
                 MWSound::VideoPlayback, ~MWSound::Type::Movie & MWSound::Type::Mask);
+
+#ifdef __EMSCRIPTEN__
+        // Cooperative playback: a nested blocking loop here would stall the browser main
+        // thread (the render loop is driven externally by the JS frame pump). Save the
+        // restore-state and return; Engine::frame() calls updateVideoPlayback() every tick
+        // until the video finishes, then teardown runs there.
+        mVideoPlaying = true;
+        mVideoOldKeyFocus = oldKeyFocus;
+        mVideoCursorWasVisible = cursorWasVisible;
+        return;
+#endif
 
         Misc::FrameRateLimiter frameRateLimiter
             = Misc::makeFrameRateLimiter(MWBase::Environment::get().getFrameRateLimit());
@@ -2171,6 +2258,60 @@ namespace MWGui
 
         mVideoBackground->setVisible(false);
     }
+
+#ifdef __EMSCRIPTEN__
+    void WindowManager::updateVideoPlayback(float dt)
+    {
+        if (!mVideoPlaying)
+            return;
+
+        MWBase::Environment::get().getInputManager()->update(dt, true, false);
+
+        // The first video frame can arrive a few ticks after playVideo (the decode threads
+        // fill in asynchronously) — keep the widget sized to the (possibly late) dimensions.
+        MyGUI::IntSize screenSize = MyGUI::RenderManager::getInstance().getViewSize();
+        sizeVideo(screenSize.width, screenSize.height);
+
+        // Consume a deferred skip (Esc / omw_skip_video) here, on the clean stack: fall straight
+        // through to the teardown below (which stops the player and reveals the game) instead of
+        // continuing playback. Doing the stop() here — not in the input handler — avoids the
+        // re-entrant decode-thread-join deadlock that froze the intro on its last frame.
+        const bool skipRequested = g_videoSkipRequested.exchange(false);
+
+        if (!skipRequested && mVideoWidget->update()
+            && !MWBase::Environment::get().getStateManager()->hasQuitRequest())
+        {
+            // Failsafe: a decoder can claim "still playing" while producing no frames (e.g. an
+            // end-of-stream A/V clock stall) — that would hold this branch FOREVER with the last
+            // movie frame blocking the viewport over a perfectly healthy game. If no new video
+            // frame has been uploaded for 10 seconds, declare the video finished and tear down.
+            static std::size_t lastFrameCounter = ~static_cast<std::size_t>(0);
+            static double lastFrameTime = 0.0;
+            const double now = emscripten_get_now();
+            const std::size_t counter = mVideoWidget->getFrameCounter();
+            if (counter != lastFrameCounter || lastFrameTime == 0.0)
+            {
+                lastFrameCounter = counter;
+                lastFrameTime = now;
+            }
+            if (now - lastFrameTime < 10000.0)
+                return; // still playing; Engine::frame renders the GUI this tick
+            printf("updateVideoPlayback: no video frame for 10s — force-ending stalled video\n");
+            lastFrameCounter = ~static_cast<std::size_t>(0);
+            lastFrameTime = 0.0;
+        }
+
+        // Finished (or skipped): same teardown as the native blocking loop.
+        mVideoWidget->stop();
+        MWBase::Environment::get().getSoundManager()->resumeSounds(MWSound::VideoPlayback);
+        setKeyFocusWidget(mVideoOldKeyFocus);
+        mVideoOldKeyFocus = nullptr;
+        setCursorVisible(mVideoCursorWasVisible);
+        updateVisible();
+        mVideoBackground->setVisible(false);
+        mVideoPlaying = false;
+    }
+#endif
 
     void WindowManager::sizeVideo(int screenWidth, int screenHeight)
     {
@@ -2235,8 +2376,23 @@ namespace MWGui
     void WindowManager::onVideoKeyPressed(MyGUI::Widget* /*sender*/, MyGUI::KeyCode key, MyGUI::Char value)
     {
         if (key == MyGUI::KeyCode::Escape)
+#ifdef __EMSCRIPTEN__
+            // Defer: do NOT stop()/close()/deinit() here — this runs inside the input handler,
+            // re-entrantly inside updateVideoPlayback; the synchronous decode-thread join
+            // deadlocked → froze on the last frame. Flag it; updateVideoPlayback tears down.
+            g_videoSkipRequested.store(true);
+#else
             mVideoWidget->stop();
+#endif
     }
+
+#ifdef __EMSCRIPTEN__
+    void WindowManager::onVideoClicked(MyGUI::Widget* /*sender*/)
+    {
+        // Same deferred skip as Esc (see onVideoKeyPressed).
+        g_videoSkipRequested.store(true);
+    }
+#endif
 
     void WindowManager::updatePinnedWindows()
     {
@@ -2341,7 +2497,26 @@ namespace MWGui
     void WindowManager::onClipboardChanged(std::string_view type, std::string_view data)
     {
         if (type == "Text")
-            SDL_SetClipboardText(MyGUI::TextIterator::getOnlyText(MyGUI::UString(data)).asUTF8().c_str());
+        {
+            const std::string text = MyGUI::TextIterator::getOnlyText(MyGUI::UString(data)).asUTF8();
+            SDL_SetClipboardText(text.c_str());
+#ifdef __EMSCRIPTEN__
+            // Also push to the real OS clipboard. This runs inside the copy gesture, so the
+            // async Clipboard API permission is granted; emscripten's SDL clipboard is otherwise
+            // sandboxed to the tab. (Paste is bridged the other way by index.html's paste listener
+            // -> omw_set_clipboard.)
+            // clang-format off
+            MAIN_THREAD_EM_ASM({
+                try
+                {
+                    if (navigator.clipboard && navigator.clipboard.writeText)
+                        navigator.clipboard.writeText(UTF8ToString($0));
+                }
+                catch (e) {}
+            }, text.c_str());
+            // clang-format on
+#endif
+        }
     }
 
     void WindowManager::onClipboardRequested(std::string_view type, std::string& data)

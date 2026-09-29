@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "videostate.hpp"
 
 #include <algorithm>
@@ -22,6 +24,7 @@ extern "C"
     #include <libavformat/avformat.h>
     #include <libswscale/swscale.h>
     #include <libavutil/time.h>
+    #include <libavutil/log.h>
 }
 
 #if defined(_MSC_VER)
@@ -166,10 +169,42 @@ int PacketQueue::get(AVPacket *pkt, VideoState *is)
 
         if(this->flushing)
             break;
-        this->cond.wait(lock);
+        // Timed wait rather than an unbounded wait(): mQuit/flushing are set by the
+        // teardown path (VideoState::deinit / PacketQueue::flush) without holding this
+        // mutex, so a notify_one() can be lost if it races ahead of this wait — leaving
+        // the decode thread blocked forever and deinit()'s join() deadlocked. Re-checking
+        // the predicate on a short timeout makes teardown robust regardless of that race
+        // (mirrors the timed pictq_cond wait and the ParseThread poll loop). This was an
+        // intermittent hang on new-game intro-video skip under the cooperative web loop.
+        this->cond.wait_for(lock, std::chrono::milliseconds(10));
     }
 
     return -1;
+}
+
+int PacketQueue::tryGet(AVPacket *pkt, VideoState *is)
+{
+    std::unique_lock<std::mutex> lock(this->mutex);
+    if(is->mQuit)
+        return -1;
+
+    PacketList *pkt1 = this->first_pkt;
+    if(pkt1)
+    {
+        this->first_pkt = pkt1->next;
+        if(!this->first_pkt)
+            this->last_pkt = nullptr;
+        this->nb_packets--;
+        this->size -= pkt1->pkt->size;
+
+        av_packet_unref(pkt);
+        av_packet_move_ref(pkt, pkt1->pkt);
+        av_free(pkt1);
+
+        return 1;
+    }
+
+    return this->flushing ? -1 : 0;
 }
 
 void PacketQueue::flush()
@@ -328,6 +363,16 @@ void VideoState::video_refresh()
     }
     else
     {
+        // Re-anchor the free-running external clock to the first frame that is actually ready to
+        // display, so a load-induced gap between init()'s mExternalClock.set(0) and the first
+        // pumped frame can't strand playback (frozen-on-frame-1). After this the clock advances in
+        // real time from the first PTS, preserving correct playback speed. See videostate.hpp.
+        if (!this->mClockAnchored)
+        {
+            this->mExternalClock.set(static_cast<uint64_t>(this->pictq[this->pictq_rindex].pts * 1000000.0));
+            this->mClockAnchored = true;
+        }
+
         const float threshold = 0.03f;
         if (this->pictq[pictq_rindex].pts > this->get_master_clock() + threshold)
             return; // not ready yet to show this picture
@@ -600,16 +645,43 @@ public:
                 }
 
 
+#ifdef __EMSCRIPTEN__
+                // Web: movie audio is consumed cooperatively on the main thread (inline stream
+                // pump). If that lags or stalls (suspended/again-suspended AudioContext, the
+                // source never actually draining its buffers), the audio packet queue fills. The
+                // upstream logic below stalls the WHOLE read loop whenever EITHER queue is full,
+                // so a full audio queue starves the VIDEO queue → the video thread blocks in
+                // videoq.get() → pictq drains → the intro FREEZES on its current frame (this is
+                // the "frozen on the opening card right after New Game" report). Video is paced by
+                // the external real-time clock and does NOT need audio to advance, so here we only
+                // back-pressure on the VIDEO queue; a full audio queue is handled by dropping
+                // audio packets at the routing step below, never by blocking. The video always
+                // plays through to its natural end (audio may glitch under starvation).
+                if(self->video_st && self->videoq.size > MAX_VIDEOQ_SIZE)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+#else
                 if((self->audio_st && self->audioq.size > MAX_AUDIOQ_SIZE) ||
                    (self->video_st && self->videoq.size > MAX_VIDEOQ_SIZE))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
                 }
+#endif
 
                 if(av_read_frame(pFormatCtx, packet.get()) < 0)
                 {
-                    if (self->audioq.nb_packets == 0 && self->videoq.nb_packets == 0)
+#ifdef __EMSCRIPTEN__
+                    // End-of-video is decided by the VIDEO path only here: audio packets may be
+                    // intentionally dropped / left undrained (back-pressure note above), so a
+                    // non-empty audio queue must NOT keep the intro from ever ending.
+                    const bool queuesDrained = (self->videoq.nb_packets == 0);
+#else
+                    const bool queuesDrained = (self->audioq.nb_packets == 0 && self->videoq.nb_packets == 0);
+#endif
+                    if (queuesDrained)
                     {
                         self->pictq_mutex.lock();
                         bool videoEnded = self->pictq_size == 0;
@@ -629,7 +701,19 @@ public:
                 if(self->video_st && packet->stream_index == self->video_st-pFormatCtx->streams)
                     self->videoq.put(packet.get());
                 else if(self->audio_st && packet->stream_index == self->audio_st-pFormatCtx->streams)
+                {
+#ifdef __EMSCRIPTEN__
+                    // See the video-only back-pressure note above: never let a full audio queue
+                    // stall the reader (which would starve video). Drop audio packets that would
+                    // overflow instead — audio degrades, video keeps playing to the end.
+                    if(self->audioq.size <= MAX_AUDIOQ_SIZE)
+                        self->audioq.put(packet.get());
+                    else
+                        av_packet_unref(packet.get());
+#else
                     self->audioq.put(packet.get());
+#endif
+                }
                 else
                     av_packet_unref(packet.get());
             }
@@ -740,6 +824,11 @@ void VideoState::init(std::unique_ptr<std::istream>&& inputstream, const std::st
     int audio_index = -1;
     unsigned int i;
 
+    // ffmpeg logs the container/stream dump (Input #0 / Duration / Stream #0:0) at INFO and the
+    // benign "swscaler: No accelerated colorspace conversion yuv420p -> rgba" at WARNING every time
+    // a Bink video opens — pure noise in the browser console. Keep only real errors.
+    av_log_set_level(AV_LOG_ERROR);
+
     this->av_sync_type = AV_SYNC_DEFAULT;
     this->mQuit = false;
 
@@ -801,6 +890,7 @@ void VideoState::init(std::unique_ptr<std::istream>&& inputstream, const std::st
     }
 
     mExternalClock.set(0);
+    mClockAnchored = false; // re-anchor to the first displayed frame's PTS (see video_refresh)
 
     if(audio_index >= 0)
         this->stream_open(audio_index, this->format_ctx);

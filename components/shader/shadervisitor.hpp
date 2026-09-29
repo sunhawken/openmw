@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_COMPONENTS_SHADERVISITOR_H
 #define OPENMW_COMPONENTS_SHADERVISITOR_H
 
@@ -85,6 +87,15 @@ namespace Shader
             std::map<int, std::string> mTextures;
 
             int mColorMode;
+
+            // Fixed-function material values (gl_FrontMaterial), fed as uniforms under GLES/WebGL
+            // where there is no fixed-function pipeline.
+            bool mHasMaterial = false;
+            osg::Vec4f mMaterialEmission;
+            osg::Vec4f mMaterialAmbient;
+            osg::Vec4f mMaterialDiffuse;
+            osg::Vec4f mMaterialSpecular;
+            float mMaterialShininess = 0.f;
 
             bool mMaterialOverridden;
             bool mAlphaTestOverridden;

@@ -81,6 +81,8 @@ namespace MWMechanics
         void restoreDynamicStats(const MWWorld::Ptr& actor, double hours, bool sleep) override;
 
         void rest(double hours, bool sleep) override;
+
+        int nearestAvatarLevel(const osg::Vec3f& pos) const override;
         ///< If the player is sleeping or waiting, this should be called every hour.
         /// @param sleep is the player sleeping or waiting?
 
@@ -92,10 +94,13 @@ namespace MWMechanics
         ///< NPC.
 
         int getDerivedDisposition(const MWWorld::Ptr& ptr, bool clamp = true) override;
+        int getDerivedDisposition(const MWWorld::Ptr& ptr, const MWWorld::Ptr& toward, bool clamp = true) override;
         ///< Calculate the diposition of an NPC toward the player.
 
         int countDeaths(const ESM::RefId& id) const override;
         ///< Return the number of deaths for actors with the given ID.
+
+        void setDeaths(const ESM::RefId& id, int count) override;
 
         void getPersuasionDispositionChange(
             const MWWorld::Ptr& npc, PersuasionType type, bool& success, int& tempChange, int& permChange) override;

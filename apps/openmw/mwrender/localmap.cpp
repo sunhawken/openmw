@@ -1,14 +1,24 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "localmap.hpp"
 
+#include <algorithm>
 #include <cstdint>
+#include <vector>
 
 #include <osg/ComputeBoundsVisitor>
+#include <osg/GL>
 #include <osg/Fog>
+#include <osg/Group>
 #include <osg/LightSource>
 #include <osg/PolygonMode>
 #include <osg/Texture2D>
 
 #include <osgDB/ReadFile>
+
+#include <osgUtil/CullVisitor>
+#include <osgUtil/RenderBin>
+#include <osgUtil/StateGraph>
 
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/fogstate.hpp>
@@ -64,6 +74,16 @@ namespace MWRender
         osg::Matrix mProjectionMatrix;
         osg::Matrix mViewMatrix;
         bool mActive;
+        // HOW MANY FRAMES THIS CAMERA STILL GETS. It used to be exactly one: the update
+        // callback masked the node off on its second visit, so the map had a single frame in
+        // which to be drawn. That is fine when the first draw definitely happens -- and under
+        // WebGL it may not, because the texture and its framebuffer are created lazily and the
+        // first traversal can be a no-op. The camera is then switched off forever and the map
+        // stays exactly as it was cleared, which is the reported "solid colour" minimap.
+        //
+        // A few frames instead of one. The cost is a handful of extra render-to-texture draws
+        // per cell visited, once; the alternative is a map that never appears at all.
+        int mFramesLeft;
     };
 
     class CameraLocalUpdateCallback
@@ -71,6 +91,51 @@ namespace MWRender
     {
     public:
         void operator()(LocalMapRenderToTexture* node, osg::NodeVisitor* nv);
+    };
+
+    // WHETHER THE CAMERA'S SUBGRAPH SURVIVES ITS OWN CULL -- the last unchecked step on this
+    // defect. Everything upstream of the draw is now proven against a real build: the camera is
+    // created and added to the scene, it IS traversed, and its texture is real and attached (the
+    // null-texture path never fires). Five suspects died that way -- fog of war, the pbuffer
+    // fallback, the one-frame render window, a null texture, traversal -- and what is left is a
+    // correct-looking camera that clears its target and draws nothing into it.
+    //
+    // The cull is the one step in between that has never been looked at, and it is a plausible
+    // culprit rather than a leftover: this camera's view and projection are hand-built for a
+    // top-down orthographic shot with a near/far computed from cell bounds, so a frustum that
+    // excludes the world -- or a child node-mask that rejects it -- produces EXACTLY the observed
+    // symptom and nothing else in the pipeline would complain.
+    //
+    // One number decides it. A cull that keeps the world leaves a positive drawable count in this
+    // camera's own render bin; a cull that throws the world away leaves zero. Positive means the
+    // fault is in the draw or the readback, and this camera is exonerated; zero means the cull is
+    // the bug and the matrices are where to look. Once per session, and it costs one walk of one
+    // bin -- deliberately cheap enough to leave in place rather than carry as a patch.
+    class MapCullDiagnostic : public osg::NodeCallback
+    {
+    public:
+        void operator()(osg::Node* node, osg::NodeVisitor* nv) override;
+    };
+
+    // DOES THE DRAW ACTUALLY EXECUTE. The cull answered yes -- 109 drawables survive into this
+    // camera's bin against build 58 -- so the world genuinely reaches the draw and the camera is
+    // exonerated. The step after it has never been observed: whether the GPU runs this camera's
+    // render stage at all, and how many times.
+    //
+    // That matters here specifically because the map camera RETIRES ITSELF. The update callback
+    // counts mFramesLeft down and then masks the node off forever, so the camera gets a fixed
+    // and very small number of chances. Under WebGL a framebuffer object is created lazily and
+    // the first attempts can be no-ops, and update traversals are not draws -- so the countdown
+    // can run out on frames that never drew anything, switching the camera off before it ever
+    // rendered. The target then keeps its clear colour permanently, which is the reported bug.
+    //
+    // A final-draw callback fires only when the stage really ran, so counting them separates
+    // "never drew" from "drew and produced black". Logged for the first few draws only.
+    class MapDrawDiagnostic : public osg::Camera::DrawCallback
+    {
+    public:
+        void operator()(osg::RenderInfo& renderInfo) const override;
+        mutable unsigned int mDraws = 0;
     };
 
     LocalMap::LocalMap(osg::Group* root)
@@ -172,10 +237,47 @@ namespace MWRender
             new LocalMapRenderToTexture(mSceneRoot, mMapResolution, mMapWorldSize, left, top, upVector, zmin, zmax));
 
         mRoot->addChild(mLocalMapRTTs.back());
+        // ...and was one ever created. If this logs and the callback above does not, the node
+        // is in the graph and never visited, which is a cull/traversal fault rather than a
+        // setup one.
+        static bool loggedCreate = false;
+        if (!loggedCreate)
+        {
+            loggedCreate = true;
+            Log(Debug::Warning) << "Local map: RTT camera created and added to the scene";
+        }
 
         MapSegment& segment = mInterior ? mInteriorSegments[std::make_pair(segmentX, segmentY)]
                                         : mExteriorSegments[std::make_pair(segmentX, segmentY)];
         segment.mMapTexture = static_cast<osg::Texture2D*>(mLocalMapRTTs.back()->getColorTexture(nullptr));
+
+        // WHICH TEXTURE THE WIDGET WILL BE HANDED. Ten suspects have died on this bug and the
+        // survivors all reduce to one unproven assumption: that the texture stored here is the
+        // same object the camera later draws into. Everything else is now measured -- the camera
+        // is created, traversed, culls 109 drawables, its draw executes, the framebuffer raises
+        // no complaint -- and the panel is still the clear colour, which those facts together
+        // cannot explain.
+        //
+        // Taken at SETUP, before the camera has ever been culled: getColorTexture(nullptr)
+        // lazily creates the camera and its texture right here, and the cull later asks for the
+        // same nullptr key. That SHOULD be the same object. Printing the pointer is how it stops
+        // being a "should" -- compare it with the one logged from inside the draw.
+        static bool loggedTexture = false;
+        if (!loggedTexture)
+        {
+            loggedTexture = true;
+            const osg::Texture2D* t = segment.mMapTexture.get();
+            Log(Debug::Warning) << "Local map: segment texture at setup = "
+                                << static_cast<const void*>(t)
+                                // The format actually in force. If the fix above is redundant
+                                // this reads 0x8058 (GL_RGBA8); anything else -- 0x1907 (GL_RGB)
+                                // especially -- names the culprit outright instead of leaving
+                                // the next person to infer it.
+                                << " internalFormat=0x" << std::hex
+                                << (t ? t->getInternalFormat() : 0) << std::dec
+                                << " size=" << (t ? t->getTextureWidth() : 0) << "x"
+                                << (t ? t->getTextureHeight() : 0);
+        }
     }
 
     void LocalMap::requestMap(const MWWorld::CellStore* cell)
@@ -687,6 +789,9 @@ namespace MWRender
         : RTTNode(res, res, 0, false, 0, StereoAwareness::Unaware_MultiViewShaders, shouldAddMSAAIntermediateTarget())
         , mSceneRoot(sceneRoot)
         , mActive(true)
+        // 3: enough to survive a first traversal that draws nothing, small enough that the
+        // extra cost is invisible. See mFramesLeft.
+        , mFramesLeft(3)
     {
         setNodeMask(Mask_RenderToTexture);
 
@@ -700,11 +805,30 @@ namespace MWRender
         mViewMatrix.makeLookAt(osg::Vec3d(x, y, zmax + 5), osg::Vec3d(x, y, zmin), upVector);
 
         setUpdateCallback(new CameraLocalUpdateCallback);
+        // A SIZED COLOUR FORMAT, EXPLICITLY. This is the one difference between this camera and
+        // the character PORTRAIT, which is also an RTTNode drawn into a MyGUI widget and which
+        // renders perfectly two panels away: characterpreview.cpp sets GL_RGBA8 here and says
+        // why -- "sized format required for a renderable WebGL2 color attachment" -- and this
+        // camera did not, relying on the global default instead.
+        //
+        // An unsized format is not colour-renderable under WebGL2, so the attach fails at GL
+        // level, BELOW where OSG reports anything. That fits every measurement taken on this
+        // bug: the camera is created, traversed, culls 109 drawables and its draw callback
+        // fires; the texture pointer stored for the widget is identical to the one in the
+        // camera's attachment map; OSG raises no complaint -- and the panel shows BLACK while
+        // this camera clears to BLUE. A clear that does not land is an unattached framebuffer,
+        // and nothing else on the list explains that.
+        //
+        // There IS a global fix (Color::SelectColorFormatOperation forces RGBA8 on Emscripten),
+        // which is presumably why this was never set here. But the portrait needed the explicit
+        // call anyway, and being right twice costs one line.
+        setColorBufferInternalFormat(GL_RGBA8);
         setDepthBufferInternalFormat(GL_DEPTH24_STENCIL8);
     }
 
     void LocalMapRenderToTexture::setDefaults(osg::Camera* camera)
     {
+        camera->setName("LocalMap");
         // Disable small feature culling, it's not going to be reliable for this camera
         osg::Camera::CullingMode cullingMode
             = (osg::Camera::DEFAULT_CULLING | osg::Camera::FAR_PLANE_CULLING) & ~(osg::Camera::SMALL_FEATURE_CULLING);
@@ -713,14 +837,64 @@ namespace MWRender
         SceneUtil::setCameraClearDepth(camera);
         camera->setComputeNearFarMode(osg::Camera::DO_NOT_COMPUTE_NEAR_FAR);
         camera->setReferenceFrame(osg::Camera::ABSOLUTE_RF_INHERIT_VIEWPOINT);
+        // FALLBACK RESTORED. This was changed to FRAME_BUFFER_OBJECT alone on the ARGUMENT that a
+        // pbuffer cannot exist under WebGL, so naming it as a fallback was dead code. The commit
+        // doing it said outright that it "has not been reproduced, so it is not proven to be the
+        // cause" -- and it was reported afterwards that the map had been working in earlier
+        // builds. Changing rendering behaviour on reasoning rather than measurement is exactly
+        // what this file has spent fourteen suspects paying for.
+        //
+        // The original symptom was "solid white/blue/black": white and blue mean SOMETHING was
+        // being drawn. Restoring the two-argument form puts that back, and if the map returns
+        // the removal was the regression.
         camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT, osg::Camera::PIXEL_BUFFER_RTT);
-        camera->setClearColor(osg::Vec4(0.f, 0.f, 0.f, 1.f));
+        // DIAGNOSTIC CLEAR COLOUR -- REVERT ONCE THIS BUG IS NAMED. Deliberately not black.
+        //
+        // Build 60 read the target and found min=0 max=0 mean=0 at its centre. That is a real
+        // measurement and it is also ambiguous, because BLACK IS WHAT THIS CAMERA CLEARS TO:
+        // "the clear landed and the geometry wrote nothing" and "we are reading a buffer that
+        // nothing ever touched" produce byte-for-byte the same answer. Every remaining theory
+        // sits on one side or the other of that line, so leaving it unresolved would mean
+        // guessing.
+        //
+        // A distinctive colour separates them in a single run, and answers a second question
+        // for free -- whether the HUD widget is showing THIS texture at all:
+        //   * readback reports ~(51,102,204) -> the clear lands, so the target is this camera's
+        //     and the geometry is what produces nothing: look at depth state and shaders.
+        //   * readback still reports 0 -> the draw is not reaching this texture, and the fault
+        //     is the target/binding rather than anything about the scene.
+        //   * the HUD panel turns BLUE -> the widget really is bound to this camera's output,
+        //     which retires the last "MyGUI is showing something else" theory outright.
+        //   * the HUD panel stays BLACK while the readback reports blue -> it is showing a
+        //     DIFFERENT texture, and that is the bug, sitting in the widget rather than here.
+        camera->setClearColor(osg::Vec4(0.2f, 0.4f, 0.8f, 1.f));
         camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         camera->setRenderOrder(osg::Camera::PRE_RENDER);
 
-        camera->setCullMask(Mask_Scene | Mask_SimpleWater | Mask_Terrain | Mask_Object | Mask_Static);
-        camera->setCullMaskLeft(Mask_Scene | Mask_SimpleWater | Mask_Terrain | Mask_Object | Mask_Static);
-        camera->setCullMaskRight(Mask_Scene | Mask_SimpleWater | Mask_Terrain | Mask_Object | Mask_Static);
+        // Mask_Lighting IS PART OF THIS, and its absence is why the map rendered black.
+        //
+        // "Scene Root" IS the SceneUtil::LightManager (renderingmanager.cpp sets the name on it
+        // and calls setLightingMask(Mask_Lighting)). Its cull callback opens with:
+        //
+        //     if (!(cv->getTraversalMask() & node->getLightingMask())) { traverse(node, cv); return; }
+        //
+        // So a camera whose cull mask omits Mask_Lighting still TRAVERSES the whole scene -- it
+        // just binds no lighting state. Every drawable is collected and then shaded by nothing,
+        // which produces an entirely black target and not one error from anywhere.
+        //
+        // That is precisely why this bug survived twelve eliminated suspects: the camera is
+        // created, is traversed, culls 109 drawables, executes its draw, holds a valid RGBA8
+        // texture the widget really does display (the map WINDOW draws the player arrow and the
+        // fog overlay over it correctly), and the GL layer raises nothing. Every one of those
+        // observations is compatible with "drawn, unlit".
+        //
+        // water.cpp is the other camera that renders the world into a texture, and it includes
+        // Mask_Lighting in both of its cull masks. This was the only one that did not.
+        const auto mapCullMask = Mask_Scene | Mask_SimpleWater | Mask_Terrain | Mask_Object
+            | Mask_Static | Mask_Lighting;
+        camera->setCullMask(mapCullMask);
+        camera->setCullMaskLeft(mapCullMask);
+        camera->setCullMaskRight(mapCullMask);
         camera->setNodeMask(Mask_RenderToTexture);
         camera->setProjectionMatrix(mProjectionMatrix);
         camera->setViewMatrix(mViewMatrix);
@@ -762,15 +936,167 @@ namespace MWRender
         // override sun for local map
         SceneUtil::configureStateSetSunOverride(light, stateset);
 
-        camera->addChild(mSceneRoot);
+        // The scene hangs under an identity group ONLY so the cull diagnostic has somewhere to sit
+        // that is INSIDE this camera's own render stage. A cull callback on the camera itself runs
+        // before that stage is pushed, so it would count the main view's bin -- a number that is
+        // always large, always healthy, and says nothing whatsoever about the map. The group adds
+        // no state and no transform; it is a place to stand.
+        osg::ref_ptr<osg::Group> sceneHolder = new osg::Group;
+        sceneHolder->setName("LocalMapSceneHolder");
+        sceneHolder->setCullCallback(new MapCullDiagnostic);
+        sceneHolder->addChild(mSceneRoot);
+        camera->addChild(sceneHolder);
+        camera->setFinalDrawCallback(new MapDrawDiagnostic);
+    }
+
+    namespace
+    {
+        // Leaves live in TWO places during cull. A bin's own leaf list is only populated once the
+        // bin has been sorted, and at cull time most of them are still sitting in StateGraphs --
+        // so counting just getRenderLeafList() would report zero for a perfectly healthy cull and
+        // frame the wrong suspect. Both are walked, recursively, the same way the shadow
+        // technique walks them.
+        unsigned int countCulledDrawables(osgUtil::StateGraph* sg)
+        {
+            if (!sg)
+                return 0;
+            unsigned int n = static_cast<unsigned int>(sg->_leaves.size());
+            for (const auto& child : sg->_children)
+                n += countCulledDrawables(child.second.get());
+            return n;
+        }
+
+        unsigned int countCulledDrawables(osgUtil::RenderBin* bin)
+        {
+            if (!bin)
+                return 0;
+            unsigned int n = static_cast<unsigned int>(bin->getRenderLeafList().size());
+            for (osgUtil::StateGraph* sg : bin->getStateGraphList())
+                n += countCulledDrawables(sg);
+            for (const auto& child : bin->getRenderBinList())
+                n += countCulledDrawables(child.second.get());
+            return n;
+        }
+    }
+
+    void MapDrawDiagnostic::operator()(osg::RenderInfo& renderInfo) const
+    {
+        // The first few only. If this never appears the draw is not running; if it appears and
+        // the map is still blank, the draw runs and produces nothing, which is a different bug
+        // in a different place.
+        if (mDraws < 4)
+        {
+            // ...and WHICH TEXTURE this draw is actually landing in. If this differs from the
+            // pointer logged at setup, the widget is holding an orphan that nothing ever renders
+            // into, and that is the whole bug -- every other measurement stays exactly as it is.
+            const void* attached = nullptr;
+            if (const osg::Camera* cam = renderInfo.getCurrentCamera())
+            {
+                const auto& map = cam->getBufferAttachmentMap();
+                const auto it = map.find(osg::Camera::COLOR_BUFFER);
+                if (it != map.end())
+                    attached = static_cast<const void*>(it->second._texture.get());
+            }
+            Log(Debug::Warning) << "Local map: RTT camera DREW (draw #" << (mDraws + 1)
+                                << ") into texture " << attached;
+        }
+
+        // WHAT IS ACTUALLY IN THE TARGET. Build 59 established that this camera draws: created,
+        // traversed, 109 drawables through the cull, draw executed -- and the HUD panel is still
+        // solid black, which is exactly this camera's clear colour.
+        //
+        // Two very different bugs remain and no amount of reasoning separates them. Either the
+        // draw writes colour and the widget is showing something else, or the draw runs and
+        // produces nothing. Reading the target answers it outright: non-black pixels mean the
+        // render is fine and the fault is in what MyGUI binds; all-black means the geometry
+        // reached the rasteriser and wrote no colour, which points at depth or shaders.
+        //
+        // Read in the FINAL draw callback, where this camera's framebuffer is still bound, and
+        // ONCE -- glReadPixels stalls the pipeline, which is acceptable for a single diagnostic
+        // frame and would not be as a per-frame cost.
+        //
+        // Sampled from the CENTRE, not the corner: a corner of a top-down map shot is plausibly
+        // dark on its own merits, and reporting that as "black" would manufacture the very
+        // conclusion this is meant to test.
+        if (mDraws == 0)
+        {
+            int w = 16, h = 16, x0 = 0, y0 = 0;
+            if (const osg::Camera* cam = renderInfo.getCurrentCamera())
+            {
+                if (const osg::Viewport* vp = cam->getViewport())
+                {
+                    x0 = static_cast<int>(vp->width()) / 2 - w / 2;
+                    y0 = static_cast<int>(vp->height()) / 2 - h / 2;
+                    if (x0 < 0) x0 = 0;
+                    if (y0 < 0) y0 = 0;
+                }
+            }
+            std::vector<unsigned char> px(static_cast<size_t>(w) * h * 4, 0);
+            glReadPixels(x0, y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            unsigned int mn = 255, mx = 0;
+            unsigned long sum = 0;
+            size_t n = 0;
+            for (size_t i = 0; i + 3 < px.size(); i += 4)
+            {
+                for (int c = 0; c < 3; ++c)
+                {
+                    const unsigned int v = px[i + c];
+                    mn = std::min(mn, v);
+                    mx = std::max(mx, v);
+                    sum += v;
+                    ++n;
+                }
+            }
+            Log(Debug::Warning) << "Local map: target centre pixels min=" << mn << " max=" << mx
+                                << " mean=" << (n ? sum / n : 0) << " (at " << x0 << "," << y0 << ")";
+        }
+        ++mDraws;
+    }
+
+    void MapCullDiagnostic::operator()(osg::Node* node, osg::NodeVisitor* nv)
+    {
+        // AFTER the traversal, not before: the question is what the cull PRODUCED, and asking
+        // before it has run reads an empty bin every time and would "prove" the bug that is
+        // being investigated.
+        traverse(node, nv);
+
+        static bool logged = false;
+        if (logged)
+            return;
+        // A cull visitor is the only visitor with a render bin to ask. Update and intersection
+        // traversals reach this node too, and answering for one of those would be a number about
+        // the wrong thing.
+        osgUtil::CullVisitor* cv = dynamic_cast<osgUtil::CullVisitor*>(nv);
+        if (!cv)
+            return;
+        logged = true;
+        Log(Debug::Warning) << "Local map: camera subgraph culled to "
+                            << countCulledDrawables(cv->getCurrentRenderBin()) << " drawable(s)";
     }
 
     void CameraLocalUpdateCallback::operator()(LocalMapRenderToTexture* node, osg::NodeVisitor* nv)
     {
-        if (!node->mActive)
+        // DOES THIS EVER RUN. The map camera is created, its texture is real and attached, and
+        // nothing is drawn into it -- so the open question is whether the node is traversed at
+        // all. Four other theories died on the way here (fog, the pbuffer fallback, the
+        // one-frame window, a null texture), each because it was TESTED rather than argued, and
+        // this is the cheapest way to test the one that is left. Once per session.
+        static bool loggedTraversal = false;
+        if (!loggedTraversal)
+        {
+            loggedTraversal = true;
+            Log(Debug::Warning) << "Local map: RTT update callback ran (node IS traversed)";
+        }
+        // Counted DOWN rather than flipped off after one visit, so a first traversal that did
+        // not actually draw (a lazily created FBO under WebGL) does not cost the map its only
+        // chance. mActive is kept because the cleanup pass in cleanupCameras() keys off it.
+        if (node->mFramesLeft > 0)
+            node->mFramesLeft--;
+        else
+        {
             node->setNodeMask(0);
-
-        node->mActive = false;
+            node->mActive = false;
+        }
 
         // Rtt-nodes do not forward update traversal to their cameras so we can traverse safely.
         // Traverse in case there are nested callbacks.

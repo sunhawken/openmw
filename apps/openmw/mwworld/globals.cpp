@@ -1,7 +1,10 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "globals.hpp"
 
 #include <stdexcept>
 
+#include <components/debug/debuglog.hpp>
 #include <components/esm3/esmreader.hpp>
 #include <components/esm3/esmwriter.hpp>
 
@@ -9,24 +12,31 @@
 
 namespace MWWorld
 {
+    // Tolerate references to globals not defined by the loaded content. Base Morrowind defines many
+    // globals (crime/werewolf/etc.) that minimal or example-suite content omits; the engine and
+    // dialogue/scripts reference them by name and would otherwise throw "unknown global variable".
+    // Create the missing global lazily as a numeric 0 (Morrowind's lenient default) instead.
+    Globals::Collection::iterator Globals::findOrCreate(std::string_view name) const
+    {
+        Collection::iterator iter = mVariables.find(name);
+        if (iter != mVariables.end())
+            return iter;
+        Log(Debug::Warning) << "Undefined global variable '" << name << "' referenced; defaulting to 0";
+        ESM::Global global;
+        global.blank();
+        global.mId = ESM::RefId::stringRefId(name);
+        global.mValue = ESM::Variant(0);
+        return mVariables.emplace(global.mId, std::move(global)).first;
+    }
+
     Globals::Collection::const_iterator Globals::find(std::string_view name) const
     {
-        Collection::const_iterator iter = mVariables.find(name);
-
-        if (iter == mVariables.end())
-            throw std::runtime_error("unknown global variable: " + std::string{ name });
-
-        return iter;
+        return findOrCreate(name);
     }
 
     Globals::Collection::iterator Globals::find(std::string_view name)
     {
-        Collection::iterator iter = mVariables.find(name);
-
-        if (iter == mVariables.end())
-            throw std::runtime_error("unknown global variable: " + std::string{ name });
-
-        return iter;
+        return findOrCreate(name);
     }
 
     void Globals::fill(const MWWorld::ESMStore& store)

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "pathfinding.hpp"
 
 #include <iterator>
@@ -373,8 +375,22 @@ namespace MWMechanics
         if (status != DetourNavigator::Status::Success)
             mPath.clear();
 
-        if (status == DetourNavigator::Status::NavMeshNotFound)
-            mPath.push_back(endPoint);
+        // Fall back to a straight-line path when detour cannot produce one. In addition to a missing navmesh, this
+        // also covers the case where the navmesh for a freshly loaded exterior cell is not yet fully built, so
+        // querying it fails to locate the start/end polygon or a path over polygons. Without this fallback the actor
+        // would be left with an empty path and freeze in place until the navmesh finishes generating. This mirrors the
+        // existing NavMeshNotFound handling (buildPath keeps a pathgrid fallback, but buildPathByNavMesh does not).
+        switch (status)
+        {
+            case DetourNavigator::Status::NavMeshNotFound:
+            case DetourNavigator::Status::StartPolygonNotFound:
+            case DetourNavigator::Status::EndPolygonNotFound:
+            case DetourNavigator::Status::FindPathOverPolygonsFailed:
+                mPath.push_back(endPoint);
+                break;
+            default:
+                break;
+        }
 
         mConstructed = !mPath.empty();
     }

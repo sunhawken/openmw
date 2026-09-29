@@ -1,6 +1,8 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "linuxpath.hpp"
 
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__)
 
 #include <array>
 #include <cstring>
@@ -24,6 +26,10 @@ namespace
                 dir = pwd->pw_dir;
             }
         }
+#ifdef __EMSCRIPTEN__
+        if (dir == nullptr || dir[0] == '\0')
+            return std::filesystem::path("/home/web_user");
+#endif
         if (dir == nullptr)
             return {};
         else

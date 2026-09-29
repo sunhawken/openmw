@@ -1,5 +1,6 @@
 #include "journalimp.hpp"
 
+#include <functional>
 #include <iterator>
 
 #include <components/esm3/esmreader.hpp>
@@ -78,7 +79,49 @@ namespace MWDialogue
         mTopics.clear();
     }
 
+    void Journal::stash()
+    {
+        if (mStashed)
+            return; // never clobber the real stash with a borrowed one
+        mStashedJournal = std::move(mJournal);
+        mStashedQuests = std::move(mQuests);
+        mStashedTopics = std::move(mTopics);
+        mJournal.clear();
+        mQuests.clear();
+        mTopics.clear();
+        mStashed = true;
+    }
+
+    void Journal::unstash()
+    {
+        if (!mStashed)
+            return;
+        // The borrowed campaign is discarded wholesale; the originals move back as the very
+        // same objects, so the restore is exact rather than a reconstruction.
+        mJournal = std::move(mStashedJournal);
+        mQuests = std::move(mStashedQuests);
+        mTopics = std::move(mStashedTopics);
+        mStashedJournal.clear();
+        mStashedQuests.clear();
+        mStashedTopics.clear();
+        mStashed = false;
+    }
+
     void Journal::addEntry(const ESM::RefId& id, int index, const MWWorld::Ptr& actor)
+    {
+        addEntryStamped(id, index, [&] { return StampedJournalEntry::makeFromQuest(id, index, actor); });
+    }
+
+    void Journal::addEntryAt(
+        const ESM::RefId& id, int index, const MWWorld::Ptr& actor, int day, int month, int dayOfMonth)
+    {
+        addEntryStamped(id, index, [&] {
+            return StampedJournalEntry(id, JournalEntry::idFromIndex(id, index), day, month, dayOfMonth, actor);
+        });
+    }
+
+    void Journal::addEntryStamped(
+        const ESM::RefId& id, int index, const std::function<StampedJournalEntry()>& make)
     {
         // bail out if we already have heard this...
         const ESM::RefId& infoId = JournalEntry::idFromIndex(id, index);
@@ -93,7 +136,7 @@ namespace MWDialogue
                 return;
             }
 
-        StampedJournalEntry entry = StampedJournalEntry::makeFromQuest(id, index, actor);
+        StampedJournalEntry entry = make();
 
         Quest& quest = getOrStartQuest(id);
         if (quest.addEntry(entry)) // we are doing slicing on purpose here

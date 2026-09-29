@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "water.hpp"
 
 #include <sstream>
@@ -265,6 +267,13 @@ namespace MWRender
             camera->addChild(mClipCullNode);
             camera->setNodeMask(Mask_RenderToTexture);
 
+#ifdef __EMSCRIPTEN__
+            // GLES has no gl_ClipVertex/ClipPlane: the scene shaders emulate the clip via a
+            // world-space plane uniform + fragment discard (see @useGLES in objects.vert etc.).
+            // vec4(N.xyz, d); keep where dot(N, worldPos) + d >= 0. Updated per-frame in apply().
+            camera->getOrCreateStateSet()->addUniform(new osg::Uniform("clipPlane", osg::Vec4f(0.f, 0.f, -1.f, 0.f)));
+#endif
+
             if (Settings::water().mRefractionScale != 1) // TODO: to be removed with issue #5709
                 SceneUtil::ShadowManager::instance().disableShadowsForStateSet(*camera->getOrCreateStateSet());
         }
@@ -273,6 +282,10 @@ namespace MWRender
         {
             camera->setViewMatrix(mViewMatrix);
             camera->setCullMask(mNodeMask);
+#ifdef __EMSCRIPTEN__
+            if (osg::Uniform* clip = camera->getOrCreateStateSet()->getUniform("clipPlane"))
+                clip->set(mClipPlane);
+#endif
         }
 
         void setScene(osg::Node* scene)
@@ -291,6 +304,8 @@ namespace MWRender
                 * osg::Matrix::translate(0, 0, (1.0 - refractionScale) * waterLevel);
 
             mClipCullNode->setPlane(osg::Plane(osg::Vec3d(0, 0, -1), osg::Vec3d(0, 0, waterLevel)));
+            // Keep geometry at or below the water surface (worldPos.z <= waterLevel).
+            mClipPlane = osg::Vec4f(0.f, 0.f, -1.f, waterLevel);
         }
 
         void showWorld(bool show)
@@ -305,6 +320,7 @@ namespace MWRender
         osg::ref_ptr<ClipCullNode> mClipCullNode;
         osg::ref_ptr<osg::Node> mScene;
         osg::Matrix mViewMatrix{ osg::Matrix::identity() };
+        osg::Vec4f mClipPlane{ 0.f, 0.f, -1.f, 0.f }; // GLES shader clip (emscripten)
 
         unsigned int mNodeMask;
 
@@ -317,6 +333,10 @@ namespace MWRender
     {
     public:
         Reflection(uint32_t rttSize, bool isInterior)
+            // NOTE (web): the reflection RTT can't get true opaque-edge MSAA on WebGL2/OSG-GLES — plain
+            // samples>0 is a no-op (no multisample textures), and the alpha-to-coverage MSAA-intermediate
+            // path is coverage-AA only (alpha-test edges, not opaque geometry). The reflected-edge aliasing
+            // is instead smoothed in water.frag with a small multi-tap blur on the reflection sample.
             : RTTNode(rttSize, rttSize, 0, false, 0, StereoAwareness::Aware, shouldAddMSAAIntermediateTarget())
         {
             setInterior(isInterior);
@@ -342,6 +362,10 @@ namespace MWRender
             camera->addChild(mClipCullNode);
             camera->setNodeMask(Mask_RenderToTexture);
 
+#ifdef __EMSCRIPTEN__
+            camera->getOrCreateStateSet()->addUniform(new osg::Uniform("clipPlane", osg::Vec4f(0.f, 0.f, 1.f, 0.f)));
+#endif
+
             SceneUtil::ShadowManager::instance().disableShadowsForStateSet(*camera->getOrCreateStateSet());
         }
 
@@ -349,6 +373,10 @@ namespace MWRender
         {
             camera->setViewMatrix(mViewMatrix);
             camera->setCullMask(mNodeMask);
+#ifdef __EMSCRIPTEN__
+            if (osg::Uniform* clip = camera->getOrCreateStateSet()->getUniform("clipPlane"))
+                clip->set(mClipPlane);
+#endif
         }
 
         void setInterior(bool isInterior)
@@ -361,6 +389,8 @@ namespace MWRender
         {
             mViewMatrix = osg::Matrix::scale(1, 1, -1) * osg::Matrix::translate(0, 0, 2 * waterLevel);
             mClipCullNode->setPlane(osg::Plane(osg::Vec3d(0, 0, 1), osg::Vec3d(0, 0, waterLevel)));
+            // Keep geometry at or above the water surface (worldPos.z >= waterLevel).
+            mClipPlane = osg::Vec4f(0.f, 0.f, 1.f, -waterLevel);
         }
 
         void setScene(osg::Node* scene)
@@ -400,6 +430,7 @@ namespace MWRender
 
         osg::ref_ptr<ClipCullNode> mClipCullNode;
         osg::ref_ptr<osg::Node> mScene;
+        osg::Vec4f mClipPlane{ 0.f, 0.f, 1.f, 0.f }; // GLES shader clip (emscripten)
         osg::Node::NodeMask mNodeMask;
         osg::Matrix mViewMatrix{ osg::Matrix::identity() };
         bool mInterior;
@@ -686,6 +717,26 @@ namespace MWRender
         defineMap["rippleMapSize"] = std::to_string(RipplesSurface::sRTTSize) + ".0";
         defineMap["sunlightScattering"] = Settings::water().mSunlightScattering ? "1" : "0";
         defineMap["wobblyShores"] = Settings::water().mWobblyShores ? "1" : "0";
+        // reflectionBlur: uv radius for the reflection multi-tap AA blur in water.frag. The reflection
+        // RTT can't be MSAA'd on WebGL2/OSG-GLES (no multisample textures; the coverage-AA path only
+        // touches alpha-test edges), so on web we average a few taps to soften the boxy reflected-edge
+        // aliasing. This radius is SCREEN-SPACE: the reflection RTT maps to the whole screen, so a uv
+        // radius is a fraction of the screen regardless of rtt size. It must therefore be a CONSTANT uv
+        // (0.008, the value confirmed to smooth the boxy reflection), NOT scaled by rttSize — tying it
+        // to texel count (3/rttSize) halved the on-screen softening at rtt 1024 and brought the grainy
+        // reflection back. A larger rtt still helps: it samples the same-radius blur from a sharper base.
+        // 0.006 is tuned as the sweet spot: enough to kill the boxy close-up reflected-edge aliasing,
+        // but small enough that it doesn't over-smear the foreshortened distant reflection into a blob
+        // (0.008 was noticeably blobby at grazing angles; a 2048 rtt would fix both but drops <60fps).
+        // 0 on desktop (real MSAA available there), so the desktop reflection stays pixel-identical.
+        // (a separate integer enable-define because the GLSL preprocessor #if is integer-only)
+#ifdef __EMSCRIPTEN__
+        defineMap["reflectionBlurEnabled"] = "1";
+        defineMap["reflectionBlur"] = "0.006";
+#else
+        defineMap["reflectionBlurEnabled"] = "0";
+        defineMap["reflectionBlur"] = "0.0";
+#endif
 
         Stereo::shaderStereoDefines(defineMap);
 

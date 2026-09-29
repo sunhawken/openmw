@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #version 120
 
 #pragma import_defines(FORCE_OPAQUE, DISTORTION)
@@ -82,6 +84,9 @@ varying vec3 passNormal;
 #if @normalMap || @diffuseParallax
 varying vec4 passTangent;
 #endif
+#if @useGLES
+varying float passClipDist; // water reflection/refraction clip (see objects.vert)
+#endif
 
 #if @additiveBlending
 #define ADDITIVE_BLENDING
@@ -113,6 +118,10 @@ varying vec3 orthoDepthMapCoord;
 
 void main()
 {
+#if @useGLES
+    if (passClipDist < 0.0)
+        discard;
+#endif
 #if @particleOcclusion
     applyOcclusionDiscard(orthoDepthMapCoord, texture2D(orthoDepthMap, orthoDepthMapCoord.xy * 0.5 + 0.5).r);
 #endif

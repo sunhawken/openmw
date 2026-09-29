@@ -1,0 +1,398 @@
+#include "puppets.hpp"
+
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <map>
+
+#include <components/debug/debuglog.hpp>
+#include <components/misc/strings/lower.hpp>
+
+#include "../mwworld/cell.hpp"
+#include "../mwworld/cellstore.hpp"
+
+#include <unordered_map>
+#include <unordered_set>
+
+namespace
+{
+    struct RefNumHash
+    {
+        std::size_t operator()(const ESM::RefNum& r) const noexcept
+        {
+            return std::hash<uint64_t>()((static_cast<uint64_t>(r.mContentFile) << 32) ^ r.mIndex);
+        }
+    };
+    struct RefNumEq
+    {
+        bool operator()(const ESM::RefNum& a, const ESM::RefNum& b) const noexcept
+        {
+            return a.mIndex == b.mIndex && a.mContentFile == b.mContentFile;
+        }
+    };
+
+    std::unordered_set<ESM::RefNum, RefNumHash, RefNumEq>& puppets()
+    {
+        static std::unordered_set<ESM::RefNum, RefNumHash, RefNumEq> sPuppets;
+        return sPuppets;
+    }
+
+    std::unordered_set<ESM::RefNum, RefNumHash, RefNumEq>& playerPuppets()
+    {
+        static std::unordered_set<ESM::RefNum, RefNumHash, RefNumEq> sPlayerPuppets;
+        return sPlayerPuppets;
+    }
+
+    // refnum -> bounty. Presence in the map IS the "this is an avatar" flag, so a body with no
+    // bounty yet is still known to be a player's, which is what the pursuit check needs.
+    std::unordered_map<ESM::RefNum, int, RefNumHash, RefNumEq>& avatars()
+    {
+        static std::unordered_map<ESM::RefNum, int, RefNumHash, RefNumEq> sAvatars;
+        return sAvatars;
+    }
+
+    std::vector<MWMP::MagicHit>& pending()
+    {
+        static std::vector<MWMP::MagicHit> sPending;
+        return sPending;
+    }
+
+    // A cell full of puppets standing in a fire field generates one of these per effect tick per
+    // actor. Lua drains every frame, so this only ever fills if the script side has stopped —
+    // in which case dropping is right and unbounded growth is not.
+    constexpr std::size_t sMaxPending = 256;
+}
+
+namespace MWMP
+{
+    void setPuppet(ESM::RefNum ref, bool on)
+    {
+        if (on)
+            puppets().insert(ref);
+        else
+        {
+            puppets().erase(ref);
+            playerPuppets().erase(ref);
+        }
+    }
+
+    bool isPuppet(ESM::RefNum ref)
+    {
+        return !puppets().empty() && puppets().find(ref) != puppets().end();
+    }
+
+    void setPlayerPuppet(ESM::RefNum ref, bool on)
+    {
+        if (on)
+        {
+            puppets().insert(ref);
+            playerPuppets().insert(ref);
+        }
+        else
+            playerPuppets().erase(ref);
+    }
+
+    bool isPlayerPuppet(ESM::RefNum ref)
+    {
+        return !playerPuppets().empty() && playerPuppets().find(ref) != playerPuppets().end();
+    }
+
+    void clearPuppets()
+    {
+        puppets().clear();
+        playerPuppets().clear();
+        pending().clear();
+    }
+
+    void setAvatar(ESM::RefNum ref, bool on)
+    {
+        if (on)
+            avatars().emplace(ref, 0);
+        else
+            avatars().erase(ref);
+        Log(Debug::Info) << "[mp] avatar registry " << ref.mIndex << (on ? " +" : " -")
+                         << " (now " << avatars().size() << ")";
+    }
+
+    bool isAvatar(ESM::RefNum ref)
+    {
+        return avatars().find(ref) != avatars().end();
+    }
+
+    namespace
+    {
+        int sPartyLevel = 0;
+    }
+
+    void setPartyLevel(int level)
+    {
+        sPartyLevel = level > 0 ? level : 0;
+    }
+
+    int partyLevel()
+    {
+        return sPartyLevel;
+    }
+
+    int avatarBounty(ESM::RefNum ref)
+    {
+        const auto it = avatars().find(ref);
+        return it == avatars().end() ? 0 : it->second;
+    }
+
+    void setAvatarBounty(ESM::RefNum ref, int bounty)
+    {
+        // Only for a KNOWN avatar: a bounty arriving for a body that has not been marked yet
+        // (or has just been detached) must not resurrect it as a pursuit target.
+        const auto it = avatars().find(ref);
+        if (it == avatars().end() || it->second == bounty)
+            return;
+        it->second = bounty;
+        // Logged because it is the far end of a long chain -- the owner's crime level, their
+        // client's CrimeUpdate, the server relay, and this registry -- and when a guard fails to
+        // react it is the one place that says whether the bounty ever arrived at all.
+        Log(Debug::Info) << "[mp] avatar bounty " << ref.mIndex << " = " << bounty;
+    }
+
+    void clearAvatars()
+    {
+        avatars().clear();
+    }
+
+    void recordMagicHit(const MagicHit& hit)
+    {
+        if (pending().size() >= sMaxPending)
+            return;
+        pending().push_back(hit);
+    }
+
+    namespace
+    {
+        struct Arrest
+        {
+            ESM::RefNum mAvatar;
+            ESM::RefNum mGuard;
+        };
+        std::vector<Arrest>& arrests()
+        {
+            static std::vector<Arrest> v;
+            return v;
+        }
+        std::map<ESM::RefNum, std::chrono::steady_clock::time_point>& lastArrestAt()
+        {
+            static std::map<ESM::RefNum, std::chrono::steady_clock::time_point> m;
+            return m;
+        }
+        constexpr auto sArrestCooldown = std::chrono::seconds(8);
+    }
+
+    void recordArrest(ESM::RefNum avatar, ESM::RefNum guard)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        auto& at = lastArrestAt();
+        const auto it = at.find(avatar);
+        if (it != at.end() && now - it->second < sArrestCooldown)
+            return;
+        at[avatar] = now;
+        if (arrests().size() >= sMaxPending)
+            return;
+        arrests().push_back({ avatar, guard });
+        Log(Debug::Info) << "[mp] guard " << guard.mIndex << " reached wanted avatar " << avatar.mIndex;
+    }
+
+    std::vector<ESM::RefNum> takeArrestsFor(ESM::RefNum avatar)
+    {
+        std::vector<ESM::RefNum> out;
+        auto& q = arrests();
+        for (auto it = q.begin(); it != q.end();)
+        {
+            if (it->mAvatar == avatar)
+            {
+                out.push_back(it->mGuard);
+                it = q.erase(it);
+            }
+            else
+                ++it;
+        }
+        return out;
+    }
+
+    namespace
+    {
+        std::vector<Crime>& crimes()
+        {
+            static std::vector<Crime> v;
+            return v;
+        }
+    }
+
+    namespace
+    {
+        std::unordered_map<ESM::RefNum, ESM::RefNum, RefNumHash, RefNumEq>& summoners()
+        {
+            static std::unordered_map<ESM::RefNum, ESM::RefNum, RefNumHash, RefNumEq> m;
+            return m;
+        }
+    }
+
+    void noteSummon(ESM::RefNum creature, ESM::RefNum summoner)
+    {
+        auto& m = summoners();
+        if (m.size() > 4096)
+            m.clear(); // a session's worth of summons; never a leak
+        m[creature] = summoner;
+    }
+
+    ESM::RefNum summonerOf(ESM::RefNum creature)
+    {
+        const auto it = summoners().find(creature);
+        return it == summoners().end() ? ESM::RefNum{} : it->second;
+    }
+
+    void recordCrime(ESM::RefNum avatar, int bounty, std::string kind, std::string faction)
+    {
+        auto& av = avatars();
+        const auto it = av.find(avatar);
+        if (it == av.end())
+            return;
+        it->second = std::max(0, it->second + bounty);
+        if (crimes().size() >= sMaxPending)
+            return;
+        crimes().push_back({ avatar, bounty, std::move(kind), std::move(faction) });
+        Log(Debug::Info) << "[mp] avatar " << avatar.mIndex << " committed " << crimes().back().mKind << " bounty +" << bounty;
+    }
+
+    std::vector<Crime> takeCrimesFor(ESM::RefNum avatar)
+    {
+        std::vector<Crime> out;
+        auto& q = crimes();
+        for (auto it = q.begin(); it != q.end();)
+        {
+            if (it->mAvatar == avatar)
+            {
+                out.push_back(*it);
+                it = q.erase(it);
+            }
+            else
+                ++it;
+        }
+        return out;
+    }
+
+    namespace
+    {
+        bool& localSummons()
+        {
+            // OFF FROM THE FIRST FRAME ON A MULTIPLAYER CLIENT. The Lua side used to switch this
+            // off once the server said "this world is simulated" -- but the starting cells load
+            // (and their levelled lists roll) while the socket is still connecting, so every
+            // client began the game with a private, unhittable copy of each wild creature near
+            // the spawn point, standing beside the peer's real one. The sim peer (OPENMW_MP_SYSTEM)
+            // is the process that rolls them; singleplayer has no URL and keeps vanilla.
+            static bool v = !(std::getenv("OPENMW_MP_URL") != nullptr && std::getenv("OPENMW_MP_SYSTEM") == nullptr);
+            return v;
+        }
+    }
+
+    void setLocalSummons(bool enabled)
+    {
+        localSummons() = enabled;
+    }
+
+    bool localSummonsEnabled()
+    {
+        return localSummons();
+    }
+
+    bool isClient()
+    {
+        static const bool v = std::getenv("OPENMW_MP_URL") != nullptr && std::getenv("OPENMW_MP_SYSTEM") == nullptr;
+        return v;
+    }
+
+    namespace
+    {
+        std::vector<ScriptNote>& scriptNotes()
+        {
+            static std::vector<ScriptNote> v;
+            return v;
+        }
+    }
+
+    void recordScriptNote(ScriptNote note)
+    {
+        // Singleplayer has nobody to tell and nothing draining the queue. Larger than the other
+        // queues: Startup alone disables ~100 refs before the socket has joined and drained once.
+        constexpr std::size_t sMaxNotes = 2048;
+        static const bool mp = std::getenv("OPENMW_MP_URL") != nullptr;
+        if (!mp || scriptNotes().size() >= sMaxNotes)
+            return;
+        // A package completion is a level, not a count (backlog 221/413): a wanderer whose
+        // package ends every few seconds must not fill the queue with the same ref while nothing
+        // has drained it -- one pending aidone per actor is all the poller on the other side reads.
+        if (note.mKind == "aidone")
+        {
+            for (const ScriptNote& pending : scriptNotes())
+                if (pending.mKind == "aidone" && pending.mRef == note.mRef)
+                    return;
+        }
+        scriptNotes().push_back(std::move(note));
+    }
+
+    std::vector<ScriptNote> takeScriptNotes()
+    {
+        std::vector<ScriptNote> out;
+        out.swap(scriptNotes());
+        return out;
+    }
+
+    std::string cellKeyOf(const MWWorld::CellStore& cell)
+    {
+        const MWWorld::Cell* c = cell.getCell();
+        if (c->isExterior())
+            return std::to_string(c->getGridX()) + "," + std::to_string(c->getGridY());
+        return Misc::StringUtils::lowerCase(c->getNameId());
+    }
+
+    namespace
+    {
+        std::unordered_map<ESM::RefNum, std::string, RefNumHash, RefNumEq>& blocks()
+        {
+            static std::unordered_map<ESM::RefNum, std::string, RefNumHash, RefNumEq> sBlocks;
+            return sBlocks;
+        }
+    }
+
+    void noteBlock(ESM::RefNum blocker, std::string sound)
+    {
+        if (isAvatar(blocker))
+            blocks()[blocker] = std::move(sound);
+    }
+
+    std::string takeBlockFor(ESM::RefNum blocker)
+    {
+        auto it = blocks().find(blocker);
+        if (it == blocks().end())
+            return {};
+        std::string out = std::move(it->second);
+        blocks().erase(it);
+        return out;
+    }
+
+    std::vector<MagicHit> takeMagicHitsFor(ESM::RefNum target)
+    {
+        std::vector<MagicHit> out;
+        auto& q = pending();
+        for (auto it = q.begin(); it != q.end();)
+        {
+            if (it->mTarget.mIndex == target.mIndex && it->mTarget.mContentFile == target.mContentFile)
+            {
+                out.push_back(*it);
+                it = q.erase(it);
+            }
+            else
+                ++it;
+        }
+        return out;
+    }
+}

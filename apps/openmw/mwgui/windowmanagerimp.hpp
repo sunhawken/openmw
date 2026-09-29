@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef MWGUI_WINDOWMANAGERIMP_H
 #define MWGUI_WINDOWMANAGERIMP_H
 
@@ -142,8 +144,17 @@ namespace MWGui
         Loading::Listener* getLoadingScreen() override;
 
         /// @note This method will block until the video finishes playing
-        /// (and will continually update the window while doing so)
+        /// (and will continually update the window while doing so).
+        /// Under emscripten it instead starts playback and returns immediately;
+        /// the engine frame loop drives updateVideoPlayback() until the video ends.
         void playVideo(std::string_view name, bool allowSkipping, bool overrideSounds = true) override;
+
+#ifdef __EMSCRIPTEN__
+        /// Cooperative video playback (see playVideo): is a video currently up?
+        bool isPlayingVideo() const { return mVideoPlaying; }
+        /// One frame of cooperative video playback: input + video decode + teardown when done.
+        void updateVideoPlayback(float dt);
+#endif
 
         /// Warning: do not use MyGUI::InputManager::setKeyFocusWidget directly. Instead use this.
         void setKeyFocusWidget(MyGUI::Widget* widget) override;
@@ -465,6 +476,12 @@ namespace MWGui
         std::unique_ptr<SoulgemDialog> mSoulgemDialog;
         MyGUI::ImageBox* mVideoBackground;
         VideoWidget* mVideoWidget;
+#ifdef __EMSCRIPTEN__
+        // Cooperative-playback state saved by playVideo for the teardown in updateVideoPlayback.
+        bool mVideoPlaying = false;
+        MyGUI::Widget* mVideoOldKeyFocus = nullptr;
+        bool mVideoCursorWasVisible = false;
+#endif
         ScreenFader* mWerewolfFader;
         ScreenFader* mBlindnessFader;
         ScreenFader* mHitFader;
@@ -594,6 +611,9 @@ namespace MWGui
 
         // Key pressed while playing a video
         void onVideoKeyPressed(MyGUI::Widget* sender, MyGUI::KeyCode key, MyGUI::Char value);
+#ifdef __EMSCRIPTEN__
+        void onVideoClicked(MyGUI::Widget* sender);
+#endif
 
         void sizeVideo(int screenWidth, int screenHeight);
 

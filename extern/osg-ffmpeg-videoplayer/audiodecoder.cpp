@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "audiodecoder.hpp"
 
 #include <algorithm>
@@ -284,8 +286,23 @@ int MovieAudioDecoder::audio_decode_frame(AVFrame *frame, int &sample_skip)
         mGetNextPacket = true;
 
         /* next packet */
+#ifdef __EMSCRIPTEN__
+        // This decode runs inline on the browser main thread (the web build has no audio
+        // StreamThread). NEVER block waiting on the parser: a wait here freezes the whole
+        // tab — permanently at end-of-audio-stream, where no packet will ever arrive but
+        // mQuit isn't set until the video finishes. Report "starved" (-2) instead; read()
+        // pads with silence and keeps the stream alive.
+        {
+            int got = mVideoState->audioq.tryGet(pkt, mVideoState);
+            if(got < 0)
+                return -1;
+            if(got == 0)
+                return -2;
+        }
+#else
         if(mVideoState->audioq.get(pkt, mVideoState) < 0)
             return -1;
+#endif
 
         if(pkt->data == mVideoState->mFlushPktData)
         {
@@ -295,8 +312,18 @@ int MovieAudioDecoder::audio_decode_frame(AVFrame *frame, int &sample_skip)
             mAudioClock = av_q2d(mAVStream->time_base)*pkt->pts;
             sample_skip = 0;
 
+#ifdef __EMSCRIPTEN__
+            {
+                int got = mVideoState->audioq.tryGet(pkt, mVideoState);
+                if(got < 0)
+                    return -1;
+                if(got == 0)
+                    return -2;
+            }
+#else
             if(mVideoState->audioq.get(pkt, mVideoState) < 0)
                 return -1;
+#endif
         }
 
         /* if update, update the audio clock w/pts */
@@ -326,6 +353,34 @@ size_t MovieAudioDecoder::read(char *stream, size_t len)
         {
             /* We have already sent all our data; get more */
             mFrameSize = audio_decode_frame(mFrame, sample_skip);
+#ifdef __EMSCRIPTEN__
+            if(mFrameSize == -2)
+            {
+                // Starved, not EOF (see audio_decode_frame): the parser hasn't produced the
+                // next packet yet. Pad the remainder with silence and return a FULL buffer —
+                // a short read would make OpenAL_SoundStream flag the stream finished and
+                // stop draining the audio queue, wedging the video's end-of-stream logic.
+                size_t sampleSize = av_get_bytes_per_sample(mOutputSampleFormat);
+                char* data[1];
+                data[0] = stream;
+                av_samples_set_silence(
+                    (uint8_t**)data, 0, static_cast<int>((len - total) / sampleSize), 1, mOutputSampleFormat);
+                // CRITICAL: advance the audio clock through the silence. The video's remaining
+                // pictures are paced by this clock (audio-master sync) — if it stalls at
+                // end-of-audio, the last queued frames never display, pictq never drains,
+                // mVideoEnded never fires, and the engine sits in its video branch FOREVER
+                // with the movie's last frame blocking the viewport over a healthy game.
+#if OPENMW_FFMPEG_5_OR_GREATER
+                int nch = mOutputChannelLayout.nb_channels;
+#else
+                int nch = av_get_channel_layout_nb_channels(mOutputChannelLayout);
+#endif
+                if (nch > 0 && mOutputSampleRate > 0)
+                    mAudioClock += double(len - total) / (sampleSize * nch * mOutputSampleRate);
+                total = len;
+                break;
+            }
+#endif
             if(mFrameSize < 0)
             {
                 /* If error, we're done */

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "stateupdater.hpp"
 
 #include <osg/Fog>
@@ -13,6 +15,26 @@
 
 namespace SceneUtil
 {
+    namespace
+    {
+        // osg::Uniform::set() ALWAYS bumps the uniform's modifiedCount (Uniform::dirty), which forces
+        // OSG to re-issue glUniform for that uniform on every program it touches this frame — even when
+        // the value is identical to last frame. These shared uniforms live at the scene ROOT (in scope
+        // for every program), and most are constant frame-to-frame (near/far/screenRes/skyBlendingStart)
+        // or the projection matrix while the camera projection is stable. Skipping the set() when the
+        // value is unchanged keeps the modifiedCount stable, so OSG's per-location dedup skips the
+        // re-upload. Pixel-identical (the same value ends up in the uniform either way).
+        template <class T>
+        inline void setIfChanged(osg::Uniform* u, const T& v)
+        {
+            if (!u)
+                return;
+            T cur;
+            if (!u->get(cur) || cur != v)
+                u->set(v);
+        }
+    }
+
     PerViewUniformStateUpdater::PerViewUniformStateUpdater(Resource::SceneManager* sceneManager, int opaqueTextureUnit)
         : mSceneManager(sceneManager)
         , mOpaqueTextureUnit(opaqueTextureUnit)
@@ -28,7 +50,7 @@ namespace SceneUtil
 
     void PerViewUniformStateUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
     {
-        stateset->getUniform("projectionMatrix")->set(mProjectionMatrix);
+        setIfChanged(stateset->getUniform("projectionMatrix"), mProjectionMatrix);
         if (mSkyRTT && nv->getVisitorType() == osg::NodeVisitor::CULL_VISITOR)
         {
             osg::Texture* skyTexture = mSkyRTT->getColorTexture(static_cast<osgUtil::CullVisitor*>(nv));
@@ -91,12 +113,12 @@ namespace SceneUtil
 
     void SharedUniformStateUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
     {
-        stateset->getUniform("near")->set(mNear);
-        stateset->getUniform("far")->set(mFar);
-        stateset->getUniform("skyBlendingStart")->set(mFar * mSkyBlendingStartCoef);
-        stateset->getUniform("screenRes")->set(mScreenRes);
-        stateset->getUniform("windSpeed")->set(mWindSpeed);
-        stateset->getUniform("playerPos")->set(mPlayerPos);
+        setIfChanged(stateset->getUniform("near"), mNear);
+        setIfChanged(stateset->getUniform("far"), mFar);
+        setIfChanged(stateset->getUniform("skyBlendingStart"), mFar * mSkyBlendingStartCoef);
+        setIfChanged(stateset->getUniform("screenRes"), mScreenRes);
+        setIfChanged(stateset->getUniform("windSpeed"), mWindSpeed);
+        setIfChanged(stateset->getUniform("playerPos"), mPlayerPos);
     }
 
     void SharedUniformStateUpdater::setNear(float near)
@@ -129,6 +151,16 @@ namespace SceneUtil
         osg::Fog* fog = new osg::Fog;
         fog->setMode(osg::Fog::LINEAR);
         stateset->setAttributeAndModes(fog, osg::StateAttribute::ON);
+#ifdef __EMSCRIPTEN__
+        // No fixed-function fog on GLES: the osg::Fog above is inert, so also feed gl_Fog (renamed to
+        // flat osg_Fog_* uniforms by the shader transform) so the scene shaders' applyFog() actually
+        // runs. Inherited down the scene graph; updated per-frame in apply().
+        stateset->addUniform(new osg::Uniform("osg_Fog_color", osg::Vec4f(0.53f, 0.62f, 0.73f, 1.f)));
+        stateset->addUniform(new osg::Uniform("osg_Fog_start", 0.f));
+        stateset->addUniform(new osg::Uniform("osg_Fog_end", 100000.f));
+        stateset->addUniform(new osg::Uniform("osg_Fog_scale", 0.f));
+        stateset->addUniform(new osg::Uniform("osg_Fog_density", 0.f));
+#endif
         if (mWireframe)
         {
             osg::PolygonMode* polygonmode = new osg::PolygonMode;
@@ -146,6 +178,15 @@ namespace SceneUtil
         fog->setColor(mFogColor);
         fog->setStart(mFogStart);
         fog->setEnd(mFogEnd);
+#ifdef __EMSCRIPTEN__
+        // Mirror the fog state into the flat uniforms the GLES shaders read. scale = 1/(end-start)
+        // is what fixed-function GL derives internally for LINEAR fog; guard the degenerate range.
+        const float range = mFogEnd - mFogStart;
+        stateset->getUniform("osg_Fog_color")->set(mFogColor);
+        stateset->getUniform("osg_Fog_start")->set(mFogStart);
+        stateset->getUniform("osg_Fog_end")->set(mFogEnd);
+        stateset->getUniform("osg_Fog_scale")->set(range > 1e-4f ? 1.f / range : 0.f);
+#endif
     }
 
     void StateUpdater::setAmbientColor(const osg::Vec4f& col)

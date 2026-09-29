@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "lightmanager.hpp"
 
 #include <algorithm>
@@ -58,17 +60,27 @@ namespace SceneUtil
 {
     static int sLightId = 0;
 
+#ifdef __EMSCRIPTEN__
+    // WebGL2/ANGLE reads struct-member uniforms (sun.ambient …) as 0, which zeroed the per-cell
+    // ambient floor (black interiors) and the directional sun. The GLES shaders (@useGLES) swap
+    // `uniform DirectionalLight sun` for flat sun_* uniforms + a reconstructing macro, so feed the
+    // flat names here.
+#define OMW_SUN_UNIFORM(member) ("sun_" member)
+#else
+#define OMW_SUN_UNIFORM(member) ("sun." member)
+#endif
+
     void configureStateSetSunOverride(const osg::Light* light, osg::StateSet* stateset, int mode)
     {
-        stateset->addUniform(new osg::Uniform("sun.position", light->getPosition()), mode);
-        stateset->addUniform(new osg::Uniform("sun.diffuse", light->getDiffuse()), mode);
-        stateset->addUniform(new osg::Uniform("sun.ambient", light->getAmbient()), mode);
-        stateset->addUniform(new osg::Uniform("sun.specular", light->getSpecular()), mode);
+        stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("position"), light->getPosition()), mode);
+        stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("diffuse"), light->getDiffuse()), mode);
+        stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("ambient"), light->getAmbient()), mode);
+        stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("specular"), light->getSpecular()), mode);
     }
 
     void configureSunAmbientOverride(const osg::Vec4f& ambient, osg::StateSet* stateset)
     {
-        stateset->getOrCreateUniform("sun.ambient", osg::Uniform::FLOAT_VEC4)->set(ambient);
+        stateset->getOrCreateUniform(OMW_SUN_UNIFORM("ambient"), osg::Uniform::FLOAT_VEC4)->set(ambient);
     }
 
     LightManager* findLightManager(const osg::NodePath& path)
@@ -229,10 +241,10 @@ namespace SceneUtil
         if (!stateset)
         {
             stateset = new osg::StateSet;
-            stateset->addUniform(new osg::Uniform("sun.position", osg::Vec4f{}));
-            stateset->addUniform(new osg::Uniform("sun.diffuse", osg::Vec4f{}));
-            stateset->addUniform(new osg::Uniform("sun.ambient", osg::Vec4f{}));
-            stateset->addUniform(new osg::Uniform("sun.specular", osg::Vec4f{}));
+            stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("position"), osg::Vec4f{}));
+            stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("diffuse"), osg::Vec4f{}));
+            stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("ambient"), osg::Vec4f{}));
+            stateset->addUniform(new osg::Uniform(OMW_SUN_UNIFORM("specular"), osg::Vec4f{}));
 
             if (node->getClusteredLighting())
             {
@@ -283,10 +295,10 @@ namespace SceneUtil
             // Don't use Camera::getViewMatrix, that one might be relative to another camera!
             const osg::RefMatrix* viewMatrix = cv->getCurrentRenderStage()->getInitialViewMatrix();
 
-            stateset->getUniform("sun.position")->set(sun->getPosition() * (*viewMatrix));
-            stateset->getUniform("sun.diffuse")->set(sun->getDiffuse());
-            stateset->getUniform("sun.ambient")->set(sun->getAmbient());
-            stateset->getUniform("sun.specular")->set(sun->getSpecular());
+            stateset->getUniform(OMW_SUN_UNIFORM("position"))->set(sun->getPosition() * (*viewMatrix));
+            stateset->getUniform(OMW_SUN_UNIFORM("diffuse"))->set(sun->getDiffuse());
+            stateset->getUniform(OMW_SUN_UNIFORM("ambient"))->set(sun->getAmbient());
+            stateset->getUniform(OMW_SUN_UNIFORM("specular"))->set(sun->getSpecular());
 
             if (node->getClusteredLighting())
             {
@@ -502,6 +514,9 @@ namespace SceneUtil
 
         mLights.clear();
         mLightsInViewSpace.clear();
+        // The cached StateSets hold this frame's light positions/colours in view space, so they
+        // are only valid for the frame that built them.
+        mLightListStateSetCache.clear();
     }
 
     void LightManager::addLight(LightSource* lightSource, const osg::Matrixf& worldMat, size_t frameNum)
@@ -528,6 +543,19 @@ namespace SceneUtil
     osg::ref_ptr<osg::StateSet> LightManager::getLightListStateSet(
         const LightList& lightList, size_t frameNum, const osg::RefMatrix* viewMatrix)
     {
+        // Cache hit? The light list determines the contents entirely, so two objects lit by the
+        // same lamps get the same StateSet object -- which also means osg::State sees the SAME
+        // uniform pointer twice in a row and can skip the re-upload. Cleared each frame in
+        // update(), so the per-frame values below stay correct.
+        std::vector<int> key;
+        key.reserve(lightList.size());
+        for (const auto* bound : lightList)
+            key.push_back(bound->mLightSource->getId());
+
+        auto cached = mLightListStateSetCache.find(key);
+        if (cached != mLightListStateSetCache.end())
+            return cached->second;
+
         osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet;
         osg::ref_ptr<osg::Uniform> data = generateLightBufferUniform();
 
@@ -549,6 +577,7 @@ namespace SceneUtil
         stateset->addUniform(data);
         stateset->addUniform(new osg::Uniform("PointLightCount", static_cast<int>(lightList.size())));
 
+        mLightListStateSetCache.emplace(std::move(key), stateset);
         return stateset;
     }
 

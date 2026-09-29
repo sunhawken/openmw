@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "transparentpass.hpp"
 
 #include <osg/AlphaFunc>
@@ -48,6 +50,21 @@ namespace MWRender
     void TransparentDepthBinCallback::drawImplementation(
         osgUtil::RenderBin* bin, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf*& previous)
     {
+#ifdef __EMSCRIPTEN__
+        // WebGL2: the depth-buffer glBlitFramebuffer between the scene FBO and the opaque-depth
+        // FBO raises GL_INVALID_OPERATION every frame (spamming the log AND corrupting the depth
+        // buffer -> geometry z-fights / disappears). So we skip the depth-copy dance and draw the
+        // bin normally, which fixes both the spam and the render corruption.
+        // KNOWN LIMITATION: this leaves Tex_OpaqueDepth unwritten. Post-processing is now DEFAULT-ON
+        // (not "disabled here" as this comment used to claim) and soft particles + underwater/heat-haze
+        // distortion sample that texture — so depth-based soft fade and distortion masking read a
+        // cleared buffer (particles can pop at surfaces; distortion mask is effectively off). Proper
+        // fix (TODO): populate Tex_OpaqueDepth via a WebGL2-legal path, or point the PP depth sampler
+        // at the main scene depth (Tex_Depth) on web.
+        bin->drawImplementation(renderInfo, previous);
+        return;
+#endif
+
         osg::State& state = *renderInfo.getState();
         osg::GLExtensions* ext = state.get<osg::GLExtensions>();
 

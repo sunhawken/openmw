@@ -1,4 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
+<!-- Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+     See WASM_ADAPTATIONS.md at the repository root for details of the changes. -->
 <MyGUI type="Layout" version="3.2.0">
     <Widget type="Window" skin="MW_Window" position="0 0 400 485" layer="Settings" name="_Main">
         <Property key="MinSize" value="640 550"/>
@@ -340,7 +342,7 @@
                             </Widget>
                         </Widget>
 
-                        <Widget type="AutoSizedTextBox" skin="SandText" position="207 174 300 32" align="Left Top">
+                        <Widget type="AutoSizedTextBox" skin="SandText" position="207 174 300 32" align="Left Top" name="FrameRateHint">
                             <Property key="Caption" value="#{OMWEngine:FrameRateHint}"/>
                         </Widget>
                         <Widget type="AutoSizedTextBox" skin="SandText" position="207 216 300 32" align="Left Top" name="WindowModeHint">
@@ -457,6 +459,15 @@
                         <Widget type="TextBox" skin="SandText" position="0 148 352 18" align="Right Top">
                             <Property key="Caption" value="#{OMWEngine:DistanceHigh}"/>
                             <Property key="TextAlign" value="Right"/>
+                        </Widget>
+
+                        <Widget type="AutoSizedTextBox" skin="NormalText" position="0 176 200 18" align="Left Top" name="AntialiasingLabel">
+                            <Property key="Caption" value="Anti-aliasing (SSAA)"/>
+                        </Widget>
+                        <Widget type="ComboBox" align="Left Top" skin="MW_ComboBox" position="0 198 200 24" name="AntialiasingButton">
+                            <Property key="AddItem" value="Off"/>
+                            <Property key="AddItem" value="1.5x"/>
+                            <Property key="AddItem" value="2x"/>
                         </Widget>
 
                     </Widget>

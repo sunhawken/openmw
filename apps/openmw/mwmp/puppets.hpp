@@ -1,0 +1,208 @@
+#ifndef OPENMW_MWMP_PUPPETS_H
+#define OPENMW_MWMP_PUPPETS_H
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include <components/esm3/refnum.hpp>
+
+namespace MWWorld
+{
+    class CellStore;
+}
+
+// WHO OWNS AN ACTOR'S DAMAGE, asked synchronously from C++.
+//
+// In multiplayer an actor a remote peer simulates is a PUPPET here: its position and stats are
+// pushed to us, and anything we do to it locally is a guess that the owner will overwrite. For
+// MELEE that is already handled in Lua — the engine hands damage application to
+// `omw/combat/local.lua` via the `Hit` event, so `scripts/mp/puppet.lua` intercepts it, returns
+// false to cancel, and forwards the raw attack to the owner.
+//
+// MAGIC HAS NO SUCH SEAM. `mwmechanics/spelleffects.cpp` applies harmful effects in C++ with
+// `adjustDynamicStat`, and the only Lua notification on that path (`Class::onHit`) returns void
+// and is queued, so a script cannot veto it. The result was that spell damage never travelled:
+// the caster's client damaged its own puppet copy, the owner never heard, and the health bar
+// snapped back on the next stats push. Casting at anything did nothing.
+//
+// This is the missing seam, and it is deliberately a QUERY rather than a callback: the damage
+// site needs an answer in the same call, and LuaManager's event path is asynchronous. Lua marks
+// puppets as it attaches and detaches them; the damage site asks, skips its local application,
+// and leaves the effect here for Lua to drain and forward on the next frame.
+namespace MWMP
+{
+    /** Mark/unmark an actor as remotely simulated. Called from `mp.setPuppet` in Lua. */
+    void setPuppet(ESM::RefNum ref, bool on);
+
+    /** True when this actor's damage belongs to somebody else. Safe to call every effect tick. */
+    bool isPuppet(ESM::RefNum ref);
+
+    /** WHICH puppets are PLAYERS (backlog 342). A client's puppet of another player's body and
+     *  its puppet of an NPC the holder simulates sit in the same registry; the crime, witness
+     *  and sneak exemptions used to tell them apart by "no content file", which is also true
+     *  of every runtime-spawned NPC puppet (levelled, PlaceAtPC) -- no crime to assault, never
+     *  a witness. puppet.lua marks the player ones (it knows its playerId); setPuppet(ref,
+     *  false) unmarks both. */
+    void setPlayerPuppet(ESM::RefNum ref, bool on);
+    bool isPlayerPuppet(ESM::RefNum ref);
+
+    /** Forget every puppet — session loss, world switch. */
+    void clearPuppets();
+
+    // AVATARS: THE OTHER HALF OF THE SAME IDEA.
+    //
+    // On the SIM PEER a player's body is an AVATAR -- an NPC object driven by that player's
+    // input. Engine code that reacts to "the player" finds `getPlayer()`, which on the peer is
+    // its own idle dummy standing wherever it was parked, so nothing in the world ever reacts
+    // to a real person. Crime pursuit was the visible case: a player could rob a shop in front
+    // of a guard and be ignored, because the guard checked a bounty belonging to nobody.
+    //
+    // The bounty is kept HERE rather than on the avatar's NpcStats because bounty is a
+    // player-only concept in the engine (`types.Player.setCrimeLevel` is global-context and
+    // player-only in Lua, and NpcStats::setBounty is not exposed for arbitrary actors). This
+    // registry is the MP-shaped place for an MP-shaped fact.
+
+    /** Mark/unmark an actor as a player's avatar. Called from `mp.setAvatar` in Lua. */
+    void setAvatar(ESM::RefNum ref, bool on);
+
+    /** True when this actor is a player's avatar on the sim peer. */
+    bool isAvatar(ESM::RefNum ref);
+
+    /** That avatar's crime bounty, 0 when unknown. Safe to call every frame. */
+    int avatarBounty(ESM::RefNum ref);
+
+    /** Record an avatar's bounty, mirrored from the owning player's CrimeUpdate. */
+    void setAvatarBounty(ESM::RefNum ref, int bounty);
+
+    /** Forget every avatar — session loss, world switch. */
+    void clearAvatars();
+
+    /** THE LEADER'S LEVEL SCALES THE WORLD. Levelled lists on the sim peer used to roll against
+     *  the nearest avatar, so a level-3 friend helping a level-20 host met level-3 creatures
+     *  wherever THEY stood -- the host's game got easier around the helper. Set from the world
+     *  owner's character (global.lua, from AvatarState); 0 means no owner is known and the
+     *  nearest avatar rules as before. */
+    void setPartyLevel(int level);
+    int partyLevel();
+
+    /** One harmful magic effect that was NOT applied locally, waiting to be forwarded. */
+    struct MagicHit
+    {
+        ESM::RefNum mTarget;
+        ESM::RefNum mCaster;
+        // Serialized RefId ("magiceffect:firedamage"-ish); the wire and the scripts both
+        // want a name, and mEffectId is an ESM::RefId rather than an enum.
+        std::string mEffectId;
+        // The SPELL this effect came from. The owner applies the spell record by id
+        // (combat.lua's MP_CombatSpellHit does `core.magic.spells.records[spellId]`), so the
+        // effect id alone is not enough to reproduce it there.
+        std::string mSpellId;
+        float mMagnitude;
+        // 0 = health, 1 = magicka, 2 = fatigue. Matches the order spelleffects.cpp picks.
+        int mStat;
+        // A helper healing a friend is a beneficial hit: it bypasses the PvP veto (which
+        // exists to stop players HARMING each other), and the owner applies the restore as a
+        // gain rather than damage. Damage hits leave this false.
+        bool mBeneficial = false;
+        // WHICH effect of the record hit (ESM::ActiveEffect::mEffectIndex, 0-based). The owner
+        // applies only these: a Self+Touch record cast at a puppet used to give the victim the
+        // caster's Fortify as well (backlog 250). -1 = unknown, apply the whole record.
+        int mEffectIndex = -1;
+        // The hit is itself a REFLECTION (activespells.cpp stamps Flag_Ignore_Reflect on the
+        // copy it bounces back). The owner must not reflect it again, or two Reflect-wearers
+        // volley one spell forever (backlog 254).
+        bool mReflected = false;
+    };
+
+    /** Record an effect the damage site declined to apply. Bounded; excess is dropped. */
+    void recordMagicHit(const MagicHit& hit);
+
+    /** Drain everything recorded for ONE actor since the last call. */
+    std::vector<MagicHit> takeMagicHitsFor(ESM::RefNum target);
+
+    /** An avatar BLOCKED on the peer (backlog 312): the shield's hit sound, kept until the
+     *  stats report drains it so the owner hears the block their engine never rolled. */
+    void noteBlock(ESM::RefNum blocker, std::string sound);
+    std::string takeBlockFor(ESM::RefNum blocker);
+
+    /** A guard REACHED a wanted avatar (AiPursue). On the local player this opens the arrest
+     *  dialogue; an avatar's owner is on another machine, so it is recorded here for the
+     *  peer's scripts to forward. Rate-limited per avatar: the pursuit package re-stacks
+     *  every frame while the bounty stands, and the owner needs one prompt, not sixty. */
+    void recordArrest(ESM::RefNum avatar, ESM::RefNum guard);
+
+    /** Drain the guards that reached ONE avatar since the last call. */
+    std::vector<ESM::RefNum> takeArrestsFor(ESM::RefNum avatar);
+
+    /** Which actor summoned a creature (summoning.cpp). A summon is its master's hand: with
+     *  pvp off, another player's scamp must not bite an avatar its master could not. */
+    void noteSummon(ESM::RefNum creature, ESM::RefNum summoner);
+    ESM::RefNum summonerOf(ESM::RefNum creature); // empty RefNum when unknown
+
+    /** A crime an avatar committed HERE and somebody reported (reportCrime). The bounty is the
+     *  owner's, on their client; the peer cannot write it, so the increment is recorded for
+     *  the scripts to forward. The registry bounty is bumped at once so the pursuit that
+     *  reportCrime just stacked does not end on its first frame. */
+    struct Crime
+    {
+        ESM::RefNum mAvatar;
+        int mBounty; // the increment, not the total
+        std::string mKind; // theft | assault | murder | trespass | pickpocket | sleeping
+        std::string mFaction; // the victim's primary faction (serialized RefId), or empty
+    };
+    void recordCrime(ESM::RefNum avatar, int bounty, std::string kind, std::string faction = {});
+    std::vector<Crime> takeCrimesFor(ESM::RefNum avatar);
+
+    /** CLIENT ONLY. While a peer simulates the cell the player stands in, the player's own
+     *  Summon effects must not spawn a creature here: the same effect reaches the avatar
+     *  (PlayerActiveSpells) and the peer's summon is the one that fights and is relayed. A
+     *  local copy is a ghost with its own AI whose blows on puppets are cancelled. Toggled by
+     *  scripts/mp (mp.setLocalSummons) from the cell's holder state; default on (singleplayer). */
+    void setLocalSummons(bool enabled);
+    bool localSummonsEnabled();
+    /** The same switch, by its real name: every RUNTIME ACTOR SPAWN on a client -- summons,
+     *  levelled-list creatures, PlaceAt/PlaceAtMe -- while a holder simulates the world. The
+     *  peer spawns them and registers each as a net object; the client would otherwise build
+     *  its own copy with a RefNum nobody else has: an AI-off statue next to the real one. */
+    inline void setLocalSpawns(bool enabled) { setLocalSummons(enabled); }
+    inline bool localSpawnsEnabled() { return localSummonsEnabled(); }
+    /** CLIENT ONLY: the same switch read the other way round. While a holder simulates the
+     *  world, the PLAYER's body here is a prediction and the avatar on the peer is the one
+     *  that takes environmental damage (a fall, drowning) and reports it back through the
+     *  bars (MP_SelfStats). Applying it locally too raced that report: the local body hit
+     *  zero and DIED -- respawn, teleport, the lot -- before the peer had even landed the
+     *  avatar. Gate the local decrement on this; the sound, the knockdown and the hit
+     *  overlay stay, they are what the player feels. */
+    inline bool peerRulesBody() { return !localSummonsEnabled(); }
+
+    /** A multiplayer CLIENT (a browser engine with a session URL), as opposed to the sim peer
+     *  (OPENMW_MP_SYSTEM) or singleplayer (no URL). Read once: the environment never changes. */
+    bool isClient();
+
+    /** A SCRIPT DID SOMETHING ONLY THIS ENGINE SAW (backlog 213/214/216). Player-gated mwscripts
+     *  -- dialogue results, OnActivate, GetPCSleep, Startup -- run on the client that triggered
+     *  them and nowhere else: an Enable/Disable of a ref in a far cell, a PlaceAtPC actor the
+     *  client itself declined to build (localSpawnsEnabled), a PositionCell on an AI-off puppet.
+     *  Recorded at the choke points, drained by scripts/mp (mp.takeScriptNotes) and relayed to
+     *  whoever simulates it. Same shape as the crime/arrest queues: C++ records, Lua polls,
+     *  the queue is bounded. */
+    struct ScriptNote
+    {
+        std::string mKind; // enable | spawn | position
+        ESM::RefNum mRef; // enable, position: the object
+        bool mOn = false; // enable
+        std::string mRecordId; // spawn: the actor record
+        int mCount = 1; // spawn
+        std::string mCellKey; // the OBJECT's cell (before a move), in the wire's key form
+        std::string mCellName; // position: the destination interior's name, "" for an exterior
+        float mPos[3] = { 0.f, 0.f, 0.f }; // spawn, position
+    };
+    void recordScriptNote(ScriptNote note);
+    std::vector<ScriptNote> takeScriptNotes();
+    /** The wire's cell key (scripts/mp cellKeyOfObj): "x,y" for an exterior, the lower-cased
+     *  name otherwise. */
+    std::string cellKeyOf(const MWWorld::CellStore& cell);
+}
+
+#endif

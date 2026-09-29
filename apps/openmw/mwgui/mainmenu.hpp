@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_GAME_MWGUI_MAINMENU_H
 #define OPENMW_GAME_MWGUI_MAINMENU_H
 
@@ -29,6 +31,11 @@ namespace MWGui
         VideoWidget* mVideo;
         std::thread mThread;
         bool mRunning;
+        // Aspect-correct sizing needs the decoded frame's dimensions. On desktop, playVideo blocks
+        // for the first frame so resize() already has them; under emscripten (cooperative playback)
+        // the first frame lands a few ticks later, so re-apply the fit once dimensions are known —
+        // otherwise autoResize falls through to a full-screen (stretched) layout.
+        bool mAspectApplied = false;
 
         void run();
 

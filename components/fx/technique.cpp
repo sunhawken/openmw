@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "technique.hpp"
 
 #include <array>
@@ -326,6 +328,24 @@ namespace Fx
 
             expect<Lexer::SemiColon>();
         }
+
+#ifdef __EMSCRIPTEN__
+        // WebGL2 color-renderability: RGB(8/16F/32F) render targets are NOT color-renderable (only
+        // their RGBA counterparts are), so a technique requesting e.g. rgb16f (bloom) gets an
+        // incomplete FBO and renders black. Remap RGB->RGBA so the render target is complete.
+        {
+            const GLenum inf = static_cast<GLenum>(rt.mTarget->getInternalFormat());
+            GLenum newInf = inf, newSrc = static_cast<GLenum>(rt.mTarget->getSourceFormat());
+            if (inf == GL_RGB16F) { newInf = GL_RGBA16F; newSrc = GL_RGBA; }
+            else if (inf == GL_RGB32F) { newInf = GL_RGBA32F; newSrc = GL_RGBA; }
+            else if (inf == GL_RGB8 || inf == GL_RGB) { newInf = GL_RGBA8; newSrc = GL_RGBA; }
+            if (newInf != inf)
+            {
+                rt.mTarget->setInternalFormat(newInf);
+                rt.mTarget->setSourceFormat(newSrc);
+            }
+        }
+#endif
 
         mRenderTargets.emplace(mBlockName, std::move(rt));
     }

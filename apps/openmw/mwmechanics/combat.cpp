@@ -25,6 +25,8 @@
 #include "../mwworld/globals.hpp"
 #include "../mwworld/inventorystore.hpp"
 
+#include "../mwmp/puppets.hpp"
+
 #include "actorutil.hpp"
 #include "difficultyscaling.hpp"
 #include "movement.hpp"
@@ -140,12 +142,20 @@ namespace MWMechanics
         {
             MWBase::SoundManager* sndMgr = MWBase::Environment::get().getSoundManager();
             const ESM::RefId skill = shield->getClass().getEquipmentSkill(*shield);
+            const char* blockSound = nullptr;
             if (skill == ESM::Skill::LightArmor)
-                sndMgr->playSound3D(blocker, ESM::RefId::stringRefId("Light Armor Hit"), 1.0f, 1.0f);
+                blockSound = "Light Armor Hit";
             else if (skill == ESM::Skill::MediumArmor)
-                sndMgr->playSound3D(blocker, ESM::RefId::stringRefId("Medium Armor Hit"), 1.0f, 1.0f);
+                blockSound = "Medium Armor Hit";
             else if (skill == ESM::Skill::HeavyArmor)
-                sndMgr->playSound3D(blocker, ESM::RefId::stringRefId("Heavy Armor Hit"), 1.0f, 1.0f);
+                blockSound = "Heavy Armor Hit";
+            if (blockSound)
+            {
+                sndMgr->playSound3D(blocker, ESM::RefId::stringRefId(blockSound), 1.0f, 1.0f);
+                // The owner's engine never rolled this block (backlog 312): hand the sound to
+                // the peer's stats report so they hear it too.
+                MWMP::noteBlock(blocker.getCellRef().getRefNum(), blockSound);
+            }
 
             // Reduce shield durability by incoming damage
             int shieldhealth = shield->getClass().getItemHealth(*shield);
@@ -169,7 +179,9 @@ namespace MWMechanics
 
             blockerStats.setBlock(true);
 
-            if (blocker == getPlayer())
+            // An avatar blocks on the peer (backlog 307): the use reaches the owner's
+            // I.SkillProgression through omw/combat/local.lua -> I.MPAvatar.skillUsed.
+            if (isPlayerOrAvatar(blocker))
                 blocker.getClass().skillUsageSucceeded(blocker, ESM::Skill::Block, ESM::Skill::Block_Success);
 
             return true;
@@ -275,7 +287,8 @@ namespace MWMechanics
                 attacker.getClass().skillUsageSucceeded(attacker, weaponSkill, ESM::Skill::Weapon_SuccessfulHit);
 
             const MWMechanics::AiSequence& sequence = victim.getClass().getCreatureStats(victim).getAiSequence();
-            bool unaware = attacker == getPlayer() && !sequence.isInCombat()
+            // The avatar is the player's body on the peer: its sneak attacks are the player's.
+            bool unaware = isPlayerOrAvatar(attacker) && !sequence.isInCombat()
                 && !MWBase::Environment::get().getMechanicsManager()->awarenessCheck(attacker, victim);
             bool knockedDown = victim.getClass().getCreatureStats(victim).getKnockedDown();
             if (knockedDown || unaware)
@@ -294,7 +307,8 @@ namespace MWMechanics
         if (validVictim)
         {
             // Non-enchanted arrows shot at enemies have a chance to turn up in their inventory
-            if (victim != getPlayer() && !appliedEnchantment)
+            // MP #313: a puppet's inventory is the owner's; the local roll would give it a phantom arrow
+            if (victim != getPlayer() && !appliedEnchantment && !MWMP::isPuppet(victim.getCellRef().getRefNum()))
             {
                 static const float fProjectileThrownStoreChance
                     = gmst.find("fProjectileThrownStoreChance")->mValue.getFloat();
@@ -320,7 +334,7 @@ namespace MWMechanics
         if (victimStats.getFatigue().getCurrent() >= 0)
         {
             // Maybe we should keep an aware state for actors updated every so often instead of testing every time
-            bool unaware = (!victimStats.getAiSequence().isInCombat()) && (attacker == getPlayer())
+            bool unaware = (!victimStats.getAiSequence().isInCombat()) && isPlayerOrAvatar(attacker)
                 && (!MWBase::Environment::get().getMechanicsManager()->awarenessCheck(attacker, victim));
             if (!(victimStats.getKnockedDown() || victimStats.isParalyzed() || unaware))
             {
@@ -398,9 +412,16 @@ namespace MWMechanics
             // Note swapped victim and attacker, since the attacker takes the damage here.
             x = scaleDamage(x, victim, attacker);
 
-            MWMechanics::DynamicStat<float> health = attackerStats.getHealth();
-            health.setCurrent(health.getCurrent() - x);
-            attackerStats.setHealth(health);
+            // A peer-ruled player's body takes the reflection on the avatar and gets it back
+            // through the bars (mwmp/puppets.hpp peerRulesBody; the fall-damage gate in
+            // character.cpp). Applied here too it raced that report and could kill the local
+            // body first (backlog 311). The sound stays: it is what the player feels.
+            if (!(attacker == getPlayer() && MWMP::peerRulesBody()))
+            {
+                MWMechanics::DynamicStat<float> health = attackerStats.getHealth();
+                health.setCurrent(health.getCurrent() - x);
+                attackerStats.setHealth(health);
+            }
 
             MWBase::Environment::get().getSoundManager()->playSound3D(
                 attacker, ESM::RefId::stringRefId("Health Damage"), 1.0f, 1.0f);
@@ -550,7 +571,11 @@ namespace MWMechanics
     int getFightTerm(const MWWorld::Ptr& actor, const MWWorld::Ptr& target)
     {
         const auto mechanicsManager = MWBase::Environment::get().getMechanicsManager();
-        int disposition = actor.getClass().isNpc() ? mechanicsManager->getDerivedDisposition(actor) : 50;
+        // Backlog 145: toward the avatar itself when the target is one, not the peer's dummy.
+        const bool avatar = target.getClass().isNpc() && MWMP::isAvatar(target.getCellRef().getRefNum());
+        int disposition = actor.getClass().isNpc()
+            ? mechanicsManager->getDerivedDisposition(actor, avatar ? target : MWWorld::Ptr())
+            : 50;
         int fight = actor.getClass().getCreatureStats(actor).getAiSetting(AiSetting::Fight).getModified()
             + static_cast<int>(
                 getFightDistanceBias(actor, target) + getFightDispositionBias(static_cast<float>(disposition)));
@@ -688,15 +713,22 @@ namespace MWMechanics
         const ESM::Position& posdata = actor.getRefData().getPosition();
         const osg::Vec3f actorPos(posdata.asVec3());
         const osg::Vec3f actorDirXY = osg::Quat(posdata.rot[2], osg::Vec3(0, 0, -1)) * osg::Vec3f(0, 1, 0);
-        // Only the player can look up, apparently.
-        const float actorVerticalAngle = actor == getPlayer() ? -std::sin(posdata.rot[0]) : 0.f;
+        // Only the player can look up, apparently -- and on the sim peer a player's AVATAR,
+        // which carries the owner's pitch (avatar.lua applies it; rotateObject keeps rot[0] on
+        // actors). With 0 here the avatar could never hit anything whose head sits more than
+        // ~42 degrees below its eye level: a scrib at 60 u, 51 swings, hp 8 -> 8 (backlog 487),
+        // while rats and foragers -- tall enough -- died.
+        const bool playerLike = isPlayerOrAvatar(actor);
+        const float actorVerticalAngle = playerLike ? -std::sin(posdata.rot[0]) : 0.f;
         const float actorEyeLevel = world->getHalfExtents(actor, true).z() * 2.f * 0.85f;
         const osg::Vec3f actorEyePos{ actorPos.x(), actorPos.y(), actorPos.z() + actorEyeLevel };
         const bool canMoveByZ = canActorMoveByZAxis(actor);
 
-        // The player can target any active actor, non-playable actors only target their targets
+        // The player can target any active actor, non-playable actors only target their targets.
+        // The avatar has no AI of its own (avatar.lua enableAI(false)): its combat-target list
+        // holds only whoever attacked it, so a standing mark that never bit was untargetable.
         std::vector<MWWorld::Ptr> targets;
-        if (actor != getPlayer())
+        if (!playerLike)
             actor.getClass().getCreatureStats(actor).getAiSequence().getCombatTargets(targets);
         else
             MWBase::Environment::get().getMechanicsManager()->getActorsInRange(

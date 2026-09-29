@@ -1,3 +1,5 @@
+# Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+# See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 project (Components)
 
 if(APPLE)
@@ -128,7 +130,7 @@ add_component_dir (vfs
     )
 
 add_component_dir (resource
-    scenemanager keyframemanager imagemanager animblendrulesmanager bulletshapemanager bulletshape niffilemanager objectcache multiobjectcache resourcesystem
+    scenemanager keyframemanager imagemanager animblendrulesmanager bulletshapemanager bulletshape niffilemanager nifstats objectcache multiobjectcache resourcesystem
     resourcemanager stats animation foreachbulletobject errormarker selectionmarker cachestats bgsmfilemanager
     )
 
@@ -399,7 +401,7 @@ if(WIN32)
         windowscrashmonitor
         windowscrashshm
     )
-elseif(NOT ANDROID)
+elseif(NOT ANDROID AND NOT EMSCRIPTEN)
     add_component_dir (crashcatcher
         crashcatcher
     )

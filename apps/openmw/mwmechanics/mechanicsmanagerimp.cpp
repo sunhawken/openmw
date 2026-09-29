@@ -33,6 +33,7 @@
 
 #include "actor.hpp"
 #include "actors.hpp"
+#include "../mwmp/puppets.hpp"
 #include "actorutil.hpp"
 #include "aicombat.hpp"
 #include "aipursue.hpp"
@@ -127,8 +128,13 @@ namespace MWMechanics
         for (size_t i = 0; i < player->mNpdt.mSkills.size(); ++i)
             npcStats.getSkill(ESM::Skill::indexToRefId(static_cast<int>(i))).setBase(player->mNpdt.mSkills[i]);
 
+        // ATTRIBUTES COME FROM mAttributes, NOT mSkills. This read the skills array (a copy-paste
+        // of the loop above), so the reset seeded all eight attributes from the first eight SKILL
+        // values. It is masked whenever a race is selected -- the race block below re-bases every
+        // attribute absolutely -- so a normal chargen looks fine, and it only shows through on a
+        // rebuild that skips the race block.
         for (size_t i = 0; i < player->mNpdt.mAttributes.size(); ++i)
-            npcStats.setAttribute(ESM::Attribute::indexToRefId(static_cast<int>(i)), player->mNpdt.mSkills[i]);
+            npcStats.setAttribute(ESM::Attribute::indexToRefId(static_cast<int>(i)), player->mNpdt.mAttributes[i]);
 
         const MWWorld::ESMStore& esmStore = *MWBase::Environment::get().getESMStore();
 
@@ -391,6 +397,11 @@ namespace MWMechanics
         mActors.rest(hours, sleep);
     }
 
+    int MechanicsManager::nearestAvatarLevel(const osg::Vec3f& pos) const
+    {
+        return mActors.nearestAvatarLevel(pos);
+    }
+
     void MechanicsManager::restoreDynamicStats(const MWWorld::Ptr& actor, double hours, bool sleep)
     {
         mActors.restoreDynamicStats(actor, hours, sleep);
@@ -475,11 +486,20 @@ namespace MWMechanics
 
     int MechanicsManager::getDerivedDisposition(const MWWorld::Ptr& ptr, bool clamp)
     {
+        return getDerivedDisposition(ptr, MWWorld::Ptr(), clamp);
+    }
+
+    int MechanicsManager::getDerivedDisposition(const MWWorld::Ptr& ptr, const MWWorld::Ptr& toward, bool clamp)
+    {
         const MWMechanics::NpcStats& npcStats = ptr.getClass().getNpcStats(ptr);
         float x = static_cast<float>(npcStats.getBaseDisposition() + npcStats.getCrimeDispositionModifier());
 
         MWWorld::LiveCellRef<ESM::NPC>* npc = ptr.get<ESM::NPC>();
-        MWWorld::Ptr playerPtr = getPlayer();
+        // Multiplayer (backlog 145): on the sim peer "the player" is a parked dummy; an NPC's
+        // feelings toward a remote player are computed against that player's AVATAR -- its
+        // race, Personality, factions -- and its bounty lives in the MP registry.
+        const bool towardAvatar = !toward.isEmpty() && toward.getClass().isNpc();
+        MWWorld::Ptr playerPtr = towardAvatar ? toward : getPlayer();
         MWWorld::LiveCellRef<ESM::NPC>* player = playerPtr.get<ESM::NPC>();
         const MWMechanics::NpcStats& playerStats = playerPtr.getClass().getNpcStats(playerPtr);
 
@@ -542,7 +562,8 @@ namespace MWMechanics
 
         static const float fDispCrimeMod = gmst.find("fDispCrimeMod")->mValue.getFloat();
         static const float fDispDiseaseMod = gmst.find("fDispDiseaseMod")->mValue.getFloat();
-        x -= fDispCrimeMod * playerStats.getBounty();
+        x -= fDispCrimeMod
+            * (towardAvatar ? MWMP::avatarBounty(playerPtr.getCellRef().getRefNum()) : playerStats.getBounty());
         if (playerStats.hasCommonDisease() || playerStats.hasBlightDisease())
             x += fDispDiseaseMod;
 
@@ -593,6 +614,11 @@ namespace MWMechanics
     int MechanicsManager::countDeaths(const ESM::RefId& id) const
     {
         return mActors.countDeaths(id);
+    }
+
+    void MechanicsManager::setDeaths(const ESM::RefId& id, int count)
+    {
+        mActors.setDeaths(id, count);
     }
 
     void MechanicsManager::getPersuasionDispositionChange(
@@ -1138,8 +1164,11 @@ namespace MWMechanics
     {
         // NOTE: victim may be empty
 
-        // Only player can commit crime
-        if (player != getPlayer())
+        // Only player can commit crime -- and on the sim peer every connected player is an
+        // AVATAR, not the dummy getPlayer(). Without this, assault and murder by a player on a
+        // simulated world were never crimes: the client cancels its own swing (the peer's job),
+        // and the peer's swing came from a body this gate did not recognise.
+        if (player != getPlayer() && !MWMP::isAvatar(player.getCellRef().getRefNum()))
             return false;
 
         if (type == OT_Assault)
@@ -1204,6 +1233,13 @@ namespace MWMechanics
         const MWWorld::Ptr& actor, const MWWorld::Ptr& victim, std::set<MWWorld::Ptr>& playerFollowers)
     {
         if (actor == getPlayer() || !actor.getClass().isNpc() || actor.getClass().getCreatureStats(actor).isDead())
+            return false;
+
+        // Backlog 143: another player's body is not a witness (same predicate as
+        // canCommitCrimeAgainst: avatars, and player puppets -- 342: the registry says which
+        // puppets are players; a runtime-spawned NPC puppet has no content file either).
+        const ESM::RefNum actorRef = actor.getCellRef().getRefNum();
+        if (MWMP::isAvatar(actorRef) || MWMP::isPlayerPuppet(actorRef))
             return false;
 
         if (actor.getClass().getCreatureStats(actor).getAiSequence().isInCombat(victim))
@@ -1443,6 +1479,12 @@ namespace MWMechanics
                     }
 
                     startCombat(actor, player, &playerFollowers);
+                    // Multiplayer client (backlog 146): theft and trespass are judged HERE, on
+                    // an AI-off copy of the witness, so the fight it just picked never ran.
+                    // Noted; scripts/mp claims it to the holder (ActorAI combat + crime).
+                    if (MWMP::isClient() && player == getPlayer() && actor.isInCell())
+                        MWMP::recordScriptNote({ "crimecombat", actor.getCellRef().getRefNum(), false, {}, 1,
+                            MWMP::cellKeyOf(*actor.getCell()) });
                     observerStats.setHitAttemptActor(player.getCellRef().getRefNum());
 
                     // Apply aggression value to the base Fight rating, so that the actor can continue fighting
@@ -1464,6 +1506,24 @@ namespace MWMechanics
 
         if (reported)
         {
+            const ESM::RefNum offender = player.getCellRef().getRefNum();
+            if (MWMP::isAvatar(offender))
+            {
+                // The bounty belongs to the owner's client; the peer records the increment for
+                // the scripts to forward, bumps the registry so the pursuit stacked above runs,
+                // and does none of the faction bookkeeping below -- that follows on the owner's
+                // machine from the CrimeUpdate their own engine produces.
+                const char* kind = type == OT_Theft ? "theft" : type == OT_Assault ? "assault"
+                    : type == OT_Murder ? "murder" : type == OT_Pickpocket ? "pickpocket"
+                    : type == OT_Trespassing ? "trespass" : "sleeping";
+                // The victim's faction rides along (backlog 144): the owner's engine never ran
+                // commitCrime, so the expulsion vanilla does below happens in MP_PlayerCrime.
+                const ESM::RefId crimeFaction = (!victim.isEmpty() && victim.getClass().isNpc())
+                    ? victim.getClass().getPrimaryFaction(victim)
+                    : factionId;
+                MWMP::recordCrime(offender, bounty, kind, crimeFaction.serializeText());
+                return reported;
+            }
             player.getClass().getNpcStats(player).setBounty(
                 std::max(0, player.getClass().getNpcStats(player).getBounty() + bounty));
 
@@ -1517,8 +1577,13 @@ namespace MWMechanics
         MWMechanics::CreatureStats& statsTarget = target.getClass().getCreatureStats(target);
         AiSequence& seq = statsTarget.getAiSequence();
 
+        // AN AVATAR ATTACKER IS A PLAYER ATTACKER. A connected player's body on the sim peer
+        // has its AI disabled, so its sequence is never "in combat" with anyone, and it is not
+        // the peer's own dummy player -- so an NPC struck by it never fought back. Together
+        // with engageCombat (actors.cpp) ignoring avatars, the world simply never hit a player.
+        const bool attackerIsPlayer = attacker == player || MWMP::isAvatar(attacker.getCellRef().getRefNum());
         if (!attacker.isEmpty()
-            && (attacker.getClass().getCreatureStats(attacker).getAiSequence().isInCombat(target) || attacker == player)
+            && (attacker.getClass().getCreatureStats(attacker).getAiSequence().isInCombat(target) || attackerIsPlayer)
             && !seq.isInCombat(attacker))
         {
             // Attacker is in combat with us, but we are not in combat with the attacker yet. Time to fight back.
@@ -1530,7 +1595,7 @@ namespace MWMechanics
                 bool peaceful = false;
                 const ESM::RefId& script = target.getClass().getScript(target);
                 if (!script.empty() && target.getRefData().getLocals().hasVar(script, "onpchitme")
-                    && attacker == player)
+                    && attackerIsPlayer)
                 {
                     const int fight
                         = target.getClass().getCreatureStats(target).getAiSetting(AiSetting::Fight).getModified();
@@ -1560,6 +1625,15 @@ namespace MWMechanics
         const MWWorld::Class& cls = target.getClass();
         const MWMechanics::CreatureStats& stats = cls.getCreatureStats(target);
         const MWMechanics::AiSequence& seq = stats.getAiSequence();
+        // MULTIPLAYER: another player's body is an NPC record, so a PvP swing read as assault
+        // and a PvP kill as murder -- witnesses put a bounty on a duel. A player is not a
+        // crime victim; PvP is its own rule (the server's pvp switch and the party veto).
+        // Puppets of NPCs are crime victims still (a theft in front of a puppet is seen by the
+        // client's copy); only player bodies are exempt: the avatar set on the peer, the
+        // PLAYER puppet set on a client (backlog 342 -- "no content file" also described every
+        // runtime-spawned NPC puppet, which was then no crime to assault).
+        if (MWMP::isAvatar(target.getCellRef().getRefNum()) || MWMP::isPlayerPuppet(target.getCellRef().getRefNum()))
+            return false;
         return cls.isNpc() && !attacker.isEmpty() && !isAggressive(target, attacker) && !seq.isEngagedWithActor()
             && !stats.getAiSequence().isInPursuit() && !cls.getNpcStats(target).isWerewolf()
             && stats.getMagicEffects().getOrDefault(ESM::MagicEffect::Vampirism).getMagnitude() <= 0;
@@ -1578,10 +1652,13 @@ namespace MWMechanics
 
         const MWMechanics::NpcStats& victimStats = victim.getClass().getNpcStats(victim);
         const MWWorld::Ptr& player = getPlayer();
-        bool canCommit = attacker == player && canCommitCrimeAgainst(victim, attacker);
+        // An avatar's kill is a player's kill (see commitCrime). The crime is committed AS the
+        // avatar so the bounty lands on its owner, not on the peer's dummy.
+        const bool attackerIsAvatar = MWMP::isAvatar(attacker.getCellRef().getRefNum());
+        bool canCommit = (attacker == player || attackerIsAvatar) && canCommitCrimeAgainst(victim, attacker);
 
         // For now we report only about crimes of player and player's followers
-        if (attacker != player)
+        if (attacker != player && !attackerIsAvatar)
         {
             std::set<MWWorld::Ptr> playerFollowers;
             getActorsSidingWith(player, playerFollowers);
@@ -1595,7 +1672,7 @@ namespace MWMechanics
         // Simple check for who attacked first: if the player attacked first, a crimeId should be set
         // Doesn't handle possible edge case where no one reported the assault, but in such a case,
         // for bystanders it is not possible to tell who attacked first, anyway.
-        commitCrime(player, victim, MWBase::MechanicsManager::OT_Murder);
+        commitCrime(attackerIsAvatar ? attacker : player, victim, MWBase::MechanicsManager::OT_Murder);
     }
 
     bool MechanicsManager::awarenessCheck(const MWWorld::Ptr& ptr, const MWWorld::Ptr& observer, bool useCache)
@@ -1905,6 +1982,20 @@ namespace MWMechanics
             inv.ContainerStore::remove(ESM::RefId::stringRefId("werewolfrobe"), 1);
         }
 
+        // An AVATAR on the peer fights with its owner's real form (backlog 152): the stat swap
+        // is actor-generic; the GUI and the witness check below stay with the owner's engine.
+        if (actor != player->getPlayer() && MWMP::isAvatar(actor.getCellRef().getRefNum()))
+        {
+            mActors.updateActor(actor, 0.f);
+            if (werewolf)
+            {
+                saveWerewolfStats(actor);
+                applyWerewolfStats(actor);
+            }
+            else
+                restoreWerewolfStats(actor);
+        }
+
         if (actor == player->getPlayer())
         {
             MWBase::Environment::get().getWorld()->reattachPlayerCamera();
@@ -1919,14 +2010,15 @@ namespace MWMechanics
 
             if (werewolf)
             {
-                player->saveStats();
-                player->setWerewolfStats();
+                // Actor-generic (MP Phase 2): the swap works on any NPC's own NpcStats.
+                saveWerewolfStats(actor);
+                applyWerewolfStats(actor);
                 windowManager->forceHide(MWGui::GW_Inventory);
                 windowManager->forceHide(MWGui::GW_Magic);
             }
             else
             {
-                player->restoreStats();
+                restoreWerewolfStats(actor);
                 windowManager->unsetForceHide(MWGui::GW_Inventory);
                 windowManager->unsetForceHide(MWGui::GW_Magic);
             }

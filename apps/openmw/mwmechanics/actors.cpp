@@ -1,7 +1,16 @@
+#include <limits>
+#include <set>
+
 #include "actors.hpp"
 
+#include "../mwmp/puppets.hpp"
+
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <optional>
+
+#include <osg/Vec3f>
 
 #include <components/esm3/esmreader.hpp>
 #include <components/esm3/esmwriter.hpp>
@@ -664,9 +673,13 @@ namespace MWMechanics
         }
 
         MWWorld::Ptr player = MWMechanics::getPlayer();
-        const std::set<MWWorld::Ptr>& playerAllies = cachedAllies.getActorsSidingWith(player);
-
-        bool isPlayerFollowerOrEscorter = playerAllies.find(actor1) != playerAllies.end();
+        // Siding is symmetric (an actor sides with whom it follows and who follows it,
+        // recursively), so "sides with the player or ANY avatar" is one any_of over the
+        // actor's own ally set — no avatar registry walk needed (backlog 292).
+        const auto sidesWithAPlayer = [&](const std::set<MWWorld::Ptr>& allies) {
+            return std::any_of(allies.begin(), allies.end(), MWMechanics::isPlayerOrAvatar);
+        };
+        bool isPlayerFollowerOrEscorter = sidesWithAPlayer(allies1);
 
         // If actor2 and at least one actor2 are in combat with actor1, actor1 and its allies start combat with them
         // Doesn't apply for player followers/escorters
@@ -721,7 +734,7 @@ namespace MWMechanics
         // Do aggression check if actor2 is the player or a player follower or escorter
         if (!aggressive)
         {
-            if (againstPlayer || playerAllies.find(actor2) != playerAllies.end())
+            if (againstPlayer || sidesWithAPlayer(cachedAllies.getActorsSidingWith(actor2)))
             {
                 // Player followers and escorters with high fight should not initiate combat with the player or with
                 // other player followers or escorters
@@ -1017,9 +1030,15 @@ namespace MWMechanics
                 // If drowning, apply 3 points of damage per second
                 static const float fSuffocationDamage
                     = world->getStore().get<ESM::GameSetting>().find("fSuffocationDamage")->mValue.getFloat();
-                DynamicStat<float> health = stats.getHealth();
-                health.setCurrent(health.getCurrent() - fSuffocationDamage * duration);
-                stats.setHealth(health);
+                // A peer-ruled player drowns on the peer (mwmp/puppets.hpp peerRulesBody);
+                // the report lands in the bars. The breath timer above still runs for the UI.
+                // A puppet drowns on its holder, never locally (backlog 290).
+                if (!(isPlayer && MWMP::peerRulesBody()) && !MWMP::isPuppet(ptr.getCellRef().getRefNum()))
+                {
+                    DynamicStat<float> health = stats.getHealth();
+                    health.setCurrent(health.getCurrent() - fSuffocationDamage * duration);
+                    stats.setHealth(health);
+                }
 
                 // Play a drowning sound
                 MWBase::SoundManager* sndmgr = MWBase::Environment::get().getSoundManager();
@@ -1037,6 +1056,13 @@ namespace MWMechanics
 
     static void updateEquippedLight(const MWWorld::Ptr& ptr, float duration, bool mayEquip)
     {
+        // A player's body on another screen (a puppet) or on the sim peer (an avatar) wears
+        // what its owner equipped, mirrored by script; it is not an NPC deciding whether it
+        // is dark enough for a torch. The daytime branch below unequipped the mirrored torch
+        // the frame after every equip, so a friend saw it only on a client slow enough for that
+        // frame to last (s148, #120/#127/#129 red, green in isolation).
+        const ESM::RefNum ref = ptr.getCellRef().getRefNum();
+        const bool mirrored = MWMP::isPuppet(ref) || MWMP::isAvatar(ref);
         const bool isPlayer = (ptr == getPlayer());
 
         const auto& actorClass = ptr.getClass();
@@ -1047,7 +1073,7 @@ namespace MWMechanics
         /**
          * Automatically equip NPCs torches at night and unequip them at day
          */
-        if (!isPlayer)
+        if (!isPlayer && !mirrored)
         {
             auto torchIter = std::find_if(std::begin(inventoryStore), std::end(inventoryStore), [&](auto entry) {
                 return entry.getType() == ESM::Light::sRecordId && entry.getClass().canBeEquipped(entry, ptr).first;
@@ -1160,27 +1186,67 @@ namespace MWMechanics
         {
             const MWWorld::ESMStore& esmStore = world->getStore();
             static const int cutoff = esmStore.get<ESM::GameSetting>().find("iCrimeThreshold")->mValue.getInteger();
-            // Force dialogue on sight if bounty is greater than the cutoff
-            // In vanilla morrowind, the greeting dialogue is scripted to either arrest the player (< 5000 bounty) or
-            // attack (>= 5000 bounty)
-            if (playerStats.getBounty() >= cutoff
+            static const int iCrimeThresholdMultiplier
+                = esmStore.get<ESM::GameSetting>().find("iCrimeThresholdMultiplier")->mValue.getInteger();
+
+            // WHO THIS GUARD MIGHT PURSUE. Vanilla has exactly one candidate -- the player --
+            // and on the SIM PEER that is its own idle dummy, so a guard evaluated a bounty
+            // belonging to nobody and no real player was ever pursued for anything.
+            //
+            // The avatars are the bodies real players drive (MWMP registry, see puppets.hpp).
+            // In singleplayer that registry is empty, so this loop runs exactly once with the
+            // player and behaves as it always did.
+            const auto pursue = [&](const MWWorld::Ptr& criminal, int bounty) -> bool {
+                // Force dialogue on sight if bounty is greater than the cutoff
+                // In vanilla morrowind, the greeting dialogue is scripted to either arrest the player (< 5000 bounty)
+                // or attack (>= 5000 bounty)
+                if (bounty < cutoff)
+                    return false;
                 // TODO: do not run these two every frame. keep an Aware state for each actor and update it every 0.2 s
                 // or so?
-                && world->getLOS(ptr, player) && mechanicsManager->awarenessCheck(player, ptr))
-            {
-                static const int iCrimeThresholdMultiplier
-                    = esmStore.get<ESM::GameSetting>().find("iCrimeThresholdMultiplier")->mValue.getInteger();
-                if (playerStats.getBounty() >= cutoff * iCrimeThresholdMultiplier)
+                if (!world->getLOS(ptr, criminal) || !mechanicsManager->awarenessCheck(criminal, ptr))
+                    return false;
+                if (bounty >= cutoff * iCrimeThresholdMultiplier)
                 {
-                    ESM::RefNum playerNum = player.getCellRef().getRefNum();
-                    mechanicsManager->startCombat(ptr, player, &cachedAllies.getActorsSidingWith(player));
-                    // Stops the guard from quitting combat if player is unreachable
-                    creatureStats.setHitAttemptActor(playerNum);
+                    ESM::RefNum criminalNum = criminal.getCellRef().getRefNum();
+                    mechanicsManager->startCombat(ptr, criminal, &cachedAllies.getActorsSidingWith(criminal));
+                    // Stops the guard from quitting combat if the criminal is unreachable
+                    creatureStats.setHitAttemptActor(criminalNum);
                 }
                 else
-                    creatureStats.getAiSequence().stack(AiPursue(player), ptr);
+                    creatureStats.getAiSequence().stack(AiPursue(criminal), ptr);
                 creatureStats.setAlarmed(true);
                 npcStats.setCrimeId(world->getPlayer().getNewCrimeId());
+                return true;
+            };
+
+            // The local player first, so singleplayer order is untouched. A guard pursues ONE
+            // target, so the first match wins.
+            if (!pursue(player, playerStats.getBounty()))
+            {
+                for (const Actor& other : mActors)
+                {
+                    if (other.isInvalid())
+                        continue;
+                    const MWWorld::Ptr& body = other.getPtr();
+                    const ESM::RefNum ref = body.getCellRef().getRefNum();
+                    if (!MWMP::isAvatar(ref) || body.getClass().getCreatureStats(body).isDead())
+                        continue;
+                    if (pursue(body, MWMP::avatarBounty(ref)))
+                    {
+                        // ONCE PER AVATAR, not once per frame. The outer guard (isInPursuit /
+                        // isInCombat) is supposed to stop re-entry, and for a wanted AVATAR it
+                        // evidently does not latch the same way it does for the player -- this
+                        // printed 13,444 times in a two-minute scenario. The behaviour is right
+                        // and re-stacking is what vanilla does anyway; the LOG is what needed
+                        // bounding, and a line per frame per guard would drown a real server.
+                        static std::set<uint32_t> sAnnounced;
+                        if (sAnnounced.insert(ref.mIndex).second)
+                            Log(Debug::Info) << "[mp] guard pursuing wanted avatar " << ref.mIndex
+                                             << " bounty=" << MWMP::avatarBounty(ref);
+                        break;
+                    }
+                }
             }
         }
 
@@ -1237,10 +1303,20 @@ namespace MWMechanics
         if (ptr == player)
             return;
 
-        const float dist
-            = (player.getRefData().getPosition().asVec3() - ptr.getRefData().getPosition().asVec3()).length();
+        // An actor in an interior the server is holding ALWAYS processes. Distance is
+        // meaningless across a door — the room may be a mile from the peer's avatar in world
+        // units — so a range check would cull exactly the NPCs the server asked to simulate.
+        // This is what lets an indoor quest advance while the peer stands somewhere else.
+        const bool heldInterior
+            = MWBase::Environment::get().getWorld()->isAnchoredInterior(ptr.getCell());
+
+        // NEAREST ANCHOR, not just the player — one shared reduction (actorutil), because the
+        // pasted-per-site version is exactly how the animation gate got missed and froze NPCs
+        // under a healthy holder.
+        const osg::Vec3f actorPos = ptr.getRefData().getPosition().asVec3();
+        const float dist = std::sqrt(nearestSimDistanceSqr(actorPos));
         const int actorsProcessingRange = Settings::game().mActorsProcessingRange;
-        if (dist > actorsProcessingRange)
+        if (!heldInterior && dist > actorsProcessingRange)
         {
             ptr.getRefData().getBaseNode()->setNodeMask(0);
             return;
@@ -1252,7 +1328,10 @@ namespace MWMechanics
         float visibilityRatio = 1.0;
         const float fadeStartDistance = actorsProcessingRange * 0.9f;
         const float fadeEndDistance = static_cast<float>(actorsProcessingRange);
-        const float fadeRatio = (dist - fadeStartDistance) / (fadeEndDistance - fadeStartDistance);
+        // A held interior is never faded: `dist` to it is meaningless, and fading would make
+        // the peer's own view of those actors wrong without changing whether they simulate.
+        const float fadeRatio
+            = heldInterior ? 0.f : (dist - fadeStartDistance) / (fadeEndDistance - fadeStartDistance);
         if (fadeRatio > 0)
             visibilityRatio -= std::max(0.f, fadeRatio);
 
@@ -1528,7 +1607,6 @@ namespace MWMechanics
             const bool showTorches = world->useTorches();
 
             const MWWorld::Ptr player = getPlayer();
-            const osg::Vec3f playerPos = player.getRefData().getPosition().asVec3();
 
             /// \todo move update logic to Actor class where appropriate
 
@@ -1544,8 +1622,6 @@ namespace MWMechanics
                 if (!playerHitAttemptActor.isInCell())
                     player.getClass().getCreatureStats(player).setHitAttemptActor({});
             }
-            const int actorsProcessingRange = Settings::game().mActorsProcessingRange;
-
             // AI and magic effects update
             for (Actor& actor : mActors)
             {
@@ -1556,9 +1632,14 @@ namespace MWMechanics
                 MWBase::LuaManager::ActorControls* luaControls
                     = MWBase::Environment::get().getLuaManager()->getActorControls(actor.getPtr());
 
-                const float distSqr = (playerPos - actor.getPtr().getRefData().getPosition().asVec3()).length2();
-                // AI processing is only done within given distance to the player.
-                const bool inProcessingRange = distSqr <= actorsProcessingRange * actorsProcessingRange;
+                // NEAREST ANCHOR, not just the player — one shared reduction (actorutil).
+                //
+                // This gate decides whether an actor gets AI AT ALL. On a normal client there
+                // are no anchors and it is exactly the vanilla check. On a headless sim peer
+                // the "player" is its own parked avatar, so measuring only from that meant
+                // every NPC near a REAL player got no AI. A held interior always processes:
+                // distance across a door is meaningless, and the server asked for that room.
+                const bool inProcessingRange = inSimProcessingRange(actor.getPtr());
 
                 // If dead or no longer in combat, no longer store any actors who attempted to hit us. Also remove for
                 // the player.
@@ -1605,7 +1686,12 @@ namespace MWMechanics
                     }
                     if (aiActive && inProcessingRange)
                     {
-                        if (engageCombatTimerStatus == Misc::TimerStatus::Elapsed)
+                        // ...and never AS an aggressor: its AI is off, so a combat package
+                        // stacked on it would never execute but would still read as "in
+                        // combat" to everything that asks (retaliation, guards, greetings).
+                        // The template record's Fight rating must not make players hostile.
+                        const bool actorIsAvatar = MWMP::isAvatar(actor.getPtr().getCellRef().getRefNum());
+                        if (engageCombatTimerStatus == Misc::TimerStatus::Elapsed && !actorIsAvatar)
                         {
                             if (!isPlayer)
                                 adjustCommandedActor(actor.getPtr());
@@ -1616,8 +1702,16 @@ namespace MWMechanics
                                     continue;
                                 if (otherActor.getPtr() == actor.getPtr() || isPlayer) // player is not AI-controlled
                                     continue;
-                                engageCombat(
-                                    actor.getPtr(), otherActor.getPtr(), cachedAllies, otherActor.getPtr() == player);
+                                // AN AVATAR IS A PLAYER FOR AGGRESSION. engageCombat only runs the
+                                // fight-rating check when the other actor is the player, and on the
+                                // sim peer the player is its own idle dummy -- so no creature or
+                                // hostile NPC ever attacked a connected player unprovoked: cliff
+                                // racers, rats and bandits all stood and watched. Retaliation
+                                // (mechanicsmanagerimp.cpp actorAttacked) had the same blind
+                                // spot and is fixed beside this. See mwmp/puppets.hpp.
+                                const MWWorld::Ptr& other = otherActor.getPtr();
+                                engageCombat(actor.getPtr(), other, cachedAllies,
+                                    other == player || MWMP::isAvatar(other.getCellRef().getRefNum()));
                             }
                         }
                         if (mTimerUpdateHeadTrack == 0)
@@ -1635,6 +1729,17 @@ namespace MWMechanics
                                 updateGreetingState(actor.getPtr(), actor, mTimerUpdateHello > 0);
                                 playIdleDialogue(actor.getPtr());
                                 updateMovementSpeed(actor.getPtr());
+                            }
+                            else if (isConscious(actor.getPtr())
+                                && MWMP::isPuppet(actor.getPtr().getCellRef().getRefNum()))
+                            {
+                                // A PUPPET IS STILL A PERSON TO TALK TO. On a client every NPC in
+                                // a held cell is a puppet with its AI off, and greetings and idle
+                                // chatter lived inside the AI block -- so nobody ever turned to a
+                                // player or said a word to them: a whole town of shop mannequins.
+                                // Motion stays the holder's; a greeting is a look and a voice line.
+                                updateGreetingState(actor.getPtr(), actor, mTimerUpdateHello > 0);
+                                playIdleDialogue(actor.getPtr());
                             }
                         }
                     }
@@ -1673,7 +1778,6 @@ namespace MWMechanics
             {
                 if (actor.isInvalid())
                     continue;
-                const float dist = (playerPos - actor.getPtr().getRefData().getPosition().asVec3()).length();
                 const bool isPlayer = actor.getPtr() == player;
                 CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
                 // Actors with active AI should be able to move.
@@ -1683,7 +1787,21 @@ namespace MWMechanics
                     MWMechanics::AiSequence& seq = stats.getAiSequence();
                     alwaysActive = !seq.isEmpty() && seq.getActivePackage().alwaysActive();
                 }
-                const bool inRange = isPlayer || dist <= actorsProcessingRange || alwaysActive;
+                // NEAREST ANCHOR, not just the player. THIS was the missed half of the
+                // 2026-08-25 fix: the AI gate above went anchor-aware while this one kept
+                // measuring from the player only, so an actor in an anchored cell DECIDED to
+                // attack and then `ctrl.update()` never ran — setNodeMask(0),
+                // setActorActive(false), continue. AI that plans and a character controller
+                // that never moves anyone is exactly the "frozen NPCs under a healthy holder"
+                // the one-peer-per-cell fan-out was deployed to paper over.
+                // Backlog 348: another player's body is never out of range. The gate below
+                // also hides the actor (setNodeMask(0)), so a friend walked out of the
+                // actors processing range while the server still streamed them at mid/far
+                // LOD. A player puppet (runtime refnum, #143 predicate) runs no AI here, so
+                // keeping its controller live costs an animation tick, not a brain.
+                const ESM::RefNum selfRef = actor.getPtr().getCellRef().getRefNum();
+                const bool playerPuppet = MWMP::isPuppet(selfRef) && !selfRef.hasContentFile();
+                const bool inRange = isPlayer || alwaysActive || playerPuppet || inSimProcessingRange(actor.getPtr());
                 const int activeFlag = isPlayer ? 2 : 1; // Can be changed back to '2' to keep updating bounding boxes
                                                          // off screen (more accurate, but slower)
                 const int active = inRange ? activeFlag : 0;
@@ -1885,6 +2003,31 @@ namespace MWMechanics
         }
     }
 
+    int Actors::nearestAvatarLevel(const osg::Vec3f& pos) const
+    {
+        // The party leader's level, when the world has one (mwmp/puppets.hpp setPartyLevel):
+        // the host's game stays the host's game wherever a helper happens to be standing.
+        if (MWMP::partyLevel() > 0)
+            return MWMP::partyLevel();
+        int level = 0;
+        float bestDist2 = std::numeric_limits<float>::max();
+        for (const Actor& actor : mActors)
+        {
+            if (actor.isInvalid())
+                continue;
+            const MWWorld::Ptr& body = actor.getPtr();
+            if (!MWMP::isAvatar(body.getCellRef().getRefNum()))
+                continue;
+            const float d2 = (body.getRefData().getPosition().asVec3() - pos).length2();
+            if (d2 < bestDist2)
+            {
+                bestDist2 = d2;
+                level = body.getClass().getCreatureStats(body).getLevel();
+            }
+        }
+        return level;
+    }
+
     void Actors::rest(double hours, bool sleep) const
     {
         float duration = static_cast<float>(hours * 3600);
@@ -1893,8 +2036,6 @@ namespace MWMechanics
             duration /= timeScale;
 
         const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
-        const osg::Vec3f playerPos = player.getRefData().getPosition().asVec3();
-        const int actorsProcessingRange = Settings::game().mActorsProcessingRange;
 
         for (const Actor& actor : mActors)
         {
@@ -1909,9 +2050,9 @@ namespace MWMechanics
             if (!sleep || actor.getPtr() == player)
                 restoreDynamicStats(actor.getPtr(), hours, sleep);
 
-            if ((!actor.getPtr().getRefData().getBaseNode())
-                || (playerPos - actor.getPtr().getRefData().getPosition().asVec3()).length2()
-                    > actorsProcessingRange * actorsProcessingRange)
+            // Nearest anchor + held interiors, not just the player (actorutil): a rest on
+            // the sim peer must tick every actor it simulates, not just its own cell.
+            if ((!actor.getPtr().getRefData().getBaseNode()) || !inSimProcessingRange(actor.getPtr()))
                 continue;
 
             // Get rid of effects pending removal so they are not applied when resting
@@ -1974,6 +2115,13 @@ namespace MWMechanics
                     continue;
 
                 if (sidingActors.find(observer) != sidingActors.cend())
+                    continue;
+
+                // Backlog 258: another player's body is not an observer (the #143 predicate,
+                // mechanicsmanagerimp.cpp canReportCrime). A friend's puppet beside you hid
+                // the eye and Sneak never trained.
+                const ESM::RefNum observerRef = observer.getCellRef().getRefNum();
+                if (MWMP::isAvatar(observerRef) || MWMP::isPlayerPuppet(observerRef))
                     continue;
 
                 if (world->getLOS(player, observer))

@@ -1,7 +1,9 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef COMPONENTS_FILES_LINUXPATH_H
 #define COMPONENTS_FILES_LINUXPATH_H
 
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__)
 
 #include <filesystem>
 #include <vector>

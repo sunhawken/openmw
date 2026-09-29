@@ -1,6 +1,10 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "settingswindow.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 #include <unicode/locid.h>
 
@@ -10,10 +14,15 @@
 #include <MyGUI_ScrollBar.h>
 #include <MyGUI_ScrollView.h>
 #include <MyGUI_TabControl.h>
+#include <MyGUI_TextBox.h>
 #include <MyGUI_UString.h>
 #include <MyGUI_Window.h>
 
 #include <SDL_video.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <components/debug/debuglog.hpp>
 #include <components/files/configurationmanager.hpp>
@@ -250,6 +259,7 @@ namespace MWGui
         getWidget(mVSyncModeList, "VSyncModeList");
         getWidget(mWindowBorderButton, "WindowBorderButton");
         getWidget(mTextureFilteringButton, "TextureFilteringButton");
+        getWidget(mAntialiasingButton, "AntialiasingButton");
         getWidget(mControlsBox, "ControlsBox");
         getWidget(mResetControlsButton, "ResetControlsButton");
         getWidget(mKeyboardSwitch, "KeyboardButton");
@@ -277,8 +287,11 @@ namespace MWGui
         getWidget(mMinimumBrightnessText, "MinimumBrightnessText");
         getWidget(mMinimumBrightnessScroll, "MinimumBrightnessScroll");
 
-#ifndef WIN32
+#if !defined(WIN32) && !defined(__EMSCRIPTEN__)
         // hide gamma controls since it currently does not work under Linux
+        // (on the web build the slider IS shown: [Video] gamma drives the post-processing
+        // 'adjustments' uGamma each frame — see PostProcessor — so it works as a real
+        // brightness control there.)
         MyGUI::ScrollBar* gammaSlider;
         getWidget(gammaSlider, "GammaSlider");
         gammaSlider->setVisible(false);
@@ -298,6 +311,18 @@ namespace MWGui
         mOkButton->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onOkButtonClicked);
         mTextureFilteringButton->eventComboChangePosition
             += MyGUI::newDelegate(this, &SettingsWindow::onTextureFilteringChanged);
+        {
+            // Anti-aliasing dropdown: items are Off / 1.5x / 2x -> stored {0,2,4}. On the web this
+            // drives SSAA (supersampling), not hardware MSAA: MSAA can't run under post-processing on
+            // WebGL2 (can't resolve a multisampled depth buffer to the texture PP needs), so the stored
+            // value is mapped to a supersample factor {1.0,1.5,2.0} in RenderingManager and applied by
+            // rescaling the drawing buffer. Any larger legacy value (8/16) clamps to the 2x entry.
+            const int aa = Settings::video().mAntialiasing;
+            const size_t aaIdx = aa >= 4 ? 2 : aa >= 2 ? 1 : 0;
+            mAntialiasingButton->setIndexSelected(aaIdx);
+            mAntialiasingButton->eventComboChangePosition
+                += MyGUI::newDelegate(this, &SettingsWindow::onAntialiasingChanged);
+        }
         mResolutionList->eventListChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onResolutionSelected);
 
         mWaterRefractionButton->eventMouseButtonClick
@@ -336,8 +361,63 @@ namespace MWGui
 
         // fill resolution list
         const int screen = Settings::video().mScreen;
-        int numDisplayModes = SDL_GetNumDisplayModes(screen);
         std::vector<std::pair<int, int>> resolutions;
+#ifdef __EMSCRIPTEN__
+        // A browser canvas has no OS "display modes" (and SDL's display queries hang under
+        // emscripten). The only meaningful choice is the SCENE render resolution: CSS always
+        // stretches the canvas to fill the same on-screen area, so a lower entry just renders the
+        // 3D scene smaller and upscales it — a quality/performance dial, NOT a window-shape change.
+        // So offer the native drawing-buffer size at 1:1 and integer downscales of it (1/2, 1/3,
+        // 1/4 …), every entry sharing the browser's EXACT aspect ratio, down to a ~480px-wide
+        // floor. Apply writes [Video] "internal render scale" (item i = 1/(i+1)) — the
+        // post-processor renders its scene FBO chain at that fraction and its final pass upscales.
+        // The canvas itself NEVER changes size, so MyGUI (menus/text/HUD) stays native-crisp at
+        // every tier (the old SDL_SetWindowSize route shrank the GUI into unreadability).
+        (void)screen;
+        (void)resolutions;
+        {
+            // "Native" = the harness's actual drawing-buffer size (window.__renderW/H) — the
+            // budget-capped resolution the canvas is CURRENTLY using, so 1:1 is pixel-perfect and
+            // selecting it is a no-op. Fall back to the device-pixel window size pre-harness.
+            // clang-format off
+            const int nativeW = EM_ASM_INT({
+                return Math.max(320, Math.round(globalThis.__renderW || ((globalThis.innerWidth || 1280) * (globalThis.devicePixelRatio || 1))));
+            });
+            const int nativeH = EM_ASM_INT({
+                return Math.max(240, Math.round(globalThis.__renderH || ((globalThis.innerHeight || 720) * (globalThis.devicePixelRatio || 1))));
+            });
+            // clang-format on
+            // Explicit SCENE render-scale ladder (a quality/perf dial, NOT monitor modes): 'Full'
+            // renders the 3D scene at the canvas's native drawing buffer; lower tiers render the scene
+            // smaller and the post-processor upscales to the same window (faster, softer), while the
+            // canvas + MyGUI stay native so menus/text stay crisp. Non-1/n tiers (75%) are supported
+            // because each item stores its float scale as the item data (read back in
+            // onResolutionAccept / highlightCurrentResolution) rather than deriving it from the index.
+            static const struct
+            {
+                float scale;
+                const char* name;
+            } tiers[] = {
+                { 1.00f, "Full" }, { 0.75f, "High" }, { 0.50f, "Half" }, { 1.f / 3.f, "Third" },
+                { 0.25f, "Quarter" }
+            };
+            for (const auto& t : tiers)
+            {
+                const bool full = t.scale >= 0.999f;
+                // 1:1 is pixel-perfect; downscales are evened for FBO/codec sanity.
+                const int w = full ? nativeW : (static_cast<int>(std::lround(nativeW * t.scale)) & ~1);
+                const int h = full ? nativeH : (static_cast<int>(std::lround(nativeH * t.scale)) & ~1);
+                if (!full && w < 480) // keep Full always; drop tiers below the ~480px floor
+                    continue;
+                const int percent = static_cast<int>(std::lround(t.scale * 100.f));
+                std::string label = std::string(t.name) + " (" + std::to_string(percent) + "%) - "
+                    + std::to_string(w) + " x " + std::to_string(h);
+                if (mResolutionList->findItemIndexWith(label) == MyGUI::ITEM_NONE)
+                    mResolutionList->addItem(label, t.scale);
+            }
+        }
+#else
+        int numDisplayModes = SDL_GetNumDisplayModes(screen);
         for (int i = 0; i < numDisplayModes; i++)
         {
             SDL_DisplayMode mode;
@@ -352,6 +432,7 @@ namespace MWGui
             if (mResolutionList->findItemIndexWith(str) == MyGUI::ITEM_NONE)
                 mResolutionList->addItem(str, resolution);
         }
+#endif
         highlightCurrentResolution();
 
         mTextureFilteringButton->setCaptionWithReplacing(
@@ -382,6 +463,23 @@ namespace MWGui
             windowMode != Settings::WindowMode::Fullscreen && windowMode != Settings::WindowMode::WindowedFullscreen);
 
         mWindowModeHint->setVisible(windowMode == Settings::WindowMode::WindowedFullscreen);
+
+#ifdef __EMSCRIPTEN__
+        // A canvas has no OS window frame, and SDL's fullscreen needs a user gesture the engine
+        // can't supply, so window-mode/border/VSync are meaningless-to-misleading here. Disable
+        // them (the canvas is always "windowed", CSS-scaled to fill; VSync is browser-controlled
+        // via requestAnimationFrame) rather than presenting silent no-ops. Resolution still works.
+        // Hide the hint texts entirely (the F3 frame-rate hint and the window-mode hint read as
+        // clutter over the menu).
+        mWindowModeList->setEnabled(false);
+        mWindowBorderButton->setEnabled(false);
+        mVSyncModeList->setEnabled(false);
+        mWindowModeHint->setVisible(false);
+        MyGUI::TextBox* frameRateHint = nullptr;
+        getWidget(frameRateHint, "FrameRateHint");
+        if (frameRateHint)
+            frameRateHint->setVisible(false);
+#endif
 
         mKeyboardSwitch->setStateSelected(true);
         mControllerSwitch->setStateSelected(false);
@@ -472,14 +570,26 @@ namespace MWGui
 
     void SettingsWindow::onResolutionAccept()
     {
-        auto resolution = mResolutionList->getItemDataAt<std::pair<int, int>>(mResolutionList->getIndexSelected());
-        if (resolution)
+        const size_t index = mResolutionList->getIndexSelected();
+        if (index == MyGUI::ITEM_NONE)
+            return;
+#ifdef __EMSCRIPTEN__
+        // The web list is a SCENE render-scale dial: each item stores its float scale. Only the
+        // post-processor's scene chain changes size; the canvas — and with it MyGUI — stays native,
+        // so menus/text remain crisp at every tier. (Setting [Video] resolution would shrink the GUI.)
+        if (const float* scale = mResolutionList->getItemDataAt<float>(index))
+        {
+            Settings::video().mInternalRenderScale.set(*scale);
+            apply();
+        }
+#else
+        if (auto resolution = mResolutionList->getItemDataAt<std::pair<int, int>>(index))
         {
             Settings::video().mResolutionX.set(resolution->first);
             Settings::video().mResolutionY.set(resolution->second);
-
             apply();
         }
+#endif
     }
 
     void SettingsWindow::onResolutionCancel()
@@ -491,6 +601,20 @@ namespace MWGui
     {
         mResolutionList->setIndexSelected(MyGUI::ITEM_NONE);
 
+#ifdef __EMSCRIPTEN__
+        // Web: the current "resolution" is the scene render-scale stored on each item; select the
+        // nearest one (tolerance covers the even-width rounding when the ladder was built).
+        const float cur = static_cast<float>(Settings::video().mInternalRenderScale);
+        for (size_t i = 0; i < mResolutionList->getItemCount(); ++i)
+        {
+            const float* s = mResolutionList->getItemDataAt<float>(i);
+            if (s && std::abs(*s - cur) < 0.02f)
+            {
+                mResolutionList->setIndexSelected(i);
+                break;
+            }
+        }
+#else
         const int currentX = Settings::video().mResolutionX;
         const int currentY = Settings::video().mResolutionY;
 
@@ -503,6 +627,7 @@ namespace MWGui
                 break;
             }
         }
+#endif
     }
 
     void SettingsWindow::onRefractionButtonClicked(MyGUI::Widget* /*sender*/)
@@ -574,6 +699,28 @@ namespace MWGui
 
         Settings::video().mVsyncMode.set(static_cast<SDLUtil::VSyncMode>(sender->getIndexSelected()));
         apply();
+    }
+
+    void SettingsWindow::onAntialiasingChanged(MyGUI::ComboBox* sender, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        // Dropdown index (Off / 1.5x / 2x) -> stored value. On the web this is mapped to an SSAA
+        // supersample factor (see RenderingManager); on desktop it's a real MSAA sample count.
+        static const int samples[] = { 0, 2, 4 };
+        Settings::video().mAntialiasing.set(samples[std::min<size_t>(pos, 2)]);
+
+#ifdef __EMSCRIPTEN__
+        // Apply live: RenderingManager::processChangedSettings drives window.__omwSetSSAA, which
+        // rescales the drawing buffer immediately — no restart/reload needed (and so no lost-write
+        // race from a fast refresh). The value persists via the normal save path.
+        apply();
+#else
+        // Desktop reads MSAA at PostProcessor construction, so it takes effect on restart.
+        MWBase::Environment::get().getWindowManager()->interactiveMessageBox(
+            "#{OMWEngine:ChangeRequiresRestart}", { "#{Interface:OK}" }, true);
+#endif
     }
 
     void SettingsWindow::onWindowModeChanged(MyGUI::ComboBox* sender, size_t pos)
@@ -653,6 +800,8 @@ namespace MWGui
 
         if (getSettingType(sender) == checkButtonType)
         {
+            // Post-processing now runs on the WebGL2/GLES build (curated chain), so the
+            // Options-menu "Post Processing > enabled" toggle is honored on web as on desktop.
             Settings::get<bool>(getSettingCategory(sender), getSettingName(sender)).set(newState);
             apply();
             return;
@@ -1024,12 +1173,40 @@ namespace MWGui
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mOkButton);
     }
 
+#ifdef __EMSCRIPTEN__
+    namespace
+    {
+        // Deferred settings save. Runs from a clean top-of-event-loop stack (emscripten_async_call),
+        // NOT inside the settings-window close-event dispatch: doing the writes synchronously in
+        // onClose deadlocked the main thread. The user config dir is FIXED on the web
+        // (index.html: XDG_CONFIG_HOME=/userdata/config; boot logs userConfig=/userdata/config/openmw)
+        // and is hardcoded here on purpose — re-reading it from the ConfigurationManager in this
+        // async context returned garbage/empty and intermittently trapped (UB).
+        void doDeferredSettingsSave(void*)
+        {
+            const std::filesystem::path dir("/userdata/config/openmw");
+            Settings::Manager::saveUser(dir / "settings.cfg");
+            MWBase::Environment::get().getLuaManager()->savePermanentStorage(dir);
+            MWBase::Environment::get().getInputManager()->saveBindings();
+        }
+    }
+#endif
+
     void SettingsWindow::onClose()
     {
+#ifdef __EMSCRIPTEN__
+        // Do NOT save synchronously here. onClose() runs inside the settings-window close-event
+        // dispatch (WindowBase::onClose during setVisible(false)); doing the file writes +
+        // FS.syncfs from within that traversal deadlocked the main thread on the web. Defer the
+        // whole save to a clean top-of-event-loop stack via emscripten_async_call(0ms), after the
+        // close traversal has fully unwound. Persistence is preserved; it happens ~one tick later.
+        emscripten_async_call(&doDeferredSettingsSave, nullptr, 0);
+#else
         // Save user settings
         Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");
         MWBase::Environment::get().getLuaManager()->savePermanentStorage(mCfgMgr.getUserConfigPath());
         MWBase::Environment::get().getInputManager()->saveBindings();
+#endif
     }
 
     void SettingsWindow::onWindowResize(MyGUI::Window* /*sender*/)

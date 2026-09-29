@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_COMPONENTS_FX_STATEUPDATER_H
 #define OPENMW_COMPONENTS_FX_STATEUPDATER_H
 
@@ -110,6 +112,10 @@ namespace Fx
         }
 
         static const std::string& getStructDefinition() { return sDefinition; }
+
+        // Flat `uniform <type> omw_<name>;` declarations used instead of the struct uniform on
+        // ANGLE/WebGL2, which reads struct-member uniforms as 0.
+        static const std::string& getFlatDefinition() { return sFlatDefinition; }
 
         void setDefaults(osg::StateSet* stateset) override;
 
@@ -291,6 +297,7 @@ namespace Fx
         bool mUseUBO;
 
         static std::string sDefinition;
+        static std::string sFlatDefinition;
 
         std::shared_ptr<SceneUtil::PPLightBuffer> mPointLightBuffer;
     };

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_COMPONENTS_MYGUIPLATFORM_MYGUIRENDERMANAGER_H
 #define OPENMW_COMPONENTS_MYGUIPLATFORM_MYGUIRENDERMANAGER_H
 
@@ -114,6 +116,10 @@ namespace MyGUIPlatform
         const MyGUI::RenderTargetInfo& getInfo() const override { return mInfo; }
 
         void setViewSize(int width, int height) override;
+
+        /** Update the GUI scaling factor at runtime (e.g. when the web render-buffer size changes with
+         * a resolution tier). The next setViewSize() applies it. */
+        void setScalingFactor(float scalingFactor) { mInvScalingFactor = scalingFactor > 0.f ? 1.f / scalingFactor : 1.f; }
 
         void registerShader(const std::string& shaderName, const std::string& vertexProgramFile,
             const std::string& fragmentProgramFile) override;

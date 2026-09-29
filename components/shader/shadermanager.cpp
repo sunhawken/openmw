@@ -1,4 +1,10 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "shadermanager.hpp"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <algorithm>
 #include <cassert>
@@ -43,6 +49,305 @@ namespace
 
         throw std::runtime_error("unrecognized shader template name: " + templateName);
     }
+
+#ifdef __EMSCRIPTEN__
+    // Merging OpenMW's $link'd shaders into one (WebGL allows one shader per stage) duplicates
+    // any #include shared by the merged units, causing "redefinition"/"already has a body".
+    // Remove duplicate top-level definitions by name, keeping the first occurrence. Operates on
+    // the define-resolved merged GLSL, so it is immune to conditional-include subtleties.
+    void dedupeTopLevelDefinitions(std::string& source)
+    {
+        // After include-guarding the lib shaders, the GLSL preprocessor dedups same-file
+        // includes; the only remaining cross-file duplicates from merging $link'd shaders are
+        // uniforms declared in more than one file (e.g. screenRes). Drop duplicate top-level
+        // uniform declarations by name (they are single-line in OpenMW's shaders).
+        auto isIdent = [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+        };
+        std::set<std::string> seenUniforms;
+        std::istringstream in(source);
+        std::string out;
+        out.reserve(source.size());
+        std::string line;
+        // Track preprocessor blocks: #ifndef guards are safe to dedupe across (they only
+        // include their body once), but #if/#ifdef/#else/#elif select mutually-exclusive
+        // branches where the SAME uniform may legitimately be declared in each (e.g. `sun`
+        // in clustered vs legacy lighting). Never dedupe inside a conditional branch.
+        std::vector<bool> condStack;
+        auto inConditional = [&] {
+            for (bool b : condStack)
+                if (b)
+                    return true;
+            return false;
+        };
+        while (std::getline(in, line))
+        {
+            std::size_t a = line.find_first_not_of(" \t");
+            if (a != std::string::npos && line[a] == '#')
+            {
+                std::string_view d(line);
+                d.remove_prefix(a + 1);
+                std::size_t ws = d.find_first_not_of(" \t");
+                if (ws != std::string_view::npos)
+                    d.remove_prefix(ws);
+                if (d.rfind("ifndef", 0) == 0)
+                    condStack.push_back(false);
+                else if (d.rfind("ifdef", 0) == 0 || d.rfind("if", 0) == 0)
+                    condStack.push_back(true);
+                else if ((d.rfind("else", 0) == 0 || d.rfind("elif", 0) == 0) && !condStack.empty())
+                    condStack.back() = true;
+                else if (d.rfind("endif", 0) == 0 && !condStack.empty())
+                    condStack.pop_back();
+                out += line;
+                out += '\n';
+                continue;
+            }
+            bool dropped = false;
+            if (a != std::string::npos && line.compare(a, 7, "uniform") == 0
+                && line.find('{') == std::string::npos)
+            {
+                std::size_t semi = line.find(';');
+                if (semi != std::string::npos)
+                {
+                    std::string decl = line.substr(0, semi);
+                    std::size_t cut = decl.find_first_of("=[");
+                    if (cut != std::string::npos)
+                        decl = decl.substr(0, cut);
+                    std::size_t q = decl.size();
+                    while (q > 0 && !isIdent(decl[q - 1]))
+                        --q;
+                    std::size_t pp = q;
+                    while (pp > 0 && isIdent(decl[pp - 1]))
+                        --pp;
+                    std::string name = decl.substr(pp, q - pp);
+                    if (!name.empty())
+                    {
+                        if (!inConditional())
+                        {
+                            // Unconditional declaration: always active. Any duplicate — even one
+                            // inside a later #if branch — is a guaranteed redefinition; drop dups.
+                            if (!seenUniforms.insert(name).second)
+                                dropped = true;
+                        }
+                        else if (seenUniforms.count(name))
+                        {
+                            // Inside a conditional, only drop when an ALWAYS-ACTIVE (unconditional)
+                            // declaration of the same name exists (e.g. `sun` in water.frag vs the
+                            // linked lighting bindings' #if branch). Purely-conditional duplicates
+                            // across mutually-exclusive branches must be kept.
+                            dropped = true;
+                        }
+                    }
+                }
+            }
+            if (!dropped)
+                out += line;
+            out += '\n';
+        }
+        source.swap(out);
+    }
+
+    // OpenMW's "compatibility" shaders target desktop GLSL 1.20. WebGL2 only accepts
+    // GLSL ES 3.00, which OpenMW's shaders require (centroid, non-constant loop bounds).
+    // Retarget the version directive and convert legacy keywords/built-ins to ES 3.00.
+    // Remaining fixed-function vertex built-ins (gl_Vertex, gl_*Matrix) are rewritten by
+    // OSG's convertVertexShaderSourceToOsgBuiltIns (vertex-attribute aliasing), which uses
+    // the `in` qualifier for #version >= 130.
+    void adjustSourceForGLES(std::string& source, osg::Shader::Type type)
+    {
+        constexpr const char* marker = "//__GLES_PRELUDE__\n";
+        std::string header = "#version 300 es\nprecision highp float;\nprecision highp int;\n";
+        if (type == osg::Shader::FRAGMENT)
+            header += "precision highp sampler2D;\nprecision highp sampler2DShadow;\nprecision highp sampler2DArray;\n";
+        header += marker;
+        std::size_t vpos = source.find("#version");
+        if (vpos != std::string::npos)
+        {
+            std::size_t eol = source.find('\n', vpos);
+            if (eol == std::string::npos)
+                eol = source.size();
+            // Replace from the START of the source (not just from #version) through the version line,
+            // so anything preceding #version is removed. GLSL requires #version to be the very first
+            // line; the Fx post-process header (components/fx/pass.cpp) begins with a blank line, which
+            // would push #version to line 2 and make the compiler silently fall back to ES 1.00
+            // ('in'/'out' unsupported, samplers reserved, no default float precision).
+            source.replace(0, eol + 1, header);
+        }
+        else
+            source = header + source;
+
+        // Declarations to inject at the prelude marker.
+        std::string prelude;
+        auto convert = [&](const std::string& glName, const std::string& osgName, const std::string& decl) {
+            if (std::regex_search(source, std::regex("\\b" + glName + "\\b")))
+            {
+                prelude += decl + "\n";
+                source = std::regex_replace(source, std::regex("\\b" + glName + "\\b"), osgName);
+            }
+        };
+
+        // ftransform() only works with fixed-function built-ins; expand it first.
+        source = std::regex_replace(
+            source, std::regex("\\bftransform\\s*\\(\\s*\\)"), "(gl_ModelViewProjectionMatrix * gl_Vertex)");
+
+        // gl_ModelViewMatrixInverse isn't converted by OSG; derive it (gl_ModelViewMatrix is).
+        source = std::regex_replace(
+            source, std::regex("\\bgl_ModelViewMatrixInverse\\b"), "inverse(gl_ModelViewMatrix)");
+
+        // Fixed-function matrices -> uniforms (OSG only converts these in vertex shaders, and
+        // not at all once we've renamed everything ourselves; do it here for both stages so
+        // OSG just feeds the uniforms by name). Order: longest names first via word boundaries.
+        convert("gl_ModelViewProjectionMatrix", "osg_ModelViewProjectionMatrix",
+            "uniform mat4 osg_ModelViewProjectionMatrix;");
+        convert("gl_ModelViewMatrix", "osg_ModelViewMatrix", "uniform mat4 osg_ModelViewMatrix;");
+        convert("gl_ProjectionMatrix", "osg_ProjectionMatrix", "uniform mat4 osg_ProjectionMatrix;");
+        convert("gl_NormalMatrix", "osg_NormalMatrix", "uniform mat3 osg_NormalMatrix;");
+
+        // Fixed-function texture matrix: OpenMW only uses it as identity here.
+        source = std::regex_replace(source, std::regex("gl_TextureMatrix\\[[0-9]+\\]"), "mat4(1.0)");
+
+        // Legacy texture lookup functions -> ES 3.00 overloads.
+        source = std::regex_replace(source, std::regex("\\btexture2DLod\\b"), "textureLod");
+        source = std::regex_replace(source, std::regex("\\btexture2DProjLod\\b"), "textureProjLod");
+        source = std::regex_replace(source, std::regex("\\btexture2DProj\\b"), "textureProj");
+        source = std::regex_replace(source, std::regex("\\btexture2DArray\\b"), "texture");
+        source = std::regex_replace(source, std::regex("\\btexture2D\\b"), "texture");
+        source = std::regex_replace(source, std::regex("\\btextureCubeLod\\b"), "textureLod");
+        source = std::regex_replace(source, std::regex("\\btextureCube\\b"), "texture");
+        // textureSize2D (EXT_gpu_shader4) -> ES 3.00 textureSize; shaders assign the result to
+        // a vec2, so wrap the ivec2 return in a vec2() conversion (ES has no implicit int->float).
+        if (source.find("textureSize2D") != std::string::npos)
+        {
+            source = std::regex_replace(source, std::regex("\\btextureSize2D\\b"), "omw_textureSize2D");
+            prelude += "vec2 omw_textureSize2D(highp sampler2D s, int lod) { return "
+                       "vec2(textureSize(s, lod)); }\n";
+        }
+
+        // Desktop GLSL shadow2D*() return vec4 (shaders do `.r` on the result); the ES 3.00
+        // equivalents textureProj/texture on a sampler2DShadow return a plain float, so a
+        // direct rename breaks compilation ("field selection on float"). Wrap instead.
+        if (source.find("shadow2DProj") != std::string::npos)
+        {
+            source = std::regex_replace(source, std::regex("\\bshadow2DProj\\b"), "omw_shadow2DProj");
+            prelude += "vec4 omw_shadow2DProj(highp sampler2DShadow s, highp vec4 c) { return "
+                       "vec4(textureProj(s, c)); }\n";
+        }
+        if (std::regex_search(source, std::regex("\\bshadow2D\\b")))
+        {
+            source = std::regex_replace(source, std::regex("\\bshadow2D\\b"), "omw_shadow2D");
+            prelude += "vec4 omw_shadow2D(highp sampler2DShadow s, highp vec3 c) { return "
+                       "vec4(texture(s, c)); }\n";
+        }
+
+        // Line-based fixups (std::regex on large merged sources risks catastrophic backtracking):
+        // - ES disallows uniform initializers ("uniform float x = 1.0;" -> "uniform float x;")
+        // - desktop #extension directives (e.g. GL_EXT_gpu_shader4) are invalid in WebGL2 and,
+        //   after merging, land mid-source where they would be illegal anyway.
+        {
+            std::string fixed;
+            fixed.reserve(source.size());
+            std::size_t pos = 0;
+            while (pos < source.size())
+            {
+                std::size_t eol = source.find('\n', pos);
+                std::string_view line(source.data() + pos, (eol == std::string::npos ? source.size() : eol) - pos);
+                std::size_t firstNonWs = line.find_first_not_of(" \t");
+                bool drop = false;
+                if (firstNonWs != std::string_view::npos && line.substr(firstNonWs).starts_with("#extension"))
+                    drop = true;
+                std::string out(line);
+                if (!drop && firstNonWs != std::string_view::npos && line.substr(firstNonWs).starts_with("uniform"))
+                {
+                    std::size_t eq = out.find('=');
+                    std::size_t semi = out.find(';');
+                    if (eq != std::string::npos && (semi == std::string::npos || eq < semi))
+                        out = out.substr(0, eq) + ";";
+                }
+                if (!drop)
+                {
+                    fixed += out;
+                    fixed += '\n';
+                }
+                if (eol == std::string::npos)
+                    break;
+                pos = eol + 1;
+            }
+            source.swap(fixed);
+        }
+
+        // Fixed-function material state -> uniforms (no fixed-function in GLES). Use FLAT (non-struct)
+        // uniforms, not a struct: struct-MEMBER uniforms (osg_FrontMaterial.diffuse …) do NOT reliably
+        // apply on WebGL2/ANGLE — they silently read as 0 (black). That is what turned the sky black
+        // (fixed in skyutil.cpp) and what makes SrcIgnore/unlit particles (chimney/hearth smoke) source
+        // a black material RGB -> "grey where thin, black where dense" plumes. Expanding each member
+        // access to a plain uniform sidesteps the struct-apply bug for every shader at once.
+        if (source.find("gl_FrontMaterial") != std::string::npos)
+        {
+            prelude += "uniform vec4 osg_FrontMaterial_emission;\nuniform vec4 osg_FrontMaterial_ambient;\n"
+                       "uniform vec4 osg_FrontMaterial_diffuse;\nuniform vec4 osg_FrontMaterial_specular;\n"
+                       "uniform float osg_FrontMaterial_shininess;\n";
+            for (const char* m : { "emission", "ambient", "diffuse", "specular", "shininess" })
+                source = std::regex_replace(source,
+                    std::regex(std::string("\\bgl_FrontMaterial\\s*\\.\\s*") + m + "\\b"),
+                    std::string("osg_FrontMaterial_") + m);
+        }
+        if (source.find("gl_Fog") != std::string::npos)
+        {
+            // Same struct-member-uniform ANGLE bug as gl_FrontMaterial above: osg_Fog.<member>
+            // silently reads 0, so fog stayed disabled (grey haze / no distance fog). Flatten each
+            // member to a plain uniform, fed per-frame by SceneUtil::StateUpdater on emscripten.
+            prelude += "uniform vec4 osg_Fog_color;\nuniform float osg_Fog_start;\nuniform float osg_Fog_end;\n"
+                       "uniform float osg_Fog_scale;\nuniform float osg_Fog_density;\n";
+            for (const char* m : { "color", "start", "end", "scale", "density" })
+                source = std::regex_replace(source,
+                    std::regex(std::string("\\bgl_Fog\\s*\\.\\s*") + m + "\\b"), std::string("osg_Fog_") + m);
+        }
+
+        if (type == osg::Shader::VERTEX)
+        {
+            // Fixed-function vertex attributes -> generic attributes. OSG binds these names to
+            // the right locations (Program: getUseVertexAttributeAliasing) regardless of source.
+            convert("gl_Vertex", "osg_Vertex", "in vec4 osg_Vertex;");
+            convert("gl_Normal", "osg_Normal", "in vec3 osg_Normal;");
+            convert("gl_Color", "osg_Color", "in vec4 osg_Color;");
+            for (int i = 0; i < 8; ++i)
+            {
+                const std::string n = std::to_string(i);
+                convert("gl_MultiTexCoord" + n, "osg_MultiTexCoord" + n, "in vec4 osg_MultiTexCoord" + n + ";");
+            }
+            // gl_ClipVertex was removed in ES 3.00; route writes to a dummy (clipping disabled).
+            convert("gl_ClipVertex", "osg_ClipVertex", "vec4 osg_ClipVertex;");
+
+            source = std::regex_replace(source, std::regex("\\battribute\\b"), "in");
+            source = std::regex_replace(source, std::regex("\\bvarying\\b"), "out");
+        }
+        else if (type == osg::Shader::FRAGMENT)
+        {
+            source = std::regex_replace(source, std::regex("\\bvarying\\b"), "in");
+
+            for (int i = 0; i < 4; ++i)
+            {
+                const std::string idx = "gl_FragData[" + std::to_string(i) + "]";
+                if (source.find(idx) == std::string::npos)
+                    continue;
+                const std::string name = "_fragData" + std::to_string(i);
+                prelude += "layout(location=" + std::to_string(i) + ") out vec4 " + name + ";\n";
+                for (std::size_t p = source.find(idx); p != std::string::npos; p = source.find(idx))
+                    source.replace(p, idx.size(), name);
+            }
+            if (source.find("gl_FragColor") != std::string::npos)
+            {
+                prelude += "layout(location=0) out vec4 _fragColor;\n";
+                source = std::regex_replace(source, std::regex("\\bgl_FragColor\\b"), "_fragColor");
+            }
+        }
+
+        // Inject all generated declarations at the marker (after the precision header).
+        std::size_t mpos = source.find(marker);
+        if (mpos != std::string::npos)
+            source.replace(mpos, std::strlen(marker), prelude);
+    }
+#endif
 
     std::string_view getRootPrefix(std::string_view path)
     {
@@ -108,7 +413,7 @@ namespace
     // reference to allow automatic cleanup.
     bool parseIncludes(const std::filesystem::path& shaderPath, std::string& source, const std::string& fileName,
         int& fileNumber, std::set<std::filesystem::path> cycleIncludeChecker,
-        std::set<std::filesystem::path>& includedFiles)
+        std::set<std::filesystem::path>& includedFiles, bool dedupe = false)
     {
         includedFiles.insert(shaderPath / fileName);
         // An include is cyclic if it is being included by itself
@@ -146,6 +451,14 @@ namespace
 
             std::filesystem::path includePath = shaderPath / includeFilename;
 
+            // In dedupe mode (merging $link'd shaders into one for WebGL), skip a file that has
+            // already been included anywhere in the merged unit to avoid redefinition errors.
+            if (dedupe && includedFiles.count(includePath))
+            {
+                source.replace(foundPos, (end - foundPos + 1), "");
+                continue;
+            }
+
             // Determine the line number that will be used for the #line directive following the included source
             int lineNumber = getLineNumber(source, foundPos, 0, -1);
 
@@ -164,8 +477,8 @@ namespace
             buffer << includeFstream.rdbuf();
             std::string stringRepresentation = buffer.str();
             if (!addLineDirectivesAfterConditionalBlocks(stringRepresentation)
-                || !parseIncludes(
-                    shaderPath, stringRepresentation, includeFilename, fileNumber, cycleIncludeChecker, includedFiles))
+                || !parseIncludes(shaderPath, stringRepresentation, includeFilename, fileNumber,
+                    cycleIncludeChecker, includedFiles, dedupe))
             {
                 Log(Debug::Error) << "In file included from " << fileName << "." << lineNumber;
                 return false;
@@ -504,6 +817,50 @@ namespace Shader
         return true;
     }
 
+#ifdef __EMSCRIPTEN__
+    void ShaderManager::mergeLinkedShadersForGLES(std::string& shaderSource,
+        std::vector<std::string>& linkedShaderNames, const DefineMap& defines, osg::Shader::Type type)
+    {
+        // WebGL permits only one shader per pipeline stage, so OpenMW's $link'd shader
+        // objects can't be linked separately (modelToClip()/pointLighting() would be
+        // undefined). Inline their processed source so the stage is a single unit.
+        for (const auto& linkedName : linkedShaderNames)
+        {
+            auto lit = mShaderTemplates.find(linkedName);
+            if (lit == mShaderTemplates.end())
+            {
+                std::ifstream lstream(mPath / linkedName);
+                if (lstream.fail())
+                    continue;
+                std::stringstream lbuf;
+                lbuf << lstream.rdbuf();
+                std::string lsrc = lbuf.str();
+                int fn = 1;
+                std::set<std::filesystem::path> lpaths;
+                if (!addLineDirectivesAfterConditionalBlocks(lsrc)
+                    || !parseIncludes(mPath, lsrc, linkedName, fn, {}, lpaths))
+                    continue;
+                lit = mShaderTemplates.insert(std::make_pair(linkedName, lsrc)).first;
+            }
+            std::string linkedSource = lit->second;
+            std::vector<std::string> nested;
+            if (!createSourceFromTemplate(linkedSource, nested, linkedName, defines))
+                continue;
+            std::size_t v = linkedSource.find("#version");
+            if (v != std::string::npos)
+            {
+                std::size_t e = linkedSource.find('\n', v);
+                linkedSource.erase(v, (e == std::string::npos ? linkedSource.size() : e + 1) - v);
+            }
+            shaderSource += "\n" + linkedSource;
+        }
+        linkedShaderNames.clear();
+        // The merged units share #includes; drop the resulting duplicate definitions.
+        dedupeTopLevelDefinitions(shaderSource);
+        adjustSourceForGLES(shaderSource, type);
+    }
+#endif
+
     osg::ref_ptr<osg::Shader> ShaderManager::getShader(
         std::string templateName, const ShaderManager::DefineMap& defines, std::optional<osg::Shader::Type> type)
     {
@@ -544,6 +901,36 @@ namespace Shader
         ShaderMap::iterator shaderIt = mShaders.find(std::make_pair(templateName, defines));
         if (shaderIt == mShaders.end())
         {
+#ifdef __EMSCRIPTEN__
+            // F14 measurement, and the prerequisite for the bake itself.
+            //
+            // A cache MISS here is a permutation being built for the first time: the $link inlining
+            // pass, dedupeTopLevelDefinitions, and adjustSourceForGLES with its ~22 inline
+            // std::regex constructions plus per-member regexes in loops -- all over the full merged
+            // source, in wasm, on the main thread, at the moment a new material first appears.
+            //
+            // Baking that offline needs one thing first: knowing WHICH permutations the game
+            // actually asks for. The define space is large and partly data-driven, so it cannot be
+            // enumerated from the source -- it has to be recorded from a real playthrough. This is
+            // that recorder. Count misses, and publish the keys so a build step can consume them.
+            //
+            // Zero cost on the hit path: this block is only reached when the permutation is new.
+            {
+                static int sMisses = 0;
+                ++sMisses;
+                std::string key = templateName;
+                for (const auto& [k, v] : defines)
+                    key += "|" + k + "=" + v;
+                // clang-format off
+                EM_ASM({
+                    var list = globalThis.__omwShaderKeys || [];
+                    list.push(UTF8ToString($0));
+                    globalThis.__omwShaderKeys = list;
+                    globalThis.__omwShaderMisses = $1;
+                }, key.c_str(), sMisses);
+                // clang-format on
+            }
+#endif
             std::string shaderSource = templateIt->second;
             std::vector<std::string> linkedShaderNames;
             if (!createSourceFromTemplate(shaderSource, linkedShaderNames, templateName, defines))
@@ -553,7 +940,11 @@ namespace Shader
                 return nullptr;
             }
 
-            osg::ref_ptr<osg::Shader> shader(new osg::Shader(type ? *type : getShaderType(templateName)));
+            osg::Shader::Type shaderType = type ? *type : getShaderType(templateName);
+#ifdef __EMSCRIPTEN__
+            mergeLinkedShadersForGLES(shaderSource, linkedShaderNames, defines, shaderType);
+#endif
+            osg::ref_ptr<osg::Shader> shader(new osg::Shader(shaderType));
             shader->setShaderSource(shaderSource);
             // Assign a unique prefix to allow the SharedStateManager to compare shaders efficiently.
             // Append shader source filename for debugging.
@@ -581,6 +972,24 @@ namespace Shader
             throw std::runtime_error("failed initializing shader: " + templateName);
 
         return getProgram(std::move(vert), std::move(frag), programTemplate);
+    }
+
+    osg::ref_ptr<osg::Uniform> ShaderManager::getConstUniform(const std::string& name, int value)
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        auto& uniform = mConstIntUniforms[{ value, name }];
+        if (!uniform)
+            uniform = new osg::Uniform(name.c_str(), value);
+        return uniform;
+    }
+
+    osg::ref_ptr<osg::Uniform> ShaderManager::getConstUniform(const std::string& name, float value)
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        auto& uniform = mConstFloatUniforms[{ value, name }];
+        if (!uniform)
+            uniform = new osg::Uniform(name.c_str(), value);
+        return uniform;
     }
 
     osg::ref_ptr<osg::Program> ShaderManager::getProgram(osg::ref_ptr<osg::Shader> vertexShader,
@@ -646,6 +1055,11 @@ namespace Shader
                 // we would when creating the shader. If we put a nullptr in the shader map, we just lose the ability to
                 // put a working one in later.
                 continue;
+#ifdef __EMSCRIPTEN__
+            // Same single-shader-per-stage merge as getShader(): inline $link'd shaders so this
+            // reprocessing path doesn't recreate the separate (unlinkable in WebGL) shader objects.
+            mergeLinkedShadersForGLES(shaderSource, linkedShaderNames, defines, shader->getType());
+#endif
             shader->setShaderSource(shaderSource);
 
             getLinkedShaders(shader, linkedShaderNames, defines);
@@ -778,6 +1192,7 @@ namespace Shader
             { "numViews", "1" },
             { "particle", "0" },
             { "particlePointLighting", "1" },
+            { "useGLES", "0" },
         };
     }
 }

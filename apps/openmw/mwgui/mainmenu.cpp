@@ -1,4 +1,8 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "mainmenu.hpp"
+
+#include "../mwmp/netmanager.hpp"
 
 #include <MyGUI_Gui.h>
 #include <MyGUI_InputManager.h>
@@ -10,6 +14,11 @@
 #include <components/vfs/manager.hpp>
 #include <components/vfs/pathutil.hpp>
 #include <components/widgets/imagebutton.hpp>
+
+#ifdef __EMSCRIPTEN__
+#include <cstdlib>
+#include <emscripten.h>
+#endif
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/statemanager.hpp"
@@ -44,6 +53,14 @@ namespace MWGui
                 // If finished playing, start again
                 if (!mVideo->update())
                     mVideo->playVideo("video\\menu_background.bik");
+                // Re-fit once the first frame's dimensions are known (see mAspectApplied): the
+                // initial resize() can run before decode, leaving a stretched full-screen layout.
+                // autoResize reads its parent's size itself, so no coords are needed here.
+                if (!mAspectApplied && mVideo->getVideoHeight() > 0)
+                {
+                    mVideo->autoResize(Settings::gui().mStretchMenuBackground);
+                    mAspectApplied = true;
+                }
             }
             else if (!paused)
             {
@@ -101,7 +118,14 @@ namespace MWGui
         , mBackground(nullptr)
     {
         getWidget(mVersionText, "VersionText");
+#ifdef __EMSCRIPTEN__
+        // Hide the "OpenMW version x.y.z" overlay in the bottom-right of the main menu on the web
+        // build (empty caption shows nothing regardless of the visibility toggle below).
+        mVersionText->setCaption({});
+        (void)versionDescription;
+#else
         mVersionText->setCaption(versionDescription);
+#endif
 
         constexpr VFS::Path::NormalizedView menuBackgroundVideo("video/menu_background.bik");
 
@@ -155,6 +179,19 @@ namespace MWGui
 
     void MainMenu::onExitConfirmed()
     {
+#ifdef __EMSCRIPTEN__
+        // openmw-web multiplayer: Exit returns to the launcher's character-select screen,
+        // not a dead engine tab. __omwAllowLeave disarms the beforeunload guard; the
+        // launcher's #characters entry shows the tile screen from the stored session.
+        if (std::getenv("OPENMW_MP_URL") != nullptr)
+        {
+            // One page-side function (index.html __omwExitToLauncher): it tells the server we
+            // are LEAVING (a Party host's guests go home now, not after the crash grace) and
+            // then navigates. No commas inside EM_ASM -- the macro splits on them.
+            EM_ASM({ globalThis.__omwExitToLauncher(); });
+            return;
+        }
+#endif
         MWBase::Environment::get().getStateManager()->requestQuit();
     }
 
@@ -300,18 +337,26 @@ namespace MWGui
 
         std::vector<std::string> buttons;
 
+        // MP (Phase 5): in a joined session there is no client save, no client load and no
+        // local New Game — the server keeps the one save, continuously. The buttons are
+        // OMITTED rather than left to dead-end on the StateManager's refusal. The list is
+        // rebuilt on every updateMenu, so the non-MP local game keeps all three.
+        const bool mpJoined = MWMP::NetManager::instance().state() == MWMP::NetManager::State::Joined;
+
         if (state == MWBase::StateManager::State_Running)
             buttons.emplace_back("return");
 
-        buttons.emplace_back("newgame");
+        if (!mpJoined)
+            buttons.emplace_back("newgame");
 
-        if (state == MWBase::StateManager::State_Running
+        if (!mpJoined && state == MWBase::StateManager::State_Running
             && MWBase::Environment::get().getWorld()->getGlobalInt(MWWorld::Globals::sCharGenState) == -1
             && MWBase::Environment::get().getWindowManager()->isSavingAllowed())
             buttons.emplace_back("savegame");
 
-        if (MWBase::Environment::get().getStateManager()->characterBegin()
-            != MWBase::Environment::get().getStateManager()->characterEnd())
+        if (!mpJoined
+            && MWBase::Environment::get().getStateManager()->characterBegin()
+                != MWBase::Environment::get().getStateManager()->characterEnd())
             buttons.emplace_back("loadgame");
 
         buttons.emplace_back("options");

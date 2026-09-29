@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "characterpreview.hpp"
 
 #include <cmath>
@@ -158,7 +160,7 @@ namespace MWRender
                 mPerspectiveMatrix = osg::Matrixf::perspective(fovYDegrees, mAspectRatio, znear, zfar);
             mGroup->getOrCreateStateSet()->addUniform(new osg::Uniform("projectionMatrix", mPerspectiveMatrix));
             mViewMatrix = osg::Matrixf::identity();
-            setColorBufferInternalFormat(GL_RGBA);
+            setColorBufferInternalFormat(GL_RGBA8); // sized format required for a renderable WebGL2 color attachment
             setDepthBufferInternalFormat(GL_DEPTH24_STENCIL8);
         }
 
@@ -166,7 +168,18 @@ namespace MWRender
         {
             camera->setName("CharacterPreview");
             camera->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
-            camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT, osg::Camera::PIXEL_BUFFER_RTT);
+            // NO PIXEL_BUFFER FALLBACK. PIXEL_BUFFER_RTT is a pbuffer, which does not exist under
+            // WebGL at all -- so on this build the second argument names a path that cannot
+            // possibly work, and anything that declines the FBO path lands there and renders
+            // garbage instead of failing loudly. The minimap rendering solid white/blue/black is
+            // exactly that shape, and these three cameras were the only ones in the engine still
+            // naming the fallback; every other RTT here already asks for FRAME_BUFFER_OBJECT
+            // alone.
+            //
+            // Stated honestly: this has not been reproduced, so it is not proven to be the cause.
+            // It is removing a path that provably cannot work on the target platform, which is
+            // worth doing on its own merits.
+            camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
             camera->setClearColor(osg::Vec4(0.f, 0.f, 0.f, 0.f));
             camera->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
             camera->setProjectionMatrixAsPerspective(fovYDegrees, mAspectRatio, znear, zfar);
@@ -268,7 +281,9 @@ namespace MWRender
         osg::ref_ptr<osg::Texture2D> dummyTexture = new osg::Texture2D();
         dummyTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
         dummyTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
-        dummyTexture->setInternalFormat(GL_DEPTH_COMPONENT);
+        dummyTexture->setInternalFormat(GL_DEPTH_COMPONENT24); // sized: unsized GL_DEPTH_COMPONENT is invalid in WebGL2
+        dummyTexture->setSourceFormat(GL_DEPTH_COMPONENT);
+        dummyTexture->setSourceType(GL_UNSIGNED_INT);
         dummyTexture->setTextureSize(1, 1);
         // This might clash with a shadow map, so make sure it doesn't cast shadows
         dummyTexture->setShadowComparison(true);

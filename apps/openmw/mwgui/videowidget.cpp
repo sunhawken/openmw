@@ -1,4 +1,9 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "videowidget.hpp"
+
+#include <cstddef>
+#include <cstdint>
 
 #include <osg-ffmpeg-videoplayer/videoplayer.hpp>
 
@@ -46,6 +51,14 @@ namespace MWGui
 
         mPlayer->playVideo(std::move(videoStream), video);
 
+#ifdef __EMSCRIPTEN__
+        // On this platform the first frame may not be decoded yet when playVideo returns, so
+        // getVideoTexture() can be null here; update() attaches it once it lands. Crucially we
+        // must forget any texture from a previously played video (e.g. the menu background),
+        // otherwise the stale texture keeps rendering and the new video appears frozen.
+        mAttachedTexture = nullptr;
+        attachCurrentTexture();
+#else
         osg::ref_ptr<osg::Texture2D> texture = mPlayer->getVideoTexture();
         if (!texture)
             return;
@@ -55,6 +68,7 @@ namespace MWGui
         setRenderItemTexture(mTexture.get());
         // Both the widget and the video frame are Y-down, so this UV is not inverted
         getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 0.f, 1.f, 1.f));
+#endif
     }
 
     int VideoWidget::getVideoWidth()
@@ -69,8 +83,50 @@ namespace MWGui
 
     bool VideoWidget::update()
     {
+#ifdef __EMSCRIPTEN__
+        // Cooperative playback skips the first-frame wait in VideoPlayer::playVideo, so the
+        // texture may not exist yet when playVideo returns — attach it on the tick it lands.
+        // We compare the underlying osg::Texture2D pointer (not just !mTexture) so a swap from
+        // one video to the next (menu background -> mw_intro) re-binds instead of leaving the
+        // previous, now-stale texture on screen (which looked like a frozen first frame).
+        attachCurrentTexture();
+#endif
         return mPlayer->update();
     }
+
+#ifdef __EMSCRIPTEN__
+    void VideoWidget::attachCurrentTexture()
+    {
+        osg::ref_ptr<osg::Texture2D> texture = mPlayer->getVideoTexture();
+        if (texture.get() == mAttachedTexture)
+            return; // already attached (or still null)
+
+        mAttachedTexture = texture.get();
+        if (!texture)
+            return;
+
+        mTexture = std::make_unique<MyGUIPlatform::OSGTexture>(texture);
+        setRenderItemTexture(mTexture.get());
+        // Both the widget and the video frame are Y-down, so this UV is not inverted
+        getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 0.f, 1.f, 1.f));
+    }
+#endif
+
+#ifdef __EMSCRIPTEN__
+    std::size_t VideoWidget::getFrameCounter() const
+    {
+        // NOTE: the decoder installs a brand-new osg::Image on the texture for every video
+        // frame (VideoState::video_display), so getModifiedCount() alone is CONSTANT during
+        // healthy playback — hash the image pointer in so the value changes per frame.
+        osg::ref_ptr<osg::Texture2D> texture = mPlayer->getVideoTexture();
+        if (texture && texture->getImage())
+            // No narrowing cast here: under wasm64 a pointer is 64-bit, and cutting it to
+            // 32 bits is exactly what would make two distinct images hash the same.
+            return reinterpret_cast<std::uintptr_t>(texture->getImage())
+                ^ static_cast<std::size_t>(texture->getImage()->getModifiedCount());
+        return 0;
+    }
+#endif
 
     void VideoWidget::stop()
     {

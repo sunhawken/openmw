@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "cellref.hpp"
 
 #include <algorithm>
@@ -161,6 +163,13 @@ namespace ESM
                     cellRef.mIsLocked = cellRef.mLockLevel > 0;
                 if (cellRef.mLockLevel == ZeroLock)
                     cellRef.mLockLevel = 0;
+                // Some content files (e.g. the OpenMW example suite) store an explicit NAM9 count of 0
+                // for placed references. A count of 0 makes LiveCellRefBase::isDeleted() treat the
+                // reference as deleted, so it is never added to the scene. Placed references always
+                // represent at least one instance (deletion is expressed via the DELE subrecord), so
+                // normalize a zero count to 1.
+                if (cellRef.mCount == 0)
+                    cellRef.mCount = 1;
             }
         }
     }

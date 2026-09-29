@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "stateupdater.hpp"
 
 #include <osg/BufferIndexBinding>
@@ -8,6 +10,16 @@
 namespace Fx
 {
     std::string StateUpdater::sDefinition = UniformData::getDefinition("_omw_data");
+    std::string StateUpdater::sFlatDefinition = UniformData::getFlatDefinition("omw_");
+
+    // On ANGLE/WebGL2 the fx shaders declare flat `omw_<name>` uniforms (struct-member uniforms read
+    // as 0 there), so the StateUpdater must set matching flat names. Desktop keeps the `omw.<name>`
+    // struct-member uniforms.
+#ifdef __EMSCRIPTEN__
+    static constexpr std::string_view sOmwUniformPrefix = "omw_";
+#else
+    static constexpr std::string_view sOmwUniformPrefix = "omw.";
+#endif
 
     StateUpdater::StateUpdater(bool useUBO)
         : mUseUBO(useUBO)
@@ -33,7 +45,7 @@ namespace Fx
         {
             const auto createUniform = [&](const auto& v) {
                 using T = std::decay_t<decltype(v)>;
-                std::string name = "omw." + std::string(T::sName);
+                std::string name = std::string(sOmwUniformPrefix) + std::string(T::sName);
                 stateset->addUniform(new osg::Uniform(name.c_str(), mData.get<T>()));
             };
 
@@ -60,7 +72,7 @@ namespace Fx
         {
             const auto setUniform = [&](const auto& v) {
                 using T = std::decay_t<decltype(v)>;
-                std::string name = "omw." + std::string(T::sName);
+                std::string name = std::string(sOmwUniformPrefix) + std::string(T::sName);
                 stateset->getUniform(name)->set(mData.get<T>());
             };
 

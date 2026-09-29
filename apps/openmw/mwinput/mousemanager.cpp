@@ -1,5 +1,10 @@
 #include "mousemanager.hpp"
 
+// std::clamp, for the web-only pointer-lock spike guard below.
+#include <algorithm>
+
+#include <components/debug/debuglog.hpp>
+
 #include <MyGUI_Button.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_RenderManager.h>
@@ -97,8 +102,45 @@ namespace MWInput
             MWBase::World* world = MWBase::Environment::get().getWorld();
 
             const float cameraSensitivity = Settings::input().mCameraSensitivity;
-            float x = arg.xrel * cameraSensitivity * (Settings::input().mInvertXAxis ? -1 : 1) / 256.f;
-            float y = arg.yrel * cameraSensitivity * (Settings::input().mInvertYAxis ? -1 : 1)
+
+            float xrel = static_cast<float>(arg.xrel);
+            float yrel = static_cast<float>(arg.yrel);
+#ifdef __EMSCRIPTEN__
+            // POINTER-LOCK SPIKE GUARD, web only. Under pointer lock a browser can deliver a
+            // single mousemove carrying a movementX/Y of several thousand pixels -- on lock
+            // acquisition, on regaining focus, or after the tab is restored. Fed straight into
+            // player.yaw() that is not a look, it is the camera whipping round, which is
+            // exactly the shape of the intermittent "camera/mouse spin" reported here.
+            //
+            // A real flick is bounded by how far a hand moves between two frames; anything past
+            // this is not motion the player made. The cap is deliberately far above any genuine
+            // movement (a fast flick at 60 Hz is a few hundred pixels) so it can only ever catch
+            // the artefact -- it must not become a sensitivity limit by the back door.
+            //
+            // Native builds are untouched: they have no pointer lock and no such event.
+            constexpr float sMaxRelPerEvent = 1000.f;
+            const bool clamped = std::abs(xrel) > sMaxRelPerEvent || std::abs(yrel) > sMaxRelPerEvent;
+            xrel = std::clamp(xrel, -sMaxRelPerEvent, sMaxRelPerEvent);
+            yrel = std::clamp(yrel, -sMaxRelPerEvent, sMaxRelPerEvent);
+            // AND SAY WHEN IT FIRES. This bug has never been reproduced -- not here, not by the
+            // reporter on demand -- so the guard above is a mechanism that FITS the symptom
+            // rather than a proven cause. A silent guard leaves it that way forever: the spin
+            // stops (or does not) and nobody learns which.
+            //
+            // Logged once per session, not per event. A spike arrives in bursts, and a line per
+            // event would flood the console of the player who is already having a bad time.
+            static bool loggedSpike = false;
+            if (clamped && !loggedSpike)
+            {
+                loggedSpike = true;
+                Log(Debug::Warning) << "Pointer-lock delta clamped: got " << arg.xrel << "," << arg.yrel
+                                    << " in one event (cap " << sMaxRelPerEvent
+                                    << "). If the camera used to spin here, this was why.";
+            }
+#endif
+
+            float x = xrel * cameraSensitivity * (Settings::input().mInvertXAxis ? -1 : 1) / 256.f;
+            float y = yrel * cameraSensitivity * (Settings::input().mInvertYAxis ? -1 : 1)
                 * Settings::input().mCameraYMultiplier / 256.f;
 
             float rot[3];

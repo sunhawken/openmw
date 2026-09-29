@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "waterutil.hpp"
 
 #include <osg/Depth>
@@ -58,8 +60,29 @@ namespace SceneUtil
         normal->push_back(osg::Vec3f(0, 0, 1));
         waterGeom->setNormalArray(normal, osg::Array::BIND_OVERALL);
 
+#ifdef __EMSCRIPTEN__
+        // WebGL2/GLES3 has no GL_QUADS - the water plane would fail with GL_INVALID_ENUM
+        // and not render. Emit two triangles per quad via indices instead.
+        {
+            osg::ref_ptr<osg::DrawElementsUInt> tris = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLES);
+            const unsigned int numQuads = static_cast<unsigned int>(verts->size()) / 4u;
+            tris->reserve(numQuads * 6u);
+            for (unsigned int q = 0; q < numQuads; ++q)
+            {
+                const unsigned int b = q * 4u;
+                tris->push_back(b);
+                tris->push_back(b + 1u);
+                tris->push_back(b + 2u);
+                tris->push_back(b);
+                tris->push_back(b + 2u);
+                tris->push_back(b + 3u);
+            }
+            waterGeom->addPrimitiveSet(tris);
+        }
+#else
         waterGeom->addPrimitiveSet(
             new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, static_cast<GLsizei>(verts->size())));
+#endif
         waterGeom->setComputeBoundingBoxCallback(new WaterBoundCallback);
         waterGeom->setCullingActive(false);
         return waterGeom;

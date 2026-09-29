@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "skyutil.hpp"
 
 #include <array>
@@ -77,7 +79,14 @@ namespace
         for (int i = 0; i < numUvSets; ++i)
             geom->setTexCoordArray(i, texcoords, osg::Array::BIND_PER_VERTEX);
 
+#ifdef __EMSCRIPTEN__
+        // WebGL2/GLES3 has no GL_QUADS - the draw fails with GL_INVALID_ENUM and the
+        // sun/moons/flashes simply don't render. A TRIANGLE_FAN over the same 4 vertices
+        // draws the identical quad.
+        geom->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLE_FAN, 0, 4));
+#else
         geom->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::QUADS, 0, 4));
+#endif
 
         return geom;
     }
@@ -106,6 +115,21 @@ namespace MWRender
         return createUnlitMaterial(osg::Material::DIFFUSE);
     }
 
+#ifdef __EMSCRIPTEN__
+    // The sky shader reads gl_FrontMaterial (renamed to the osg_FrontMaterial uniform struct on
+    // GLES/WebGL2, where no fixed-function material state exists). Scene objects get those
+    // uniforms fed by ShaderVisitor, but the sky pass builds its own state — mirror the material
+    // into the uniforms here or the shader reads black: black sky dome, unlit "smoke" clouds,
+    // invisible sun/sunglare.
+    static void syncSkyMaterialUniforms(osg::StateSet& stateset, const osg::Material& mat)
+    {
+        stateset.getOrCreateUniform("skyMaterialEmission", osg::Uniform::FLOAT_VEC4)
+            ->set(mat.getEmission(osg::Material::FRONT));
+        stateset.getOrCreateUniform("skyMaterialDiffuse", osg::Uniform::FLOAT_VEC4)
+            ->set(mat.getDiffuse(osg::Material::FRONT));
+    }
+#endif
+
     class SunUpdater : public SceneUtil::StateSetUpdater
     {
     public:
@@ -123,6 +147,9 @@ namespace MWRender
             osg::Material* mat = static_cast<osg::Material*>(stateset->getAttribute(osg::StateAttribute::MATERIAL));
             mat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(0, 0, 0, mColor.a()));
             mat->setEmission(osg::Material::FRONT_AND_BACK, osg::Vec4f(mColor.r(), mColor.g(), mColor.b(), 1));
+#ifdef __EMSCRIPTEN__
+            syncSkyMaterialUniforms(*stateset, *mat);
+#endif
         }
     };
 
@@ -187,6 +214,9 @@ namespace MWRender
                     mat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(0, 0, 0, fade * mGlareView));
                     stateset = new osg::StateSet;
                     stateset->setAttributeAndModes(mat, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+#ifdef __EMSCRIPTEN__
+                    syncSkyMaterialUniforms(*stateset, *mat);
+#endif
                 }
                 else if (visibleRatio < 1.f)
                 {
@@ -282,6 +312,9 @@ namespace MWRender
                 mat->setEmission(osg::Material::FRONT_AND_BACK, mColor);
 
                 stateset->setAttributeAndModes(mat);
+#ifdef __EMSCRIPTEN__
+                syncSkyMaterialUniforms(*stateset, *mat);
+#endif
 
                 cv->pushStateSet(stateset);
                 traverse(node, cv);
@@ -426,6 +459,9 @@ namespace MWRender
     {
         osg::Material* mat = static_cast<osg::Material*>(stateset->getAttribute(osg::StateAttribute::MATERIAL));
         mat->setEmission(osg::Material::FRONT_AND_BACK, mEmissionColor);
+#ifdef __EMSCRIPTEN__
+        syncSkyMaterialUniforms(*stateset, *mat);
+#endif
     }
 
     AtmosphereNightUpdater::AtmosphereNightUpdater(Resource::ImageManager* imageManager)
@@ -497,6 +533,9 @@ namespace MWRender
 
         osg::Material* mat = static_cast<osg::Material*>(stateset->getAttribute(osg::StateAttribute::MATERIAL));
         mat->setEmission(osg::Material::FRONT_AND_BACK, mEmissionColor);
+#ifdef __EMSCRIPTEN__
+        syncSkyMaterialUniforms(*stateset, *mat);
+#endif
 
         osg::TexMat* texMat = static_cast<osg::TexMat*>(stateset->getTextureAttribute(0, osg::StateAttribute::TEXMAT));
         texMat->setMatrix(mTexMat);

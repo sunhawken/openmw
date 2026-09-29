@@ -671,7 +671,13 @@ namespace MWClass
             if (!weapon.isEmpty())
                 weapskill = weapon.getClass().getEquipmentSkill(weapon);
             skillUsageSucceeded(ptr, weapskill, ESM::Skill::Weapon_SuccessfulHit);
+        }
 
+        // The sneak-attack critical is the avatar's too (backlog 308): the peer swings for a
+        // player, and the row-90 fix reached ranged only. The weapon skill use above stays
+        // player-only (the owner's client claims its own), the message box too.
+        if (MWMechanics::isPlayerOrAvatar(ptr))
+        {
             const MWMechanics::AiSequence& seq = victim.getClass().getCreatureStats(victim).getAiSequence();
 
             bool unaware
@@ -679,7 +685,8 @@ namespace MWClass
             if (unaware)
             {
                 damage *= store.find("fCombatCriticalStrikeMult")->mValue.getFloat();
-                MWBase::Environment::get().getWindowManager()->messageBox("#{sTargetCriticalStrike}");
+                if (ptr == MWMechanics::getPlayer())
+                    MWBase::Environment::get().getWindowManager()->messageBox("#{sTargetCriticalStrike}");
                 if (healthdmg)
                 {
                     MWBase::Environment::get().getSoundManager()->playSound3D(
@@ -734,19 +741,21 @@ namespace MWClass
             MWMechanics::CreatureStats& statsAttacker = attacker.getClass().getCreatureStats(attacker);
             // First handle the attacked actor
             if (!stats.getHitAttemptActor().isSet()
-                && (statsAttacker.getAiSequence().isInCombat(ptr) || attacker == MWMechanics::getPlayer()))
+                && (statsAttacker.getAiSequence().isInCombat(ptr) || MWMechanics::isPlayerOrAvatar(attacker)))
                 stats.setHitAttemptActor(attacker.getCellRef().getRefNum());
 
             // Next handle the attacking actor
             if (!statsAttacker.getHitAttemptActor().isSet()
-                && (statsAttacker.getAiSequence().isInCombat(ptr) || attacker == MWMechanics::getPlayer()))
+                && (statsAttacker.getAiSequence().isInCombat(ptr) || MWMechanics::isPlayerOrAvatar(attacker)))
                 statsAttacker.setHitAttemptActor(ptr.getCellRef().getRefNum());
         }
 
         if (!object.empty())
             stats.setLastHitAttemptObject(object);
 
-        if (setOnPcHitMe && !attacker.isEmpty() && attacker == MWMechanics::getPlayer())
+        // OnPCHitMe fires for the player's BODY on the peer too: the quest script that reacts
+        // to being struck by the player runs on the engine where the blow lands.
+        if (setOnPcHitMe && MWMechanics::isPlayerOrAvatar(attacker))
         {
             const ESM::RefId& script = getScript(ptr);
             /* Set the OnPCHitMe script variable. The script is responsible for clearing it. */

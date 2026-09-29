@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef GAME_MWWORLD_GLOBALS_H
 #define GAME_MWWORLD_GLOBALS_H
 
@@ -31,11 +33,14 @@ namespace MWWorld
     private:
         using Collection = std::map<ESM::RefId, ESM::Global, std::less<>>;
 
-        Collection mVariables; // type, value
+        mutable Collection mVariables; // type, value (mutable: find() lazily creates unknown globals)
 
         Collection::const_iterator find(std::string_view name) const;
 
         Collection::iterator find(std::string_view name);
+
+        // Look up a global, lazily creating it (as numeric 0) if the loaded content doesn't define it.
+        Collection::iterator findOrCreate(std::string_view name) const;
 
     public:
         static constexpr GlobalVariableName sDaysPassed{ "dayspassed" };

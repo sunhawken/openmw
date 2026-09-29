@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 // clang-format off
 /* This file is based on OpenSceneGraph's src/osgShadow/ViewDependentShadowMap.cpp.
  * Where applicable, any changes made are covered by OpenMW's GPL 3 license, not the OSGPL.
@@ -552,7 +554,16 @@ MWShadowTechnique::ShadowData::ShadowData(MWShadowTechnique::ViewDependentData* 
     }
     else
     {
+#ifdef __EMSCRIPTEN__
+        // WebGL2 rejects unsized depth internal formats (texImage2D INVALID_ENUM -> the
+        // shadow map is never allocated -> no shadows). Use a sized format + explicit
+        // source format/type.
+        _texture->setInternalFormat(GL_DEPTH_COMPONENT24);
+        _texture->setSourceFormat(GL_DEPTH_COMPONENT);
+        _texture->setSourceType(GL_UNSIGNED_INT);
+#else
         _texture->setInternalFormat(GL_DEPTH_COMPONENT);
+#endif
         _texture->setShadowComparison(true);
         _texture->setShadowTextureMode(osg::Texture2D::LUMINANCE);
     }
@@ -1229,6 +1240,12 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
         // 3.2 compute RTT camera view+projection matrix settings
         //
+#ifdef __EMSCRIPTEN__
+        // Key the base-ortho stabilization latch to whichever VIEW is being culled this pass
+        // (main / water-reflection / local-map) so each keeps its own grow-only max instead of
+        // sharing one global that the auxiliary passes inflate every frame (shadow swim).
+        _emsLatchViewCamera = cv.getCurrentCamera();
+#endif
         osg::Matrixd projectionMatrix;
         osg::Matrixd viewMatrix;
         if (!computeShadowCameraSettings(frustum, pl, projectionMatrix, viewMatrix))
@@ -1888,6 +1905,20 @@ bool MWShadowTechnique::computeShadowCameraSettings(Frustum& frustum, LightData&
 
     const ShadowSettings* settings = getShadowedScene()->getShadowSettings();
 
+#ifdef __EMSCRIPTEN__
+    // Stable shadow basis: derive lightSide/lightUp from a FIXED world up-vector (+Z in OpenMW)
+    // so the shadow raster's X/Y axes do NOT rotate with camera yaw. The upstream basis is
+    // view-derived (lightDir ^ frustumCenterLine), which spins the whole shadow map under the
+    // scene as you mouse-look -> severe shadow swim. World-up basis costs a little effective
+    // resolution but keeps shadows still while standing and rotating the camera.
+    {
+        osg::Vec3d worldUp(0.0, 0.0, 1.0);
+        if (std::abs(positionedLight.lightDir * worldUp) > 0.99) // light ~parallel to up (noon sun)
+            worldUp.set(0.0, 1.0, 0.0);
+        lightSide = positionedLight.lightDir ^ worldUp;
+        lightSide.normalize();
+    }
+#else
     double dotProduct_v = positionedLight.lightDir * frustum.frustumCenterLine;
     double gamma_v = acos(dotProduct_v);
     if (gamma_v<osg::DegreesToRadians(settings->getPerspectiveShadowMapCutOffAngle()) || gamma_v>osg::DegreesToRadians(180.0-settings->getPerspectiveShadowMapCutOffAngle()))
@@ -1902,6 +1933,7 @@ bool MWShadowTechnique::computeShadowCameraSettings(Frustum& frustum, LightData&
         lightSide = positionedLight.lightDir ^ frustum.frustumCenterLine;
         lightSide.normalize();
     }
+#endif
 
     osg::Vec3d lightUp = lightSide ^ positionedLight.lightDir;
 
@@ -1964,6 +1996,61 @@ bool MWShadowTechnique::computeShadowCameraSettings(Frustum& frustum, LightData&
         }
         else
         {
+#ifdef __EMSCRIPTEN__
+            // Fixed-size base ortho: fit X/Y to a square that encloses the frustum-corner box so
+            // the ortho SIZE is invariant to camera orientation (keeps the light-clip scale stable
+            // so the per-cascade texel snap below is consistent frame to frame), then snap the
+            // center to whole shadow-map texels to stop sub-texel crawl.
+            {
+                double cx = 0.5 * (xMin + xMax);
+                double cy = 0.5 * (yMin + yMax);
+                double half = 0.5 * osg::maximum(xMax - xMin, yMax - yMin);
+                if (half <= 0.0) half = 1.0;
+                // Quantize the ortho half-size to the next power of two so texelSize is INVARIANT to
+                // the frustum box shrinking/growing as the camera yaws/pitches. If half varied
+                // continuously, texelSize varied with it and the per-texel center snap below shifted
+                // every frame — the shadow "crawl"/swim. With a fixed texelSize the snap keeps the
+                // shadow map locked to whole-texel positions as the camera moves.
+                half = std::pow(2.0, std::ceil(std::log2(half)));
+                // Grow-only: even the pow2 step still jumps 2x whenever the frustum box crosses a
+                // boundary as the camera yaws (and oscillates if it hovers near one) — each jump
+                // doubles/halves texelSize and slides the whole shadow grid = the residual swim.
+                // Latch half to its running maximum so texelSize becomes constant after the first
+                // frames and the grid stays locked. Cost: shadows a touch softer (slightly oversized
+                // ortho); benefit: no orientation-driven texel-size changes.
+                // KEYED PER VIEW CAMERA (main / water-reflection / local-map): a single shared latch
+                // let the reflection & localmap passes — which cull the scene from a different
+                // viewpoint every frame — inflate the main view's half, so texelSize (hence the
+                // whole snapped shadow grid) shifted each frame = swim on ALL geometry, worst with
+                // water reflection enabled. Per-view keying gives each pass its own stable max.
+                static std::map<const osg::Camera*, double> sStableBaseHalf;
+                double& stableBase = sStableBaseHalf[_emsLatchViewCamera];
+                if (half < stableBase)
+                    half = stableBase;
+                else
+                    stableBase = half;
+                double mapRes = static_cast<double>(settings->getTextureSize().x());
+                if (mapRes < 1.0) mapRes = 1024.0;
+                double texelSize = (2.0 * half) / mapRes;
+                double cxRaw = cx, cyRaw = cy;
+                if (texelSize > 0.0)
+                {
+                    cx = std::floor(cx / texelSize) * texelSize;
+                    cy = std::floor(cy / texelSize) * texelSize;
+                }
+                if (getenv("OMW_SHADOW_DEBUG"))
+                {
+                    static int sDbgBase = 0;
+                    if ((sDbgBase++ % 6) == 0)
+                        OSG_NOTICE << "[shadowdbg BASE] cam=" << _emsLatchViewCamera
+                            << " half=" << half << " texel=" << texelSize
+                            << " cxRaw=" << cxRaw << " cxSnap=" << cx
+                            << " cyRaw=" << cyRaw << " cySnap=" << cy << std::endl;
+                }
+                xMin = cx - half; xMax = cx + half;
+                yMin = cy - half; yMax = cy + half;
+            }
+#endif
             projectionMatrix.makeOrtho(xMin,xMax, yMin, yMax,0.0,zMax-zMin);
             viewMatrix.makeLookAt(frustum.center+positionedLight.lightDir*zMin, frustum.center+positionedLight.lightDir*zMax, lightUp);
         }
@@ -2672,6 +2759,56 @@ bool MWShadowTechnique::cropShadowCameraToMainFrustum(Frustum& frustum, osg::Cam
     if (xMin != -1.0 || yMin != -1.0 || zMin != -1.0 ||
         xMax != 1.0 || yMax != 1.0 || zMax != 1.0)
     {
+#ifdef __EMSCRIPTEN__
+        // Stabilize the per-cascade crop: make X/Y a square, invariant extent and snap the crop
+        // center to whole shadow-map texels (in the base light clip space, where texel = 2*half/res)
+        // so the rendered cascade does not swim under camera rotation. With the stable basis above,
+        // this is the decisive fix. Widening the crop only keeps a few extra casters, never clips.
+        {
+            double cx = 0.5 * (xMin + xMax);
+            double cy = 0.5 * (yMin + yMax);
+            double half = 0.5 * osg::maximum(xMax - xMin, yMax - yMin);
+            if (half <= 0.0) half = 1.0;
+            // Quantize to a power-of-two extent so texel size is invariant to the cascade box
+            // changing as the camera turns — a varying texel makes the snap below shift every frame
+            // (shadow crawl). Fixed texel => the crop stays locked to whole-texel positions.
+            half = std::pow(2.0, std::ceil(std::log2(half)));
+            // Grow-only latch, per cascade (keyed by its shadow camera): even the pow2 step jumps
+            // 2x when the cascade box crosses a boundary on camera yaw (and oscillates near one),
+            // sliding the crop = residual swim. Latch to the per-cascade running max so texel size
+            // stops changing after the first frames and the crop stays locked. Per-camera keying
+            // keeps each cascade's own resolution (a single shared max would blow up near cascades).
+            {
+                static std::map<const osg::Camera*, double> sStableCropHalf;
+                double& stable = sStableCropHalf[camera];
+                if (half < stable)
+                    half = stable;
+                else
+                    stable = half;
+            }
+            const ShadowSettings* s = getShadowedScene()->getShadowSettings();
+            double mapRes = static_cast<double>(s->getTextureSize().x());
+            if (mapRes < 1.0) mapRes = 1024.0;
+            double texel = (2.0 * half) / mapRes;
+            double cxRawC = cx, cyRawC = cy;
+            if (texel > 0.0)
+            {
+                cx = std::floor(cx / texel) * texel;
+                cy = std::floor(cy / texel) * texel;
+            }
+            if (getenv("OMW_SHADOW_DEBUG"))
+            {
+                static std::map<const osg::Camera*, int> sDbgCropN;
+                if ((sDbgCropN[camera]++ % 12) == 0)
+                    OSG_NOTICE << "[shadowdbg CROP] cam=" << camera
+                        << " half=" << half << " texel=" << texel
+                        << " cxRaw=" << cxRawC << " cxSnap=" << cx
+                        << " cyRaw=" << cyRawC << " cySnap=" << cy << std::endl;
+            }
+            xMin = cx - half; xMax = cx + half;
+            yMin = cy - half; yMax = cy + half;
+        }
+#endif
         osg::Matrix m;
         m.makeTranslate(osg::Vec3d(-0.5*(xMax + xMin),
                                    -0.5*(yMax + yMin),
