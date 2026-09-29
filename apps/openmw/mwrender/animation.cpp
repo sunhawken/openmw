@@ -257,6 +257,22 @@ namespace
             settings.mMaxStep = f;
     }
 
+    bool hasSecondaryMotionController(osg::Node* node)
+    {
+        if (!node)
+            return false;
+
+        osg::Callback* cb = node->getUpdateCallback();
+        while (cb)
+        {
+            if (dynamic_cast<MWRender::VerletClothController*>(cb)
+                || dynamic_cast<MWRender::JiggleBoneController*>(cb))
+                return true;
+            cb = cb->getNestedCallback();
+        }
+        return false;
+    }
+
     MWRender::VerletClothSettings verletSettingsFromNode(const osg::Node& node)
     {
         MWRender::VerletClothSettings settings;
@@ -1956,6 +1972,12 @@ namespace MWRender
 
     void Animation::attachJiggleBoneControllers()
     {
+        // Equipment can inject BONE-marked secondary-motion chains after the
+        // actor root has already been created. Always refresh the cached node
+        // map before scanning, and make repeated scans idempotent below.
+        mNodeMap.clear();
+        mNodeMapCreated = false;
+
         static constexpr std::string_view legacyBoneNames[] = {
             "bip01 l breast",
             "bip01 r breast",
@@ -1974,7 +1996,7 @@ namespace MWRender
         for (const auto& [name, nodeRef] : getNodeMap())
         {
             osg::MatrixTransform* root = nodeRef.get();
-            if (!root || attached.contains(root))
+            if (!root || attached.contains(root) || hasSecondaryMotionController(root))
                 continue;
 
             VerletClothSettings clothSettings = verletSettingsFromNode(*root);
@@ -2025,7 +2047,7 @@ namespace MWRender
         for (const auto& [name, nodeRef] : getNodeMap())
         {
             osg::MatrixTransform* node = nodeRef.get();
-            if (!node)
+            if (!node || hasSecondaryMotionController(node))
                 continue;
 
             WiggleBoneSettings settings = wiggleSettingsFromNode(*node);
@@ -2052,7 +2074,7 @@ namespace MWRender
             }
 
             osg::MatrixTransform* node = iter->second;
-            if (attached.contains(node))
+            if (attached.contains(node) || hasSecondaryMotionController(node))
                 continue;
 
             if (debug)
