@@ -229,6 +229,13 @@ namespace LuaUtil
         {
             int mScriptId;
             sol::main_function mFn;
+            // Number of times this handler threw without a successful call in between. Reset to 0 on any
+            // success, so a handler that fails only occasionally is never throttled or disabled - only one
+            // that fails continuously (a genuinely broken script) is. See callEngineHandlers.
+            int mConsecutiveErrors = 0;
+            // Set once a handler has failed too many times in a row; it is then skipped to stop the per-frame
+            // log flood and the throw/catch cost. Cleared naturally when the script is reloaded.
+            bool mDisabled = false;
         };
 
         struct EngineHandlerList
@@ -248,16 +255,39 @@ namespace LuaUtil
         void callEngineHandlers(EngineHandlerList& handlers, const Args&... args)
         {
             ensureLoaded();
+            // How many full error messages to print before suppressing, and how many consecutive failures
+            // before a handler is disabled so one broken script cannot flood the log or stall the frame.
+            constexpr int logLimit = 3;
+            constexpr int disableLimit = 300;
             for (Handler& handler : handlers.mList)
             {
+                if (handler.mDisabled)
+                    continue;
                 try
                 {
                     LuaUtil::call({ this, handler.mScriptId }, handler.mFn, args...);
+                    handler.mConsecutiveErrors = 0;
                 }
                 catch (std::exception& e)
                 {
-                    Log(Debug::Error) << mNamePrefix << "[" << scriptPath(handler.mScriptId) << "] " << handlers.mName
-                                      << " failed. " << e.what();
+                    handler.mConsecutiveErrors++;
+                    if (handler.mConsecutiveErrors <= logLimit)
+                        Log(Debug::Error) << mNamePrefix << "[" << scriptPath(handler.mScriptId) << "] "
+                                          << handlers.mName << " failed. " << e.what();
+                    else if (handler.mConsecutiveErrors == logLimit + 1)
+                        Log(Debug::Error) << mNamePrefix << "[" << scriptPath(handler.mScriptId) << "] "
+                                          << handlers.mName
+                                          << " keeps failing; suppressing further messages. Last error: "
+                                          << e.what();
+                    if (handler.mConsecutiveErrors >= disableLimit)
+                    {
+                        handler.mDisabled = true;
+                        Log(Debug::Error)
+                            << mNamePrefix << "[" << scriptPath(handler.mScriptId) << "] " << handlers.mName
+                            << " failed " << handler.mConsecutiveErrors
+                            << " times in a row; disabling this handler to protect performance. "
+                            << "Fix the script and reload a save to re-enable it.";
+                    }
                 }
             }
         }

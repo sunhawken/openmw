@@ -459,6 +459,13 @@ namespace MWDialogue
         mPermanentDispositionChange = 0;
         mOriginalDisposition = 0;
         mCurrentDisposition = 0;
+
+        // Clear any lingering choice/goodbye state so a conversation that ended while a Choice was
+        // active does not leave the manager stuck "in choice" (which previously blocked leaving).
+        mChoice = -1;
+        mIsInChoice = false;
+        mChoices.clear();
+        mGoodbye = false;
     }
 
     void DialogueManager::questionAnswered(int answer, ResponseCallback* callback)

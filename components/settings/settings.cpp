@@ -178,9 +178,49 @@ namespace Settings
         if (!loadEditorSettings)
             Settings::StaticValues::init();
 
+        // A default present in defaults.bin that no SettingValue in this build registers is a stale leftover
+        // (e.g. defaults.bin newer than the running binary, or a renamed/removed setting). This used to be a fatal
+        // error ("Default setting [X] Y is not initialized") that stopped the game/launcher from starting.
+        // We tolerate it so startup is not blocked: warn and drop only the orphaned DEFAULT from the in-memory
+        // defaults (so it is not treated as a real setting or re-written as a "missing default"). We deliberately
+        // never touch the user's settings.cfg here - whatever value the user has is left exactly as-is on disk.
+        std::vector<std::pair<std::string, std::string>> orphanedDefaults;
         for (const auto& [key, value] : originalDefaultSettings)
             if (!sInitialized.contains(key))
-                throw std::runtime_error("Default setting [" + key.first + "] " + key.second + " is not initialized");
+                orphanedDefaults.emplace_back(std::string(key.first), std::string(key.second));
+
+        for (const auto& [category, setting] : orphanedDefaults)
+        {
+            Log(Debug::Warning) << "Ignoring unknown default setting [" << category << "] " << setting
+                                << " (not used by this build). Your settings.cfg value, if any, is left untouched.";
+            const CategorySettingValueMap::key_type key(category, setting);
+            mDefaultSettings.erase(key);
+        }
+
+        // Self-heal: materialize any missing default into the user settings file so it is complete on disk.
+        // This only ADDS entries the user file is missing (using the effective default value); it never replaces
+        // an existing user value. Only writes the file when something was actually added.
+        if (!loadEditorSettings)
+        {
+            std::size_t addedDefaults = 0;
+            for (const auto& [key, value] : mDefaultSettings)
+                if (mUserSettings.emplace(key, value).second)
+                    ++addedDefaults;
+
+            if (addedDefaults > 0)
+            {
+                Log(Debug::Info) << "Writing " << addedDefaults << " missing default setting"
+                                 << (addedDefaults == 1 ? "" : "s") << " into " << settingspath;
+                try
+                {
+                    parser.saveSettingsFile(settingspath, mUserSettings);
+                }
+                catch (const std::exception& e)
+                {
+                    Log(Debug::Warning) << "Could not write missing defaults to " << settingspath << ": " << e.what();
+                }
+            }
+        }
 
         return settingspath;
     }

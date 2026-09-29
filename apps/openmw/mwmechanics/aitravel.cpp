@@ -73,6 +73,10 @@ namespace MWMechanics
     bool AiTravel::execute(
         const MWWorld::Ptr& actor, CharacterController& characterController, AiState& state, float duration)
     {
+        // Safety check: actor must be valid and in a cell
+        if (actor.isEmpty() || !actor.isInCell())
+            return true;
+
         MWBase::MechanicsManager* mechMgr = MWBase::Environment::get().getMechanicsManager();
         auto& stats = actor.getClass().getCreatureStats(actor);
 

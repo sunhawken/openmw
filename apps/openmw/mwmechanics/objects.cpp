@@ -77,7 +77,6 @@ namespace MWMechanics
                 if (object.isAnimPlaying("containeropen"))
                 {
                     object.update(duration);
-                    MWBase::Environment::get().getWorld()->updateAnimatedCollisionShape(object.getPtr());
                 }
             }
         }

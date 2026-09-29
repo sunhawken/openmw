@@ -14,6 +14,7 @@
 #include <components/esm3/stolenitems.hpp>
 
 #include <components/sceneutil/positionattitudetransform.hpp>
+#include <components/settings/values.hpp>
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"

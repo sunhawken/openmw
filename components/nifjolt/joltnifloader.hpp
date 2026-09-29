@@ -1,0 +1,80 @@
+#ifndef OPENMW_COMPONENTS_NIFJOLT_JOLTNIFLOADER_HPP
+#define OPENMW_COMPONENTS_NIFJOLT_JOLTNIFLOADER_HPP
+
+#include <cassert>
+#include <map>
+#include <set>
+#include <string>
+
+#include <osg/BoundingBox>
+#include <osg/Referenced>
+#include <osg/ref_ptr>
+
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+
+#include <components/debug/debuglog.hpp>
+#include <components/nif/niffile.hpp>
+#include <components/resource/physicsshape.hpp>
+
+namespace Nif
+{
+    struct NiAVObject;
+    struct NiNode;
+    struct NiGeometry;
+    struct Parent;
+}
+
+namespace NifJolt
+{
+
+    /**
+     *Load Jolt Shapes from NIF files.
+     */
+    class JoltNifLoader
+    {
+    public:
+        void warn(const std::string& msg) { Log(Debug::Warning) << "NIFLoader: Warn: " << msg; }
+
+        [[noreturn]] void fail(const std::string& msg)
+        {
+            Log(Debug::Error) << "NIFLoader: Fail: " << msg;
+            abort();
+        }
+
+        osg::ref_ptr<Resource::PhysicsShape> load(Nif::FileView file);
+
+    private:
+        bool findBoundingBox(const Nif::NiAVObject& node);
+
+        struct HandleNodeArgs
+        {
+            bool mHasMarkers{ false };
+            bool mHasTriMarkers{ false };
+            bool mAnimated{ false };
+            bool mGenerateCollision{ false };
+            bool mAvoid{ false };
+            const Nif::NiNode* mCollisionNode{ nullptr };
+        };
+
+        void handleRoot(Nif::FileView nif, const Nif::NiAVObject& node, HandleNodeArgs args);
+        void handleNode(const Nif::NiAVObject& node, const Nif::Parent* parent, HandleNodeArgs args);
+        void handleGeometry(const Nif::NiGeometry& nifNode, const Nif::Parent* parent, HandleNodeArgs args);
+
+        bool mShapeMutable = false;
+        std::unique_ptr<JPH::CompoundShapeSettings> mCompoundShape;
+        std::unique_ptr<JPH::CompoundShapeSettings> mAvoidCompoundShape;
+
+        osg::ref_ptr<Resource::PhysicsShape> mShape;
+
+        // Nodes already visited during the current collision traversal. A NIF node graph can be a
+        // DAG - a node reachable via multiple parent paths - so without this guard handleNode()
+        // reprocesses shared subtrees once per path. For a diamond-shaped graph that is exponential
+        // and can hang the loader while allocating gigabytes of duplicate collision sub-shapes on a
+        // tiny mesh. Reset at the start of each load().
+        std::set<const Nif::NiAVObject*> mSeenNodes;
+    };
+
+}
+
+#endif

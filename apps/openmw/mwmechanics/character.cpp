@@ -37,6 +37,7 @@
 #include "../mwrender/animation.hpp"
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/inputmanager.hpp"
 #include "../mwbase/luamanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/soundmanager.hpp"
@@ -1200,6 +1201,10 @@ namespace MWMechanics
         const auto world = MWBase::Environment::get().getWorld();
         if (world->isInStorm())
         {
+            // Safety check: getBaseNode() can be null during cell transitions
+            if (!mPtr.getRefData().getBaseNode())
+                return;
+
             osg::Vec3f stormDirection = world->getStormDirection();
             osg::Vec3f characterDirection = mPtr.getRefData().getBaseNode()->getAttitude() * osg::Vec3f(0, 1, 0);
             stormDirection.normalize();
@@ -1693,7 +1698,11 @@ namespace MWMechanics
                             }
                             else
                             {
-                                mAttackType = getMovementBasedAttackType();
+                                // Directional attacks from the mouse/camera flick (player only). Falls
+                                // back to the movement-key behaviour when no flick is detected/enabled.
+                                std::string_view flickAttack
+                                    = MWBase::Environment::get().getInputManager()->getMouseDirectionalAttackType();
+                                mAttackType = flickAttack.empty() ? getMovementBasedAttackType() : flickAttack;
                             }
                         }
                         else if (aiInactive)
@@ -2458,8 +2467,14 @@ namespace MWMechanics
             }
         }
 
-        osg::Vec3f movementFromAnimation
-            = mAnimation->runAnimation(mSkipAnim && !isScriptedAnimPlaying() ? 0.f : duration);
+        // Skip animation updates if ragdoll is active - ragdoll controls the bones now
+        const bool hasRagdoll = cls.isActor() && world->hasRagdoll(mPtr);
+
+        osg::Vec3f movementFromAnimation = osg::Vec3f();
+        if (!hasRagdoll)
+        {
+            movementFromAnimation = mAnimation->runAnimation(mSkipAnim && !isScriptedAnimPlaying() ? 0.f : duration);
+        }
 
         if (mPtr.getClass().isActor() && !isScriptedAnimPlaying())
         {
@@ -2516,6 +2531,9 @@ namespace MWMechanics
             world->queueMovement(mPtr, movement);
         }
 
+        // Keep the value available until the next update. Mannequin mods conventionally call
+        // SkipAnim every frame to keep a dead NPC posed, and death handling runs after this reset.
+        mSkippedAnimationLastUpdate = mSkipAnim;
         mSkipAnim = false;
 
         mAnimation->enableHeadAnimation(cls.isActor() && !cls.getCreatureStats(mPtr).isDead());
@@ -2821,6 +2839,10 @@ namespace MWMechanics
         // Keeping track of when to stop a continuous VFX seems to be very difficult to do inside the spells code,
         // as it's extremely spread out (ActiveSpells, Spells, InventoryStore effects, etc...) so we do it here.
 
+        // Animation may be null if the actor was invalidated during cell transition
+        if (!mAnimation)
+            return;
+
         // Stop any effects that are no longer active
         std::vector<std::string_view> effects = mAnimation->getLoopingEffects();
 
@@ -2843,6 +2865,10 @@ namespace MWMechanics
     void CharacterController::updateMagicEffects() const
     {
         if (!mPtr.getClass().isActor())
+            return;
+
+        // Animation may be null if the actor was invalidated during cell transition
+        if (!mAnimation)
             return;
 
         float light = mPtr.getClass()

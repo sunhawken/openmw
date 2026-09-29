@@ -9,6 +9,7 @@
 
 #include "archive.hpp"
 #include "file.hpp"
+#include "filesystemarchive.hpp"
 #include "pathutil.hpp"
 #include "recursivedirectoryiterator.hpp"
 
@@ -95,6 +96,17 @@ namespace VFS
         if (found == mIndex.end())
             throw std::runtime_error("Resource '" + std::string(name.value()) + "' not found");
         return found->second->getStem();
+    }
+
+    std::optional<std::filesystem::path> Manager::getPhysicalPath(Path::NormalizedView name) const
+    {
+        const auto found = mIndex.find(name);
+        if (found == mIndex.end())
+            return std::nullopt;
+        const auto* file = dynamic_cast<const FileSystemArchiveFile*>(found->second);
+        if (file == nullptr)
+            return std::nullopt;
+        return file->getPath();
     }
 
     RecursiveDirectoryRange Manager::getRecursiveDirectoryIterator(std::string_view path) const
