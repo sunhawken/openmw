@@ -61,8 +61,8 @@ namespace MWRender
         /// @param isPlayer when true, this bone belongs to the player character. While the
         /// "jiggle player only" setting is on, the manual breast/butt Z-offset sliders (player-mesh
         /// -specific tuning) are applied only to the player's bones and skipped for NPCs.
-        explicit JiggleBoneController(
-            bool debug = false, bool isPlayer = false, WiggleBoneSettings settings = {});
+        explicit JiggleBoneController(bool debug = false, bool isPlayer = false,
+            WiggleBoneSettings settings = {}, std::string actorName = {});
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
@@ -78,6 +78,7 @@ namespace MWRender
         double mLastSimTime;
         bool mDebug;
         bool mIsPlayer;
+        std::string mActorName;
         WiggleBoneSettings mSettings;
         int mDebugCounter = 0;
         bool mMotionVerified = false;
