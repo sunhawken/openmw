@@ -2,6 +2,7 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/nifosg/matrixtransform.hpp>
+#include <components/sceneutil/visitor.hpp>
 #include <components/settings/values.hpp>
 
 #include <osg/MatrixTransform>
@@ -114,6 +115,110 @@ namespace MWRender
         }
     }
 
+    void VerletClothController::initializeBodyCollisionNodes(osg::MatrixTransform* node)
+    {
+        mBodyCollisionNodes.clear();
+        mBodyCollisionInitialized = true;
+
+        osg::NodePathList paths = node->getParentalNodePaths();
+        if (paths.empty() || paths[0].empty())
+            return;
+
+        osg::Node* actorRoot = paths[0].front();
+        SceneUtil::NodeMap map;
+        SceneUtil::NodeMapVisitor visitor(map);
+        actorRoot->accept(visitor);
+
+        // Ordered from pelvis to neck so consecutive entries form torso capsules.
+        // Missing bones are simply skipped, keeping this compatible with variant rigs.
+        for (const char* name : { "Bip01 Pelvis", "Bip01 Spine", "Bip01 Spine1", "Bip01 Spine2", "Bip01 Neck" })
+        {
+            auto it = map.find(name);
+            if (it != map.end() && it->second)
+                mBodyCollisionNodes.push_back(it->second);
+        }
+    }
+
+    std::vector<osg::Vec3f> VerletClothController::bodyCollisionPoints() const
+    {
+        std::vector<osg::Vec3f> points;
+        points.reserve(mBodyCollisionNodes.size());
+
+        for (const osg::ref_ptr<osg::MatrixTransform>& bone : mBodyCollisionNodes)
+        {
+            if (!bone)
+                continue;
+            const osg::NodePathList paths = bone->getParentalNodePaths();
+            if (paths.empty())
+                continue;
+            points.push_back(osg::computeLocalToWorld(paths[0]).getTrans());
+        }
+        return points;
+    }
+
+    void VerletClothController::solveBodyCollision(int pinCount, float radius, float margin)
+    {
+        if (mBodyCollisionNodes.size() < 2 || radius <= 0.f)
+            return;
+
+        const std::vector<osg::Vec3f> points = bodyCollisionPoints();
+        if (points.size() < 2)
+            return;
+
+        const float collisionRadius = std::max(0.01f, radius + margin);
+        const float collisionRadius2 = collisionRadius * collisionRadius;
+
+        for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
+        {
+            for (std::size_t seg = 1; seg < points.size(); ++seg)
+            {
+                const osg::Vec3f a = points[seg - 1];
+                const osg::Vec3f b = points[seg];
+                const osg::Vec3f ab = b - a;
+                const float abLen2 = ab.length2();
+
+                float t = 0.f;
+                if (abLen2 > 1e-6f)
+                    t = std::clamp(((mPositions[i] - a) * ab) / abLen2, 0.f, 1.f);
+
+                const osg::Vec3f closest = a + ab * t;
+                osg::Vec3f outward = mPositions[i] - closest;
+                const float dist2 = outward.length2();
+                if (dist2 >= collisionRadius2)
+                    continue;
+
+                float dist = std::sqrt(std::max(dist2, 1e-10f));
+                if (dist <= 1e-5f)
+                {
+                    // Degenerate exact-center case: use the current motion direction first,
+                    // then a stable axis perpendicular to the torso segment.
+                    outward = mPositions[i] - mPreviousPositions[i];
+                    if (outward.length2() <= 1e-8f)
+                    {
+                        outward = ab ^ osg::Vec3f(0.f, 0.f, 1.f);
+                        if (outward.length2() <= 1e-8f)
+                            outward = osg::Vec3f(0.f, 1.f, 0.f);
+                    }
+                    outward.normalize();
+                    dist = 0.f;
+                }
+                else
+                    outward /= dist;
+
+                const osg::Vec3f correction = outward * (collisionRadius - dist);
+                mPositions[i] += correction;
+
+                // Keep tangential motion but remove velocity aimed into the torso,
+                // preventing repeated tunnelling and explosive bounce at the surface.
+                osg::Vec3f velocity = mPositions[i] - mPreviousPositions[i];
+                const float normalVelocity = velocity * outward;
+                if (normalVelocity < 0.f)
+                    velocity -= outward * normalVelocity;
+                mPreviousPositions[i] = mPositions[i] - velocity;
+            }
+        }
+    }
+
     void VerletClothController::operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv)
     {
         if (mChain.size() < 2 || !mSettings.mEnabled)
@@ -128,6 +233,8 @@ namespace MWRender
         if (!mInitialized)
         {
             initialize(rootParentWorld, simTime);
+            if (!mBodyCollisionInitialized)
+                initializeBodyCollisionNodes(node);
             traverse(node, nv);
             return;
         }
@@ -185,6 +292,9 @@ namespace MWRender
         const bool idleWind = Settings::game().mVerletIdleWind;
         const int pinCount = std::clamp(Settings::game().mVerletPinCount.get(), 1,
             static_cast<int>(mPositions.size()) - 1);
+        const bool bodyCollision = Settings::game().mVerletBodyCollision;
+        const float bodyCollisionRadius = Settings::game().mVerletBodyCollisionRadius;
+        const float bodyCollisionMargin = Settings::game().mVerletBodyCollisionMargin;
 
         const float subDt = static_cast<float>(dt / static_cast<double>(substeps));
         const float anchorSpeed = static_cast<float>(anchorDelta.length() / std::max(dt, 1e-6));
@@ -261,6 +371,9 @@ namespace MWRender
                         mPositions[i] -= correction * 0.5f;
                     }
                 }
+
+                if (bodyCollision)
+                    solveBodyCollision(pinCount, bodyCollisionRadius, bodyCollisionMargin);
             }
         }
 
@@ -273,6 +386,7 @@ namespace MWRender
                              << " tip displacement=" << tipDistance << " friction=" << frictionBase
                              << " gravity=" << gravity << " wind=" << effectiveWindStrength
                              << " rootSpeed=" << anchorSpeed << " pinCount=" << pinCount
+                             << " bodyCollision=" << bodyCollision << " bodyRadius=" << bodyCollisionRadius
                              << " globalOverride=" << useGlobal;
         }
 
