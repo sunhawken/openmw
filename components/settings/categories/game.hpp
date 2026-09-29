@@ -82,6 +82,9 @@ namespace Settings
         // Use optional player-only naked female BBR body mesh when fully unequipped.
         SettingValue<bool> mCurvyNakedBody{ mIndex, "Game", "curvy naked body" };
         SettingValue<bool> mJiggleBoneDebug{ mIndex, "Game", "jiggle bone debug" };
+        // Live master toggle for ordinary Jiggle/Wiggle bone controllers. Verlet cloth is separate
+        // and keeps running when this is disabled.
+        SettingValue<bool> mJiggleBoneControllers{ mIndex, "Game", "jiggle bone controllers" };
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
