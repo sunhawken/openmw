@@ -122,6 +122,18 @@ namespace Settings
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
+        // Fine-grained actor scoping. Player/NPC defaults can be controlled independently and
+        // specific NPC display names can override the NPC default.
+        SettingValue<bool> mJigglePlayerEnabled{ mIndex, "Game", "jiggle player enabled" };
+        SettingValue<bool> mJiggleNpcDefaultEnabled{ mIndex, "Game", "jiggle npc default enabled" };
+        SettingValue<std::vector<std::string>> mJiggleNpcEnabledNames{
+            mIndex, "Game", "jiggle npc enabled names" };
+        SettingValue<std::vector<std::string>> mJiggleNpcDisabledNames{
+            mIndex, "Game", "jiggle npc disabled names" };
+        // Optional per-actor/per-mesh Z tuning entries:
+        // "player|mesh=breast;butt" or "npc:name|mesh=breast;butt".
+        SettingValue<std::vector<std::string>> mJiggleScopedMeshZOffsets{
+            mIndex, "Game", "jiggle scoped mesh z offsets" };
         // Keep the simulation running (physics, jiggle, NPCs, time) while the Options/Settings
         // window is open, instead of pausing - so movement and jiggle can be previewed live while
         // adjusting sliders. The console, interactive message boxes, and having no active game
