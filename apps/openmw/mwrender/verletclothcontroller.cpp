@@ -362,6 +362,29 @@ namespace MWRender
         const float friction = std::pow(effectiveFrictionBase, subDt * sReferenceFps);
         const float effectiveWindStrength = (!idleWind && stationary) ? 0.f : windStrength;
 
+        // The attachment point is animated with the actor.  Carry every free
+        // particle by that same world-space displacement before simulating its
+        // lag.  Leaving the free particles at their old world positions while
+        // only pinning the root stretches the entire chain on every walking
+        // frame; the distance solver then straightens it into the familiar
+        // "shoot backwards / flat cape" failure.
+        for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
+        {
+            mPositions[i] += anchorDelta;
+            mPreviousPositions[i] += anchorDelta;
+        }
+
+        // Root motion is now only a secondary trailing force.  Bound its
+        // frame contribution so a fast animation, frame hitch, or unusually
+        // large actor-scale translation cannot flatten the cloth in one tick.
+        osg::Vec3f boundedAnchorDelta = anchorDelta;
+        const float maxMovementDrag = maxStep * 0.25f;
+        if (boundedAnchorDelta.length2() > maxMovementDrag * maxMovementDrag)
+        {
+            boundedAnchorDelta.normalize();
+            boundedAnchorDelta *= maxMovementDrag;
+        }
+
         for (int substep = 0; substep < substeps; ++substep)
         {
             // Pin the authored attachment region. For capes this keeps the
@@ -389,7 +412,7 @@ namespace MWRender
                 // distal particles trail slightly more than particles near the pin.
                 const float chainT = static_cast<float>(i) / static_cast<float>(mPositions.size() - 1);
                 const osg::Vec3f movementDrag
-                    = anchorDelta * (-movementInfluence * chainT / static_cast<float>(substeps));
+                    = boundedAnchorDelta * (-movementInfluence * chainT / static_cast<float>(substeps));
                 osg::Vec3f step = velocity + acceleration * (subDt * subDt) + movementDrag;
                 if (step.length2() > maxStep * maxStep)
                 {
