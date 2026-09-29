@@ -720,7 +720,9 @@ namespace NifOsg
                     // per-bone settings. NIF string extras are otherwise intentionally ignored.
                     else if (Misc::StringUtils::ciFind(sd->mData, "openmw_wiggle") != std::string::npos
                         || Misc::StringUtils::ciFind(sd->mData, "wiggle_") != std::string::npos
-                        || Misc::StringUtils::ciFind(sd->mData, "jiggle_") != std::string::npos)
+                        || Misc::StringUtils::ciFind(sd->mData, "jiggle_") != std::string::npos
+                        || Misc::StringUtils::ciFind(sd->mData, "openmw_verlet") != std::string::npos
+                        || Misc::StringUtils::ciFind(sd->mData, "verlet_") != std::string::npos)
                     {
                         node->getOrCreateUserDataContainer()->addDescription(sd->mData);
                     }
