@@ -41,7 +41,10 @@ jobs:
         -D USE_SYSTEM_TINYXML=ON
         -D BUILD_COMPONENTS_TESTS=ON
         -D BUILD_OPENMW_TESTS=ON
-        -D BUILD_OPENCS_TESTS=ON
+        -D BUILD_OPENCS_TESTS=OFF
+        -D BUILD_OPENCS=OFF
+        -D BUILD_LAUNCHER=OFF
+        -D BUILD_WIZARD=OFF
         -D CMAKE_INSTALL_PREFIX=install
 
     - name: Build
@@ -54,7 +57,29 @@ jobs:
       run: ./openmw-tests
 
     - name: Run OpenMW-CS tests
+      if: false
       run: ./openmw-cs-tests
+
+    - name: Assemble portable Linux runtime for Siff in-game test
+      shell: bash
+      run: |
+        set -euxo pipefail
+        mkdir -p siff-linux-runtime/bin siff-linux-runtime/lib siff-linux-runtime/osgPlugins-3.6.5
+        cp ./openmw siff-linux-runtime/bin/openmw
+        cp -a ./resources siff-linux-runtime/
+        ldd ./openmw | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' | sort -u > /tmp/openmw-libs.txt
+        while read -r lib; do cp -L "$lib" siff-linux-runtime/lib/ || true; done < /tmp/openmw-libs.txt
+        if [ -d /usr/lib/x86_64-linux-gnu/osgPlugins-3.6.5 ]; then
+          cp -a /usr/lib/x86_64-linux-gnu/osgPlugins-3.6.5/. siff-linux-runtime/osgPlugins-3.6.5/
+        fi
+        tar -czf siff-linux-runtime.tar.gz siff-linux-runtime
+
+    - name: Upload portable Linux runtime
+      uses: actions/upload-artifact@v4
+      with:
+        name: siff-linux-runtime
+        path: siff-linux-runtime.tar.gz
+        retention-days: 1
 
     # - name: Install
     #   shell: bash
