@@ -1517,7 +1517,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet gravity"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="20"/>
-                        <UserString key="SettingLabelWidget" value="VerletGravityText"/><UserString key="SettingLabelCaption" value="Verlet Gravity: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletGravityText"/><UserString key="SettingLabelCaption" value="Verlet Gravity: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 186 330 18"><Property key="Caption" value="Higher = falls/drops down faster"/></Widget>
 
@@ -1527,7 +1527,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet friction"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0.70"/><UserString key="SettingMax" value="0.999"/>
-                        <UserString key="SettingLabelWidget" value="VerletFrictionText"/><UserString key="SettingLabelCaption" value="Verlet Friction: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletFrictionText"/><UserString key="SettingLabelCaption" value="Verlet Friction: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 256 330 18"><Property key="Caption" value="Lower = settles faster; higher = more flowing inertia"/></Widget>
 
@@ -1537,7 +1537,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet wind strength"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="20"/>
-                        <UserString key="SettingLabelWidget" value="VerletWindText"/><UserString key="SettingLabelCaption" value="Verlet Wind: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletWindText"/><UserString key="SettingLabelCaption" value="Verlet Wind: {value}"/>
                     </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 344 330 18" name="VerletWindFrequencyText"/>
@@ -1546,7 +1546,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet wind frequency"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="2"/>
-                        <UserString key="SettingLabelWidget" value="VerletWindFrequencyText"/><UserString key="SettingLabelCaption" value="Wind Frequency: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletWindFrequencyText"/><UserString key="SettingLabelCaption" value="Wind Frequency: {value}"/>
                     </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 402 330 18" name="VerletMovementText"/>
@@ -1555,7 +1555,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet movement influence"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="3"/>
-                        <UserString key="SettingLabelWidget" value="VerletMovementText"/><UserString key="SettingLabelCaption" value="Movement Pull: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletMovementText"/><UserString key="SettingLabelCaption" value="Movement Pull: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 442 330 18"><Property key="Caption" value="How strongly running/turning drags cloth behind the actor"/></Widget>
 
@@ -1565,7 +1565,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet idle damping"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0.50"/><UserString key="SettingMax" value="1.0"/>
-                        <UserString key="SettingLabelWidget" value="VerletIdleDampingText"/><UserString key="SettingLabelCaption" value="Idle Retention: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletIdleDampingText"/><UserString key="SettingLabelCaption" value="Idle Retention: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 512 330 18"><Property key="Caption" value="Lower = cape settles downward faster when standing still"/></Widget>
 
@@ -1575,7 +1575,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet iterations"/><UserString key="SettingValueType" value="Integer"/>
                         <UserString key="SettingMin" value="1"/><UserString key="SettingMax" value="32"/>
-                        <UserString key="SettingLabelWidget" value="VerletIterationsText"/><UserString key="SettingLabelCaption" value="Constraint Iterations: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletIterationsText"/><UserString key="SettingLabelCaption" value="Constraint Iterations: {value}"/>
                     </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 600 330 18" name="VerletSubstepsText"/>
@@ -1584,7 +1584,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet substeps"/><UserString key="SettingValueType" value="Integer"/>
                         <UserString key="SettingMin" value="1"/><UserString key="SettingMax" value="8"/>
-                        <UserString key="SettingLabelWidget" value="VerletSubstepsText"/><UserString key="SettingLabelCaption" value="Substeps: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletSubstepsText"/><UserString key="SettingLabelCaption" value="Substeps: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 640 330 18"><Property key="Caption" value="More iterations/substeps = steadier cloth but more CPU cost"/></Widget>
 
@@ -1594,7 +1594,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet pin count"/><UserString key="SettingValueType" value="Integer"/>
                         <UserString key="SettingMin" value="1"/><UserString key="SettingMax" value="8"/>
-                        <UserString key="SettingLabelWidget" value="VerletPinCountText"/><UserString key="SettingLabelCaption" value="Pinned Top Bones: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletPinCountText"/><UserString key="SettingLabelCaption" value="Pinned Top Bones: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 718 330 36"><Property key="Caption" value="Higher = more of the shoulder/upper-arm region stays rigid."/></Widget>
 
@@ -1613,7 +1613,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet body collision radius"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="4"/><UserString key="SettingMax" value="24"/>
-                        <UserString key="SettingLabelWidget" value="VerletBodyRadiusText"/><UserString key="SettingLabelCaption" value="Body Collision Radius: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletBodyRadiusText"/><UserString key="SettingLabelCaption" value="Body Collision Radius: {value}"/>
                     </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 864 330 18" name="VerletBodyMarginText"/>
@@ -1622,7 +1622,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet body collision margin"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="6"/>
-                        <UserString key="SettingLabelWidget" value="VerletBodyMarginText"/><UserString key="SettingLabelCaption" value="Collision Padding: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletBodyMarginText"/><UserString key="SettingLabelCaption" value="Collision Padding: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 904 330 36"><Property key="Caption" value="Capsules follow Pelvis, Spine, Spine1, Spine2 and Neck. Raise radius/padding if the cape still clips."/></Widget>
 
@@ -1632,7 +1632,7 @@
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet max step"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0.25"/><UserString key="SettingMax" value="15"/>
-                        <UserString key="SettingLabelWidget" value="VerletMaxStepText"/><UserString key="SettingLabelCaption" value="Max Step: {0}"/>
+                        <UserString key="SettingLabelWidget" value="VerletMaxStepText"/><UserString key="SettingLabelCaption" value="Max Step: {value}"/>
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 998 330 36"><Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/></Widget>
 
