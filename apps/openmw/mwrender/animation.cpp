@@ -64,6 +64,7 @@
 
 #include "actorutil.hpp"
 #include "jigglebonecontroller.hpp"
+#include "verletclothcontroller.hpp"
 #include "rotatecontroller.hpp"
 #include "util.hpp"
 #include "vismask.hpp"
@@ -212,6 +213,135 @@ namespace
         }
 
         return settings;
+    }
+
+    bool parseVerletInt(const std::string& value, int& out)
+    {
+        try
+        {
+            std::size_t consumed = 0;
+            out = std::stoi(value, &consumed);
+            return consumed != 0;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    void applyVerletProperty(MWRender::VerletClothSettings& settings, std::string key, const std::string& value)
+    {
+        key = normalizedWiggleKey(std::move(key));
+
+        bool b = false;
+        float f = 0.f;
+        int i = 0;
+
+        if ((key == "verlet_cloth" || key == "verlet_active") && parseWiggleBool(value, b))
+            settings.mEnabled = b;
+        else if (key == "verlet_count" && parseVerletInt(value, i))
+            settings.mCount = std::max(0, i);
+        else if (key == "verlet_friction" && parseWiggleFloat(value, f))
+            settings.mFriction = f;
+        else if (key == "verlet_gravity" && parseWiggleFloat(value, f))
+            settings.mGravity = f;
+        else if ((key == "verlet_wind" || key == "verlet_wind_strength") && parseWiggleFloat(value, f))
+            settings.mWindStrength = f;
+        else if (key == "verlet_wind_frequency" && parseWiggleFloat(value, f))
+            settings.mWindFrequency = f;
+        else if (key == "verlet_iterations" && parseVerletInt(value, i))
+            settings.mIterations = i;
+        else if (key == "verlet_substeps" && parseVerletInt(value, i))
+            settings.mSubsteps = i;
+        else if (key == "verlet_max_step" && parseWiggleFloat(value, f))
+            settings.mMaxStep = f;
+    }
+
+    MWRender::VerletClothSettings verletSettingsFromNode(const osg::Node& node)
+    {
+        MWRender::VerletClothSettings settings;
+
+        bool b = false;
+        if (node.getUserValue("verlet_cloth", b) || node.getUserValue("verlet_active", b))
+            settings.mEnabled = b;
+
+        int count = 0;
+        if (node.getUserValue("verlet_count", count))
+            settings.mCount = count;
+
+        auto readFloat = [&](std::string_view key) {
+            float value = 0.f;
+            if (node.getUserValue(std::string(key), value))
+                applyVerletProperty(settings, std::string(key), std::to_string(value));
+        };
+        for (std::string_view key : { "verlet_friction", "verlet_gravity", "verlet_wind",
+                 "verlet_wind_strength", "verlet_wind_frequency", "verlet_max_step" })
+            readFloat(key);
+
+        for (const std::string& description : node.getDescriptions())
+        {
+            const std::string normalized = normalizedWiggleKey(description);
+            if (normalized.find("openmw_verlet_cloth") != std::string::npos)
+                settings.mEnabled = true;
+
+            std::size_t start = 0;
+            while (start < description.size())
+            {
+                const std::size_t end = description.find_first_of(";\n,", start);
+                const std::string token
+                    = description.substr(start, end == std::string::npos ? std::string::npos : end - start);
+                const std::size_t sep = token.find_first_of("=:");
+                if (sep != std::string::npos)
+                    applyVerletProperty(settings, token.substr(0, sep), token.substr(sep + 1));
+                if (end == std::string::npos)
+                    break;
+                start = end + 1;
+            }
+        }
+
+        return settings;
+    }
+
+    std::vector<std::string> numberedVerletChainNames(const std::string& rootName, int count)
+    {
+        std::vector<std::string> names;
+        if (count <= 0)
+            return names;
+
+        std::size_t digitStart = rootName.size();
+        while (digitStart > 0 && std::isdigit(static_cast<unsigned char>(rootName[digitStart - 1])))
+            --digitStart;
+
+        if (digitStart == rootName.size())
+        {
+            names.push_back(rootName);
+            return names;
+        }
+
+        const std::string prefix = rootName.substr(0, digitStart);
+        const std::string digits = rootName.substr(digitStart);
+        const int width = static_cast<int>(digits.size());
+
+        int startNumber = 0;
+        try
+        {
+            startNumber = std::stoi(digits);
+        }
+        catch (...)
+        {
+            names.push_back(rootName);
+            return names;
+        }
+
+        names.reserve(static_cast<std::size_t>(count));
+        for (int offset = 0; offset < count; ++offset)
+        {
+            std::string number = std::to_string(startNumber + offset);
+            if (static_cast<int>(number.size()) < width)
+                number.insert(number.begin(), static_cast<std::size_t>(width - number.size()), '0');
+            names.push_back(prefix + number);
+        }
+        return names;
     }
 
     /// Removes all particle systems and related nodes in a subgraph.
@@ -1836,6 +1966,57 @@ namespace MWRender
         const bool isPlayer = mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr();
 
         std::unordered_set<osg::MatrixTransform*> attached;
+
+        // Runtime Verlet cloth chains. A root such as v_01 can opt in with
+        // OPENMW_VERLET_CLOTH / verlet_cloth=true and verlet_count=N. The
+        // sequentially-numbered bones are simulated together, so none of the
+        // member bones should also receive independent JiggleBoneControllers.
+        for (const auto& [name, nodeRef] : getNodeMap())
+        {
+            osg::MatrixTransform* root = nodeRef.get();
+            if (!root || attached.contains(root))
+                continue;
+
+            VerletClothSettings clothSettings = verletSettingsFromNode(*root);
+            if (!clothSettings.mEnabled || clothSettings.mCount < 2)
+                continue;
+
+            const std::vector<std::string> chainNames
+                = numberedVerletChainNames(root->getName(), clothSettings.mCount);
+            std::vector<osg::ref_ptr<osg::MatrixTransform>> chain;
+            chain.reserve(chainNames.size());
+
+            bool complete = chainNames.size() == static_cast<std::size_t>(clothSettings.mCount);
+            for (const std::string& chainName : chainNames)
+            {
+                auto iter = getNodeMap().find(chainName);
+                if (iter == getNodeMap().end() || !iter->second)
+                {
+                    complete = false;
+                    if (debug)
+                        Log(Debug::Warning) << "Verlet cloth: missing chain bone " << chainName
+                                            << " for root " << root->getName();
+                    break;
+                }
+                chain.push_back(iter->second);
+            }
+
+            if (!complete || chain.size() < 2)
+                continue;
+
+            if (debug)
+                Log(Debug::Info) << "Verlet cloth: attached root=" << root->getName()
+                                 << " particles=" << chain.size();
+
+            root->addUpdateCallback(new VerletClothController(std::move(chain), clothSettings, debug));
+
+            for (const std::string& chainName : chainNames)
+            {
+                auto iter = getNodeMap().find(chainName);
+                if (iter != getNodeMap().end() && iter->second)
+                    attached.insert(iter->second.get());
+            }
+        }
 
         // Direct Blender Wiggle Bones support. Exporters can preserve the add-on's
         // properties either as OSG user values or as NiStringExtraData/node
