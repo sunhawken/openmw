@@ -63,6 +63,9 @@ PNG_A="$WARCH/libpng-mt.a"
 OMW_FORCE_INC="$ROOT/wasm-build/include"
 [ -f "$DW/include/gl_compat.h" ] && OMW_FORCE_INC="$DW/include"
 
+JOLT_SRC=""
+[ -f "$ROOT/deps/src/JoltPhysics/Build/CMakeLists.txt" ] && JOLT_SRC="$ROOT/deps/src/JoltPhysics"
+
 emcmake cmake -S "$ROOT/openmw" -B "$ROOT/$BUILD_DIR" -G Ninja \
   -DMYGUI_STATIC=ON -DUSE_LUAJIT=OFF -DOSG_STATIC=ON -DOPENMW_USE_SYSTEM_OSG=ON -DOSGPlugins_LIB_DIR="$DW/lib" -DCMAKE_CXX_SCAN_FOR_MODULES=OFF \
   -DSDL2_DIR="$DW/lib/cmake/SDL2" -DPNG_LIBRARY:FILEPATH="$PNG_A" \
@@ -72,7 +75,7 @@ emcmake cmake -S "$ROOT/openmw" -B "$ROOT/$BUILD_DIR" -G Ninja \
   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH -DCMAKE_FIND_ROOT_PATH="$DW;$SR" \
   -DBUILD_OPENMW=ON -DBUILD_LAUNCHER=OFF -DBUILD_OPENCS=OFF -DBUILD_WIZARD=OFF \
   -DBUILD_BSATOOL=OFF -DBUILD_ESMTOOL=OFF -DBUILD_ESSIMPORTER=OFF -DBUILD_NIFTEST=OFF \
-  -DBUILD_NAVMESHTOOL=OFF -DBUILD_BULLETOBJECTTOOL=OFF -DBUILD_MWINIIMPORTER=OFF \
+  -DBUILD_NAVMESHTOOL=OFF -DBUILD_PHYSICSOBJECTTOOL=OFF -DBUILD_MWINIIMPORTER=OFF \
   -DBUILD_DOCS=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_UNITTESTS=OFF -DBUILD_COMPONENTS_TESTS=OFF \
   -DBUILD_OPENMW_MP=OFF -DUSE_QT=OFF -DUSE_SYSTEM_TINYXML=OFF \
   -DOPENMW_USE_SYSTEM_SQLITE3=OFF -DOPENMW_USE_SYSTEM_YAML_CPP=OFF -DOPENMW_USE_SYSTEM_ICU=ON \
@@ -83,7 +86,7 @@ emcmake cmake -S "$ROOT/openmw" -B "$ROOT/$BUILD_DIR" -G Ninja \
   `# the MAIN-THREAD canvas -- proven by stack trace: _eglCreateContext -> Browser.createContext` \
   `# -> getContext on the transferred canvas, which throws once it belongs to the worker.` \
   `# Off by default so the shipping build keeps SDL's context exactly as it is.` \
-  -DCMAKE_CXX_FLAGS="${OMW_PROXY:+-DOPENMW_PROXY_GL} -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES -DBT_USE_DOUBLE_PRECISION $ARCH_FLAG -fwasm-exceptions -msimd128 -include $OMW_FORCE_INC/mygui_char_traits_fix.h -include $OMW_FORCE_INC/gl_compat.h -Wno-missing-template-arg-list-after-template-kw -Wno-error=missing-template-arg-list-after-template-kw -pthread -I$BOOST/../bullet3/src -I$DW/include -I$BOOST" \
+  -DCMAKE_CXX_FLAGS="${OMW_PROXY:+-DOPENMW_PROXY_GL} -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES $ARCH_FLAG -fwasm-exceptions -msimd128 -include $OMW_FORCE_INC/mygui_char_traits_fix.h -include $OMW_FORCE_INC/gl_compat.h -Wno-missing-template-arg-list-after-template-kw -Wno-error=missing-template-arg-list-after-template-kw -pthread -I$DW/include -I$BOOST" \
   -DCMAKE_C_FLAGS="-pthread -msimd128 $ARCH_FLAG" \
   -DBoost_INCLUDE_DIR="$BOOST" -DBoost_NO_BOOST_CMAKE=OFF \
   -DBoost_USE_STATIC_RUNTIME=ON -DBoost_USE_STATIC_LIBS=ON \
@@ -92,7 +95,7 @@ emcmake cmake -S "$ROOT/openmw" -B "$ROOT/$BUILD_DIR" -G Ninja \
   -DLUA_MATH_LIBRARY="$DW/lib/libopenal_stub.a" \
   -DLZ4_LIBRARY="$DW/lib/liblz4.a" -DLZ4_INCLUDE_DIR="$DW/include" \
   -DOPENAL_LIBRARY="$DW/lib/libopenal_stub.a" -DOPENAL_INCLUDE_DIR="$SR/include/AL" \
-  -DCMAKE_EXE_LINKER_FLAGS="$ARCH_FLAG -fwasm-exceptions -lopenal --use-port=sdl2 --use-port=freetype --use-port=harfbuzz --use-port=libpng --use-port=libjpeg --use-port=zlib --use-port=ogg --use-port=vorbis -sALLOW_MEMORY_GROWTH=1 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=8 -sINITIAL_MEMORY=1610612736 -sASSERTIONS=0" \
+  -DCMAKE_EXE_LINKER_FLAGS="$ARCH_FLAG -fwasm-exceptions -lopenal --use-port=sdl2 --use-port=freetype --use-port=harfbuzz --use-port=libpng --use-port=libjpeg --use-port=zlib --use-port=ogg --use-port=vorbis -sALLOW_MEMORY_GROWTH=1 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1 -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=8 -sINITIAL_MEMORY=1610612736 -sSTACK_SIZE=1048576 -sDEFAULT_PTHREAD_STACK_SIZE=1048576 -sASSERTIONS=0" \
   -DZLIB_LIBRARY="$W32/libz.a" -DZLIB_INCLUDE_DIR="$SR/include" \
   -DOPENGL_INCLUDE_DIR="$SR/include" \
   -DOPENGL_opengl_LIBRARY="$LIBGL_A" \
@@ -104,10 +107,8 @@ emcmake cmake -S "$ROOT/openmw" -B "$ROOT/$BUILD_DIR" -G Ninja \
   -DICU_UC_LIBRARY_RELEASE="$W32/libicu_common-mt.a" -DICU_UC_LIBRARY="$W32/libicu_common-mt.a" \
   -DICU_I18N_LIBRARY_RELEASE="$W32/libicu_i18n-mt.a" -DICU_I18N_LIBRARY="$W32/libicu_i18n-mt.a" \
   -DICU_DATA_LIBRARY_RELEASE="$W32/libicu_stubdata-mt.a" -DICU_DATA_LIBRARY="$W32/libicu_stubdata-mt.a" \
-  -DBULLET_INCLUDE_DIR="$ROOT/deps/src/bullet3/src" -DBULLET_USE_DOUBLE_PRECISION=ON \
-  -DBULLET_DYNAMICS_LIBRARY="$DW/lib/libBulletDynamics.a" -DBULLET_COLLISION_LIBRARY="$DW/lib/libBulletCollision.a" \
-  -DBULLET_MATH_LIBRARY="$DW/lib/libLinearMath.a" -DBULLET_SOFTBODY_LIBRARY="$DW/lib/libBulletSoftBody.a" \
-  `# Skip CheckBulletPrecision.cmake's try_compile probe (flaky under emscripten); our Bullet is` \
-  `# built double-precision (-DUSE_DOUBLE_PRECISION=ON). See openmw/cmake/CheckBulletPrecision.cmake.` \
-  -DOPENMW_ASSUME_BULLET_DOUBLE_PRECISION:BOOL=TRUE \
+  `# Physics is Jolt (the official-jolt-ragdoll engine), built from source by the engine CMake` \
+  `# (openmw/extern/CMakeLists.txt). Point FetchContent at the fetch-deps.sh pinned` \
+  `# checkout when it is there so configure needs no network; otherwise it downloads v5.3.0.` \
+  ${JOLT_SRC:+-DFETCHCONTENT_SOURCE_DIR_JOLTPHYSICS="$JOLT_SRC"} \
   "$@" 2>&1

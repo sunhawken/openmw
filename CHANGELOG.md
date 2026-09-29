@@ -2,6 +2,16 @@
 
 Notable changes to OpenMW-Web. Dates are release dates, newest first.
 
+## Unreleased: Jolt / Ragdoll edition
+
+**The engine is now the `official-jolt-ragdoll` fork.** Physics runs on Jolt instead of Bullet,
+with ragdolls on death, loose items and ingredients as simulated bodies that float, Jiggle,
+Wiggle and Verlet cloth secondary motion (each with its own settings tab), masked occlusion
+culling, directional mouse-flick melee and the fork's other additions. The browser-specific
+changes it needed (one Jolt worker thread, SIMD128 builds of Jolt and the occlusion rasterizer, a
+1 MB stack) and the build-script changes are in [`JOLT_RAGDOLL_PORT.md`](JOLT_RAGDOLL_PORT.md).
+Not yet baked or playtested in a browser.
+
 ## 1.4.1
 
 **Nobody can hide the world from everybody.** A client may toggle refs in cells it is nowhere

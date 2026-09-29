@@ -18,7 +18,7 @@
 #
 # WHAT IS AND IS NOT PUBLISHABLE. The "not ours to publish" note on deps/ is correct for RETAIL
 # game data — that stays out, and the bring-your-own-Morrowind path exists for it. It is not true
-# of the dependency sources: OSG, Bullet, Recast, MyGUI, FFmpeg, Boost, Lua and LZ4 are all open
+# of the dependency sources: OSG, Jolt Physics, Recast, MyGUI, FFmpeg, Boost, Lua and LZ4 are all open
 # source and freely fetchable. Downloading them needs no permission from anyone.
 #
 # USAGE
@@ -55,7 +55,9 @@ log() { printf '\n=== %s\n' "$*"; }
 # name|url|tag|dir
 GIT_DEPS=(
   "osg|https://github.com/openscenegraph/OpenSceneGraph.git|OpenSceneGraph-3.6.5|osg"
-  "bullet|https://github.com/bulletphysics/bullet3.git|3.25|bullet3"
+  # Jolt is not prebuilt by build-deps.sh: the engine's own CMake builds it (extern/CMakeLists.txt),
+  # and configure-openmw.sh points FetchContent at this checkout so configure needs no network.
+  "jolt|https://github.com/jrouwe/JoltPhysics.git|v5.3.0|JoltPhysics"
   "recast|https://github.com/recastnavigation/recastnavigation.git|v1.6.0|recast"
   "mygui|https://github.com/MyGUI/mygui.git|MyGUI3.4.3|mygui"
 )

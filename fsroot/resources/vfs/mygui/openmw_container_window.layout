@@ -15,6 +15,10 @@
                 <Property key="Caption" value="#{sDisposeofCorpse}"/>
                 <Property key="Visible" value="false"/>
             </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="TransferButton" align="Right Bottom">
+                <Property key="Caption" value="#{Interface:TransferAll}"/>
+                <Property key="Visible" value="false"/>
+            </Widget>
             <Widget type="AutoSizedButton" skin="MW_Button" name="TakeButton" align="Right Bottom">
                 <Property key="Caption" value="#{sTakeAll}"/>
             </Widget>

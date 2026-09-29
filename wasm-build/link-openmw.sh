@@ -203,27 +203,30 @@ fi
 # rebuilt, and the deployed client threw "attempt to call a nil value" at runtime — which
 # killed the whole MP transport, because a throwing Lua handler disables its subsystem.
 # Ninja no-ops these in seconds when nothing changed, so there is no reason to skip them.
-ninja components openmw-lib
+ninja components openmw-lib Jolt maskedoc
 ninja apps/openmw/CMakeFiles/openmw.dir/main.cpp.o
 
 # X11 no-op stubs (osgViewer's X11 backend symbols; see wasm-build/x11_stubs.c).
 "$EMSDK_BIN/emcc" $ARCH_FLAG -O2 -pthread -fwasm-exceptions -msimd128 -c "$ROOT/wasm-build/x11_stubs.c" -o "$BUILD/x11_stubs.o"
 
 "$EMSDK_BIN/em++" \
-  -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES -DBT_USE_DOUBLE_PRECISION \
+  -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES \
   `# -msimd128 must match configure-openmw.sh: every hand-built dep already carries it, and` \
   `# main.cpp.o is compiled HERE rather than by cmake, so it would otherwise be the odd one out.` \
   $ARCH_FLAG -fwasm-exceptions -msimd128 \
   -include "$OMW_FORCE_INC/mygui_char_traits_fix.h" -include "$OMW_FORCE_INC/gl_compat.h" \
   -Wno-missing-template-arg-list-after-template-kw -Wno-error=missing-template-arg-list-after-template-kw \
   -pthread \
-  -I"$ROOT/deps/src/bullet3/src" -I"$INC" -I"$ROOT/deps/src/boost_1_85_0" \
+  -I"$INC" -I"$ROOT/deps/src/boost_1_85_0" \
   -O3 -DNDEBUG \
   -lopenal \
   --use-port=sdl2 --use-port=freetype --use-port=harfbuzz --use-port=libpng \
   --use-port=libjpeg --use-port=zlib --use-port=ogg --use-port=vorbis \
   -sALLOW_MEMORY_GROWTH=1 -sMAX_WEBGL_VERSION=2 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1 \
   -sEXIT_RUNTIME=0 -sPTHREAD_POOL_SIZE=8 -sINITIAL_MEMORY=1610612736 \
+  `# Jolt asks for at least a 1MB stack (its README / Jolt.cmake); the physics job runs on a` \
+  `# pthread, so the worker default has to grow with the main stack.` \
+  -sSTACK_SIZE=1048576 -sDEFAULT_PTHREAD_STACK_SIZE=1048576 \
   `# MAXIMUM_MEMORY defaults to 2GB (emsdk src/settings.js:211), so ALLOW_MEMORY_GROWTH over a` \
   `# 1.5GB initial had only ~512MB of headroom -- the shadow map alone was ~1GB before it was` \
   `# halved. wasm32 addresses 4GB, which the wasm32 build takes in full -- and that is the` \
@@ -273,7 +276,11 @@ ninja apps/openmw/CMakeFiles/openmw.dir/main.cpp.o
   extern/libsqlite3.a extern/smhasher/libsmhasher.a \
   "$SYSROOT/libicu_common-mt.a" "$SYSROOT/libicu_i18n-mt.a" "$SYSROOT/libicu_stubdata-mt.a" \
   _deps/yaml-cpp-build/libyaml-cpp.a \
-  "$LIB/libBulletCollision.a" "$LIB/libLinearMath.a" \
+  `# Jolt Physics and the masked occlusion culler are built by the engine CMake (openmw/extern).` \
+  `# ERROR_ON_UNDEFINED_SYMBOLS=0 below means a missing archive here would NOT fail the link --` \
+  `# it would ship an engine that aborts on its first physics call -- so both are named explicitly.` \
+  extern/maskedoc/libmaskedoc.a \
+  _deps/joltphysics-build/libJolt.a \
   "$BUILD/x11_stubs.o" \
   -sERROR_ON_UNDEFINED_SYMBOLS=0 \
   -lidbfs.js -lwebsocket.js -sFORCE_FILESYSTEM=1 \

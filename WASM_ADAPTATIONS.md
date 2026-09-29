@@ -265,6 +265,12 @@ Honest boundaries of the port. None are correctness bugs; each is a documented t
 
 Files changed from upstream OpenMW base `bc1d9c97a3881bb961a0b74e6e49bbba772b86a1` as of 2026-07-13. Each carries a "Modified by Virtastic" notice.
 
+This edition additionally merges the engine of `sunhawken/openmw` `official-jolt-ragdoll`
+(Jolt Physics, ragdolls, secondary motion, occlusion culling, and more), which touches many more
+files than the list below. What was merged, how conflicts were resolved and the web-specific
+changes to the new code are recorded in [`JOLT_RAGDOLL_PORT.md`](JOLT_RAGDOLL_PORT.md); the
+file-level record is the merge history of `openmw/`.
+
 New (non-upstream) additions, not listed below: `openmw/apps/openmw/mwmp/` (omw-mp/1
 multiplayer client transport — WebSocket wrapper, NetManager, `openmw.mp` Lua package) and
 `openmw/files/data/mp.omwscripts` + `openmw/files/data/scripts/mp/` (the multiplayer Lua

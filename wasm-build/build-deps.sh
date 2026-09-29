@@ -7,14 +7,14 @@
 # (only OSG was scripted). Consolidates the standard emscripten cross-compiles + the flags
 # documented in README.md §"Dependency stack".
 #
-# Sources expected under deps/src/ (already in the tree): osg (patched), bullet3, recast, mygui,
+# Sources expected under deps/src/ (already in the tree): osg (patched), recast, mygui,
 # ffmpeg-6.1.2, boost_1_85_0, lua-5.4.7, lz4-1.10.0. Emscripten PORTS provide the rest
 # (SDL2/FreeType/HarfBuzz/png/jpeg/zlib/ogg/vorbis at link time; ICU + libGL-getprocaddr into the
 # sysroot; OpenAL is emscripten's built-in — we only stage an empty `openal_stub` to satisfy CMake).
 #
 # Usage:
 #   ROOT=/path/to/repo EM_LIBEXEC=/path/to/emscripten/libexec ./wasm-build/build-deps.sh [target...]
-#   (no target => build everything, in order)   e.g. ./wasm-build/build-deps.sh bullet recast lua
+#   (no target => build everything, in order)   e.g. ./wasm-build/build-deps.sh recast lua
 #
 # NOTE: I authored this from the standard emscripten build patterns + the README flags and could NOT
 # compile-test it here. The from-source builds most likely to need a round of iteration on the target
@@ -97,19 +97,6 @@ arch_guard() {  # arch_guard <src-dir> <clean command...>
 }
 log() { echo "=== build-deps: $* ==="; }
 log "target=$WASM_ARCH prefix=$DW"
-
-# --- Bullet (double precision, static) -> libBullet{Collision,Dynamics,SoftBody}.a + libLinearMath.a
-build_bullet() {
-  log "bullet3"
-  emcmake cmake -S "$SRC/bullet3" -B "$SRC/bullet3/$BUILD_DIR" -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-    -DBUILD_SHARED_LIBS=OFF -DUSE_DOUBLE_PRECISION=ON \
-    -DBUILD_BULLET2_DEMOS=OFF -DBUILD_CPU_DEMOS=OFF -DBUILD_OPENGL3_DEMOS=OFF \
-    -DBUILD_UNIT_TESTS=OFF -DBUILD_EXTRAS=OFF -DBUILD_PYBULLET=OFF \
-    -DCMAKE_CXX_FLAGS="$CFLAGS_COMMON -DBT_USE_DOUBLE_PRECISION" -DCMAKE_C_FLAGS="$CFLAGS_COMMON"
-  ninja -C "$SRC/bullet3/$BUILD_DIR" BulletDynamics BulletCollision BulletSoftBody LinearMath
-  find "$SRC/bullet3/$BUILD_DIR" \( -name 'libBullet*.a' -o -name 'libLinearMath.a' \) -exec cp -f {} "$DW/lib/" \;
-}
 
 # --- RecastNavigation (static) -> libRecast/Detour/DetourCrowd/DetourTileCache/DebugUtils.a
 build_recast() {
@@ -291,7 +278,7 @@ build_em_ports() {
     echo "!! ICU-mt / libGL-getprocaddr not staged — see VERIFY note above" >&2; exit 1; }
 }
 
-ALL=(em_ports openal_stub sdl2_cfg lz4 lua boost bullet recast mygui ffmpeg osg)
+ALL=(em_ports openal_stub sdl2_cfg lz4 lua boost recast mygui ffmpeg osg)
 targets=("${@:-${ALL[@]}}")
 for t in "${targets[@]}"; do "build_${t}"; done
 log "done. staged libs:"; ls "$DW/lib/"*.a | wc -l
