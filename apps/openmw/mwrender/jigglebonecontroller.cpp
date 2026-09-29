@@ -106,6 +106,27 @@ namespace MWRender
 
         const osg::Vec3f restStep = restWorldPos - mPreviousRestWorldPos;
         mPreviousRestWorldPos = restWorldPos;
+
+        // Live master switch for the ordinary Jiggle/Wiggle controller family.
+        // Verlet cloth uses its own controller and is intentionally unaffected.
+        if (!Settings::game().mJiggleBoneControllers)
+        {
+            mSimWorldPos = restWorldPos;
+            mVelocity = osg::Vec3f(0, 0, 0);
+            mLastSimTime = simTime;
+            const osg::Vec3f newLocalTranslation
+                = restWorldPos * osg::Matrix::inverse(parentWorldMatrix) - simulationOffset;
+            if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
+                nifTransform->setTranslation(newLocalTranslation);
+            else
+            {
+                osg::Matrix newMatrix = mRestLocalMatrix;
+                newMatrix.setTrans(newLocalTranslation);
+                node->setMatrix(newMatrix);
+            }
+            traverse(node, nv);
+            return;
+        }
         if (restStep.length2() > sTeleportResetDistance * sTeleportResetDistance)
         {
             // Fast travel, cell transitions and scripted teleports can move an actor hundreds or
