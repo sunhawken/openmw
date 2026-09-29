@@ -29,6 +29,11 @@ reimplementation of *The Elder Scrolls III: Morrowind*. The whole engine runs cl
 a desktop browser - no plugins, no streaming service, and no game data included: you bring
 your own legally-owned copy.
 
+**This branch: the Jolt / Ragdoll edition.** The engine here merges the
+[`official-jolt-ragdoll`](https://github.com/sunhawken/openmw/tree/official-jolt-ragdoll) fork:
+Jolt physics, ragdolls, dynamic objects, jiggle/wiggle/cloth secondary motion and occlusion
+culling. See [`JOLT_RAGDOLL_PORT.md`](JOLT_RAGDOLL_PORT.md).
+
 **New in 1.2.0: the admin dashboard.** Run your own server entirely from a browser - a setup
 wizard, a mod manager with drag-to-order, Tamriel Rebuilt support, savegame export, backups,
 logs and accounts. Multiplayer (added in 1.1.0) is there too, behind an experimental flag.

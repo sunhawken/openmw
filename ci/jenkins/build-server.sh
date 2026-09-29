@@ -17,7 +17,7 @@ cd "$SRC"
 [ -d openmw ] || { echo "FATAL: openmw/ missing from the build context"; exit 1; }
 
 echo "==> building $TAG from $(cat .source-commit 2>/dev/null || echo 'unknown commit')"
-# --network=host: npm ci and the MyGUI/Bullet git clones need egress.
+# --network=host: npm ci, the MyGUI git clone and the Jolt FetchContent download need egress.
 # The native OpenMW compile dominates; layers cache unless openmw/ changed.
 DOCKER_BUILDKIT=1 docker build --network=host \
   -f server/Dockerfile.simpeer --target tier2 -t "$TAG" .

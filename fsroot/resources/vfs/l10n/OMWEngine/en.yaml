@@ -9,6 +9,11 @@ LogViewer: "Log Viewer"
 LuaProfiler: "Lua Profiler"
 PhysicsProfiler: "Physics Profiler"
 
+# Appearance (head/hair) window
+AppearanceTitle: "Appearance"
+AppearanceHead: "Head"
+AppearanceHair: "Hair"
+
 
 # Messages
 
@@ -76,6 +81,8 @@ AudioMusic: "Music"
 AudioVoice: "Voice"
 AutoSaveOnResting: "Auto-Save on Resting"
 BestAttack: "Always Use Best Attack"
+MouseDirectionalAttack: "Directional Attacks (Mouse Flick)"
+MouseDirectionalAttackInvert: "Invert"
 CameraSensitivity: "Camera Sensitivity"
 CameraZoomIn: "Zoom Camera In"
 CameraZoomOut: "Zoom Camera Out"
@@ -203,6 +210,29 @@ SensitivityLow: "Low"
 SettingsWindow: "Options"
 Subtitles: "Subtitles"
 SunlightScattering: "Sunlight Scattering"
+Shadows: "Shadows"
+ShadowsTooltip: "Enable dynamic shadow rendering."
+ShadowActors: "Actor Shadows"
+ShadowActorsTooltip: "Cast shadows from NPCs and creatures."
+ShadowCascades: "Shadow Cascades"
+ShadowCascadesTooltip: "Number of shadow map cascades. More cascades improve shadow quality at distance but decrease performance."
+ShadowIndoor: "Indoor Shadows"
+ShadowIndoorTooltip: "Cast shadows inside interior cells. Only actors cast shadows indoors."
+ShadowMapResolution: "Shadow Map Resolution"
+ShadowMapResolutionTooltip: "Resolution of each shadow map texture. Higher values produce sharper shadows but decrease performance."
+ShadowObjects: "Object Shadows"
+ShadowObjectsTooltip: "Cast shadows from static objects and architecture."
+ShadowPlayer: "Player Shadow"
+ShadowPlayerTooltip: "Cast a shadow from the player character."
+ShadowSoftShadows: "Soft Shadows"
+ShadowSoftShadowsTooltip: "Smooth shadow edges. Decreases performance slightly but allows you to use a lower Shadow Map Resolution to compensate."
+ShadowTerrain: "Terrain Shadows"
+ShadowTerrainTooltip: "Cast shadows from terrain heightmaps."
+ShadowUpdateInterval: "Shadow Temporal Reuse"
+ShadowUpdateIntervalTooltip: |-
+    Reuse shadow maps across frames instead of recalculating every frame.
+    Significantly improves CPU performance at the cost of slightly delayed shadow updates.
+    Automatically disabled at very low FPS. Requires restart.
 TestingExteriorCells: "Testing Exterior Cells"
 TestingInteriorCells: "Testing Interior Cells"
 TextureFiltering: "Texture Filtering"
@@ -232,6 +262,91 @@ WindowModeWindowed: "Windowed"
 WindowModeWindowedFullscreen: "Windowed Fullscreen"
 WobblyShores: "Wobbly Shores"
 
+# Physics settings
+Physics: "Physics"
+PhysicsNote: "Advanced physics options for enhanced object interaction."
+EnableDynamicObjects: "Dynamic Objects (Oblivion-style)"
+EnableDynamicObjectsTooltip: |-
+    Enable Oblivion-style dynamic object physics.
+    When enabled, dropped items bounce and roll realistically instead of freezing in place.
+    Items can be pushed by walking into them and knocked around by attacks.
+EnableBuoyancy: "Object Buoyancy"
+EnableBuoyancyTooltip: |-
+    Enable buoyancy for dynamic objects.
+    When enabled, dynamic objects will float in water and respond to water physics.
+    Objects will bob and drift realistically when thrown into water.
+EnableRagdoll: "Ragdoll Physics"
+EnableRagdollTooltip: |-
+    Enable ragdoll physics for dead actors.
+    When enabled, dead actors will ragdoll instead of playing a static death animation.
+    Note: This feature is experimental and may cause instability.
+JiggleBoneNote: "Breast/butt jiggle physics settings."
+JiggleStiffnessValue: "Jiggle Stiffness ({value, number, ::.0})"
+JiggleStiffnessLow: "Loose"
+JiggleStiffnessHigh: "Stiff"
+JiggleDampingValue: "Jiggle Damping ({value, number, ::.0})"
+JiggleDampingLow: "Bouncy"
+JiggleDampingHigh: "Settled"
+JiggleMaxDisplacementValue: "Jiggle Max Displacement ({value, number, ::.0})"
+JiggleMaxDisplacementLow: "Subtle"
+JiggleMaxDisplacementHigh: "Extreme"
+JiggleBreastZOffsetValue: "Jiggle Breast Z Offset — Up/Down ({value, number, ::.0})"
+JiggleBreastZOffsetLow: "Lower"
+JiggleBreastZOffsetHigh: "Higher"
+JiggleButtZOffsetValue: "Jiggle Butt Z Offset ({value, number, ::.0})"
+JiggleButtZOffsetLow: "Lower"
+JiggleButtZOffsetHigh: "Higher"
+JiggleResetCurrentWornOffset: "Reset Current Worn Body Z Offset"
+JiggleResetCurrentWornOffsetTooltip: "Reset the live breast and butt Z offsets for the currently worn naked body, clothing, or armor mesh. Other outfits keep their saved offsets. Does not undo an offset already baked into a NIF."
+JiggleBakeBreastToNif: "Bake Breast Offset Into NIF"
+JiggleBakeBreastToNifTooltip: "Permanently write the current breast Z offset into the worn body's loose .nif file (both Bip01 L/R Breast bones), then zero the live offset. Only works for a loose, writable, pre-rigged NIF that already has breast bones - not auto-rigged bodies or meshes inside BSA archives. To undo, set the slider negative and bake again."
+JiggleBakeDone: "Breast Z offset baked into the worn body's NIF. Reload the body (re-equip or reload a save) to see the baked result."
+JiggleBakeNoMesh: "No worn body mesh to bake into."
+JiggleBakeFailed: "Could not bake the breast offset into the NIF:"
+JiggleGravityValue: "Jiggle Gravity ({value, number, ::.0})"
+JiggleGravityLow: "Weightless"
+JiggleGravityHigh: "Heavy Sag"
+JiggleSoftnessValue: "Jiggle Softness ({value, number, ::.0})"
+JiggleSoftnessLow: "Firm"
+JiggleSoftnessHigh: "Soft"
+JiggleQuicknessValue: "Jiggle Quickness ({value, number, ::.0})"
+JiggleQuicknessLow: "Lazy"
+JiggleQuicknessHigh: "Snappy"
+JiggleMassResponseValue: "Jiggle Mass Response ({value, number, ::.00})"
+JiggleMassResponseLow: "Uniform"
+JiggleMassResponseHigh: "Size-Driven"
+JiggleSideValue: "Jiggle Side Sway ({value, number, ::.00})"
+JiggleSideLow: "Vertical Only"
+JiggleSideHigh: "Loose Sway"
+JiggleSelfCollisionLimitValue: "Jiggle Self-Collision Limit ({value, number, ::.0})"
+JiggleSelfCollisionLimitLow: "Tight"
+JiggleSelfCollisionLimitHigh: "Loose"
+JiggleSelfCollision: "Jiggle Self-Collision"
+JiggleSelfCollisionTooltip: |-
+    Keeps jiggle and gravity sag from clipping the breast/butt bulge back into the body. When on, a jiggle bone cannot sink toward the body past the Self-Collision Limit, and its into-body motion stops there.
+    Bone-space approximation of TittyMagic's soft self-collision and distance limit.
+JiggleTogglesNote: "Enable or disable the in-engine jiggle features."
+JiggleAutoRig: "In-Game Auto Jiggle"
+JiggleAutoRigTooltip: |-
+    Master switch for jiggle. When on, jiggle physics play and female bodies that lack jiggle bones are rigged automatically (so pre-rigging meshes with the Add Jiggle Bones tool is optional).
+    Turning it off freezes all jiggle instantly; turning it on resumes it. Auto-rigging of a body applies when it is next loaded (reload a save or re-equip).
+JiggleTab: "Jiggle"
+OptionsMenuRealTime: "Options Menu Runs In Real Time"
+OptionsMenuRealTimeTooltip: |-
+    Keeps the game running while the Options menu is open, instead of pausing, so you can watch movement, physics and jiggle update live as you change settings.
+    The console, message boxes and the main menu with no game loaded still pause as normal.
+JigglePlayerOnly: "Player Only"
+JigglePlayerOnlyTooltip: |-
+    Restricts all jiggle to your own character - NPCs get no jiggle at all. Leave off to jiggle every female body.
+    Applies when a body is next loaded (reload a save or re-equip).
+JiggleThigh: "Thigh Jiggle"
+JiggleThighTooltip: |-
+    Also jiggles the upper-thigh flesh, mirroring the breast jiggle with the same spring, gravity and softness settings. Auto-rigs L/R thigh jiggle bones onto female bodies that lack them.
+    Requires In-Game Auto Jiggle to be on. Applies when a body is next loaded (reload a save or re-equip).
+JiggleSeamWelding: "Jiggle Seam Fixer"
+JiggleSeamWeldingTooltip: |-
+    Feathers jiggle weights to zero at mesh seams so the cracks jiggle opens between body parts/clothing are closed.
+    Takes effect when a mesh is next loaded (reload a save or re-equip).
 
 # Controller button names
 

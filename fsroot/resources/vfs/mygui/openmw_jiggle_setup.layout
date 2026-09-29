@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MyGUI type="Layout" version="3.2.0">
+    <Widget type="Window" skin="MW_Window" position="80 60 570 505" layer="Settings" name="_Main">
+        <Property key="Caption" value="Advanced Jiggle Setup"/>
+        <Property key="MinSize" value="520 450"/>
+        <Widget type="AutoSizedTextBox" skin="NormalText" position="12 8 540 36">
+            <Property key="Caption" value="Configure Jiggle per mesh and per NPC. Changes are saved with OpenMW settings."/>
+        </Widget>
+        <Widget type="TabControl" skin="TabControl" position="12 48 546 392" align="Stretch" name="JiggleSetupTabs">
+            <Property key="ButtonAutoWidth" value="true"/>
+
+            <Widget type="TabItem">
+                <Property key="Caption" value=" Mesh Z Offsets "/>
+                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 18">
+                    <Property key="Caption" value="Choose who this mesh adjustment applies to."/>
+                </Widget>
+                <Widget type="ComboBox" skin="MW_ComboBox" position="8 34 510 24" name="JiggleMeshScopeCombo">
+                    <Property key="AddItem" value="Any Actor"/>
+                    <Property key="AddItem" value="Player Only"/>
+                    <Property key="AddItem" value="NPC By Name"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" position="8 66 510 18">
+                    <Property key="Caption" value="Mesh path or filename"/>
+                </Widget>
+                <Widget type="EditBox" skin="MW_TextEdit" position="8 86 396 24" name="JiggleMeshPathInput"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="412 86 106 24" name="JiggleUseCurrentMeshButton">
+                    <Property key="Caption" value="Use Current"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" position="8 116 510 18">
+                    <Property key="Caption" value="Breast Z / Butt Z. Leave blank to use the live Jiggle sliders."/>
+                </Widget>
+                <Widget type="EditBox" skin="MW_TextEdit" position="8 138 245 24" name="JiggleBreastOffsetInput"/>
+                <Widget type="EditBox" skin="MW_TextEdit" position="273 138 245 24" name="JiggleButtOffsetInput"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="8 172 245 26" name="JiggleSaveMeshOffsetButton">
+                    <Property key="Caption" value="Add / Update Offset"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="273 172 245 26" name="JiggleRemoveMeshOffsetButton">
+                    <Property key="Caption" value="Remove Selected"/>
+                </Widget>
+                <Widget type="ListBox" skin="MW_List" position="8 208 510 144" name="JiggleMeshOffsetList"/>
+            </Widget>
+
+            <Widget type="TabItem">
+                <Property key="Caption" value=" Mesh Blacklist "/>
+                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 36">
+                    <Property key="Caption" value="Prevent selected body or armor meshes from being processed by the automatic Jiggle rigger."/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" position="8 54 510 18">
+                    <Property key="Caption" value="Use the Mesh Z Offsets tab to enter or grab a mesh path, then add it here."/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="8 82 245 26" name="JiggleAddBlacklistButton">
+                    <Property key="Caption" value="Blacklist Mesh"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="273 82 245 26" name="JiggleRemoveBlacklistButton">
+                    <Property key="Caption" value="Remove Selected"/>
+                </Widget>
+                <Widget type="ListBox" skin="MW_List" position="8 120 510 232" name="JiggleBlacklistList"/>
+            </Widget>
+
+            <Widget type="TabItem">
+                <Property key="Caption" value=" Player / NPC Rules "/>
+                <Widget type="HBox" position="8 10 510 28">
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle player enabled"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Jiggle for Player"/></Widget>
+                </Widget>
+                <Widget type="HBox" position="8 42 510 28">
+                    <Widget type="AutoSizedButton" skin="MW_Button">
+                        <UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="jiggle npc default enabled"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Jiggle for NPCs by Default"/></Widget>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 82 510 18">
+                    <Property key="Caption" value="NPC-specific override by display name"/>
+                </Widget>
+                <Widget type="EditBox" skin="MW_TextEdit" position="8 104 510 24" name="JiggleNpcNameInput"/>
+                <Widget type="AutoSizedTextBox" skin="SandText" position="8 132 510 18">
+                    <Property key="Caption" value="Name matching is case-insensitive. Force ON/OFF overrides the NPC default."/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="8 158 160 26" name="JiggleEnableNpcButton">
+                    <Property key="Caption" value="Force ON"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="181 158 160 26" name="JiggleDisableNpcButton">
+                    <Property key="Caption" value="Force OFF"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="354 158 164 26" name="JiggleClearNpcRuleButton">
+                    <Property key="Caption" value="Clear Override"/>
+                </Widget>
+                <Widget type="ListBox" skin="MW_List" position="8 196 510 156" name="JiggleNpcRuleList"/>
+            </Widget>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="442 454 116 28" align="Right Bottom" name="JiggleAdvancedCloseButton">
+            <Property key="Caption" value="Close"/>
+        </Widget>
+    </Widget>
+    <CodeGeneratorSettings/>
+</MyGUI>

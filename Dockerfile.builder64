@@ -16,7 +16,7 @@
 # built here from the port. That also means no sysroot-extra dependency for this image.
 #
 # Prereqs in the build context (all gitignored): deps/wasm64 (built by
-# `OMW_WASM64=1 wasm-build/build-deps.sh`), deps/src/{bullet3/src,boost_1_85_0/boost}.
+# `OMW_WASM64=1 wasm-build/build-deps.sh`), deps/src/{JoltPhysics,boost_1_85_0/boost}.
 # Build:  docker build -t openmw-builder64:1 -f Dockerfile.builder64 .
 # TODO if the toolchain changes: repin the emscripten/emsdk tag to match (emcc --version).
 FROM emscripten/emsdk:6.0.1

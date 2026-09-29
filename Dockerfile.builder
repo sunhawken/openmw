@@ -5,10 +5,10 @@
 #
 # This is the PREBUILT-deps path (what built the live morrowind.virtastic.app image): it stages the
 # already-cross-compiled deps/wasm + the sysroot ICU/-mt libs+headers + the dep source HEADERS
-# (bullet3/src, boost), pre-builds the emscripten ports, and rewrites macOS build-machine paths.
+# (JoltPhysics, boost), pre-builds the emscripten ports, and rewrites macOS build-machine paths.
 # wasm .a archives are host-arch-independent, so ARM-built libs link fine here (x86 Linux).
 # Prereqs in the build context (rsync'd; all gitignored): deps/wasm, deps/sysroot-extra
-# (lib .a + include/unicode), deps/src/{bullet3/src,boost_1_85_0/boost}.
+# (lib .a + include/unicode), deps/src/{JoltPhysics,boost_1_85_0/boost}.
 # Build once on the VPS: docker build -t openmw-builder:1 -f Dockerfile.builder .
 # (For a fully-from-source rebuild of the deps instead of prebuilt, see wasm-build/build-deps.sh.)
 # TODO if the toolchain changes: repin the emscripten/emsdk tag to match (emcc --version).
