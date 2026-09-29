@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #version 120
 
 #include "lib/sky/passes.glsl"
@@ -12,9 +14,14 @@ uniform vec4 atmosphereFade;    // PASS_MOON
 varying vec2 diffuseMapUV;
 varying vec4 passColor;
 
+// GLES/WebGL2 has no fixed-function material; the struct-uniform bridge is not
+// reliably fed for the sky's hand-built state. Use plain uniforms set by the sky updaters.
+uniform vec4 skyMaterialEmission;
+uniform vec4 skyMaterialDiffuse;
+
 void paintAtmosphere(inout vec4 color)
 {
-    color = gl_FrontMaterial.emission;
+    color = skyMaterialEmission;
     color.a *= passColor.a;
 }
 
@@ -28,7 +35,7 @@ void paintClouds(inout vec4 color)
 {
     color = texture2D(diffuseMap, diffuseMapUV);
     color.a *= passColor.a * opacity;
-    color.xyz = clamp(color.xyz * gl_FrontMaterial.emission.xyz, 0.0, 1.0);
+    color.xyz = clamp(color.xyz * skyMaterialEmission.xyz, 0.0, 1.0);
 
     // ease transition between clear color and atmosphere/clouds
     color = mix(vec4(gl_Fog.color.xyz, color.a), color, passColor.a);
@@ -63,13 +70,13 @@ void paintMoon(inout vec4 color)
 void paintSun(inout vec4 color)
 {
     color = texture2D(diffuseMap, diffuseMapUV);
-    color.a *= gl_FrontMaterial.diffuse.a;
+    color.a *= skyMaterialDiffuse.a;
 }
 
 void paintSunglare(inout vec4 color)
 {
-    color = gl_FrontMaterial.emission;
-    color.a = gl_FrontMaterial.diffuse.a;
+    color = skyMaterialEmission;
+    color.a = skyMaterialDiffuse.a;
 }
 
 void processSunflashQuery()

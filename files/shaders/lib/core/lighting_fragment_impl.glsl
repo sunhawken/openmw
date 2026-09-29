@@ -1,3 +1,7 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
+#ifndef OMW_GUARD_LIB_CORE_LIGHTING_FRAGMENT_IMPL_GLSL
+#define OMW_GUARD_LIB_CORE_LIGHTING_FRAGMENT_IMPL_GLSL
 #if @useGPUShader4
     #extension GL_EXT_gpu_shader4: require
 #endif
@@ -70,4 +74,5 @@ vec3 doSpecularLighting(vec2 screenCoord, vec3 viewPos, vec3 viewNormal) {
 }
 #else
 vec3 doSpecularLighting(vec2 screenCoord, vec3 viewPos, vec3 viewNormal) { return vec3(0.0); }
+#endif
 #endif

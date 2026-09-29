@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "animation.hpp"
 
 #include <algorithm>
@@ -1067,6 +1069,56 @@ namespace MWRender
                 SceneUtil::NodeMapVisitor visitor(mNodeMap);
                 mObjectRoot->accept(visitor);
             }
+#ifdef __EMSCRIPTEN__
+            // The bundled example-suite/template skeletons are Max-Biped exports that only contain
+            // the "Bip01 *" bones and lack the Morrowind body-part attachment nodes ("Head", "Chest",
+            // "Right Hand", ...) that NpcAnimation attaches body parts to. Without them, no actor body
+            // renders. Alias each missing attachment name to the closest existing Bip01 bone so actors
+            // (player + NPCs) are visible. (In real Morrowind skeletons these nodes sit at ~identity
+            // relative to their parent bone, so this is a close approximation.)
+            {
+                // Candidate bone per attachment name, in priority order: infix rig ("Bip01 R Hand",
+                // used by the example-suite skeleton that matches skincharacter.nif) first, then the
+                // suffix rig ("Bip01 Hand R") as a fallback. The loop below aliases each attachment
+                // name to the first candidate that exists (CiEqual is case-insensitive; spacing is not,
+                // so both "Spine 2"/"Spine2" are listed).
+                static const std::pair<const char*, const char*> aliases[] = {
+                    { "Head", "Bip01 Head" }, { "Neck", "Bip01 Neck" },
+                    { "Chest", "Bip01 Spine 2" }, { "Chest", "Bip01 Spine2" }, { "Chest", "Bip01 Spine 1" },
+                    // This skeleton has no "Bip01 Pelvis"; fall back to the lowest spine, then root.
+                    { "Groin", "Bip01 Pelvis" }, { "Groin", "Bip01 Spine 1" }, { "Groin", "Bip01" },
+                    { "Right Hand", "Bip01 R Hand" }, { "Right Hand", "Bip01 Hand R" },
+                    { "Left Hand", "Bip01 L Hand" }, { "Left Hand", "Bip01 Hand L" },
+                    { "Right Wrist", "Bip01 R Hand" }, { "Right Wrist", "Bip01 Hand R" },
+                    { "Left Wrist", "Bip01 L Hand" }, { "Left Wrist", "Bip01 Hand L" },
+                    { "Right Forearm", "Bip01 R Forearm" }, { "Right Forearm", "Bip01 Forearm R" },
+                    { "Left Forearm", "Bip01 L Forearm" }, { "Left Forearm", "Bip01 Forearm L" },
+                    // NOTE: the bundled skeleton misspells the right bone as "Bio01" (data typo).
+                    { "Right Upper Arm", "Bip01 R Upper arm" }, { "Right Upper Arm", "Bip01 Upper Arm R" },
+                    { "Right Upper Arm", "Bio01 R Upper Arm" },
+                    { "Left Upper Arm", "Bip01 L Upper arm" }, { "Left Upper Arm", "Bip01 Upper Arm L" },
+                    { "Left Upper Arm", "Bio01 L Upper Arm" },
+                    { "Right Foot", "Bip01 R Foot" }, { "Right Foot", "Bip01 Foot R" },
+                    { "Left Foot", "Bip01 L Foot" }, { "Left Foot", "Bip01 Foot L" },
+                    { "Right Ankle", "Bip01 R Foot" }, { "Right Ankle", "Bip01 Foot R" },
+                    { "Left Ankle", "Bip01 L Foot" }, { "Left Ankle", "Bip01 Foot L" },
+                    { "Right Knee", "Bip01 R Calf" }, { "Right Knee", "Bip01 Calf R" },
+                    { "Left Knee", "Bip01 L Calf" }, { "Left Knee", "Bip01 Calf L" },
+                    { "Right Upper Leg", "Bip01 R Thigh" }, { "Right Upper Leg", "Bip01 Thigh R" },
+                    { "Left Upper Leg", "Bip01 L Thigh" }, { "Left Upper Leg", "Bip01 Thigh L" },
+                    { "Right Clavicle", "Bip01 R Clavicle" }, { "Right Clavicle", "Bip01 Clavicle R" },
+                    { "Left Clavicle", "Bip01 L Clavicle" }, { "Left Clavicle", "Bip01 Clavicle L" },
+                };
+                for (const auto& [attachName, boneName] : aliases)
+                {
+                    if (mNodeMap.find(attachName) != mNodeMap.end())
+                        continue; // already present (real node or aliased by an earlier candidate)
+                    auto found = mNodeMap.find(boneName);
+                    if (found != mNodeMap.end())
+                        mNodeMap.emplace(attachName, found->second);
+                }
+            }
+#endif
             mNodeMapCreated = true;
         }
         return mNodeMap;

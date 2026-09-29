@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "videoplayer.hpp"
 
 #include <iostream>
@@ -38,12 +40,17 @@ void VideoPlayer::playVideo(std::unique_ptr<std::istream>&& inputstream, const s
         mState->setAudioFactory(mAudioFactory.get());
         mState->init(std::move(inputstream), name);
 
+#ifndef __EMSCRIPTEN__
         // wait until we have the first picture
+        // (Under emscripten this busy-wait can starve/deadlock the browser main thread
+        // while the decode pthreads spin up. The caller polls update() cooperatively and
+        // VideoWidget attaches the texture as soon as the first frame lands instead.)
         while (mState->video_st && !mState->mTexture.get())
         {
             if (!mState->update())
                 break;
         }
+#endif
     }
     catch(std::exception& e) {
         OSG_FATAL << "Failed to play video: " << e.what() << std::endl;

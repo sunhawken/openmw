@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #version 120
 
 #if @useGPUShader4
@@ -89,7 +91,19 @@ uniform vec2 screenRes;
 #include "shadows_fragment.glsl"
 #include "fog.glsl"
 
+#if @useGLES
+// Guard: the linked-shader merge can pull this block in more than once per compiled unit.
+#ifndef OMW_SUN_UNIFORMS
+#define OMW_SUN_UNIFORMS
+uniform vec4 sun_position;
+uniform vec4 sun_diffuse;
+uniform vec4 sun_ambient;
+uniform vec4 sun_specular;
+#define sun DirectionalLight(sun_position, sun_diffuse, sun_ambient, sun_specular)
+#endif
+#else
 uniform DirectionalLight sun;
+#endif
 
 void main(void)
 {
@@ -152,7 +166,21 @@ void main(void)
     screenCoordsOffset *= clamp(realWaterDepth / BUMP_SUPPRESS_DEPTH, 0.0, 1.0);
 #endif
     // reflection
-    vec3 reflection = sampleReflectionMap(screenCoords + screenCoordsOffset).rgb;
+    vec2 reflCoord = screenCoords + screenCoordsOffset;
+#if @reflectionBlurEnabled
+    // The reflection RTT is single-sampled (it can't be MSAA'd on this GLES build), so reflected
+    // geometry edges alias into a boxy stair-step. Average a small 5-tap tent around the sample to
+    // antialias those edges while keeping the reflection detailed. Radius (@reflectionBlur) is ~1
+    // reflection texel; 0 disables (desktop, where the RTT has real MSAA).
+    const float rAA = @reflectionBlur;
+    vec3 reflection = sampleReflectionMap(reflCoord).rgb * 0.4
+        + sampleReflectionMap(reflCoord + vec2( rAA,  rAA)).rgb * 0.15
+        + sampleReflectionMap(reflCoord + vec2(-rAA,  rAA)).rgb * 0.15
+        + sampleReflectionMap(reflCoord + vec2( rAA, -rAA)).rgb * 0.15
+        + sampleReflectionMap(reflCoord + vec2(-rAA, -rAA)).rgb * 0.15;
+#else
+    vec3 reflection = sampleReflectionMap(reflCoord).rgb;
+#endif
 
     vec3 waterColor = WATER_COLOR * sunFade;
 

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "shadervisitor.hpp"
 
 #include <set>
@@ -510,6 +512,15 @@ namespace Shader
                         }
 
                         mRequirements.back().mColorMode = colorMode;
+
+                        // Capture fixed-function material values so they can be fed as uniforms
+                        // (gl_FrontMaterial) on platforms without a fixed-function pipeline.
+                        mRequirements.back().mHasMaterial = true;
+                        mRequirements.back().mMaterialEmission = mat->getEmission(osg::Material::FRONT);
+                        mRequirements.back().mMaterialAmbient = mat->getAmbient(osg::Material::FRONT);
+                        mRequirements.back().mMaterialDiffuse = mat->getDiffuse(osg::Material::FRONT);
+                        mRequirements.back().mMaterialSpecular = mat->getSpecular(osg::Material::FRONT);
+                        mRequirements.back().mMaterialShininess = mat->getShininess(osg::Material::FRONT);
                     }
                 }
                 else if (it->first.first == osg::StateAttribute::ALPHAFUNC)
@@ -610,7 +621,11 @@ namespace Shader
 
         if (defineMap["diffuseMap"] == "0")
         {
-            writableStateSet->addUniform(new osg::Uniform("useDiffuseMapForShadowAlpha", false));
+            // Always false at this site, and never set() afterwards -- one shared instance keeps
+            // OSG's pointer-identity upload dedup working across statesets.
+            static const osg::ref_ptr<osg::Uniform> sNoDiffuseShadowAlpha
+                = new osg::Uniform("useDiffuseMapForShadowAlpha", false);
+            writableStateSet->addUniform(sNoDiffuseShadowAlpha);
             addedState->addUniform("useDiffuseMapForShadowAlpha");
         }
 
@@ -618,8 +633,65 @@ namespace Shader
         defineMap["parallax"] = reqs.mNormalHeight ? "1" : "0";
         defineMap["reconstructNormalZ"] = reqs.mReconstructNormalZ ? "1" : "0";
 
-        writableStateSet->addUniform(new osg::Uniform("colorMode", reqs.mColorMode));
+        writableStateSet->addUniform(mShaderManager.getConstUniform("colorMode", reqs.mColorMode));
         addedState->addUniform("colorMode");
+
+#ifdef __EMSCRIPTEN__
+        // No fixed-function pipeline on the web: feed gl_FrontMaterial as FLAT uniforms (the shader
+        // transform in shadermanager.cpp expands gl_FrontMaterial.<member> -> osg_FrontMaterial_<member>).
+        // Struct-member uniforms don't reliably apply on WebGL2/ANGLE — see shadermanager.cpp — so
+        // flat names are required or the material RGB reads black (black smoke / black sky).
+        if (reqs.mHasMaterial)
+        {
+            writableStateSet->addUniform(new osg::Uniform("osg_FrontMaterial_emission", reqs.mMaterialEmission));
+            writableStateSet->addUniform(new osg::Uniform("osg_FrontMaterial_ambient", reqs.mMaterialAmbient));
+            writableStateSet->addUniform(new osg::Uniform("osg_FrontMaterial_diffuse", reqs.mMaterialDiffuse));
+            writableStateSet->addUniform(new osg::Uniform("osg_FrontMaterial_specular", reqs.mMaterialSpecular));
+            writableStateSet->addUniform(new osg::Uniform("osg_FrontMaterial_shininess", reqs.mMaterialShininess));
+            addedState->addUniform("osg_FrontMaterial_emission");
+            addedState->addUniform("osg_FrontMaterial_ambient");
+            addedState->addUniform("osg_FrontMaterial_diffuse");
+            addedState->addUniform("osg_FrontMaterial_specular");
+            addedState->addUniform("osg_FrontMaterial_shininess");
+        }
+        else
+        {
+            // No osg::Material anywhere in the inherited chain (pushRequirements copies the parent
+            // frame, so mHasMaterial==false means none upstream either). Desktop GL would apply the
+            // fixed-function DEFAULT material here; without these uniforms the flat osg_FrontMaterial_*
+            // read 0 and the surface renders black. Feed the GL defaults to keep parity.
+            //
+            // PERF (web): the GL default material is IMMUTABLE and shared by every material-less object
+            // (a large fraction of the scene). Adding a fresh Uniform per stateset gives each draw a
+            // distinct uniform POINTER at the same location, so OSG's per-location upload dedup can
+            // never skip them — 5 identical glUniform uploads per default-material draw. Share ONE
+            // instance of each: consecutive default-material draws then hit the dedup fast-path (pointer
+            // + modifiedCount match → no re-upload). Pixel-identical (same constant values); safe to
+            // share because default material is never animated (a NiMaterialColorController requires an
+            // osg::Material, which is absent here). Magic-static init is thread-safe; the uniforms are
+            // read-only after construction.
+            static const osg::ref_ptr<osg::Uniform> sDefEmission
+                = new osg::Uniform("osg_FrontMaterial_emission", osg::Vec4f(0.f, 0.f, 0.f, 1.f));
+            static const osg::ref_ptr<osg::Uniform> sDefAmbient
+                = new osg::Uniform("osg_FrontMaterial_ambient", osg::Vec4f(0.2f, 0.2f, 0.2f, 1.f));
+            static const osg::ref_ptr<osg::Uniform> sDefDiffuse
+                = new osg::Uniform("osg_FrontMaterial_diffuse", osg::Vec4f(0.8f, 0.8f, 0.8f, 1.f));
+            static const osg::ref_ptr<osg::Uniform> sDefSpecular
+                = new osg::Uniform("osg_FrontMaterial_specular", osg::Vec4f(0.f, 0.f, 0.f, 1.f));
+            static const osg::ref_ptr<osg::Uniform> sDefShininess
+                = new osg::Uniform("osg_FrontMaterial_shininess", 0.f);
+            writableStateSet->addUniform(sDefEmission);
+            writableStateSet->addUniform(sDefAmbient);
+            writableStateSet->addUniform(sDefDiffuse);
+            writableStateSet->addUniform(sDefSpecular);
+            writableStateSet->addUniform(sDefShininess);
+            addedState->addUniform("osg_FrontMaterial_emission");
+            addedState->addUniform("osg_FrontMaterial_ambient");
+            addedState->addUniform("osg_FrontMaterial_diffuse");
+            addedState->addUniform("osg_FrontMaterial_specular");
+            addedState->addUniform("osg_FrontMaterial_shininess");
+        }
+#endif
 
         defineMap["alphaFunc"] = std::to_string(reqs.mAlphaFunc);
 
@@ -635,7 +707,7 @@ namespace Shader
         defineMap["adjustCoverage"] = "0";
         if (reqs.mAlphaFunc != osg::AlphaFunc::ALWAYS)
         {
-            writableStateSet->addUniform(new osg::Uniform("alphaRef", reqs.mAlphaRef));
+            writableStateSet->addUniform(mShaderManager.getConstUniform("alphaRef", reqs.mAlphaRef));
             addedState->addUniform("alphaRef");
 
             if (!removedState->getAttributePair(osg::StateAttribute::ALPHAFUNC))
@@ -699,7 +771,7 @@ namespace Shader
         {
             const int unitSoftEffect
                 = mShaderManager.reserveGlobalTextureUnits(Shader::ShaderManager::Slot::OpaqueDepthTexture);
-            writableStateSet->addUniform(new osg::Uniform("opaqueDepthTex", unitSoftEffect));
+            writableStateSet->addUniform(mShaderManager.getConstUniform("opaqueDepthTex", unitSoftEffect));
             addedState->addUniform("opaqueDepthTex");
         }
 
@@ -736,7 +808,9 @@ namespace Shader
 
         for (const auto& [unit, name] : reqs.mTextures)
         {
-            writableStateSet->addUniform(new osg::Uniform(name.c_str(), unit), osg::StateAttribute::ON);
+            // Interned: see ShaderManager::getSamplerUniform. A fresh Uniform per stateset defeated
+            // osg::Program's pointer-identity upload cache and re-sent this every stateset change.
+            writableStateSet->addUniform(mShaderManager.getConstUniform(name, unit), osg::StateAttribute::ON);
             addedState->addUniform(name);
         }
 

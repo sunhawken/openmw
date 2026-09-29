@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "sky.hpp"
 
 #include <osg/Depth>
@@ -362,7 +364,17 @@ namespace MWRender
 
         osg::ref_ptr<osg::Depth> depth = new SceneUtil::AutoDepth;
         depth->setWriteMask(false);
+#ifdef __EMSCRIPTEN__
+        // The sky's child NIF meshes (atmosphere/clouds/sun/moon) carry their own osg::Depth with
+        // writeMask=true (from each NIF's ZBufferProperty, via nifloader handleDepthFlags). Without
+        // OVERRIDE the child wins, so the camera-relative sky dome writes a near depth into the scene
+        // FBO and every opaque terrain/object (drawn later, farther) fails GL_LEQUAL and is discarded
+        // — leaving only the flat sky colour. OVERRIDE forces writeMask=false down to the sky meshes.
+        mEarlyRenderBinRoot->getOrCreateStateSet()->setAttributeAndModes(
+            depth, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+#else
         mEarlyRenderBinRoot->getOrCreateStateSet()->setAttributeAndModes(depth);
+#endif
         mEarlyRenderBinRoot->getOrCreateStateSet()->setMode(GL_BLEND, osg::StateAttribute::ON);
         mEarlyRenderBinRoot->getOrCreateStateSet()->setMode(GL_FOG, osg::StateAttribute::OFF);
 

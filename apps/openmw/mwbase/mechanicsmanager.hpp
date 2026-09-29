@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <osg/Vec3f>
+
 #include <string>
 #include <string_view>
 #include <vector>
@@ -87,6 +89,11 @@ namespace MWBase
         virtual void restoreDynamicStats(const MWWorld::Ptr& actor, double hours, bool sleep) = 0;
 
         virtual void rest(double hours, bool sleep) = 0;
+
+        /** MP: level of the player-driven AVATAR nearest `pos`, 0 if this process simulates
+            none. Levelled lists need "the player here", and the sim peer's own getPlayer()
+            is an idle dummy. */
+        virtual int nearestAvatarLevel(const osg::Vec3f& pos) const = 0;
         ///< If the player is sleeping or waiting, this should be called every hour.
         /// @param sleep is the player sleeping or waiting?
 
@@ -98,10 +105,16 @@ namespace MWBase
         ///< NPC.
 
         virtual int getDerivedDisposition(const MWWorld::Ptr& ptr, bool clamp = true) = 0;
+        /// Multiplayer (backlog 145): the same read with `toward` standing in for the player
+        /// (a remote player's avatar on the sim peer). Empty = the player.
+        virtual int getDerivedDisposition(const MWWorld::Ptr& ptr, const MWWorld::Ptr& toward, bool clamp = true) = 0;
         ///< Calculate the diposition of an NPC toward the player.
 
         virtual int countDeaths(const ESM::RefId& id) const = 0;
         ///< Return the number of deaths for actors with the given ID.
+
+        // Added by Virtastic (OpenMW-Web MP): apply a networked shared kill tally.
+        virtual void setDeaths(const ESM::RefId& id, int count) = 0;
 
         /// Check if \a observer is potentially aware of \a ptr. Does not do a line of sight check!
         virtual bool awarenessCheck(const MWWorld::Ptr& ptr, const MWWorld::Ptr& observer, bool useCache = true) = 0;

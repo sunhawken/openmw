@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "sdlvideowrapper.hpp"
 
 #include <components/debug/debuglog.hpp>
@@ -56,6 +58,13 @@ namespace SDLUtil
 
         mHasSetGammaContrast = true;
 
+#ifdef __EMSCRIPTEN__
+        // WebGL has no hardware gamma ramp (SDL_SetWindowGammaRamp always fails "not supported"),
+        // and it spammed the log on every gamma/contrast apply. Gamma is instead applied in-shader
+        // (uGamma, driven by [Video] gamma), so the ramp is redundant here — skip it silently.
+        (void)gamma;
+        (void)contrast;
+#else
         Uint16 red[256], green[256], blue[256];
         for (int i = 0; i < 256; i++)
         {
@@ -73,6 +82,7 @@ namespace SDLUtil
         }
         if (SDL_SetWindowGammaRamp(mWindow, red, green, blue) < 0)
             Log(Debug::Warning) << "Couldn't set gamma: " << SDL_GetError();
+#endif
     }
 
     void VideoWrapper::setVideoMode(int width, int height, Settings::WindowMode windowMode, bool windowBorder)
@@ -91,15 +101,18 @@ namespace SDLUtil
         {
             SDL_DisplayMode mode;
             SDL_GetWindowDisplayMode(mWindow, &mode);
-            mode.w = width / (dw / w);
-            mode.h = height / (dh / h);
+            // Floating point: integer (dw/w) truncates a fractional device-pixel ratio to 1 (no
+            // scaling) and truncates to 0 when the drawable is smaller than the window (div by zero).
+            mode.w = dw > 0 ? static_cast<int>(static_cast<double>(width) * w / dw + 0.5) : width;
+            mode.h = dh > 0 ? static_cast<int>(static_cast<double>(height) * h / dh + 0.5) : height;
             SDL_SetWindowDisplayMode(mWindow, &mode);
             SDL_SetWindowFullscreen(mWindow,
                 windowMode == Settings::WindowMode::Fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_FULLSCREEN_DESKTOP);
         }
         else
         {
-            SDL_SetWindowSize(mWindow, width / (dw / w), height / (dh / h));
+            SDL_SetWindowSize(mWindow, dw > 0 ? static_cast<int>(static_cast<double>(width) * w / dw + 0.5) : width,
+                dh > 0 ? static_cast<int>(static_cast<double>(height) * h / dh + 0.5) : height);
             SDL_SetWindowBordered(mWindow, windowBorder ? SDL_TRUE : SDL_FALSE);
 
             centerWindow();

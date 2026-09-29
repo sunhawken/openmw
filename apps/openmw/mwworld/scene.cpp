@@ -1,5 +1,8 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "scene.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <limits>
@@ -120,7 +123,9 @@ namespace
         const auto rotation = makeDirectNodeRotation(ptr);
 
         ESM::RefNum refnum = ptr.getCellRef().getRefNum();
-        if (!refnum.hasContentFile() || !std::binary_search(pagedRefs.begin(), pagedRefs.end(), refnum))
+        const bool paged
+            = refnum.hasContentFile() && std::binary_search(pagedRefs.begin(), pagedRefs.end(), refnum);
+        if (!paged)
             ptr.getClass().insertObjectRendering(ptr, model, rendering);
         else
             ptr.getRefData().setBaseNode(pagedNode);
@@ -612,6 +617,126 @@ namespace MWWorld
             ESM::ExteriorCellLocation(cell.x(), cell.y(), mCurrentCell->getCell()->getWorldSpace()), changeEvent };
     }
 
+
+    // ------------------------------------------------ MP simulation anchors
+
+    void Scene::setSimAnchors(
+        const std::vector<osg::Vec3f>& anchors, const std::vector<ESM::RefId>& interiors)
+    {
+        // Positions update UNCONDITIONALLY — they are only read by the mechanics range
+        // checks, and a stale anchor position is the one thing that reintroduces frozen NPCs.
+        mSimAnchorPositions = anchors;
+
+        // Grid work is gated on the DERIVED cell-coordinate set: positions change every
+        // resend (players move), and rebuilding the cell grid every 5 s for no reason is
+        // exactly what the old raw-value early-return was protecting against.
+        const ESM::RefId worldspace
+            = mCurrentCell ? mCurrentCell->getCell()->getWorldSpace() : ESM::Cell::sDefaultWorldspaceId;
+        std::vector<osg::Vec2i> derived;
+        derived.reserve(anchors.size());
+        for (const osg::Vec3f& a : anchors)
+        {
+            const ESM::ExteriorCellLocation loc
+                = ESM::positionToExteriorCellLocation(a.x(), a.y(), worldspace);
+            const osg::Vec2i coord(loc.mX, loc.mY);
+            if (std::find(derived.begin(), derived.end(), coord) == derived.end())
+                derived.push_back(coord);
+        }
+
+        const bool exteriorsChanged = mSimAnchors != derived;
+        const bool interiorsChanged = mSimAnchorInteriors != interiors;
+        if (!exteriorsChanged && !interiorsChanged)
+            return;
+        mSimAnchors = std::move(derived);
+
+        if (interiorsChanged)
+        {
+            // Unload interiors that are no longer anchored — unless the local player is
+            // standing in one, which is its own reason to stay.
+            for (auto iter = mActiveCells.begin(); iter != mActiveCells.end();)
+            {
+                CellStore* cell = *iter++;
+                if (cell->getCell()->isExterior() || cell == mCurrentCell)
+                    continue;
+                const ESM::RefId id = cell->getCell()->getId();
+                const bool stillWanted
+                    = std::find(interiors.begin(), interiors.end(), id) != interiors.end();
+                const bool wasHeld = std::find(mSimAnchorInteriors.begin(), mSimAnchorInteriors.end(), id)
+                    != mSimAnchorInteriors.end();
+                if (wasHeld && !stillWanted)
+                    unloadCell(cell, nullptr);
+            }
+            mSimAnchorInteriors = interiors;
+
+            // Load interiors newly anchored. Loading one does NOT make it current: the local
+            // player stays where they are, and this process simply also ticks that room. That
+            // is the whole point — a peer can hold a hundred rooms it is not standing in.
+            for (const ESM::RefId& id : mSimAnchorInteriors)
+            {
+                // GUARDED: these names originate in a client-reported cellKey and arrive over
+                // the network. WorldModel::getCell THROWS on an id no content file defines, and
+                // this runs inside the SimAnchors event handler — one renamed or mistyped cell
+                // would kill the sim peer, which then crash-loops through its restart backoff
+                // and nobody's cell gets simulated at all. Skip the bad name and keep going.
+                CellStore* cell = nullptr;
+                try
+                {
+                    cell = &mWorld.getWorldModel().getCell(id);
+                }
+                catch (const std::exception& e)
+                {
+                    Log(Debug::Warning) << "Sim anchor names no such cell, ignoring: " << id
+                                        << " (" << e.what() << ")";
+                    continue;
+                }
+                if (std::find(mActiveCells.begin(), mActiveCells.end(), cell) != mActiveCells.end())
+                    continue;
+                // respawn=true: this is the ONLY load path the sim peer takes for a room it does
+                // not stand in, and with false nothing in a multiplayer world ever ran
+                // CellStore::respawn -- no corpse cleared, no levelled list re-rolled, no
+                // container restocked, for the life of the world (backlog 149). The server
+                // forgets a death after fCorpseRespawnDelay, so the re-stood actor is not
+                // re-killed by the cell state that follows.
+                loadCell(*cell, nullptr, true, osg::Vec3f(0.f, 0.f, 0.f), nullptr);
+            }
+        }
+
+        // Re-run the grid so newly anchored regions load and dropped ones unload. Cheap when
+        // nothing changed, which is the common case (the server resends the same list).
+        // changeEvent=true is what changeCellGrid passes to loadCell as `respawn` (same reason
+        // as the interior load above); its other effect, one frame of mCellChanged, only
+        // makes MWScript `CellChanged` read 1 on the peer for that frame.
+        if (exteriorsChanged && mCurrentCell != nullptr && mCurrentCell->getCell()->isExterior())
+            requestChangeCellGrid(mLastPlayerPos, mCurrentGridCenter, true);
+    }
+
+    bool Scene::isAnchoredInterior(const MWWorld::CellStore* cell) const
+    {
+        if (cell == nullptr || cell->getCell()->isExterior())
+            return false;
+        return std::find(mSimAnchorInteriors.begin(), mSimAnchorInteriors.end(), cell->getCell()->getId())
+            != mSimAnchorInteriors.end();
+    }
+
+    bool Scene::isWithinActiveGrids(int x, int y) const
+    {
+        if (std::abs(mCurrentGridCenter.x() - x) <= mHalfGridSize
+            && std::abs(mCurrentGridCenter.y() - y) <= mHalfGridSize)
+            return true;
+        for (const osg::Vec2i& a : mSimAnchors)
+            if (std::abs(a.x() - x) <= mHalfGridSize && std::abs(a.y() - y) <= mHalfGridSize)
+                return true;
+        return false;
+    }
+
+    std::vector<osg::Vec3f> Scene::getSimAnchorPositions() const
+    {
+        // The REAL positions, not cell centres: the range checks follow players exactly —
+        // 7168 units around each of them, identical to what a single-player client gets —
+        // with a vanilla 3x3 grid loaded around each (mSimAnchors, derived above).
+        return mSimAnchorPositions;
+    }
+
     void Scene::changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent)
     {
         const int halfGridSize
@@ -625,19 +750,56 @@ namespace MWWorld
             auto* cell = *iter++;
             if (cell->getCell()->isExterior() && cell->getCell()->getWorldSpace() == playerCellIndex.mWorldspace)
             {
+                // Keep a cell that any ANCHOR still covers, not just the player's own grid.
+                // mHalfGridSize is updated below, so compare against the size we are moving to.
                 const auto dx = std::abs(playerCellX - cell->getCell()->getGridX());
                 const auto dy = std::abs(playerCellY - cell->getCell()->getGridY());
-                if (dx > halfGridSize || dy > halfGridSize)
+                bool keep = dx <= halfGridSize && dy <= halfGridSize;
+                if (!keep)
+                    for (const osg::Vec2i& a : mSimAnchors)
+                        if (std::abs(a.x() - cell->getCell()->getGridX()) <= halfGridSize
+                            && std::abs(a.y() - cell->getCell()->getGridY()) <= halfGridSize)
+                        {
+                            keep = true;
+                            break;
+                        }
+                if (!keep)
                     unloadCell(cell, navigatorUpdateGuard.get());
             }
-            else
+            else if (!isAnchoredInterior(cell))
+            {
+                // An anchored interior is held for the server and must survive the player's
+                // own grid moving. Without this exemption every exterior grid change silently
+                // dropped every room the peer was holding, so an indoor player's NPCs froze the
+                // moment anyone outdoors walked across a cell boundary.
                 unloadCell(cell, navigatorUpdateGuard.get());
+            }
         }
 
         const DetourNavigator::CellGridBounds cellGridBounds{
             .mCenter = osg::Vec2i(playerCellX, playerCellY),
             .mHalfSize = halfGridSize,
         };
+
+        // The navmesh must cover every anchor's grid, not just the player's (backlog 479): the
+        // cells around an anchor were loaded and their actors processed (nearestSimDistanceSqr),
+        // but the navigator's bounds and its "too far from player" tile gate still measured from
+        // the dummy alone, so an actor two cells out had no navmesh at all -- pathfinding failed
+        // and s166's forager walked a straight line into terrain at a crawl (#114 422 -> 207 u
+        // in 15 s, #115 426 -> 234 u in 30 s) instead of chasing. Empty with no anchors: the
+        // browser client never has any and keeps vanilla behaviour byte for byte.
+        std::vector<DetourNavigator::CellGridBounds> anchorGrids;
+        anchorGrids.reserve(mSimAnchors.size());
+        for (const osg::Vec2i& a : mSimAnchors)
+        {
+            // The navmesh tile pool is split evenly between the player and the anchors
+            // (shouldAddTile, backlog 483): an anchor on the player's own cell would draw the
+            // same circle twice and halve everyone's share for nothing.
+            if (a == cellGridBounds.mCenter)
+                continue;
+            anchorGrids.push_back({ .mCenter = a, .mHalfSize = halfGridSize });
+        }
+        mNavigator.setSimAnchorGrids(std::move(anchorGrids));
 
         mNavigator.updateBounds(playerCellIndex.mWorldspace, cellGridBounds, pos, navigatorUpdateGuard.get());
 
@@ -661,13 +823,21 @@ namespace MWWorld
 
         std::size_t refsToLoad = 0;
         std::vector<std::pair<int, int>> cellsPositionsToLoad;
-        iterateOverCellsAround(playerCellX, playerCellY, mHalfGridSize, [&](int x, int y) {
+        const auto wantCell = [&](int x, int y) {
             const ESM::ExteriorCellLocation location(x, y, playerCellIndex.mWorldspace);
             if (isCellInCollection(location, mActiveCells))
                 return;
+            if (std::find(cellsPositionsToLoad.begin(), cellsPositionsToLoad.end(), std::pair<int, int>(x, y))
+                != cellsPositionsToLoad.end())
+                return;
             refsToLoad += mWorld.getWorldModel().getExterior(location).count();
             cellsPositionsToLoad.emplace_back(x, y);
-        });
+        };
+        iterateOverCellsAround(playerCellX, playerCellY, mHalfGridSize, wantCell);
+        // Each anchor gets the same grid the player does: this is the whole point — one engine
+        // holding several populated regions instead of one process per region.
+        for (const osg::Vec2i& a : mSimAnchors)
+            iterateOverCellsAround(a.x(), a.y(), mHalfGridSize, wantCell);
 
         Loading::Listener* loadingListener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
         Loading::ScopedLoad load(loadingListener);
@@ -964,6 +1134,9 @@ namespace MWWorld
 
         loadingListener->setProgressRange(cell.count());
 
+        // The anchor grids are exterior cells of the worldspace just left; carrying them into an
+        // interior's navmesh would build tiles at exterior coordinates nobody stands on (479).
+        mNavigator.setSimAnchorGrids({});
         mNavigator.updateBounds(
             cell.getCell()->getWorldSpace(), std::nullopt, position.asVec3(), navigatorUpdateGuard.get());
 

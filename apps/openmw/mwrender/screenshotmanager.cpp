@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "screenshotmanager.hpp"
 
 #include <condition_variable>
@@ -79,7 +81,30 @@ namespace MWRender
             int width = screenW - leftPadding * 2;
             int height = screenH - topPadding * 2;
 
+#ifdef __EMSCRIPTEN__
+            // WebGL2/ANGLE: glReadPixels only guarantees GL_RGBA+GL_UNSIGNED_BYTE; GL_RGB is an
+            // invalid format/type combination (GL_INVALID_OPERATION), which broke the saved-game
+            // thumbnail readback. Read RGBA (the safe combo) then drop alpha into a GL_RGB image so
+            // the downstream jpg (save thumbnail) and png (F12 screenshot) writers — which only
+            // accept GL_RGB here — get exactly the format they expect. data(x,y) accounts for any
+            // row padding, so this is alignment-safe.
+            osg::ref_ptr<osg::Image> rgba = new osg::Image;
+            rgba->readPixels(leftPadding, topPadding, width, height, GL_RGBA, GL_UNSIGNED_BYTE);
+            mImage->allocateImage(width, height, 1, GL_RGB, GL_UNSIGNED_BYTE);
+            for (int y = 0; y < height; ++y)
+            {
+                const unsigned char* src = rgba->data(0, y);
+                unsigned char* dst = mImage->data(0, y);
+                for (int x = 0; x < width; ++x)
+                {
+                    dst[x * 3 + 0] = src[x * 4 + 0];
+                    dst[x * 3 + 1] = src[x * 4 + 1];
+                    dst[x * 3 + 2] = src[x * 4 + 2];
+                }
+            }
+#else
             mImage->readPixels(leftPadding, topPadding, width, height, GL_RGB, GL_UNSIGNED_BYTE);
+#endif
             mImage->scaleImage(mWidth, mHeight, 1);
         }
 

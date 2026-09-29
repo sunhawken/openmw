@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "morphgeometry.hpp"
 
 #include <osgUtil/CullVisitor>
@@ -61,6 +63,36 @@ namespace SceneUtil
                 vertexArray->setVertexBufferObject(vbo);
                 to.setVertexArray(vertexArray);
             }
+
+#ifdef __EMSCRIPTEN__
+            // WebGL2/ANGLE with forced VAOs: mixing this dedicated (dynamic) position VBO with the
+            // source geometry's VBO for the un-morphed attributes made the per-frame position
+            // re-upload not reach the GPU — the morphing head rendered as a collapsed cone. Put
+            // EVERY array on the same dedicated VBO (exactly what RigGeometry does, which works),
+            // so the cloned geometry's VAO references only this buffer. Web-only: on desktop the
+            // shallow-shared arrays are the intended memory optimisation.
+            if (const osg::Array* normals = from.getNormalArray())
+            {
+                osg::ref_ptr<osg::Array> a = static_cast<osg::Array*>(normals->clone(osg::CopyOp::DEEP_COPY_ALL));
+                a->setVertexBufferObject(vbo);
+                to.setNormalArray(a, a->getBinding());
+            }
+            if (const osg::Array* colors = from.getColorArray())
+            {
+                osg::ref_ptr<osg::Array> a = static_cast<osg::Array*>(colors->clone(osg::CopyOp::DEEP_COPY_ALL));
+                a->setVertexBufferObject(vbo);
+                to.setColorArray(a, a->getBinding());
+            }
+            for (unsigned int unit = 0; unit < from.getNumTexCoordArrays(); ++unit)
+            {
+                const osg::Array* tc = from.getTexCoordArray(unit);
+                if (!tc)
+                    continue;
+                osg::ref_ptr<osg::Array> a = static_cast<osg::Array*>(tc->clone(osg::CopyOp::DEEP_COPY_ALL));
+                a->setVertexBufferObject(vbo);
+                to.setTexCoordArray(unit, a, a->getBinding());
+            }
+#endif
         }
     }
 

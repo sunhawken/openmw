@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "mtphysics.hpp"
 
 #include <cassert>
@@ -321,7 +323,14 @@ namespace MWPhysics
                 return LockingPolicy::NoLocks;
             if (getMaxBulletSupportedThreads() > 1)
                 return LockingPolicy::AllowSharedLocks;
+#ifdef __EMSCRIPTEN__
+            // Bullet is intentionally built without BT_THREADSAFE for the single-threaded WASM
+            // viewer; one exclusive-locked async physics thread is the correct configuration here
+            // (BT_THREADSAFE would add lock overhead with no benefit at async num threads = 1).
+            Log(Debug::Info) << "Bullet built without multithreading; using 1 async physics thread (expected under Emscripten)";
+#else
             Log(Debug::Warning) << "Bullet was not compiled with multithreading support, 1 async thread will be used";
+#endif
             return LockingPolicy::ExclusiveLocksOnly;
         }
 

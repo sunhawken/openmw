@@ -1,5 +1,11 @@
 #include "spelleffects.hpp"
 
+#include <cstdlib>
+
+#ifdef __EMSCRIPTEN__
+#include "../mwmp/puppets.hpp"
+#endif
+
 #include <algorithm>
 #include <array>
 
@@ -63,6 +69,12 @@ namespace
         stat.setModifier(static_cast<int>(stat.getModifier() + magnitude));
         creatureStats.setAiSetting(setting, stat);
         return ESM::ActiveEffect::Flag_Applied;
+    }
+
+    bool isHeadless()
+    {
+        static const bool headless = std::getenv("OPENMW_HEADLESS") != nullptr;
+        return headless;
     }
 
     void adjustDynamicStat(const MWWorld::Ptr& target, int index, float magnitude, bool allowDecreaseBelowZero = false,
@@ -496,27 +508,28 @@ namespace MWMechanics
             }
             else if (effect.mEffectId == ESM::MagicEffect::Mark)
             {
-                if (target != getPlayer())
+                // MP (Phase 2): on a HEADLESS peer any NPC may carry a mark — the slot moved
+                // off the Player singleton, so a peer-driven avatar's Mark works like the
+                // real player's. Everywhere else the vanilla player-only rule holds
+                // byte-for-byte (a scripted Mark on an NPC stays Flag_Invalid in SP).
+                if (target != getPlayer() && !(isHeadless() && target.getClass().isNpc()))
                     return ESM::ActiveEffect::Flag_Invalid;
                 else if (world->isTeleportingEnabled())
-                    world->getPlayer().markPosition(target.getCell(), target.getRefData().getPosition());
+                    target.getClass().getNpcStats(target).setMarkedPosition(
+                        target.getCell()->getCell()->getId(), target.getRefData().getPosition());
                 else if (caster == getPlayer())
                     MWBase::Environment::get().getWindowManager()->messageBox("#{sTeleportDisabled}");
             }
             else if (effect.mEffectId == ESM::MagicEffect::Recall)
             {
-                if (target != getPlayer())
+                if (target != getPlayer() && !(isHeadless() && target.getClass().isNpc()))
                     return ESM::ActiveEffect::Flag_Invalid;
                 else if (world->isTeleportingEnabled())
                 {
-                    MWWorld::CellStore* markedCell = nullptr;
-                    ESM::Position markedPosition;
-
-                    world->getPlayer().getMarkedPosition(markedCell, markedPosition);
-                    if (markedCell)
+                    const MWMechanics::NpcStats& stats = target.getClass().getNpcStats(target);
+                    if (!stats.getMarkedCell().empty())
                     {
-                        ESM::RefId dest = markedCell->getCell()->getId();
-                        MWWorld::ActionTeleport action(dest, markedPosition, false);
+                        MWWorld::ActionTeleport action(stats.getMarkedCell(), stats.getMarkedPosition(), false);
                         action.execute(target);
                         if (!caster.isEmpty())
                         {
@@ -649,7 +662,18 @@ namespace MWMechanics
             {
                 if (!target.isInCell())
                     return ESM::ActiveEffect::Flag_Invalid;
-                effect.mArg = summonCreature(effect.mEffectId, target);
+                // Multiplayer: while a peer holds this cell the player's summon is spawned on
+                // the peer beside the avatar (the effect travels there); a local copy would be
+                // a second creature that fights nothing. The effect stays active with no
+                // creature of its own here, exactly as a failed summon does.
+#ifdef __EMSCRIPTEN__
+                // Client-only by construction: the native build is the sim peer, which is the
+                // holder and never suppresses its own summons.
+                if (target == MWMechanics::getPlayer() && !MWMP::localSummonsEnabled())
+                    effect.mArg = ESM::RefNum();
+                else
+#endif
+                    effect.mArg = summonCreature(effect.mEffectId, target);
             }
             else if (effect.mEffectId == ESM::MagicEffect::BoundGloves)
             {
@@ -698,6 +722,30 @@ namespace MWMechanics
                         targetStat = Stats::Magicka;
                     else if (effect.mEffectId == ESM::MagicEffect::DamageFatigue)
                         targetStat = Stats::Fatigue;
+#ifdef __EMSCRIPTEN__
+                    // MULTIPLAYER: this actor's damage may not be ours to apply.
+                    //
+                    // A puppet is simulated by a remote peer; anything we do to it here is a
+                    // guess the owner will overwrite on its next stats push, which is exactly
+                    // what made spell damage appear for an instant and revert. Melee already
+                    // avoids this because the engine hands damage application to Lua (the `Hit`
+                    // event) and scripts/mp/puppet.lua cancels it — magic is applied right here
+                    // in C++ with no seam to cancel through, so this IS the seam. Record the
+                    // effect for scripts/mp to forward to the owner, and apply nothing.
+                    //
+                    // Guarded, and the desktop path is left byte-for-byte intact per
+                    // WASM_ADAPTATIONS.md. The registry is empty in singleplayer, so isPuppet is
+                    // a hash lookup against an empty set.
+                    if (MWMP::isPuppet(target.getCellRef().getRefNum()))
+                    {
+                        MWMP::recordMagicHit({ target.getCellRef().getRefNum(),
+                            caster.isEmpty() ? ESM::RefNum{} : caster.getCellRef().getRefNum(),
+                            effect.mEffectId.serializeText(),
+                            spellParams.getSourceSpellId().serializeText(), effect.mMagnitude,
+                            targetStat == Stats::Health ? 0 : (targetStat == Stats::Magicka ? 1 : 2) });
+                    }
+                    else
+#endif
                     // Damage "Dynamic" abilities reduce the base value
                     if (spellParams.hasFlag(ESM::ActiveSpells::Flag_AffectsBaseValues))
                         modDynamicStat(target, targetStat, -effect.mMagnitude);
@@ -738,15 +786,36 @@ namespace MWMechanics
                 if (target.getClass().isNpc())
                     restoreSkill(target, effect, effect.mMagnitude);
             }
-            else if (effect.mEffectId == ESM::MagicEffect::RestoreHealth)
+            else if (effect.mEffectId == ESM::MagicEffect::RestoreHealth
+                || effect.mEffectId == ESM::MagicEffect::RestoreMagicka
+                || effect.mEffectId == ESM::MagicEffect::RestoreFatigue)
             {
-                affectedHealth = true;
-                adjustDynamicStat(target, Stats::Health, effect.mMagnitude);
+                auto targetStat = effect.mEffectId == ESM::MagicEffect::RestoreMagicka
+                    ? Stats::Magicka
+                    : (effect.mEffectId == ESM::MagicEffect::RestoreFatigue ? Stats::Fatigue : Stats::Health);
+#ifdef __EMSCRIPTEN__
+                // MULTIPLAYER: healing a FRIEND'S puppet is theirs to apply, exactly like
+                // damage (above). Applied here it would help for a frame and then revert on
+                // the owner's next stats push -- a drop-in helper could not actually heal
+                // anyone. Record it for scripts/mp to forward to the owner, marked beneficial
+                // so it crosses the PvP veto, and apply nothing locally.
+                if (MWMP::isPuppet(target.getCellRef().getRefNum()))
+                {
+                    MWMP::MagicHit hit{ target.getCellRef().getRefNum(),
+                        caster.isEmpty() ? ESM::RefNum{} : caster.getCellRef().getRefNum(),
+                        effect.mEffectId.serializeText(), spellParams.getSourceSpellId().serializeText(),
+                        effect.mMagnitude, targetStat == Stats::Health ? 0 : (targetStat == Stats::Magicka ? 1 : 2) };
+                    hit.mBeneficial = true;
+                    MWMP::recordMagicHit(hit);
+                }
+                else
+#endif
+                {
+                    if (targetStat == Stats::Health)
+                        affectedHealth = true;
+                    adjustDynamicStat(target, targetStat, effect.mMagnitude);
+                }
             }
-            else if (effect.mEffectId == ESM::MagicEffect::RestoreMagicka)
-                adjustDynamicStat(target, Stats::Magicka, effect.mMagnitude);
-            else if (effect.mEffectId == ESM::MagicEffect::RestoreFatigue)
-                adjustDynamicStat(target, Stats::Fatigue, effect.mMagnitude);
             else if (effect.mEffectId == ESM::MagicEffect::SunDamage)
             {
                 //// isInCell shouldn't be needed, but updateActor called during game start
@@ -1246,6 +1315,57 @@ namespace MWMechanics
             return { MagicApplicationResult::Type::REMOVED, receivedMagicDamage, affectedHealth };
         }
         const auto* magicEffect = world->getStore().get<ESM::MagicEffect>().find(effect.mEffectId);
+#ifdef __EMSCRIPTEN__
+        // MULTIPLAYER, THE WHOLE SEAM. A puppet is somebody else's body: the peer's NPC or
+        // another player's avatar. Two branches below (Damage H/M/F, Restore H/M/F) already
+        // declined to touch the local copy and parked the effect for scripts/mp to forward to
+        // its owner -- and every OTHER effect was applied to the local copy alone: a Calm
+        // that soothed nobody, a Soultrap the peer (where the creature dies) never heard of,
+        // a Paralyze that froze a statue. Forward ONCE per effect instance, on its first
+        // tick -- the owner applies the spell record whole, with its own durations -- and
+        // let the local copy tick down untouched. (The two per-tick branches below are now
+        // unreachable for puppets; they stay as the desktop path's shape.)
+        if (!(effect.mFlags & ESM::ActiveEffect::Flag_Remove) && target.getClass().isActor()
+            && MWMP::isPuppet(target.getCellRef().getRefNum()))
+        {
+            // A WEAPON'S ON-STRIKE ENCHANTMENT IS THE AVATAR'S SWING. The avatar lands the blow
+            // on the peer and casts the enchantment there natively; the owner's dead local
+            // swing cast it too, and forwarding that applied every on-strike effect twice and
+            // drained the charge on both copies. Cast-once (a scroll) and cast-when-used items
+            // are the owner's casts and still travel.
+            bool onStrike = false;
+            const ESM::RefId ench = spellParams.getEnchantment();
+            if (!ench.empty())
+            {
+                const ESM::Enchantment* rec = world->getStore().get<ESM::Enchantment>().search(ench);
+                onStrike = rec != nullptr && rec->mData.mType == ESM::Enchantment::WhenStrikes;
+            }
+            if (!(effect.mFlags & ESM::ActiveEffect::Flag_Applied) && !onStrike)
+            {
+                MWMP::MagicHit hit{ target.getCellRef().getRefNum(),
+                    caster.isEmpty() ? ESM::RefNum{} : caster.getCellRef().getRefNum(),
+                    effect.mEffectId.serializeText(), spellParams.getSourceSpellId().serializeText(),
+                    roll(effect), 0 };
+                // The engine's own word on it: a heal, a fortify, a cure crosses the PvP veto.
+                hit.mBeneficial = !(magicEffect->mData.mFlags & ESM::MagicEffect::Harmful);
+                // Which effect of the record this is (the owner applies only the ones that
+                // hit), and whether it is already a reflection (activespells.cpp stamps the
+                // bounced copy Ignore_Reflect; the owner must not bounce it back).
+                hit.mEffectIndex = effect.mEffectIndex;
+                hit.mReflected = (effect.mFlags & ESM::ActiveEffect::Flag_Ignore_Reflect) != 0;
+                MWMP::recordMagicHit(hit);
+                effect.mFlags |= ESM::ActiveEffect::Flag_Applied;
+                // MP #255: the seam returns before the desktop path's playEffects, so the puppet
+                // never showed the hit VFX/sound on the caster's screen. Play them once here.
+                if (!spellParams.hasFlag(ESM::ActiveSpells::Flag_Lua))
+                    playEffects(target, *magicEffect,
+                        spellParams.hasFlag(ESM::ActiveSpells::Flag_Temporary)
+                            || (spellParams.hasFlag(ESM::ActiveSpells::Flag_Equipment) && playNonLooping));
+            }
+            effect.mTimeLeft -= dt;
+            return { MagicApplicationResult::Type::APPLIED, receivedMagicDamage, affectedHealth };
+        }
+#endif
         if (effect.mFlags & ESM::ActiveEffect::Flag_Applied)
         {
             if (magicEffect->mData.mFlags & ESM::MagicEffect::Flags::AppliedOnce)

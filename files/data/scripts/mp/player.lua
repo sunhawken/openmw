@@ -1,0 +1,1503 @@
+-- Multiplayer PLAYER script: chat window + input, harness command poll (M0), and the
+-- own-pose sampler (M1) that feeds PlayerMove/PlayerCellChange to the server.
+-- T toggles the chat window (mouse is freed via the Interface UI mode); click the input
+-- line, type, Enter sends. Incoming messages also pop as screen messages so chat is
+-- visible without the window open.
+local core = require('openmw.core')
+local ui = require('openmw.ui')
+local util = require('openmw.util')
+local async = require('openmw.async')
+local input = require('openmw.input')
+local types = require('openmw.types')
+local mp = require('openmw.mp')
+local I = require('openmw.interfaces')
+local self = require('openmw.self')
+local nearby = require('openmw.nearby')
+
+local json = require('scripts.mp.json')
+local identity = require('scripts.mp.identity')
+
+local HISTORY_MAX = 8
+
+-- Chat is presented by the HTML overlay (index.html), not MyGUI. This script is the BRIDGE:
+-- it keeps a rolling log of recent messages mirrored to JS (window.omw.state.chatLog + a bumped
+-- chatSeq the overlay polls) and, on the T key, raises an openChat signal the overlay polls.
+-- Outgoing lines come back from the overlay as 'chatx:<channel>:<to>:<text>' commands, parsed
+-- in dispatch. Raw fields are mirrored (channel/from/to/text) so the HTML formats/colours.
+local CHAT_LOG_MAX = 50
+local chatHistory = {}
+local chatSeq = 0
+local chatOpenSeq = 0
+
+local function pushMessage(data)
+    chatHistory[#chatHistory + 1] = {
+        channel = tostring(data.channel or 'say'),
+        from = data.from and tostring(data.from) or nil,
+        to = data.to and tostring(data.to) or nil,
+        text = tostring(data.text or ''),
+    }
+    if #chatHistory > CHAT_LOG_MAX then table.remove(chatHistory, 1) end
+    chatSeq = chatSeq + 1
+    mp.set('chatLog', json.encode(chatHistory))
+    -- testSet is (string, string) ONLY — a number here THROWS, and a throwing handler
+    -- disables its whole subsystem (this exact line killed chat + T until s99 caught it).
+    mp.set('chatSeq', tostring(chatSeq))
+    -- lastChatLine keeps its long-standing contract: the FORMATTED line as shown, carrying
+    -- the sender's attribution (s03-chat asserts on it). The HTML overlay renders from
+    -- chatLog's structured fields instead; this mirror is for the harness and legacy checks.
+    local ch = tostring(data.channel or 'say')
+    local line
+    if ch == 'server' then
+        line = '* ' .. tostring(data.text or '')
+    elseif ch == 'whisper' and data.to and data.to ~= '' then
+        line = '-> ' .. tostring(data.to) .. ': ' .. tostring(data.text or '')
+    else
+        line = tostring(data.from or '?') .. ': ' .. tostring(data.text or '')
+    end
+    mp.set('lastChatLine', line)
+end
+
+-- T raises a signal; the HTML overlay owns the input, focus and cursor. No MyGUI window.
+local function toggleChat()
+    chatOpenSeq = chatOpenSeq + 1
+    mp.set('openChat', tostring(chatOpenSeq)) -- testSet takes strings only
+end
+
+-- --- M1: own-pose sampler -> PlayerMove (0x0100) + PlayerCellChange ---------------------
+-- ~15 Hz real-time while moving, plus edge-triggered sends on jump and on stop. Kept well
+-- under the server's 40 msg/s movement budget.
+local SEND_INTERVAL = 1 / 15
+local POSE_MIRROR_INTERVAL = 0.5 -- 2 Hz test-surface mirror
+
+local lastSend = 0
+local lastSentPos = nil
+local lastSentYaw = nil
+local lastSentFlags = nil
+local wasMoving = false
+local forceUseUntil = 0 -- harness: attack:<ms> holds the use bit without a real keypress
+local jumpQueued = false
+local prevJumpCtl = false
+local prevUseCtl = false
+local lastCellKey = nil
+local knockedUntil = 0 -- backlog 73: the peer's avatar is on the floor; hold our body still
+local lastPoseMirror = 0
+-- Every GUI mode that can pay an NPC out of its purse. Verified against the engine rather
+-- than guessed: these are exactly the call sites of setGoldPool that a player can reach --
+-- tradewindow, trainingwindow, travelwindow, spellbuyingwindow, spellcreationdialog,
+-- enchanting and merchantrepair. Barter alone was covered for a while, which left the other
+-- six paying into a per-client purse that never empties.
+local liveContainerOpen = false -- a pickpocket window is up (Container mode on a live actor)
+local arrestDialoguePending = false -- the next Dialogue mode is MP_PlayerArrest's: no lock request (343)
+-- The world's rest rule, off WorldMode (#262). A guest under timeSkip=owner used to get the
+-- whole wait animation, a fast-forwarded sky, THEN the refusal and the sky slewing back. The
+-- Rest window is refused before it opens instead; the sleep itself must still happen for a
+-- guest to level (#256), so the pending level-up is offered in its place.
+local restRule = { isOwner = true, timeSkip = 'anyone' }
+local function restRefusedHere()
+    return not restRule.isOwner and (restRule.timeSkip == 'owner' or restRule.timeSkip == 'party')
+end
+local GOLD_SERVICE_MODES = {
+    Barter = true, Training = true, Travel = true, SpellBuying = true,
+    SpellCreation = true, Enchanting = true, MerchantRepair = true,
+    -- COMPANION SHARE is the same shape: a live actor's inventory, open in a window, moved
+    -- both ways, reconciled once on close. Without it what you handed your follower existed
+    -- on your screen only; the peer's copy -- the one that fights -- carried none of it.
+    Companion = true,
+}
+
+local barterTarget = nil -- harness 'barter:open' / 'svc:open': the NPC whose purse is mirrored
+-- The service windows the harness may open on an NPC (svc:open:<Mode>); the UI mode names.
+local SERVICE_MODES = { Barter = true, Training = true, Travel = true, SpellCreation = true, Enchanting = true }
+local walkCmd = nil -- harness 'walk:<dx>,<dy>,<ms>' injection
+local jumpFrames = 0 -- harness 'jump': frames left holding the jump control (an edge the input sender cannot miss)
+-- harness 'use:<ms>' -- wait, that name is taken by the inventory hook; this is 'press:<ms>':
+-- the use key held on THIS engine (attack from a drawn weapon, or a cast from the spell
+-- stance), through the same control the mouse button drives. attack:<ms> only forwards the
+-- use bit to the peer (the avatar swings); it never presses anything here, so no scenario
+-- had ever driven a real client-side cast (s147/s148).
+local pressUntil = 0
+local pendingTestEquip = nil -- harness 'equip:<id>:<slot>': equip once the grant lands
+
+local function cellKey()
+    local cell = self.cell
+    if not cell then return nil end
+    if cell.isExterior then return cell.gridX .. ',' .. cell.gridY end
+    return string.lower(cell.name)
+end
+
+local function poseFlags()
+    local flags = 0
+    if self.controls.run then flags = flags + 1 end -- bit0
+    if self.controls.sneak then flags = flags + 2 end -- bit1
+    if jumpQueued then flags = flags + 4 end -- bit2 jump-edge
+    -- bit3 is USE, as the puppet reads it (puppet.lua showSwing) and as the peer's avatar
+    -- stream sets it. It carried inAir here, which nothing read: in degraded mode every
+    -- landing played a phantom chop on every other screen (backlog 136).
+    if (self.controls.use and self.controls.use ~= 0) or core.getRealTime() < forceUseUntil then flags = flags + 8 end
+    local stance = types.Actor.getStance(self)
+    if stance == types.Actor.STANCE.Weapon then flags = flags + 16 end -- bit4
+    if stance == types.Actor.STANCE.Spell then flags = flags + 32 end -- bit5
+    -- INPUT DIAGNOSTIC. "Player cannot attack" was reported from live play while every combat
+    -- test stayed green, because the harness drives a synthetic Hit event and had no way to
+    -- press a mouse button. Mirroring the stance lets a scenario prove that REAL input reaches
+    -- the engine at all: readying a weapon must change this.
+    mp.set('stance', stance == types.Actor.STANCE.Weapon and 'weapon'
+        or (stance == types.Actor.STANCE.Spell and 'spell' or 'nothing'))
+    return flags
+end
+
+local function sendPose(now)
+    local pos = self.position
+    local yaw = self.rotation:getYaw()
+    local walkSpeed = types.Actor.getWalkSpeed(self)
+    local animVel = walkSpeed > 0 and (types.Actor.getCurrentSpeed(self) / walkSpeed) or 0
+    local flags = poseFlags()
+    mp.sendMove({
+        x = pos.x,
+        y = pos.y,
+        z = pos.z,
+        yaw = yaw,
+        pitch = self.rotation:getPitch(),
+        flags = flags,
+        animVel = animVel,
+    })
+    jumpQueued = false
+    lastSend = now
+    lastSentPos = pos
+    lastSentYaw = yaw
+    lastSentFlags = flags
+end
+
+-- Phase 3: the input tier. ~30 Hz of raw intent (self.controls + facing) to the server,
+-- which forwards it to the peer; the peer's avatar produces the authoritative pose. The
+-- local engine KEEPS simulating — input latency stays zero — and MP_SelfState below
+-- reconciles the difference. Sequence numbers are what tie the two together.
+local inputSeq = 0
+local lastInputSend = 0
+local jumpLatched = false -- a jump edge seen between two input frames (inputTick)
+local INPUT_EVERY = 1 / 30
+-- WHERE WE STOOD WHEN EACH INPUT LEFT. The peer's pose acknowledges lastInputSeq, i.e. it is
+-- one RTT old; compared with where we stand NOW every stop, jump and doorway rubber-banded
+-- by RTT x speed on a real link (invisible on the LAN harness, #197). Reconciliation
+-- compares the sample with where we were at that seq instead. ~2 s at 30 Hz.
+local POS_RING_N = 64
+local posRing = {} -- [seq % POS_RING_N] = {seq, x, y, z}
+local function posAt(seq)
+    seq = tonumber(seq)
+    if seq == nil then return nil end
+    local r = posRing[seq % POS_RING_N]
+    if r and r.seq == seq then return r end
+    return nil -- older than the ring (a long stall): the caller uses the current position
+end
+
+local tookControlsSaid = false -- once per session: the rejoin position hold lets go
+local function inputTick(now)
+    -- The PEER's own dummy player has no avatar and the server drops its input
+    -- (playerInputDropped{from_peer}); 30 Hz of frames for the bin.
+    if mp.isSystem and mp.isSystem() then
+        -- AND IT CANNOT DIE (#430). It stands where a player stands (global.lua MP_SimAnchors
+        -- place), so a drowning player drowned it and a creature on that player bit it; its
+        -- PlayerDeath then respawned it at the harness's sea cell, where slaughterfish killed
+        -- it every 30 s for the rest of the run. God mode is player-only in the engine: the
+        -- avatars and the NPCs it simulates are untouched.
+        pcall(function()
+            local dbg = require('openmw.debug')
+            if not dbg.isGodMode() then dbg.toggleGodMode() end
+        end)
+        return
+    end
+    if not tookControlsSaid then
+        local c = self.controls
+        if (c.movement or 0) ~= 0 or (c.sideMovement or 0) ~= 0 or c.jump or (c.use and c.use ~= 0) then
+            tookControlsSaid = true
+            core.sendGlobalEvent('mpPlayerTookControls', {})
+        end
+    end
+    -- A JUMP IS ONE FRAME. playercontrols.lua sets controls.jump for the frame the key went
+    -- down and clears it at the end of that frame; this sender runs every other frame at
+    -- 60 fps, so half of all real jumps never reached the avatar -- the owner rose, the
+    -- avatar did not, and reconciliation dragged the owner back down mid-air. Latch the
+    -- edge until it has ridden an input frame.
+    if self.controls.jump then jumpLatched = true end
+    if now - lastInputSend < INPUT_EVERY then return end
+    lastInputSend = now
+    inputSeq = inputSeq + 1
+    local p = self.position
+    posRing[inputSeq % POS_RING_N] = { seq = inputSeq, x = p.x, y = p.y, z = p.z }
+    local c = self.controls
+    local flags = 0
+    if c.run then flags = flags + 1 end
+    if c.sneak then flags = flags + 2 end
+    if c.jump or jumpLatched then flags = flags + 4 end
+    jumpLatched = false
+    -- A MENU HOLDS NOTHING. playercontrols leaves controls.use set when a menu opens with the
+    -- key down (backlog 263), so the avatar stayed wound up for the whole menu. The harness's
+    -- forced press is not a key and is kept.
+    local inMenu = false
+    pcall(function() inMenu = I.UI.getMode() ~= nil end)
+    if (c.use and c.use ~= 0 and not inMenu) or now < forceUseUntil then flags = flags + 8 end
+    -- THE STANCE RIDES THE INPUT, or the avatar never swings. The engine only starts an attack
+    -- from UpperBodyState::WeaponEquipped (mwmechanics/character.cpp), and nothing on the peer
+    -- ever drew the avatar's weapon: the use bit arrived at a body standing at ease and did
+    -- nothing, while combat.lua had already cancelled the local swing as the peer's job. Same
+    -- bits as poseFlags (4 weapon, 5 spell); bits 4-5 of the input byte were reserved unused.
+    local stance = types.Actor.getStance(self)
+    if stance == types.Actor.STANCE.Weapon then flags = flags + 16 end
+    if stance == types.Actor.STANCE.Spell then flags = flags + 32 end
+    if mp.sendInput then
+        mp.sendInput({
+            seq = inputSeq,
+            move = c.movement or 0,
+            side = c.sideMovement or 0,
+            yaw = self.rotation:getYaw(),
+            pitch = self.rotation:getPitch(),
+            flags = flags,
+        })
+    end
+end
+
+-- Phase 3 reconciliation: predict + smooth blend, NEVER interp.lua's delayed buffer — the
+-- local player must not inherit RENDER_DELAY (75 ms of input lag on the one thing built to
+-- keep it at zero). The NEWEST authoritative sample is compared against where we stand:
+--   small divergence  -> a capped mp.correctSelf offset, resolved by the next physics step
+--   past the hard threshold -> one snap through the global teleport path (cooldown below)
+local SNAP_DIST = 256
+local CORRECT_GAIN = 0.25 -- fraction of the divergence per FRAME that has a fresh sample
+local latestSelf = nil -- newest authoritative self pose, consumed by selfReconcileTick
+local lastSnapAt = 0
+local SNAP_COOLDOWN_S = 2.0
+-- OUR OWN TELEPORT, BY INPUT SEQUENCE. A state batch already in flight when we jumped still
+-- carries the place we left; reconciling against it dragged us straight back (16539 units,
+-- s122: teleport, back to the spawn 3 s later, forward again, every time). The batch says
+-- which input its pose accounts for, so a sample from before the jump is recognisable and
+-- ignored; the avatar's poses after it has followed us carry a newer sequence.
+local teleportSeq = nil
+local lastOwnPos = nil -- teleport (single-frame jump) detector; see PlayerCellChange below
+-- WHERE WE ANNOUNCED WE WENT, and until when a sample from anywhere else is stale. The input
+-- sequence alone cannot tell: a sample the peer produced BEFORE it applied our teleport still
+-- acknowledges inputs we sent after it, so it passed as fresh, sat 900 units from us, and
+-- reconciliation snapped us straight back to the old spot (s151: a same-cell teleport was
+-- undone on the client while the avatar arrived at the destination alone). Bounded, so a
+-- peer that never follows cannot leave us uncorrected forever.
+local teleportTo = nil -- {x, y, z, until_}
+local TELEPORT_GRACE_S = 4
+
+local lastAppliedSelfSeq = nil
+local function onSelfState(e)
+    if not e or not e.x then return end
+    if teleportSeq ~= nil and (tonumber(e.lastInputSeq) or 0) <= teleportSeq then return end
+    -- NO NEW INFORMATION, NO CORRECTION. The server re-broadcasts the avatar's last pose at
+    -- 15 Hz for 2 s whether or not the peer produced a new one, so while the peer stalls (a
+    -- cold cell load for anyone on the world) every moving player was pulled back toward a
+    -- frozen sample at up to 720 units/s -- running in place -- and then snapped on resume.
+    -- A sample that acknowledges no input we have not already been corrected for is the
+    -- same sample; skip it.
+    local seq = tonumber(e.lastInputSeq)
+    if seq ~= nil and lastAppliedSelfSeq ~= nil and seq <= lastAppliedSelfSeq then return end
+    if seq ~= nil then lastAppliedSelfSeq = seq end
+    if teleportTo ~= nil then
+        local tx, ty, tz = e.x - teleportTo.x, e.y - teleportTo.y, e.z - teleportTo.z
+        if tx * tx + ty * ty + tz * tz <= SNAP_DIST * SNAP_DIST then
+            teleportTo = nil -- the avatar arrived; corrections mean something again
+        elseif core.getRealTime() < teleportTo.until_ then
+            return -- the peer has not moved the avatar yet: this sample describes the old place
+        else
+            teleportTo = nil
+        end
+    end
+    -- BEFORE THE DETECTOR HAS SEEN THE JUMP. A far teleport loads a new region, and the
+    -- engine stalls for seconds with the player already standing at the destination and no
+    -- onUpdate running -- so the cell change is not yet announced, the server keeps
+    -- streaming the old place, and those samples are delivered (events land before
+    -- onUpdate) the moment the stall ends. lastOwnPos is still the pre-stall spot: if we are
+    -- now far from it we have jumped, and a sample near where we were is from before the
+    -- jump. (s122: the 3-second drag back to the spawn, 3/3 alone, that the sequence gate
+    -- alone still let through.)
+    if lastOwnPos ~= nil then
+        local here = self.position
+        if (here - lastOwnPos):length2() > 512 * 512 then
+            local ox, oy, oz = e.x - lastOwnPos.x, e.y - lastOwnPos.y, e.z - lastOwnPos.z
+            if ox * ox + oy * oy + oz * oz < SNAP_DIST * SNAP_DIST then
+                teleportSeq = math.max(teleportSeq or 0, inputSeq)
+                mp.set('selfStale', string.format('%.0f,%.0f,%.0f seq=%s', e.x, e.y, e.z, tostring(e.lastInputSeq)))
+                return
+            end
+        end
+    end
+    -- LATEST WINS, APPLIED ONCE PER FRAME (selfReconcileTick). The correction used to run
+    -- here, per SAMPLE: the peer streams the same pose every pass, the server fans each one
+    -- out, and on a slow client (a big scene, a low-end machine, a loading hitch) a dozen
+    -- identical samples landed between two physics steps. Each added CORRECT_GAIN of the
+    -- SAME divergence to the accumulated physics offset, so the effective gain was 3x, 5x,
+    -- 10x -- an overshoot past the avatar, a larger correction back, and a growing
+    -- oscillation that ran the player hundreds of units away until the hard snap caught it
+    -- (measured: 26 -> 46 -> 81 -> 300 units after one sword swing, then a 303-unit snap).
+    latestSelf = e
+end
+
+local function selfReconcileTick()
+    local e = latestSelf
+    if not e then return end
+    latestSelf = nil
+    -- the position the sample is answering, not where we are now (posRing, #197)
+    local pos = posAt(e.lastInputSeq) or self.position
+    local dx, dy, dz = e.x - pos.x, e.y - pos.y, e.z - pos.z
+    local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    mp.set('selfDivergence', string.format('%.1f', dist))
+    mp.set('selfFlags', tostring(e.flags or 0)) -- bit 3 = the avatar is attacking (s67)
+    if dist < 1 then return end
+    if dist > SNAP_DIST then
+        local now = core.getRealTime()
+        if now - lastSnapAt >= SNAP_COOLDOWN_S then
+            lastSnapAt = now
+            print(string.format('[mp] SELF SNAP %.0f units -> (%.0f,%.0f,%.0f) seq=%s',
+                dist, e.x, e.y, e.z, tostring(e.lastInputSeq)))
+            mp.set('selfSnap', string.format('%.0f,%.0f,%.0f d=%.0f', e.x, e.y, e.z, dist))
+            -- The hard snap rides the same global teleport machinery invites use; a
+            -- flapping link cannot strobe the player thanks to the cooldown.
+            core.sendGlobalEvent('mpSelfSnap', { x = e.x, y = e.y, z = e.z })
+        end
+        return
+    end
+    if mp.correctSelf then
+        -- The engine caps the per-call offset (it is load-bearing: an uncapped correction
+        -- pushes through geometry before physics gets a say); the gain keeps the approach
+        -- smooth over several frames instead of a visible yank.
+        mp.correctSelf(dx * CORRECT_GAIN, dy * CORRECT_GAIN, dz * CORRECT_GAIN)
+    end
+end
+
+-- The UI mode, mirrored ON CHANGE (it used to be written only on a key press, so a dialogue
+-- the engine opened by itself -- an arrest, s126 -- was invisible to the scenarios).
+local lastUiModeSaid = nil
+local function uiModeMirrorTick()
+    local ok, mode = pcall(function() return tostring(I.UI.getMode() or 'none') end)
+    if ok and mode ~= lastUiModeSaid then
+        lastUiModeSaid = mode
+        mp.set('uiMode', mode)
+    end
+end
+
+local function movementTick()
+    if mp.status().state ~= 'Joined' then
+        lastCellKey = nil -- rejoin resends PlayerCellChange (required to become visible)
+        identity.reset() -- and the identity diffs re-upload
+        return
+    end
+    local now = core.getRealTime()
+    -- OUR OWN TELEPORT FIRST. The frame after a teleport lands, the sample in hand still
+    -- describes the old place; reconciling to it before the jump detector below has run
+    -- snapped the player straight back (and the detector then announced the old spot). Seen
+    -- with every same-cell teleport: the client stayed put while its avatar went.
+    if lastOwnPos ~= nil and (self.position - lastOwnPos):length2() > SNAP_DIST * SNAP_DIST then latestSelf = nil end
+    -- Backlog 73: knockdown is not relayed by the engine, so while the peer reports the avatar
+    -- knocked down (MP_SelfStats.kd) the owner kept walking and reconciliation rubber-banded
+    -- them back. Zero the controls before the intent goes out: nobody walks lying down.
+    if now < knockedUntil then
+        self.controls.movement = 0
+        self.controls.sideMovement = 0
+        self.controls.jump = false
+    end
+    selfReconcileTick() -- Phase 3: one correction per frame toward the newest peer pose
+    inputTick(now) -- Phase 3: raw intent to the peer, beside the pose stream
+    identity.tick(now) -- M2: appearance/equipment/stats/inventory diff broadcasts
+    identity.equipRetryTick(now)
+    uiModeMirrorTick()
+
+    -- PlayerCellChange: immediately once Joined (before it we are invisible and receive no
+    -- batches), then on every cell change -- AND on any single-frame position jump. A jump
+    -- is a teleport (respawn in the same cell, a scripted move, console): the peer's avatar
+    -- follows this event and the server opens the reconciliation grace window on it, so a
+    -- teleport that stays inside the cell must announce too or the avatar keeps streaming
+    -- the old spot and reconciliation drags the player straight back (s22: the respawned
+    -- player could never walk away from their own corpse). 512 units/frame is far beyond
+    -- any legitimate movement speed.
+    local key = cellKey()
+    local pos = self.position
+    -- 256 (SNAP_DIST), not 512: a hop between them was silently undone -- the peer never
+    -- followed, and the next samples snapped the player back. No legitimate movement covers
+    -- 256 units in one frame (a fall at 1500 u/s is 75 at 20 fps, 150 at 10).
+    local jumped = lastOwnPos ~= nil and (pos - lastOwnPos):length2() > SNAP_DIST * SNAP_DIST
+    lastOwnPos = pos
+    -- NEVER ANNOUNCE THE ORIGIN. The engine reports (0,0,0) for a frame or two before the
+    -- player is actually placed in the world, and the join-time cell change is sent the
+    -- instant we are Joined -- so a player who then STANDS STILL leaves the server holding
+    -- (0,0,0) as their position forever, because only movement updates it.
+    --
+    -- That is not cosmetic: the server hands a late-joining SIM PEER each player's stored
+    -- position, and on the peer a PlayerCellChange TELEPORTS that player's avatar. A watcher
+    -- who never moved was therefore teleported to the middle of the world when a peer
+    -- restarted, and the avatar streams authoritative poses from there. Waiting a frame for
+    -- a real position costs nothing; the cell change is re-sent on the next tick.
+    local atOrigin = pos.x == 0 and pos.y == 0 and pos.z == 0
+    if key and not atOrigin and (key ~= lastCellKey or jumped) then
+        lastCellKey = key
+        teleportSeq = inputSeq -- every state sample up to here describes the old place
+        if jumped then
+            teleportTo = { x = pos.x, y = pos.y, z = pos.z, until_ = now + TELEPORT_GRACE_S }
+            latestSelf = nil -- the sample already in hand describes the old place: reconciling to it undoes the teleport
+        end
+        mp.sendEvent('PlayerCellChange', { cellKey = key, x = pos.x, y = pos.y, z = pos.z })
+    end
+
+    -- Jump edge: send the same frame the jump control rises.
+    local jumpCtl = self.controls.jump
+    if jumpCtl and not prevJumpCtl then
+        jumpQueued = true
+        sendPose(now)
+    elseif now - lastSend >= SEND_INTERVAL then
+        local pos = self.position
+        local yaw = self.rotation:getYaw()
+        local moving = lastSentPos == nil
+            or (pos - lastSentPos):length2() > 0.25
+            or math.abs(yaw - (lastSentYaw or yaw)) > 0.005
+            or poseFlags() ~= lastSentFlags -- a swing or a drawn weapon while standing still
+        if moving or wasMoving then -- 'wasMoving and not moving' = the stop-edge send
+            sendPose(now)
+        end
+        wasMoving = moving
+    end
+    prevJumpCtl = jumpCtl
+
+    -- A CAST YOU CAN SEE (backlog 131): the use press in the spell stance is the cast. The
+    -- server relays CombatCast to the cell and every observer's puppet plays MP_CastFx.
+    local useCtl = (self.controls.use or 0) ~= 0
+    if useCtl and not prevUseCtl and types.Actor.getStance(self) == types.Actor.STANCE.Spell then
+        local spell = types.Actor.getSelectedSpell(self)
+        if spell then core.sendGlobalEvent('mpCombatCast', { spellId = spell.id }) end
+    end
+    prevUseCtl = useCtl
+
+    if now - lastPoseMirror >= POSE_MIRROR_INTERVAL then
+        lastPoseMirror = now
+        local p = self.position
+        mp.set('pose', json.encode({ x = p.x, y = p.y, z = p.z }))
+    end
+end
+
+-- Harness walk injection: overrides the omw input controls for the duration so the two
+-- writers can't fight over self.controls (I.Controls.overrideMovementControls).
+-- One frame of rotation control toward faceCmd (the face: hook), then hands the controls
+-- back unless a walk is still running. Two frames: the first turns, the second zeroes the
+-- change so a stale delta cannot keep spinning the player.
+local faceCmd = nil
+local faceApplied = false
+local function faceTick()
+    if not faceCmd then return end
+    if not faceApplied then
+        I.Controls.overrideMovementControls(true)
+        local curYaw, curPitch = self.rotation:getYaw(), self.rotation:getPitch()
+        local dyaw = faceCmd.yaw - curYaw
+        while dyaw > math.pi do dyaw = dyaw - 2 * math.pi end
+        while dyaw < -math.pi do dyaw = dyaw + 2 * math.pi end
+        self.controls.yawChange = dyaw
+        self.controls.pitchChange = faceCmd.pitch - curPitch
+        faceApplied = true
+        return
+    end
+    self.controls.yawChange = 0
+    self.controls.pitchChange = 0
+    if not walkCmd then I.Controls.overrideMovementControls(false) end
+    faceCmd = nil
+    faceApplied = false
+end
+
+local function pressTick()
+    if pressUntil == 0 then return end
+    if core.getRealTime() < pressUntil then
+        self.controls.use = 1
+    else
+        self.controls.use = 0
+        I.Controls.overrideCombatControls(false)
+        pressUntil = 0
+    end
+end
+
+local function walkTick()
+    pressTick()
+    if jumpFrames > 0 then
+        jumpFrames = jumpFrames - 1
+        self.controls.jump = jumpFrames > 0
+        if jumpFrames == 0 and not walkCmd then I.Controls.overrideMovementControls(false) end
+        if not walkCmd then return end
+    end
+    if not walkCmd then return end
+    if core.getRealTime() >= walkCmd.stopAt then
+        self.controls.movement = 0
+        self.controls.sideMovement = 0
+        -- Every posture bit off in the SAME frame as the stop: the stop is an edge-triggered
+        -- input send, and it carries whatever the controls say right now (s145).
+        self.controls.run = false
+        self.controls.sneak = false
+        self.controls.jump = false
+        I.Controls.overrideMovementControls(false)
+        walkCmd = nil
+        return
+    end
+    self.controls.movement = walkCmd.dy
+    self.controls.sideMovement = walkCmd.dx
+    self.controls.run = walkCmd.run
+    self.controls.sneak = walkCmd.sneak
+end
+
+-- HARNESS ONLY. Mirrors the merchant's purse so a scenario can assert on it. Polled rather
+-- than pushed because the interesting moment is AFTER the server's canonical figure has been
+-- applied back with setBarterGold, which happens on a network handler the scenario cannot see.
+local nextBarterMirror = 0
+local function barterMirrorTick()
+    if not (barterTarget and barterTarget:isValid()) then return end
+    local now = core.getRealTime()
+    if now < nextBarterMirror then return end
+    nextBarterMirror = now + 0.25
+    local okg, g = pcall(function() return types.Actor.getBarterGold(barterTarget) end)
+    if okg and type(g) == 'number' then mp.set('barterGold', tostring(math.floor(g))) end
+end
+
+local function testEquipTick()
+    if not pendingTestEquip then return end
+    local now = core.getRealTime()
+    for _, item in ipairs(types.Actor.inventory(self):getAll()) do
+        if item.recordId == pendingTestEquip.id then
+            -- MERGE, do not replace: setEquipment takes the whole table, so equipping the
+            -- arrows (slot 18) used to unequip the bow (slot 16) a moment after it was set.
+            local eq = {}
+            pcall(function() for slot, it in pairs(types.Actor.getEquipment(self)) do eq[slot] = it end end)
+            eq[pendingTestEquip.slot] = pendingTestEquip.id
+            types.Actor.setEquipment(self, eq)
+            pendingTestEquip = nil
+            return
+        end
+    end
+    if now > pendingTestEquip.until_ then
+        print('[mp] test equip timed out waiting for ' .. pendingTestEquip.id)
+        pendingTestEquip = nil
+    end
+end
+
+-- One command from the page. Everything the overlays and the harness can ask for is a
+-- string matched here; the caller acks each one back to the page (see pollCommands).
+local function dispatch(cmd)
+    if type(cmd) == 'string' then
+        -- Phase C: 'social:<Op>:<arg>'. The arg is a display NAME for FriendRequest and
+        -- BlockAdd (what a player types) and an ACCOUNT KEY for everything else, matching
+        -- the server contract.
+        local sop, sarg = cmd:match('^social:([%a]+):(.*)$')
+        if sop then
+            -- BY NAME, for everything that targets a PERSON. The panel only knows display
+            -- names — the account key is the login identifier and is deliberately not on the
+            -- wire — so it used to send a GUESS (the lowercased handle) for these, which stops
+            -- being a real key the moment someone's handle differs from their login name. The
+            -- server resolves names against its roster and the shared account index.
+            local byName = (sop == 'FriendRequest' or sop == 'BlockAdd' or sop == 'FriendAccept'
+                or sop == 'MuteAdd' or sop == 'ReportPlayer' or sop == 'WorldKick')
+            -- The arg does NOT always belong in name/acct. PresenceMode reads `mode` and
+            -- SetAvailability reads `state` on the server, so routing their argument into
+            -- `acct` meant the server saw an empty value and refused with no_such_player --
+            -- silently, because SocialResult is not surfaced. The privacy control had
+            -- therefore never worked. Route by what each op actually reads.
+            local FIELD = { PresenceMode = 'mode', SetAvailability = 'state' }
+            local field = FIELD[sop]
+            local body = { op = sop }
+            if field then body[field] = sarg
+            elseif byName then body.name = sarg
+            else body.acct = sarg end
+            -- ReportPlayer carries a reason after the name: 'social:ReportPlayer:<name>:<why>'.
+            -- The name cannot contain ':' (validUsername), the reason may.
+            if sop == 'ReportPlayer' then
+                local n, why = sarg:match('^([^:]*):(.*)$')
+                if n then body.name = n; body.reason = why end
+            end
+            core.sendGlobalEvent('mpSocial', body)
+        end
+
+        local uiWhich = cmd:match('^openui:(%a+)$')
+        if uiWhich then core.sendGlobalEvent('mpOpenUi', { which = uiWhich }) end
+
+        -- Test hook: switch the Social hub's tab. The harness cannot click, so without this
+        -- the Worlds tab could only ever be verified by reading state, never by looking at
+        -- what a player would actually see.
+        local socialTab = cmd:match('^socialtab:(%a+)$')
+        if socialTab then core.sendGlobalEvent('mpSocialTab', { tab = socialTab }) end
+
+        -- Test hook: create a world through the same uplink the Worlds tab's button uses.
+        -- The harness cannot type into the name field, so without this the create path
+        -- could only be tested at the protocol level, never as the player experiences it.
+        -- Test hook: press the Worlds tab's "join" button for a world by id. The harness
+        -- cannot click, and the join path (disconnect + redial a different world) is the
+        -- one thing about the tab a player would notice most if it were broken.
+        -- Test hook: drop the transport without killing the server, so the AUTOMATIC redial
+        -- can be observed. s92 kills the server instead; here the world must stay up,
+        -- because the question is WHICH world the client comes back to.
+        if cmd == 'netdrop' then core.sendGlobalEvent('mpNetDrop', {}) end
+
+        -- Test hook for the multiplayer console gate. Goes through the engine's own
+        -- executeAction(A_Console) — the same entry point the keybind uses — then mirrors
+        -- what the ENGINE says about console state, so the assertion is on real state and
+        -- not on how a screenshot looks.
+        if cmd == 'console:request' then
+            -- pcall BOTH halves: s49 read 'undefined' because requestConsole threw and the
+            -- handler died before the mirror was written -- which reads exactly like a dead
+            -- command channel. Whatever fails, the mirror now says something diagnosable.
+            local ok, err = pcall(mp.requestConsole)
+            if not ok then print('[mp] console request failed: ' .. tostring(err)) end
+            local okOpen, open = pcall(mp.isConsoleOpen)
+            mp.set('consoleOpen', okOpen and tostring(open) or ('error:' .. tostring(open)))
+        end
+
+        local joinId = cmd:match('^worldjoin:([%w_-]+)$')
+        if joinId then core.sendGlobalEvent('mpSocialJoinById', { id = joinId }) end
+
+        local wcId, wcMode = cmd:match('^worldcreate:([%w_-]+):(%a+)$')
+        if wcId then
+            core.sendGlobalEvent('mpSocial', { op = 'WorldCreate', id = wcId, mode = wcMode })
+        end
+
+        -- Character slot test hooks: the same uplinks the Characters tab uses.
+        local ccName = cmd:match('^charcreate:(.+)$')
+        if ccName then core.sendGlobalEvent('mpCharCreate', { name = ccName }) end
+        local csId = cmd:match('^charswitch:(%w+)$')
+        if csId then core.sendGlobalEvent('mpCharSwitch', { id = csId }) end
+        -- leaving: the page's Exit button, on its way to the launcher. A deliberate departure
+        -- closes a Party world to its guests now (server onPlayerLeaving), not after the grace.
+        if cmd == 'leaving' then pcall(function() mp.sendEvent('PlayerLeaving', {}) end) end
+        if cmd == 'chars' then core.sendGlobalEvent('mpChars', {}) end
+        local text = cmd:match('^chat:(.*)$')
+        if text and text ~= '' then
+            core.sendGlobalEvent('mpChatSend', { text = text })
+        end
+
+        -- HTML overlays drive these through the same command channel. 'chatx:<channel>:<to>:
+        -- <text>' carries the chat channel selector + whisper target; text is greedy (may
+        -- contain colons). Empty `to` for non-whisper channels.
+        local cxCh, cxTo, cxText = cmd:match('^chatx:([%a]+):([^:]*):(.*)$')
+        if cxCh and cxText ~= '' then
+            core.sendGlobalEvent('mpChatSend', { text = cxText, channel = cxCh, to = cxTo })
+        end
+        -- Where-am-I switcher (solo/party/online/offline).
+        -- A freshly minted login ticket, handed down by the page before a world switch. Not a
+        -- secret the client did not already hold: it is minted from the same SSO session.
+        local tkt = cmd:match('^mpticket:(.+)$')
+        if tkt then core.sendGlobalEvent('mpSetTicket', { ticket = tkt }) end
+        local whereMode = cmd:match('^where:(%a+)$')
+        if whereMode then core.sendGlobalEvent('mpWhere', { mode = whereMode }) end
+        -- Availability toggle.
+        local availState = cmd:match('^avail:(%a+)$')
+        if availState then core.sendGlobalEvent('mpSocial', { op = 'SetAvailability', state = availState }) end
+        -- Onboarding: pick the public handle. 'profile:<email>:<username>' — email first
+        -- because a username can never contain ':' (validUsername) while an email can't
+        -- either, and the email is echoed back from what the server already told us.
+        local pEmail, pUser = cmd:match('^profile:([^:]*):(.+)$')
+        if pUser then
+            core.sendGlobalEvent('mpProfileSetup', { email = pEmail, username = pUser })
+        end
+
+        -- Cross-world join a friend.
+        local jfAcct = cmd:match('^joinfriend:(.+)$')
+        if jfAcct then
+            print('[mp] joinfriend command for ' .. jfAcct)
+            core.sendGlobalEvent('mpSocial', { op = 'JoinFriend', acct = jfAcct })
+        end
+        -- Owner in-place Solo<->Party flip of their own world.
+        local wmMode = cmd:match('^worldmode:(%a+)$')
+        if wmMode then core.sendGlobalEvent('mpSocial', { op = 'SetWorldMode', mode = wmMode }) end
+        -- Cursor handshake for the HTML overlays: when the overlay opens it asks the engine to
+        -- enter Interface mode (frees the mouse cursor + suspends game input, no pause); on
+        -- close it restores. This is what lets clicking/typing in the HTML panel not also drive
+        -- the game behind it.
+        -- HARNESS ONLY. Opens a real barter window on the nearest living NPC so a scenario
+        -- can exercise the SHARED PURSE end to end -- the one fix nothing else can reach,
+        -- because a merchant's gold only moves through a GUI a bot has no other way to open.
+        -- Nearest-NPC rather than a hardcoded id so the scenario does not depend on which
+        -- cell the harness happens to start in.
+        -- svc:open:<Mode>[:<recordId>] generalises it (backlog 34): Training, Travel,
+        -- SpellCreation and Enchanting are the same service-window shape and each has its
+        -- own shared-purse / skill / spell path a bot can only reach through the GUI.
+        -- barter:open[:<recordId>] and barter:close stay as aliases of the Barter mode.
+        -- <recordId> names the NPC instead of taking the nearest (the one a dlg: lock was
+        -- taken on).
+        local svcMode, wantMerchant
+        if cmd == 'barter:open' then svcMode = 'Barter'
+        else
+            wantMerchant = cmd:match('^barter:open:(.+)$')
+            if wantMerchant then svcMode = 'Barter'
+            else
+                svcMode, wantMerchant = cmd:match('^svc:open:(%a+):?(.*)$')
+                if wantMerchant == '' then wantMerchant = nil end
+            end
+        end
+        if svcMode and not SERVICE_MODES[svcMode] then
+            mp.set('barterGold', 'bad-mode:' .. svcMode)
+            svcMode = nil
+        end
+        if svcMode then
+            local best, bestD2 = nil, nil
+            -- nearby.actors, NOT cell:getAll(). getAll is a GLOBAL-script API; a player script
+            -- is local and does not have it, so this read `attempt to call a nil value (method
+            -- 'getAll')` -- and because it ran inside onFrame it took the whole handler down
+            -- with it, which in OpenMW means player.lua's onFrame stops for the rest of the
+            -- session. One unavailable method silently disabled the client's entire per-frame
+            -- multiplayer subsystem, which is exactly the failure mode the Lua tests exist for.
+            --
+            -- nearby.actors is the local-script equivalent and is strictly better here anyway:
+            -- it spans the LOADED cells rather than only the one the player stands in, so a
+            -- merchant one cell over is still found.
+            for _, obj in ipairs(nearby.actors) do
+                if types.NPC.objectIsInstance(obj) and not types.Player.objectIsInstance(obj)
+                    and (not wantMerchant or obj.recordId == wantMerchant) then
+                    local okd, dead = pcall(function() return types.Actor.isDead(obj) end)
+                    if okd and not dead then
+                        local d2 = (obj.position - self.position):length2()
+                        if not bestD2 or d2 < bestD2 then best, bestD2 = obj, d2 end
+                    end
+                end
+            end
+            if best then
+                barterTarget = best
+                pcall(function() I.UI.addMode(svcMode, { target = best }) end)
+            else
+                mp.set('barterGold', 'no-npc') -- say so rather than time out silently
+            end
+        end
+        local closeMode = cmd == 'barter:close' and 'Barter' or cmd:match('^svc:close:(%a+)$')
+        if closeMode then
+            pcall(function() I.UI.removeMode(closeMode) end)
+        end
+        -- barter:sell:<recordId> / barter:buy:<recordId>: one item moves between the pack and
+        -- the barterTarget's inventory and the merchant's purse moves by its value -- what the
+        -- trade window does, on a bot that cannot click it. Global context, like give:/chest:,
+        -- because a local script cannot touch another actor's inventory. The live container
+        -- watch armed by barter:open reports the stock change; the purse delta goes on close.
+        local tradeDir, tradeId = cmd:match('^barter:(sell):(.+)$')
+        if not tradeDir then tradeDir, tradeId = cmd:match('^barter:(buy):(.+)$') end
+        if tradeDir then
+            if barterTarget and barterTarget:isValid() then
+                core.sendGlobalEvent('mpTestBarter', { merchant = barterTarget, id = tradeId, sell = tradeDir == 'sell' })
+            else
+                print('[mp] barter:' .. tradeDir .. ': no barter window open (barter:open first)')
+            end
+        end
+
+        -- HARNESS ONLY. Learns a dialogue topic and mirrors what this player knows, so a
+        -- scenario can prove the whole path -- local discovery, relay, remote apply -- without
+        -- retail dialogue. Topics are just record ids, so unlike companions or merchants this
+        -- one feature IS testable against the demo content.
+        -- LEARN IT THE WAY THE DIFF SEES IT. 'topic:' below calls addTopic, which marks a
+        -- topic known but is invisible to journal(player).topics -- the collection the sync
+        -- diffs -- so a scenario using it can never observe its own input (s75 measures
+        -- exactly that). This one marks the topic locally learned so the real diff -> send ->
+        -- relay -> apply path runs end to end.
+        local diffTopic = cmd:match('^learntopic:(.+)$')
+        if diffTopic then core.sendGlobalEvent('mpTestLearnTopic', { id = diffTopic }) end
+        -- OPEN A UI MODE (ui:Map, ui:Inventory, ...). Added for the minimap investigation and
+        -- kept because it is generally useful: the HUD minimap and the full Map WINDOW read
+        -- the SAME per-cell texture through two different widgets, so opening the window is
+        -- the cheapest way to tell a broken RENDER from a broken HUD widget. If the window
+        -- draws the cell and the HUD panel does not, the texture has content and the fault is
+        -- in the small widget; if both are blank, nothing is being drawn at all.
+        local uiMode = cmd:match('^ui:(%a+)$')
+        if uiMode then pcall(function() I.UI.addMode(uiMode) end) end
+        local learnTopic = cmd:match('^topic:(.+)$')
+        if learnTopic then
+            -- SAY WHEN IT FAILS. addTopic looks the id up in the ESM store and THROWS if there
+            -- is no such dialogue record -- a topic is a record, not just a string. Swallowing
+            -- that made a scenario look like a broken sync when the topic simply did not exist
+            -- in the loaded content.
+            local ok, err = pcall(function() types.Player.addTopic(self, learnTopic) end)
+            if not ok then print('[mp] addTopic ' .. tostring(learnTopic) .. ' failed: ' .. tostring(err)) end
+        end
+        if cmd == 'topics' then
+            local names = {}
+            pcall(function()
+                for id in pairs(types.Player.journal(self).topics) do names[#names + 1] = id end
+            end)
+            table.sort(names)
+            mp.set('topics', table.concat(names, ','))
+        end
+
+        local ui_mode = cmd:match('^uimode:(%a+)$')
+        -- ADD, never SET (481). I.UI.setMode only QUEUES the engine push (uibindings.cpp
+        -- _setUiModeStack is a delayed action) and leaves I.UI's own stack mirror to the
+        -- engine's callback a frame later, so an 'off' drained in the SAME frame (T then Escape
+        -- between two frames -- routine at browser frame rates, every time in the harness)
+        -- found no 'Interface' in the mirror, removed nothing, queued nothing, and the engine
+        -- sat in Interface with no overlay up: no movement, and the live "Escape twice" report.
+        -- addMode records the mode in the mirror at once, so the off always finds it.
+        if ui_mode == 'on' then I.UI.addMode('Interface', { windows = {} })
+        elseif ui_mode == 'off' then I.UI.removeMode('Interface') end
+        -- NO-OP ON PURPOSE. This used to try to stop the world behind the pre-chargen intro
+        -- modal, first through UI modes (which never took effect: omw/ui.lua only recomputes
+        -- the pause when the mode stack CHANGES, and uimode:on has already entered Interface
+        -- mode by the time this arrives) and then through the 'Pause'/'Unpause' global events,
+        -- which DID take effect — and that is the problem.
+        --
+        -- A real pause stops executeLocalScripts (engine.cpp:311), and the opening is driven
+        -- entirely by Morrowind.esm's own mwscripts: the engine writes chargenstate exactly
+        -- once (worldimp.cpp:336-342) and every decrement toward -1 is done by those scripts.
+        -- Pausing therefore freezes character creation itself, and world-paused is also the
+        -- first gate in playercontrols.lua's controlsAllowed(), so the player cannot move.
+        --
+        -- It is also unsafe as built: two independent callers share the tag 'mpintro' — the
+        -- intro tour (index.html) and restoreHold's position-restore freeze — and restoreHold
+        -- acts only on CHANGE while being polled solely from the loading screen's finish(),
+        -- which stops polling once awaitRestore() returns false. Either caller's pause:off
+        -- clears the other's pause, and a stopped poll leaves it set forever.
+        --
+        -- Accepted and dropped rather than left half-working. If the intro genuinely needs the
+        -- world held, it needs its own tag per caller and a release that cannot be skipped —
+        -- a design pass, not another retry. uimode:on already blocks movement via
+        -- I.UI.getMode(), which is what the modal actually needs.
+        local pause_mode = cmd:match('^pause:(%a+)$')
+        if pause_mode == 'on' or pause_mode == 'off' then
+            -- ponytail: accepted and ignored so callers do not error; delete the callers too
+            -- if the intro stops asking for it.
+        end
+        if cmd == 'cam:3p' then -- visual scenarios: put own avatar in frame
+            local camera = require('openmw.camera')
+            camera.setMode(camera.MODE.ThirdPerson)
+        end
+        -- M2 test hooks. equip:<recordId>:<slot> grants (via global) then equips; sethp:<n>
+        -- drives the death path (0 = die); applyrace:<race>:<head>:<hair> exercises the
+        -- chargen rebuild for the identity scenarios.
+        local grantId, grantSlot = cmd:match('^equip:([^:]+):(%d+)$')
+        if grantId then
+            core.sendGlobalEvent('mpGrantItem', { id = grantId })
+            pendingTestEquip = { id = grantId, slot = tonumber(grantSlot), until_ = core.getRealTime() + 5 }
+        end
+        -- give:<recordId> puts one in the pack without equipping it; use:<recordId> uses it
+        -- the way the inventory click does (drink a potion, read a scroll, light a torch).
+        local giveId = cmd:match('^give:(.+)$')
+        if giveId then core.sendGlobalEvent('mpGrantItem', { id = giveId }) end
+        local useId = cmd:match('^use:(.+)$')
+        if useId then
+            local item = types.Actor.inventory(self):find(useId)
+            if item then core.sendGlobalEvent('UseItem', { object = item, actor = self })
+            else print('[mp] use: not in the pack: ' .. useId) end
+        end
+        -- selectench:<recordId>: pick an enchanted item (a scroll) in the magic menu, so the
+        -- next use in the spell stance casts it -- the player's own path to reading a scroll.
+        local enchId = cmd:match('^selectench:(.+)$')
+        if enchId then
+            local item = types.Actor.inventory(self):find(enchId)
+            if item then types.Actor.setSelectedEnchantedItem(self, item)
+            else print('[mp] selectench: not in the pack: ' .. enchId) end
+        end
+        -- selected: what the use key would cast right now (the magic menu's selection).
+        -- body: the engine's own view of our body -- swimming, on the ground, z, health.
+        if cmd == 'body' then
+            local ok, v = pcall(function()
+                local swim = types.Actor.isSwimming and tostring(types.Actor.isSwimming(self)) or '?'
+                local d = mp.drownState and mp.drownState() or {}
+                return string.format('swim=%s ground=%s z=%.0f hp=%.1f submerged=%s breath=%s god=%s wb=%s', swim,
+                    tostring(types.Actor.isOnGround(self)), self.position.z, types.Actor.stats.dynamic.health(self).current,
+                    tostring(d.submerged), tostring(d.breath), tostring(d.godmode), tostring(d.waterBreathing))
+            end)
+            mp.set('body', ok and v or ('err:' .. tostring(v)))
+        end
+        -- actives: the ids of our active spells right now (did the cast take?).
+        if cmd == 'actives' then
+            local ids = {}
+            pcall(function() for _, sp in pairs(types.Actor.activeSpells(self)) do ids[#ids + 1] = tostring(sp.id) end end)
+            table.sort(ids)
+            mp.set('actives', table.concat(ids, ','))
+        end
+        if cmd == 'selected' then
+            local ok, v = pcall(function()
+                local ei = types.Actor.getSelectedEnchantedItem(self)
+                if ei then return 'item:' .. tostring(ei.recordId) end
+                local sp = types.Actor.getSelectedSpell(self)
+                return sp and ('spell:' .. tostring(sp.id)) or 'none'
+            end)
+            mp.set('selected', ok and v or ('err:' .. tostring(v)))
+        end
+        if cmd == 'equiptest' then -- demo content has no items; global creates one
+            core.sendGlobalEvent('mpTestItem', {})
+        end
+        local hp = cmd:match('^sethp:(-?[%d.]+)$')
+        if hp then
+            types.Actor.stats.dynamic.health(self).current = tonumber(hp)
+        end
+        -- setmp:<n>: what a cast (lower) or a restore-magicka potion (higher) does to the
+        -- local bar; the avatar never casts, so this is the only writer of magicka (s113).
+        local mpv = cmd:match('^setmp:(-?[%d.]+)$')
+        if mpv then
+            types.Actor.stats.dynamic.magicka(self).current = tonumber(mpv)
+        end
+        -- setskill:<id>:<n> / skillof:<id>: what training or use does to a skill's base, and a
+        -- read of it (s132: a guest's progress comes home with them).
+        -- setlevel:<n>: the character's level (a leveled-list scaling and progression probe).
+        local lvl = cmd:match('^setlevel:(%d+)$')
+        if lvl then pcall(function() types.Actor.stats.level(self).current = tonumber(lvl) end) end
+        -- levelof: read it back (s153: the level must survive a second relog, backlog 404).
+        if cmd == 'levelof' then
+            local ok, v = pcall(function() return types.Actor.stats.level(self).current end)
+            mp.set('levelOf', tostring(ok and v or -1))
+        end
+        local skId, skVal = cmd:match('^setskill:([%w_]+):(%d+)$')
+        if skId then
+            pcall(function() types.NPC.stats.skills[skId](self).base = tonumber(skVal) end)
+        end
+        local skRead = cmd:match('^skillof:([%w_]+)$')
+        if skRead then
+            local ok, v = pcall(function() return types.NPC.stats.skills[skRead](self).base end)
+            mp.set('skillOf', tostring(ok and v or -1))
+        end
+        -- attrof:<id>: base/damage/modifier of an attribute. damageattr:<id>:<n>: what a Damage
+        -- Attribute effect leaves behind once it has run (s159: it must survive a relog).
+        local atRead = cmd:match('^attrof:([%w_]+)$')
+        if atRead then
+            local ok, v = pcall(function()
+                local st = types.Actor.stats.attributes[atRead](self)
+                return string.format('%g/%g/%g', st.base or 0, st.damage or 0, st.modifier or 0)
+            end)
+            mp.set('attrOf', ok and v or ('err:' .. tostring(v)))
+        end
+        local dmgId, dmgN = cmd:match('^damageattr:([%w_]+):(%d+)$')
+        if dmgId then
+            pcall(function() types.Actor.stats.attributes[dmgId](self).damage = tonumber(dmgN) end)
+        end
+        -- sethpbase:<n>: what a level-up does to the maximum (s121).
+        local hpb = cmd:match('^sethpbase:(-?[%d.]+)$')
+        if hpb then
+            types.Actor.stats.dynamic.health(self).base = tonumber(hpb)
+        end
+        -- setmpbase:<n>: the magicka maximum (an Intelligence gain). setmp: alone cannot fund a
+        -- minted spell while the peer rules: the claim is capped at the base (~40 on a fresh
+        -- character) and the avatar's bar comes back at 4 Hz, under the #391 cost of a 100x60
+        -- self spell (s147/s156 in #105: "did not take", three presses).
+        local mpb = cmd:match('^setmpbase:(-?[%d.]+)$')
+        if mpb then
+            types.Actor.stats.dynamic.magicka(self).base = tonumber(mpb)
+        end
+        local race, head, hair = cmd:match('^applyrace:([^:]+):([^:]+):([^:]*)$')
+        if race then
+            mp.applyChargen({ race = race, head = head, hair = hair, isMale = true })
+        end
+        -- M3 test hooks (world objects; all resolved in the GLOBAL script).
+        local dropId = cmd:match('^drop:(.+)$')
+        if dropId then core.sendGlobalEvent('mpDropItem', { id = dropId }) end
+        -- setcond:<id>:<n> / itemstate:<id>: an item's own state (wear, charge, soul) -- what a
+        -- drop must carry (s160). itemData is writable from the global script only.
+        local condId, condN = cmd:match('^setcond:(.+):([%d.]+)$')
+        if condId then core.sendGlobalEvent('mpSetItemCondition', { id = condId, condition = tonumber(condN) }) end
+        -- itemstate: the first stack; itemstates: every stack of the record, `;`-joined with
+        -- its count first (s163: does a spent lockpick stay spent; #234: did a split land).
+        local allStates, stateId = cmd:match('^itemstate(s?):(.+)$')
+        if stateId then
+            local out = {}
+            pcall(function()
+                for _, item in ipairs(types.Actor.inventory(self):getAll()) do
+                    if item.recordId == stateId then
+                        local d = types.Item.itemData(item)
+                        local one = string.format('%s/%s/%s', tostring(d and d.condition), tostring(d and d.enchantmentCharge), tostring(d and d.soul))
+                        if allStates == 's' then one = tostring(item.count) .. 'x' .. one end
+                        out[#out + 1] = one
+                        if allStates ~= 's' then break end
+                    end
+                end
+            end)
+            mp.set(allStates == 's' and 'itemStates' or 'itemState', #out > 0 and table.concat(out, ';') or 'none')
+        end
+        local takeNet = cmd:match('^takenet:(%d+)$')
+        if takeNet then core.sendGlobalEvent('mpTakeNet', { netId = tonumber(takeNet) }) end
+        if cmd == 'chest:spawn' then core.sendGlobalEvent('mpSpawnChest', {}) end
+        local openNet = cmd:match('^chest:open:?(%d*)$')
+        if openNet then core.sendGlobalEvent('mpChestOpen', { netId = tonumber(openNet) }) end
+        local putId = cmd:match('^chest:put:(.+)$')
+        if putId then core.sendGlobalEvent('mpChestPut', { id = putId }) end
+        -- netId FIRST (may be empty = "my own chest"): record ids can contain colons
+        -- (dynamic records are named like "Generated:0x0").
+        local takeChestNet, takeId = cmd:match('^chesttake:(%d*):(.+)$')
+        if takeId then
+            core.sendGlobalEvent('mpChestTake', { id = takeId, netId = tonumber(takeChestNet) })
+        end
+        -- M5: hit a player (hitp:<playerId>:<dmg>) or an NPC (hitn:<recordId>:<dmg>).
+        local hitPid, hitPdmg = cmd:match('^hitp:(%d+):([%d.]+)$')
+        if hitPid then
+            core.sendGlobalEvent('mpTestHit', { playerId = tonumber(hitPid), damage = tonumber(hitPdmg) })
+        end
+        local hitRec, hitNdmg = cmd:match('^hitn:(.+):([%d.]+)$')
+        if hitRec then
+            core.sendGlobalEvent('mpTestHit', { record = hitRec, damage = tonumber(hitNdmg) })
+        end
+        -- UNARMED variant. Morrowind's hand-to-hand damages FATIGUE, not health, and the engine
+        -- fills only one of the two -- so without a way to send this shape no scenario could
+        -- reproduce the server dropping every unarmed swing. Separate command rather than an
+        -- argument on hitn: record ids may contain colons, so the existing pattern cannot take
+        -- another field on the end without becoming ambiguous.
+        local hitFatRec, hitFatDmg = cmd:match('^hitnfat:(.+):([%d.]+)$')
+        if hitFatRec then
+            core.sendGlobalEvent('mpTestHit',
+                { record = hitFatRec, damage = tonumber(hitFatDmg), channel = 'fatigue' })
+        end
+        -- M5: CAST a damaging spell at an NPC (castat:<recordId>:<magnitude>). Distinct from
+        -- hitn: that is the melee path; this one goes through spelleffects.cpp.
+        local castRec, castMag = cmd:match('^castat:(.+):([%d.]+)$')
+        if castRec then
+            core.sendGlobalEvent('mpTestCastAt', { record = castRec, magnitude = tonumber(castMag) })
+        end
+        -- castp:<playerId>:<magnitude>: the same magic path at another PLAYER's puppet (s116).
+        local castPid, castPMag = cmd:match('^castp:(%d+):([%d.]+)$')
+        if castPid then
+            core.sendGlobalEvent('mpTestCastAt', { playerId = tonumber(castPid), magnitude = tonumber(castPMag) })
+        end        -- healp:<playerId>: a helper HEALS a friend -- a beneficial Restore Health at their
+        -- puppet. Crosses the PvP veto (help, not harm) and lands on the owner's avatar.
+        local healPid = cmd:match('^healp:(%d+)$')
+        if healPid then
+            core.sendGlobalEvent('mpTestCastAt', { playerId = tonumber(healPid), beneficial = true })
+        end
+
+        -- selfcast:<spellId>: what casting a spell on yourself does locally -- an active spell
+        -- on the player's own body (a summon, a buff). The avatar receives it through
+        -- PlayerActiveSpells and the peer acts on it (s115).
+        local selfSpell = cmd:match('^selfcast:(.+)$')
+        if selfSpell then core.sendGlobalEvent('mpTestSelfCast', { id = selfSpell }) end
+        -- learnspell:<spellId>: know it and select it, so the use key in the spell stance
+        -- casts it through the engine's own path (a real cast carries an activeSpellId, which
+        -- the effect mirror needs; the selfcast hook above bypasses that and never reaches the
+        -- avatar -- fine for a local effect, wrong for proving the mirror).
+        -- mintspell:<effect>:<magnitude>:<seconds>: a cheap self spell of one effect, learned
+        -- and selected (see global.lua mpMintSpell); the id lands in the 'mintedSpell' mirror.
+        local mEff, mMag, mDur = cmd:match('^mintspell:([%w_]+):(%d+):(%d+)$')
+        if mEff then
+            core.sendGlobalEvent('mpMintSpell', { effect = mEff, magnitude = tonumber(mMag), duration = tonumber(mDur) })
+        end
+        local learnId = cmd:match('^learnspell:(.+)$')
+        if learnId then
+            pcall(function()
+                types.Actor.spells(self):add(learnId)
+                types.Actor.setSelectedSpell(self, learnId)
+            end)
+        end
+        -- dispel:<spellId>: end one of our own active spells (levitation off mid-air = a fall
+        -- the engine measures, unlike a teleport; s147).
+        local dispelId = cmd:match('^dispel:(.+)$')
+        if dispelId then
+            -- By RECORD: an active spell is keyed by a generated instance id, so remove(recordId)
+            -- silently did nothing and the player kept flying after the "dispel" (s147).
+            pcall(function()
+                local spells = types.Actor.activeSpells(self)
+                for _, sp in pairs(spells) do
+                    if sp.id == dispelId and sp.activeSpellId then spells:remove(sp.activeSpellId) end
+                end
+            end)
+        end
+        local killNpc = cmd:match('^killnpc:(.+)$')
+        if killNpc then core.sendGlobalEvent('mpKillNpc', { id = killNpc }) end
+        if cmd == 'door:toggle' then core.sendGlobalEvent('mpDoorToggle', {}) end
+        -- door:enter: walk through the nearest LOAD door, the way a player does (s117).
+        if cmd == 'door:enter' then core.sendGlobalEvent('mpDoorEnter', {}) end
+        local lockLevel = cmd:match('^door:lock:(%d+)$')
+        if lockLevel then core.sendGlobalEvent('mpDoorLock', { level = tonumber(lockLevel) }) end
+        if cmd == 'door:unlock' then core.sendGlobalEvent('mpDoorUnlock', {}) end
+        -- door:scriptlock:<n> / door:scriptunlock: the object changes with nothing sent, as a
+        -- quest script's Lock/Unlock does; the cell poll must carry it (s158).
+        local scriptLock = cmd:match('^door:scriptlock:(%d+)$')
+        if scriptLock then core.sendGlobalEvent('mpDoorLock', { level = tonumber(scriptLock), silent = true }) end
+        if cmd == 'door:scriptunlock' then core.sendGlobalEvent('mpDoorUnlock', { silent = true }) end
+        -- countname:<display name>: count by the record's NAME. A record minted in another
+        -- world arrives here under a different local id (M7 maps server ids per world), so
+        -- counting by id across a world switch asks for something that does not exist (s127).
+        local countName = cmd:match('^countname:(.+)$')
+        if countName then
+            local n = 0
+            pcall(function()
+                for _, item in ipairs(types.Actor.inventory(self):getAll()) do
+                    local okn, name = pcall(function() return item.type.record(item).name end)
+                    if okn and name == countName then n = n + item.count end
+                end
+            end)
+            mp.set('countName', tostring(n))
+        end
+        local countId = cmd:match('^count:(.+)$')
+        if countId then
+            local ok, n = pcall(function()
+                return types.Actor.inventory(self):countOf(countId)
+            end)
+            mp.set('count', tostring(ok and n or -1))
+        end
+        -- M7/M8 hooks (all resolved in the GLOBAL script).
+        local restHours = cmd:match('^rest:([%d.]+)$')
+        if restHours then core.sendGlobalEvent('mpTestRest', { hours = tonumber(restHours) }) end
+        -- sleep:<hours>: the real thing (the wait dialog's loop: heal + advance, per hour),
+        -- not the clock-only rest above. -1 in the mirror when the binding is missing.
+        local sleepHours = cmd:match('^sleep:(%d+)$')
+        if sleepHours then
+            -- The raise is BANKED, not measured: the rest ran inline on the real stat and a
+            -- peer report in the same frame overwrites it before any read could see it
+            -- (backlog 460). restHours says what it healed; identity claims exactly that.
+            local ok, healed = pcall(function() return mp.restHours(tonumber(sleepHours), true) end)
+            if ok and type(healed) == 'table' then identity.bankGain(healed) end
+            mp.set('slept', ok and sleepHours or '-1')
+        end
+        -- The engine's rest verdict (bit 4 = enemies nearby): does a fight the peer runs
+        -- against us count as one on THIS screen? -1 when the binding is missing.
+        if cmd == 'canrest' then
+            local ok, v = pcall(function() return mp.canRest and mp.canRest() or -1 end)
+            mp.set('canRest', tostring(ok and v or -1))
+        end
+        local recName = cmd:match('^mkrec:(.+)$')
+        if recName then core.sendGlobalEvent('mpTestRecord', { name = recName }) end
+        local localRec = cmd:match('^mklocal:(.+)$')
+        if localRec then
+            core.sendGlobalEvent('mpTestRecord', { name = localRec, noRegister = true })
+        end
+        local spellName = cmd:match('^mkspell:(.+)$')
+        if spellName then core.sendGlobalEvent('mpTestSpell', { name = spellName }) end
+        local enchName = cmd:match('^mkench:(.+)$')
+        if enchName then core.sendGlobalEvent('mpTestEnchanted', { name = enchName }) end
+        local weatherIdx = cmd:match('^weather:(%d+)$')
+        if weatherIdx then core.sendGlobalEvent('mpTestWeather', { index = tonumber(weatherIdx) }) end
+        -- M6 quest-layer hooks (all resolved in the GLOBAL script).
+        local questId, questStage = cmd:match('^quest:(.+):(%d+)$')
+        if questId then
+            core.sendGlobalEvent('mpTestQuest', { id = questId, stage = tonumber(questStage) })
+        end
+        local gvarName, gvarValue = cmd:match('^gvar:([^:]+):(-?[%d.]+)$')
+        if gvarName then
+            core.sendGlobalEvent('mpTestGlobal', { name = gvarName, value = tonumber(gvarValue) })
+        end
+        -- snapto:<x>,<y>,<z> — put the player somewhere specific in the CURRENT cell. Some
+        -- behaviour can only be tested at conversational distance: a guard's pursuit needs the
+        -- engine's own line-of-sight and awareness checks to pass, and those fail at the range
+        -- two NPCs happen to spawn apart, so the test has to close the gap itself.
+        -- onGround: the z a scenario hard-codes is a guess, and a guess UNDER the terrain
+        -- (s170's SPOT z=512 sits 360 u below the LAND surface at 872) drops the body
+        -- through the heightfield to the sea, where it swims at z=-121 for the rest of the
+        -- run (fresh14/fresh15, backlog 482). Native OpenMW falls exactly the same way; the
+        -- engine's own fix is the teleport's onGround option, which lifts a position to the
+        -- LAND height and traces it down onto whatever stands there. tpz: and the
+        -- reconciliation snap stay free: one measures a fall on purpose, the other places a
+        -- physics-ruled pose that may be levitating.
+        local snX, snY, snZ = cmd:match('^snapto:(-?[%d.]+),(-?[%d.]+),(-?[%d.]+)$')
+        if snX then
+            core.sendGlobalEvent('mpSelfSnap',
+                { x = tonumber(snX), y = tonumber(snY), z = tonumber(snZ), onGround = true })
+        end
+        -- takeowned: pick up the nearest item in this cell that BELONGS to someone -- a theft,
+        -- through the same activation the hand uses, with the owner in the room (s125).
+        if cmd == 'takeowned' then core.sendGlobalEvent('mpTestTakeOwned', {}) end
+        local bountyN = cmd:match('^bounty:(%d+)$')
+        if bountyN then core.sendGlobalEvent('mpTestBounty', { n = tonumber(bountyN) }) end
+        local facId, facRank = cmd:match('^faction:([^:]+):(%d+)$')
+        if facId then
+            core.sendGlobalEvent('mpTestFaction', { id = facId, rank = tonumber(facRank) })
+        end
+        local mvRec, mvName, mvVal = cmd:match('^mvar:([^:]+):([^:]+):(-?[%d.]+)$')
+        if mvRec then
+            core.sendGlobalEvent('mpTestMemberVar',
+                { id = mvRec, name = mvName, value = tonumber(mvVal) })
+        end
+        -- follow:<recordId>: what a recruiting dialogue result ("AIFollow player") does on the
+        -- recruiting player's own client -- stacks Follow on the local copy of the NPC. The
+        -- companion chain (companion.lua -> ActorAI claim -> holder) takes it from there (s114).
+        local followRec = cmd:match('^follow:(.+)$')
+        if followRec then core.sendGlobalEvent('mpTestFollow', { id = followRec }) end
+        -- escort:<record>:x,y,z / travel:<record>:x,y,z: the other two dialogue results
+        -- ("AIEscort player 0 x y z", "AITravel x y z") stacked on the local copy (s123, s124).
+        local escRec, ex, ey, ez = cmd:match('^escort:(.+):(-?[%d.]+),(-?[%d.]+),(-?[%d.]+)$')
+        if escRec then core.sendGlobalEvent('mpTestFollow', { id = escRec, escort = { x = tonumber(ex), y = tonumber(ey), z = tonumber(ez) } }) end
+        local trvRec, tx, ty, tz = cmd:match('^travel:(.+):(-?[%d.]+),(-?[%d.]+),(-?[%d.]+)$')
+        if trvRec then core.sendGlobalEvent('mpTestFollow', { id = trvRec, travel = { x = tonumber(tx), y = tonumber(ty), z = tonumber(tz) } }) end
+        local probeRec = cmd:match('^followprobe:(.+)$')
+        if probeRec then core.sendGlobalEvent('mpTestFollow', { id = probeRec, probe = true }) end
+        if cmd == 'dlg:release' then
+            core.sendGlobalEvent('mpDialogueClosed', {})
+        else
+            local dlgId = cmd:match('^dlg:(.+)$')
+            if dlgId then core.sendGlobalEvent('mpTestDialogue', { id = dlgId }) end
+        end
+        -- Harness: teleport self vertically (tpz:<dz>). Rides the same mpSelfSnap global
+        -- hop reconciliation's hard snap uses, so it exercises the true self-teleport path:
+        -- the jump detector announces it, the avatar follows, and (for a positive dz) the
+        -- avatar FALLS on the peer -- which is what s60-avatar-bars measures.
+        -- Harness: hold the attack (use) bit for <ms> so the peer's avatar swings (s67).
+        local atkMs = cmd:match('^attack:(%d+)$')
+        if atkMs then forceUseUntil = core.getRealTime() + tonumber(atkMs) / 1000 end
+        -- Harness: draw the weapon (the stance rides the input, so the avatar draws too) and
+        -- face a point -- an archer's shot on the peer is aimed by the avatar's yaw and pitch,
+        -- which are ours. The camera FOLLOWS the player's rotation (camera.cpp
+        -- rotateCameraToTrackingPtr), not the reverse, so this goes through the rotation
+        -- controls the mouse would drive; applied by faceTick under the movement override.
+        -- Angles as the engine's own aim (pathfinding.hpp getZAngleToDir / getXAngleToDir).
+        if cmd == 'stance:weapon' then pcall(function() types.Actor.setStance(self, types.Actor.STANCE.Weapon) end) end
+        if cmd == 'stance:spell' then pcall(function() types.Actor.setStance(self, types.Actor.STANCE.Spell) end) end
+        if cmd == 'stance:none' then pcall(function() types.Actor.setStance(self, types.Actor.STANCE.Nothing) end) end
+        local fx, fy, fz = cmd:match('^face:(-?[%d.]+),(-?[%d.]+),(-?[%d.]+)$')
+        if fx then
+            local p = self.position
+            local dx, dy, dz = tonumber(fx) - p.x, tonumber(fy) - p.y, tonumber(fz) - (p.z + 100) -- the arrow leaves the hand, not the eye
+            local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+            faceCmd = { yaw = math.atan(dx, dy), pitch = len > 0 and -math.asin(dz / len) or 0 }
+        end
+        local tdz = cmd:match('^tpz:(-?[%d.]+)$')
+        if tdz then
+            local pos = self.position
+            core.sendGlobalEvent('mpSelfSnap', { x = pos.x, y = pos.y, z = pos.z + tonumber(tdz) })
+        end
+        -- walk:<dx>,<dy>,<ms>[:run|:sneak] -- the optional mode is what a friend's puppet is
+        -- expected to show (s145); jump queues one jump edge on the next frame.
+        local dx, dy, ms, mode = cmd:match('^walk:(-?[%d.]+),(-?[%d.]+),(%d+):?(%a*)$') -- mode: run | sneak (a levitating body climbs by LOOKING up and walking: face: then walk:)
+        if dx then
+            walkCmd = {
+                dx = tonumber(dx),
+                dy = tonumber(dy),
+                run = mode == 'run',
+                sneak = mode == 'sneak',
+                stopAt = core.getRealTime() + tonumber(ms) / 1000,
+            }
+            I.Controls.overrideMovementControls(true)
+        end
+        local pressMs = cmd:match('^press:(%d+)$')
+        if pressMs then
+            pressUntil = core.getRealTime() + tonumber(pressMs) / 1000
+            I.Controls.overrideCombatControls(true)
+        end
+        if cmd == 'jump' then
+            jumpFrames = 4 -- held ~3 frames, released on the 4th
+            I.Controls.overrideMovementControls(true)
+        end
+        -- Test hook (backlog 256): spend a level on three attributes, the level-up dialog's
+        -- OK button without the dialog (mp.applyLevelup over MWMechanics::applyLevelup).
+        local levelAttrs = cmd:match('^levelup:(.+)$')
+        if levelAttrs and mp.applyLevelup then
+            local attrs = {}
+            for a in levelAttrs:gmatch('[^,]+') do attrs[#attrs + 1] = a end
+            mp.applyLevelup(attrs)
+        end
+    end
+end
+
+-- THE PAGE'S COMMANDS, EVERY FRAME, EVERY ONE ACKED. The page queues {id, text}; the engine
+-- hands the whole queue over at once, so a burst never overwrites itself, and each command
+-- is run under pcall and answered with an 'ack' event carrying its id -- a throwing handler
+-- reports itself instead of silently killing every command after it in the same frame.
+local function pollCommands()
+    -- THE PAGE BRIDGE IS OPTIONAL, AND THIS RUNS FIRST. mp.pollCommands is a browser binding;
+    -- a headless engine has no page, and an engine built before the bridge existed has no
+    -- binding at all. Unguarded, that threw on the very first frame -- and because this call
+    -- is the first line of onFrame, it took walkTick, testEquipTick, barterMirrorTick AND
+    -- movementTick down with it for the entire session, at 20 errors a second. A sim peer in
+    -- that state answers the wire but never reports itself, so it never takes a cell and
+    -- nothing drives the NPCs, which reads as "authority is broken" and is nothing of the
+    -- kind. An optional convenience must not be able to stop a player reporting movement.
+    if type(mp.pollCommands) ~= 'function' then return end
+    local raw = mp.pollCommands()
+    if type(raw) ~= 'string' or raw == '' then return end
+    local okDecode, list = pcall(json.decode, raw)
+    if not okDecode or type(list) ~= 'table' then return end
+    for _, c in ipairs(list) do
+        local okRun, err = pcall(dispatch, c.text)
+        if not okRun then print('[mp] command failed: ' .. tostring(c.text) .. ': ' .. tostring(err)) end
+        mp.emit('ack', json.encode({ id = c.id, ok = okRun, detail = okRun and '' or tostring(err) }))
+    end
+end
+
+-- Multiplayer never pauses the LOCAL world when a menu is open. Pausing only your own client
+-- would freeze your view while the server-authoritative sim and every other player keep
+-- moving — and we want one uniform feel in every world, so the pause menu, the
+-- Social hub, inventory, dialogue, the map, etc. all leave the world running. This flips the
+-- default in scripts/omw/ui.lua (every mode pauses) off for all modes. The modePause table it
+-- writes is per-session and not persisted, so we re-apply on every init and load. Only the MP
+-- content loads this script, so the offline demo/single-player still pauses as normal.
+local function disableMenuPause()
+    for _, mode in pairs(I.UI.MODE) do
+        I.UI.setPauseOnMode(mode, false)
+    end
+end
+
+return {
+    engineHandlers = {
+        onInit = disableMenuPause,
+        onLoad = disableMenuPause,
+        -- M6: the ONLY quest-layer signal that is player-context-only. Forward it to the
+        -- global hub (scripts/mp/quests.lua), which owns the journal cache + echo guard.
+        onQuestUpdate = function(questId, stage)
+            core.sendGlobalEvent('mpQuestUpdate', { questId = questId, stage = stage })
+        end,
+        onKeyPress = function(key)
+            -- INPUT DIAGNOSTIC. "Player cannot attack" / "escape must be pressed twice" were
+            -- reported from live play, and s64-real-input shows keys reaching the PAGE and no
+            -- engine action firing. This mirror answers the next question: does the ENGINE
+            -- deliver key events to scripts at all? If it does, input arrives and something
+            -- downstream (control switches, GUI mode) is swallowing it; if it does not, the
+            -- break is between the browser and SDL.
+            mp.set('lastKey', tostring(key.symbol or key.code or '?'))
+            mp.set('uiMode', tostring(I.UI.getMode() or 'none'))
+            if key.symbol == 't' and not I.UI.getMode() then
+                toggleChat()
+            end
+        end,
+        onFrame = function() -- runs while paused too — the harness must not stall in menus
+            pollCommands()
+            faceTick()
+            walkTick()
+            testEquipTick()
+            barterMirrorTick()
+            movementTick()
+        end,
+    },
+    eventHandlers = {
+        -- Phase 3: our authoritative pose from the peer (own entry of PlayerStateBatch).
+        MP_SelfState = onSelfState,
+        -- Phase 4A: our authoritative bars, as the peer simulated them (NPC swings, falls,
+        -- spells all land on the avatar). Current values only -- base stats still travel
+        -- through the progression path. identity.lua's own dynamic broadcast keeps running
+        -- as the degraded-mode fallback; the server ignores it while these are fresh.
+        -- Phase 4D: peer-reported item states are applied in global.lua (MP_SelfItemStates:
+        -- split() and itemData writes are global-context); this is the test-hook echo.
+        MP_SelfItemStatesApplied = function(data)
+            mp.set('selfItemStates', tostring(data and data.any == true))
+        end,
+        -- Arrest (global.lua MP_PlayerArrest): the guard that reached our avatar, resolved
+        -- to our copy of it. UI modes are player-script-only, hence the hop.
+        MP_PeerEffect = function(data)
+            if data then identity.notePeerEffect(data.id, data.on == true) end
+        end,
+        MP_OpenDialogue = function(data)
+            local target = data and data.target
+            local okv, valid = pcall(function() return target and target:isValid() end)
+            if not (okv and valid) then return end
+            -- An arrest is not a conversation to arbitrate (backlog 343): the lock request
+            -- the UiModeChanged below would send could be DENIED (two players on one guard)
+            -- and close the arrest window. Consumed by the mode change it opens.
+            arrestDialoguePending = true
+            pcall(function() I.UI.addMode('Dialogue', { target = target }) end)
+        end,
+        MP_ResyncActive = function() identity.resyncActive() end,
+        MP_ForgetDeclared = function(data) identity.forgetDeclared(data and data.kind) end,
+        MP_ForgetSpells = function(data) identity.forgetSpells(data and data.ids) end,
+        MP_SpellMinted = function(data)
+            pcall(function()
+                types.Actor.spells(self):add(data.id)
+                types.Actor.setSelectedSpell(self, data.id)
+            end)
+            mp.set('mintedSpell', tostring(data.id))
+        end,
+        MP_SelfStats = function(data)
+            if not data or not data.hp then return end
+            -- Scenario mirror: proves the PEER-authoritative bars actually flowed (a local
+            -- fall would drop hp too; only this marker distinguishes the sources).
+            mp.set('selfStats', string.format('%.0f/%.0f', data.hp.c, data.hp.b))
+            if data.mp then mp.set('selfMagicka', string.format('%.0f/%.0f', data.mp.c, data.mp.b)) end
+            identity.notePeerBars(data.hp.c, data.mp and data.mp.c, data.ft and data.ft.c)
+            -- Backlog 73: reports come at 4 Hz; hold a little past the next one.
+            if data.kd == true then knockedUntil = core.getRealTime() + 0.5 end
+            -- Backlog 312: the block happened on the peer; this is its sound.
+            if type(data.blk) == 'string' then pcall(core.sound.playSound3d, data.blk, self) end
+            pcall(function()
+                local d = types.Actor.stats.dynamic
+                -- The blow landed on the peer, so this engine never ran its hit chain: the
+                -- drop in the bar is the only sign, and it was silent (backlog 130).
+                if data.hp.c < d.health(self).current then core.sound.playSound3d('Health Damage', self) end
+                d.health(self).current = data.hp.c
+                d.magicka(self).current = data.mp.c
+                d.fatigue(self).current = data.ft.c
+            end)
+        end,
+        -- Backlog 307: the avatar's armour took a hit, or blocked, on the peer. This is the
+        -- only engine with our SkillProgression, so the use is counted here.
+        MP_SelfSkillUse = function(data)
+            if not (data and data.skill and I.SkillProgression) then return end
+            pcall(I.SkillProgression.skillUsed, data.skill, { useType = data.useType or 0 })
+        end,
+        MP_UiChatMessage = pushMessage,
+        -- Whose world, and its rest rule (global.lua forwards the server's WorldMode; #262).
+        MP_WorldMode = function(data)
+            restRule = { isOwner = data and data.isOwner == true, timeSkip = tostring(data and data.timeSkip or 'anyone') }
+        end,
+        -- M2 rejoin restore: global.lua forwards SessionWelcome.playerRecord here (after
+        -- granting the inventory and teleporting us to record.position).
+        MP_ApplyRecord = function(record)
+            identity.applyRecord(record)
+        end,
+        MP_SelfTalkedTo = function(data) identity.applyTalkedTo(data.list) end, -- backlog 230
+        -- Chargen finished on a BRAND NEW character (global.lua watches chargenstate hit -1).
+        -- There is no record to restore for one of these, so this is the only signal that the
+        -- player has stopped being the engine's template and its stats are worth persisting.
+        MP_ChargenDone = function()
+            identity.markBaselineReady()
+        end,
+        -- Test hook: dynamic record created by global.lua (equiptest) — equip as a helmet.
+        MP_TestItem = function(data)
+            pendingTestEquip = { id = data.id, slot = 0, until_ = core.getRealTime() + 5 }
+        end,
+        -- The NPC we are talking to died, or someone else holds the conversation we were
+        -- forced into: shut the window (quests.lua releases the lock).
+        MP_CloseDialogue = function()
+            pcall(function() I.UI.removeMode('Dialogue') end)
+        end,
+        -- M2 respawn: global.lua already teleported us; revive + optionally top up stats.
+        MP_DoResurrect = function(data)
+            mp.resurrect()
+            if data and data.restoreHp then
+                local d = types.Actor.stats.dynamic
+                d.health(self).current = d.health(self).base
+                d.magicka(self).current = d.magicka(self).base
+                d.fatigue(self).current = d.fatigue(self).base
+            end
+        end,
+        UiModeChanged = function(data)
+            -- Esc (or any other window) closed our Interface mode -> drop the chat window.
+            if chatElement and data.newMode == nil then
+                destroyChat()
+            end
+            -- A guest's Rest in a timeSkip=owner world is refused BEFORE the bed lies (#262):
+            -- the window closes, one line says why, and a level earned since the last sleep
+            -- is offered now, since the sleep that would have offered it never happens.
+            if data.newMode == 'Rest' and restRefusedHere() then
+                pcall(function() I.UI.removeMode('Rest') end)
+                pushMessage({ channel = 'server', text = 'Only the world owner can rest for everyone.' })
+                local okLvl, due = pcall(function()
+                    return types.Actor.stats.level(self).progress >= (tonumber(core.getGMST('iLevelUpTotal')) or 10)
+                end)
+                if okLvl and due then pcall(function() I.UI.addMode('LevelUp') end) end
+            end
+            -- M6: leaving the dialogue window releases the NPC's conversation lock
+            -- (PROTOCOL.md §M6: "released on close, cell change, or disconnect").
+            -- A service window opened FROM the dialogue (Dialogue -> Barter -> Dialogue) is still
+            -- the same conversation: releasing on the Dialogue->Barter edge let a second player
+            -- open the merchant mid-trade and lost the bribe/admire made after the trade.
+            local function talking(m) return m == 'Dialogue' or GOLD_SERVICE_MODES[m] ~= nil end
+            if talking(data.oldMode) and not talking(data.newMode) then
+                core.sendGlobalEvent('mpDialogueClosed', {})
+            end
+            -- A window that opened with no activation behind it (a script's ForceGreeting, a
+            -- guard's arrest): the global script takes the lock after the fact, or the results
+            -- of this conversation are dropped as nobody's (backlog 226). A normal click
+            -- already holds it; quests.lua tells the two apart.
+            if data.newMode == 'Dialogue' and not talking(data.oldMode) and data.arg then
+                local arrest = arrestDialoguePending
+                arrestDialoguePending = false
+                local okNpc, isNpc = pcall(function() return types.NPC.objectIsInstance(data.arg) end)
+                if okNpc and isNpc and not arrest then core.sendGlobalEvent('mpDialogueForced', { target = data.arg }) end
+            end
+            -- PAID SERVICES. `arg` is the actor the window belongs to (pushGuiMode passes it
+            -- through uiModeChanged for every mode), which is the NPC the server has to
+            -- arbitrate. Barter is the only one that moves STOCK, but all seven pay the NPC
+            -- out of one field -- getBarterGold -- so all seven have to be watched or the
+            -- purse forks per client again through whichever window is not covered.
+            -- PICKPOCKETING is the Container window opened on a LIVE actor (a dead one is loot,
+            -- synced by the activation path). Same shape again: what the thief lifted must
+            -- leave the NPC on every engine, or the mark still has it for everyone else and a
+            -- second thief lifts the same ring. The detection roll stays the thief's client's.
+            local function liveActorArg(mode, arg)
+                if mode ~= 'Container' or not arg then return false end
+                local ok, live = pcall(function()
+                    return types.Actor.objectIsInstance(arg) and not types.Actor.isDead(arg)
+                end)
+                return ok and live == true
+            end
+            local openedLive = (GOLD_SERVICE_MODES[data.newMode] and data.arg)
+                or liveActorArg(data.newMode, data.arg)
+            local closedLive = (GOLD_SERVICE_MODES[data.oldMode] and not GOLD_SERVICE_MODES[data.newMode])
+                or (data.oldMode == 'Container' and data.newMode ~= 'Container' and liveContainerOpen)
+            if openedLive then
+                liveContainerOpen = liveActorArg(data.newMode, data.arg)
+                core.sendGlobalEvent('mpBarterOpen', { merchant = data.arg })
+            elseif closedLive then
+                liveContainerOpen = false
+                core.sendGlobalEvent('mpBarterClose', {})
+            end
+        end,
+    },
+}

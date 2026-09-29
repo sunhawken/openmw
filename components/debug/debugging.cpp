@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "debugging.hpp"
 
 #include <chrono>
@@ -492,12 +494,19 @@ namespace Debug
             ret = 1;
         }
 
+#ifndef __EMSCRIPTEN__
+        // Post-run cleanup: restore the raw streambufs and reset logging. On the web this MUST be
+        // skipped — innerApplication()/engine.go() installs an async emscripten main loop and
+        // RETURNS immediately while the game keeps running. Running this here (mid-game) would
+        // restore unformatted cout and set sMinDebugLevel=All, flooding the console with every
+        // Debug/Verbose line (e.g. the per-job DetourNavigator spam) with no timestamp/level.
         // Restore cout and cerr
         std::cout.rdbuf(rawStdout->rdbuf());
         std::cerr.rdbuf(rawStderr->rdbuf());
 
         Log::sMinDebugLevel = All;
         Log::sWriteLevel = false;
+#endif
 
         return ret;
     }

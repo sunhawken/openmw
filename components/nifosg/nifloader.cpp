@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "nifloader.hpp"
 
 #include <mutex>
@@ -61,6 +63,7 @@
 #include "fog.hpp"
 #include "matrixtransform.hpp"
 #include "particle.hpp"
+#include <components/resource/nifstats.hpp>
 
 namespace
 {
@@ -823,7 +826,11 @@ namespace NifOsg
                 if (!skip)
                 {
                     if (isNiGeometry)
+                    {
+                        OPENMW_NIF_STAT_BEGIN(nifGeomBegin);
                         handleNiGeometry(nifNode, parent, node, composite, args.mBoundTextures, args.mAnimFlags);
+                        OPENMW_NIF_STAT_END(Resource::NifStage::Geom, nifGeomBegin);
+                    }
                     else // isBSGeometry
                         handleBSGeometry(nifNode, parent, node, composite, args.mBoundTextures, args.mAnimFlags);
 
@@ -1078,7 +1085,11 @@ namespace NifOsg
             if (!mImageManager)
                 return nullptr;
 
-            return mImageManager->getImage(Misc::ResourceHelpers::correctTexturePath(path, *mImageManager->getVFS()));
+            OPENMW_NIF_STAT_BEGIN(nifTexBegin);
+            osg::ref_ptr<osg::Image> image
+                = mImageManager->getImage(Misc::ResourceHelpers::correctTexturePath(path, *mImageManager->getVFS()));
+            OPENMW_NIF_STAT_END(Resource::NifStage::Texture, nifTexBegin);
+            return image;
         }
 
         static osg::ref_ptr<osg::Texture2D> attachTexture(const std::string& name, osg::ref_ptr<osg::Image> image,
@@ -1646,6 +1657,12 @@ namespace NifOsg
                     continue;
                 if (ctrl->mRecordType == Nif::RC_NiGeomMorpherController)
                 {
+                    // NOTE (web): MorphGeometry used to be disabled here on WebGL2/ANGLE because its
+                    // per-frame vertex re-upload rendered the head as a collapsed cone. That was
+                    // caused by the morph geometry mixing its dedicated position VBO with the source
+                    // geometry's VBO for the other attributes; MorphGeometry now puts every array on
+                    // one dedicated VBO under __EMSCRIPTEN__ (mirroring RigGeometry, which always
+                    // worked), so the morph path is enabled again.
                     if (!niGeometry->mSkin.empty())
                         continue;
 

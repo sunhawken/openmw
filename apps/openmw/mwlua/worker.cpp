@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "worker.hpp"
 
 #include "luamanagerimp.hpp"
@@ -14,8 +16,14 @@ namespace MWLua
     Worker::Worker(LuaManager& manager)
         : mManager(manager)
     {
+#ifdef __EMSCRIPTEN__
+        // No Lua worker on the web: the default (lua num threads = 1) makes the main thread
+        // mCV.wait() on the worker EVERY frame (finishUpdate) — pure per-frame latency in a
+        // main-thread-bound build. With no thread, update() runs inline (finishUpdate else).
+#else
         if (Settings::lua().mLuaNumThreads > 0)
             mThread = std::thread([this] { run(); });
+#endif
     }
 
     Worker::~Worker()

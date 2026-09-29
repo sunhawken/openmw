@@ -44,6 +44,17 @@ namespace MWBase
 
         virtual void clear() = 0;
 
+        /// Multiplayer: move the whole journal aside so a borrowed campaign can be shown in
+        /// its place, and put it back untouched afterwards. A guest in another player's world
+        /// sees THAT player's journal; their own must not leak through and must return
+        /// exactly as it was. Moving the containers (rather than deleting and re-adding
+        /// entries) is what makes the restore lossless — only the final quest index is known
+        /// to the server, so a rebuild would collapse a player's history to one entry each.
+        /// Both are idempotent: stash() while stashed must never clobber the real stash.
+        virtual void stash() = 0;
+        virtual void unstash() = 0;
+        virtual bool isStashed() const = 0;
+
         virtual ~Journal() = default;
 
         virtual MWDialogue::Quest& getOrStartQuest(const ESM::RefId& id) = 0;
@@ -54,6 +65,13 @@ namespace MWBase
         virtual void addEntry(const ESM::RefId& id, int index, const MWWorld::Ptr& actor) = 0;
         ///< Add a journal entry.
         /// @param actor Used as context for replacing of escape sequences (%name, etc).
+
+        virtual void addEntryAt(
+            const ESM::RefId& id, int index, const MWWorld::Ptr& actor, int day, int month, int dayOfMonth)
+            = 0;
+        ///< Multiplayer: addEntry stamped with a given date instead of today's. A session boots
+        /// with an empty journal and rebuilds it from the server's ordered log (backlog 257);
+        /// stamping every replayed entry "today" dated the whole campaign to the relog.
 
         virtual void setJournalIndex(const ESM::RefId& id, int index) = 0;
         ///< Set the journal index without adding an entry.

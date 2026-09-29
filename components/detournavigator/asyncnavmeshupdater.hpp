@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_COMPONENTS_DETOURNAVIGATOR_ASYNCNAVMESHUPDATER_H
 #define OPENMW_COMPONENTS_DETOURNAVIGATOR_ASYNCNAVMESHUPDATER_H
 
@@ -27,6 +29,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <thread>
 #include <tuple>
 
@@ -78,7 +81,9 @@ namespace DetourNavigator
 
         std::optional<JobIt> pop(TilePosition playerTile);
 
-        void update(TilePosition playerTile, int maxTiles, std::vector<JobIt>& removing);
+        // simAnchorTiles: MP (backlog 479), see shouldAddTile in makenavmesh.hpp.
+        void update(TilePosition playerTile, int maxTiles, std::span<const TilePosition> simAnchorTiles,
+            std::vector<JobIt>& removing);
 
     private:
         using IndexPoint = boost::geometry::model::point<int, 2, boost::geometry::cs::cartesian>;
@@ -111,7 +116,7 @@ namespace DetourNavigator
         std::optional<JobIt> pop(
             TilePosition playerTile, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
 
-        void update(TilePosition playerTile, int maxTiles,
+        void update(TilePosition playerTile, int maxTiles, std::span<const TilePosition> simAnchorTiles,
             std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
 
     private:
@@ -204,6 +209,20 @@ namespace DetourNavigator
 
         void wait(WaitConditionType waitConditionType, Loading::Listener* listener);
 
+        // MP (backlog 479): the tiles the sim peer's anchors stand on. A job is kept and processed
+        // when its tile is near the player OR near any of these; the vanilla single-centre gate
+        // dropped every far anchor's tiles as "too far from player". Empty in single player.
+        void setSimAnchorTiles(std::vector<TilePosition> tiles);
+
+        // Process up to maxJobs pending jobs synchronously on the calling thread. Never blocks.
+        // Used when the updater runs with zero worker threads (e.g. on the web/emscripten,
+        // where the browser main thread must not wait on worker threads).
+        void processJobsSync(std::size_t maxJobs);
+
+        // Like processJobsSync but bounded by wall-time instead of job count, so a large
+        // exterior cell load (hundreds of navmesh tiles) can't freeze the browser main thread.
+        void processJobsSyncTimeBudget(std::chrono::steady_clock::duration budget);
+
         void stop();
 
         AsyncNavMeshUpdaterStats getStats() const;
@@ -225,6 +244,7 @@ namespace DetourNavigator
         JobQueue mWaiting;
         std::set<std::tuple<AgentBounds, TilePosition>> mPushed;
         Misc::ScopeGuarded<TilePosition> mPlayerTile;
+        Misc::ScopeGuarded<std::vector<TilePosition>> mSimAnchorTiles;
         NavMeshTilesCache mNavMeshTilesCache;
         Misc::ScopeGuarded<std::set<std::tuple<AgentBounds, TilePosition>>> mProcessingTiles;
         std::map<std::tuple<AgentBounds, TilePosition>, std::chrono::steady_clock::time_point> mLastUpdates;
@@ -235,6 +255,8 @@ namespace DetourNavigator
         std::atomic_size_t mPostedCount{ 0 };
 
         void process() noexcept;
+
+        void runJob(JobIt job) noexcept;
 
         JobStatus processJob(Job& job);
 

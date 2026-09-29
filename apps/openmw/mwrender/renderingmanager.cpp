@@ -1,6 +1,13 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "renderingmanager.hpp"
 
 #include <cstdlib>
+#ifdef __EMSCRIPTEN__
+#include <cmath>
+
+#include <emscripten.h>
+#endif
 
 #include <osg/ClipControl>
 #include <osg/ComputeBoundsVisitor>
@@ -256,6 +263,12 @@ namespace MWRender
 
         globalDefines["reverseZ"] = reverseZ ? "1" : "0";
 
+#ifdef __EMSCRIPTEN__
+        globalDefines["useGLES"] = "1";
+#else
+        globalDefines["useGLES"] = "0";
+#endif
+
         // It is unnecessary to stop/start the viewer as no frames are being rendered yet.
         mResourceSystem->getSceneManager()->getShaderManager().setGlobalDefines(globalDefines);
 
@@ -267,10 +280,26 @@ namespace MWRender
 
         mObjects = std::make_unique<Objects>(mResourceSystem, sceneRoot, unrefQueue);
 
+        // The incremental compile operation precompiles GL objects (VBOs/textures/programs)
+        // for preloaded cells under a per-frame time budget instead of stalling at first draw.
+        // Under emscripten the viewer is SingleThreaded, so ICO runs on the main (= GL) thread
+        // during the frame — safe. (An earlier port phase disabled it because a threaded viewer
+        // proxied glBufferData to a null GL thread; that no longer applies.)
+        // OPENMW_DONT_PRECOMPILE=1 opts back out.
         if (getenv("OPENMW_DONT_PRECOMPILE") == nullptr)
         {
-            mViewer->setIncrementalCompileOperation(new osgUtil::IncrementalCompileOperation);
-            mViewer->getIncrementalCompileOperation()->setTargetFrameRate(Settings::cells().mTargetFramerate);
+            osg::ref_ptr<osgUtil::IncrementalCompileOperation> ico = new osgUtil::IncrementalCompileOperation;
+            ico->setTargetFrameRate(Settings::cells().mTargetFramerate);
+#ifdef __EMSCRIPTEN__
+            // The default ICO budget defers compiling subgraphs that enter the view frustum, so on a
+            // SingleThreaded (main-thread GL) emscripten viewer, objects revealed by a camera TURN
+            // "pop in" a few frames late — and only on the leading edge (trailing-edge objects were
+            // already compiled). Raise the budget hard so entering objects compile within the same
+            // frame they're needed: keeps ICO's exterior-streaming smoothing but kills the pop-in.
+            ico->setMaximumNumOfObjectsToCompilePerFrame(1000);
+            ico->setMinimumTimeAvailableForGLCompileAndDeletePerFrame(0.004); // ~1/4 of a 60fps frame
+#endif
+            mViewer->setIncrementalCompileOperation(ico);
         }
 
         mDebugDraw = new Debug::DebugDrawer(mResourceSystem->getSceneManager()->getShaderManager());
@@ -327,9 +356,19 @@ namespace MWRender
         source->setNodeMask(Mask_Lighting);
         mSunLight = new osg::Light;
         source->setLight(mSunLight);
+#ifdef __EMSCRIPTEN__
+        // The weather system overwrites these every frame once the sim is unpaused. But during
+        // paused states (notably the new-game character-generation flow), the sun would stay at
+        // (0,0,0), making all scene geometry render solid black behind the menus. Seed a neutral
+        // daylight default so the world is legible before/while the weather system takes over.
+        mSunLight->setDiffuse(osg::Vec4f(0.6f, 0.6f, 0.6f, 1));
+        mSunLight->setAmbient(osg::Vec4f(0.4f, 0.4f, 0.4f, 1));
+        mSunLight->setSpecular(osg::Vec4f(0, 0, 0, 0));
+#else
         mSunLight->setDiffuse(osg::Vec4f(0, 0, 0, 1));
         mSunLight->setAmbient(osg::Vec4f(0, 0, 0, 1));
         mSunLight->setSpecular(osg::Vec4f(0, 0, 0, 0));
+#endif
         mSunLight->setConstantAttenuation(1.f);
         sceneRoot->setSunlight(mSunLight);
         sceneRoot->addChild(source);
@@ -387,6 +426,17 @@ namespace MWRender
         // The transparent renderbin sets alpha testing on because that was faster on old GPUs. It's now slower and
         // breaks things.
         mRootNode->getOrCreateStateSet()->setMode(GL_ALPHA_TEST, osg::StateAttribute::OFF);
+
+#ifdef __EMSCRIPTEN__
+        // GLES water clip (see @useGLES in objects.vert / water.cpp): the reflection/refraction RTT
+        // cameras publish a per-frame `clipPlane` uniform and the scene shaders discard fragments on
+        // the wrong side of it. Those cameras are DESCENDANTS of mRootNode, so a neutral clipPlane
+        // here is the default for the MAIN pass (dot()+w == 0 -> nothing discarded) while each RTT
+        // camera overrides it with its real plane for the reflection/refraction render. Without this
+        // default the main pass inherits the STALE value last set by the RTT cameras and discards all
+        // above-water geometry — the scene collapses to just water + sky + the shoreline base.
+        mRootNode->getOrCreateStateSet()->addUniform(new osg::Uniform("clipPlane", osg::Vec4f(0.f, 0.f, 0.f, 0.f)));
+#endif
 
         if (reverseZ)
         {
@@ -1336,6 +1386,15 @@ namespace MWRender
             {
                 updateProjection = true;
             }
+#ifdef __EMSCRIPTEN__
+            else if (it->first == "Video" && it->second == "internal render scale")
+            {
+                // Scene render-scale (web): rebuild the post-processor's FBO chain at the new
+                // fraction of the canvas. The canvas itself (and the GUI) does not change size.
+                if (mPostProcessor)
+                    mPostProcessor->resize();
+            }
+#endif
             else if (it->first == "Camera" && it->second == "viewing distance")
             {
                 setViewDistance(Settings::camera().mViewingDistance);
@@ -1397,6 +1456,26 @@ namespace MWRender
 
                     mViewer->startThreading();
                 }
+            }
+            else if (it->first == "Video" && it->second == "antialiasing")
+            {
+#ifdef __EMSCRIPTEN__
+                // Hardware MSAA can't run under post-processing on WebGL2: PP needs a sampleable depth
+                // texture, and WebGL2 forbids resolving a multisampled depth buffer into one, so the
+                // scene is forced single-sample under PP (postprocessor.cpp) and the sample count is a
+                // no-op. So on the web the Options "Antialiasing (SSAA)" dropdown drives SSAA
+                // (supersampling) instead: render at factor× and let the browser box-downscale. The
+                // dropdown stores {0,2,4} (Off / 1.5× / 2×); map those to the supersample factor
+                // {1.0, 1.5, 2.0}. Capped at 2× (measured free at 60fps — CPU-bound, GPU absorbs the
+                // 4× fragments). The JS bridge resizes the drawing buffer live via omw_set_resolution.
+                const int n = Settings::video().mAntialiasing;
+                const double factor = n >= 4 ? 2.0 : n >= 2 ? 1.5 : 1.0;
+                emscripten_run_script(("if(window.__omwSetSSAA)window.__omwSetSSAA(" + std::to_string(factor) + ")").c_str());
+#else
+                // Live MSAA change (Options anti-aliasing dropdown) — rebuild the render FBOs with
+                // the new sample count instead of requiring a restart.
+                mPostProcessor->setSamples(Settings::video().mAntialiasing);
+#endif
             }
             else if (it->first == "Post Processing" && it->second == "enabled")
             {

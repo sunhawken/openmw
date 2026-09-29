@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "soundmanagerimp.hpp"
 
 #include <algorithm>
@@ -1106,6 +1108,16 @@ namespace MWSound
             updateWaterSound();
         }
     }
+
+#ifdef __EMSCRIPTEN__
+    void SoundManager::pumpAudioStreams()
+    {
+        if (!mOutput->isInitialized())
+            return;
+        // finishUpdate() runs the inline stream refill on the web (see OpenALOutput).
+        mOutput->finishUpdate();
+    }
+#endif
 
     void SoundManager::processChangedSettings(const Settings::CategorySettingVector& settings)
     {

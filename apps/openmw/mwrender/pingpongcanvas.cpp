@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "pingpongcanvas.hpp"
 
 #include <cassert>
@@ -258,6 +260,11 @@ namespace MWRender
                 const auto& pass = node.mPasses[passIndex];
 
                 bool lastPass = passIndex == node.mPasses.size() - 1;
+                // True only for the pass that draws to the real output framebuffer (the final
+                // resolve). Under render scale the scene/ping-pong FBOs are smaller than the canvas,
+                // so only this pass may use the full output viewport; intermediate passes must use
+                // their (scene-size) FBO viewport or they sample a sub-region and the frame zooms.
+                bool canvasPass = false;
 
                 // VR-TODO: This won't actually work for tex2darrays
                 if (lastShader == 0)
@@ -285,6 +292,7 @@ namespace MWRender
                 else if (pass.mResolve && index == filtered.back())
                 {
                     bindDestinationFbo();
+                    canvasPass = true;
                     if (!destinationFbo && !Stereo::getMultiview())
                     {
                         resolveViewport->apply(state);
@@ -307,6 +315,39 @@ namespace MWRender
 
                     lastApplied = mFbos[buffer[0] - GL_COLOR_ATTACHMENT0_EXT]->getHandle(cid);
                 }
+
+#ifdef __EMSCRIPTEN__
+                // The viewport is not reset per pass, so it leaks across passes: a render-target
+                // pass at a downscaled size (e.g. bloom's 0.25-res blur targets) followed by a
+                // full-screen pass would sample/draw with the wrong viewport, collapsing the
+                // fullscreen triangle's texcoord range (bloom rendered as a flat tint on web).
+                // Set the viewport to match the current draw target explicitly.
+                if (pass.mRenderTarget)
+                {
+                    const osg::Texture* rtTex
+                        = pass.mRenderTarget->getAttachment(osg::Camera::COLOR_BUFFER0).getTexture();
+                    if (rtTex)
+                        glViewport(0, 0, rtTex->getTextureWidth(), rtTex->getTextureHeight());
+                }
+                else if (canvasPass)
+                {
+                    // Final resolve to the real output framebuffer — full canvas viewport, which
+                    // upscales a render-scaled scene to the display.
+                    if (resolveViewport)
+                        resolveViewport->apply(state);
+                }
+                else
+                {
+                    // Intermediate ping-pong pass: it writes into an mFbos buffer sized to the scene
+                    // texture. Under render scale that is SMALLER than the canvas, so applying the full
+                    // output viewport (the old behavior) would rasterize the fullscreen triangle into
+                    // only the corner of the smaller FBO and sample a sub-region of the scene — the
+                    // whole frame then appears zoomed. Match the scene-size FBO. At render scale 1.0
+                    // mTextureScene == the canvas, so this equals the full viewport and nothing changes
+                    // off the render-scale path.
+                    glViewport(0, 0, mTextureScene->getTextureWidth(), mTextureScene->getTextureHeight());
+                }
+#endif
 
                 state.pushStateSet(pass.mStateSet);
                 state.apply();

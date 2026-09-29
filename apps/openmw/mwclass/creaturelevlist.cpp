@@ -1,5 +1,8 @@
 #include "creaturelevlist.hpp"
 
+#include "../mwmp/puppets.hpp"
+#include <components/debug/debuglog.hpp>
+
 #include <components/esm3/actoridconverter.hpp>
 #include <components/esm3/creaturelevliststate.hpp>
 #include <components/esm3/loadlevlist.hpp>
@@ -15,6 +18,7 @@
 #include "../mwmechanics/creaturestats.hpp"
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/world.hpp"
 
 namespace MWClass
@@ -110,10 +114,31 @@ namespace MWClass
 
         const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
         auto& prng = MWBase::Environment::get().getWorld()->getPrng();
+        // WHAT LEVEL IS "THE PLAYER" HERE? On the sim peer getLevelledItem's own fallback is
+        // getPlayer(), an idle dummy at level 1, so every levelled creature in the world spawned
+        // at the bottom tier no matter who was actually standing there. Ask for the nearest
+        // AVATAR instead and fall through to vanilla when there is none (singleplayer, or a cell
+        // this process holds with nobody in it).
+        const int avatarLevel
+            = MWBase::Environment::get().getMechanicsManager()->nearestAvatarLevel(
+                ptr.getRefData().getPosition().asVec3());
         const ESM::RefId& id = MWMechanics::getLevelledItem(
-            store.get<ESM::CreatureLevList>().find(ptr.getCellRef().getRefId()), true, prng);
+            store.get<ESM::CreatureLevList>().find(ptr.getCellRef().getRefId()), true, prng,
+            avatarLevel > 0 ? std::optional<int>(avatarLevel) : std::nullopt);
+        // Said once per roll so the harness can see which level the world was scaled to.
+        if (avatarLevel > 0)
+            Log(Debug::Info) << "[mp] levelled spawn " << ptr.getCellRef().getRefId() << " rolled at level "
+                             << avatarLevel << (MWMP::partyLevel() > 0 ? " (party leader)" : " (nearest avatar)")
+                             << " -> " << id;
 
-        if (!id.empty())
+        // Multiplayer client: the peer rolls this list and its creature arrives as a net
+        // object (mwmp/puppets.hpp localSpawnsEnabled). Rolling here too would put a second,
+        // differently-rolled creature in the cell that only this screen has.
+        if (!id.empty() && !MWMP::localSpawnsEnabled())
+        {
+            customData.mSpawn = false;
+        }
+        else if (!id.empty())
         {
             // Delete the previous creature
             MWWorld::Ptr previous = customData.getSpawnedPtr();

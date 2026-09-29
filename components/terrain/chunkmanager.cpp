@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "chunkmanager.hpp"
 
 #include <osg/Material>
@@ -108,7 +110,14 @@ namespace Terrain
         osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D;
         texture->setTextureWidth(mCompositeMapSize);
         texture->setTextureHeight(mCompositeMapSize);
+#ifdef __EMSCRIPTEN__
+        // WebGL2: unsized GL_RGB is not color-renderable as an FBO attachment
+        // (composite-map RTT would fail with GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT
+        // = 0x8cd6). Use a sized, renderable format.
+        texture->setInternalFormat(GL_RGBA8);
+#else
         texture->setInternalFormat(GL_RGB);
+#endif
         texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
         texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
         mSceneManager->applyFilterSettings(texture);

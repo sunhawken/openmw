@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "npcanimation.hpp"
 
 #include <osg/Depth>
@@ -336,6 +338,19 @@ namespace MWRender
             osgUtil::RenderBin* bin, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf*& previous) override
         {
             osg::State* state = renderInfo.getState();
+
+#ifdef __EMSCRIPTEN__
+            // WebGL2: the per-FBO depth-clear dance (FBO_FirstPerson / FBO_OpaqueDepth apply +
+            // glClear) raises GL_INVALID_OPERATION every frame (log spam; the FBO formats aren't
+            // blit/clear-compatible under GLES3). So we just draw the first-person bin with the
+            // depth-write state applied and skip the depth isolation. KNOWN TRADEOFF: without its own
+            // cleared depth range the viewmodel can clip into very-close geometry — accepted as
+            // preferable to per-frame GL errors. (The old "post-processing is disabled here" note was
+            // stale: PP now defaults on; a WebGL2-legal depth-isolation path is the proper fix.)
+            state->applyAttribute(mDepth);
+            bin->drawImplementation(renderInfo, previous);
+            return;
+#endif
 
             PostProcessor* postProcessor = static_cast<PostProcessor*>(renderInfo.getCurrentCamera()->getUserData());
 

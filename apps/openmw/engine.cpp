@@ -1,4 +1,19 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "engine.hpp"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <osg/NodeVisitor>
+#include <osg/DisplaySettings>
+#include <osg/Geometry>
+#include <osg/Group>
+#include <osg/Geode>
+#include <osg/Transform>
+#include <osg/Camera>
+#include <osg/Viewport>
+#include <osg/Math>
+#endif
 
 #include <cerrno>
 #include <chrono>
@@ -56,6 +71,7 @@
 
 #include "mwinput/inputmanagerimp.hpp"
 
+#include "mwgui/nullwindowmanager.hpp"
 #include "mwgui/windowmanagerimp.hpp"
 
 #include "mwlua/luamanagerimp.hpp"
@@ -70,8 +86,24 @@
 #include "mwworld/class.hpp"
 #include "mwworld/datetimemanager.hpp"
 #include "mwworld/worldimp.hpp"
+#include "mwworld/actionteleport.hpp"
+#include "mwworld/globals.hpp"
+#ifdef __EMSCRIPTEN__
+#include "mwmechanics/drawstate.hpp"
+#include "mwworld/inventorystore.hpp"
+#include "mwworld/player.hpp"
+#endif
+
+#include <components/esm/util.hpp>
+#include <components/esm3/loadcell.hpp>
 
 #include "mwrender/vismask.hpp"
+#include "mwrender/camera.hpp"
+#include "mwbase/world.hpp"
+#include "mwbase/environment.hpp"
+#include "mwbase/mechanicsmanager.hpp"
+#include "mwbase/windowmanager.hpp"
+#include "mwgui/mode.hpp"
 
 #include "mwclass/classes.hpp"
 
@@ -151,6 +183,15 @@ namespace
             Log(Debug::Info) << "OpenGL Renderer: " << glGetString(GL_RENDERER);
             Log(Debug::Info) << "OpenGL Version: " << glGetString(GL_VERSION);
             glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &mMaxTextureImageUnits);
+#ifdef __EMSCRIPTEN__
+            // WebGL/GLES has no fixed-function pipeline. Let OSG rewrite gl_Vertex,
+            // gl_*Matrix etc. in shader sources to bound attributes/uniforms.
+            if (osg::State* state = graphicsContext->getState())
+            {
+                state->setUseModelViewAndProjectionUniforms(true);
+                state->setUseVertexAttributeAliasing(true);
+            }
+#endif
         }
 
         int getMaxTextureImageUnits() const
@@ -195,6 +236,25 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
 
     mEnvironment.setFrameDuration(frametime);
 
+#ifdef __EMSCRIPTEN__
+    // Cooperative video playback: WindowManager::playVideo returns immediately on this
+    // platform (its native nested render loop would deadlock the browser main thread).
+    // While a video is up, replace the game frame with the minimal video frame the native
+    // loop would run — input + video decode + GUI render. Game simulation stays paused,
+    // matching native playVideo semantics.
+    if (mGuiWindowManager != nullptr && mGuiWindowManager->isPlayingVideo())
+    {
+        mGuiWindowManager->updateVideoPlayback(frametime);
+        // No background audio StreamThread on the web — refill the movie-audio stream
+        // inline (the normal SoundManager::update path doesn't run during videos).
+        mSoundManager->pumpAudioStreams();
+        mViewer->eventTraversal();
+        mViewer->updateTraversal();
+        mViewer->renderingTraversals();
+        return true;
+    }
+#endif
+
     try
     {
         // update input
@@ -210,6 +270,12 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
         {
             ScopedProfile<UserStatsType::Sound> profile(frameStart, frameNumber, *timer, *stats);
 
+#ifdef __EMSCRIPTEN__
+            // Emscripten's SDL port can report the canvas as hidden/minimized at startup,
+            // which would pause the game forever. The requestAnimationFrame main loop already
+            // stops ticking when the browser tab is hidden, so always render here.
+            mSoundManager->resumePlayback();
+#else
             if (!mWindowManager->isWindowVisible())
             {
                 mSoundManager->pausePlayback();
@@ -217,6 +283,7 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
             }
             else
                 mSoundManager->resumePlayback();
+#endif
 
             // sound
             if (mUseSound)
@@ -304,9 +371,10 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
         }
 
         // update GUI
+        if (mGuiWindowManager != nullptr)
         {
             ScopedProfile<UserStatsType::Gui> profile(frameStart, frameNumber, *timer, *stats);
-            mWindowManager->update(frametime);
+            mGuiWindowManager->update(frametime);
         }
     }
     catch (const std::exception& e)
@@ -342,7 +410,23 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     mViewer->eventTraversal();
     mViewer->updateTraversal();
 
-    // update focus object for GUI
+    // HEADLESS: this is a full IntersectionVisitor descent of the scene graph, every frame,
+    // for the sole purpose of deciding which object a crosshair is over so the GUI can draw a
+    // tooltip. The sim peer has no crosshair and no GUI. Purely presentational — it has no
+    // effect on AI, physics or scripts — so skipping it changes nothing about the simulation.
+    static const bool sHeadless = std::getenv("OPENMW_HEADLESS") != nullptr;
+#ifdef __EMSCRIPTEN__
+    // ...and on the web, throttle it even when we DO have a crosshair. A tooltip does not need
+    // 60Hz: at 20Hz the delay before an item name appears is under a frame of human perception,
+    // and two thirds of the graph descents stop happening. The player cannot move far enough in
+    // 33ms to make the answer stale.
+    // Measure the cost first with ?perfstats=1: the Focus bucket already exists. If it is a
+    // fraction of a millisecond, revert this -- it is only worth the asymmetry if it shows up.
+    const bool skipFocusThisFrame = (frameNumber % 3 != 0);
+#else
+    constexpr bool skipFocusThisFrame = false;
+#endif
+    if (!sHeadless && !skipFocusThisFrame)
     {
         ScopedProfile<UserStatsType::Focus> profile(frameStart, frameNumber, *timer, *stats);
         mWorld->updateFocusObject();
@@ -351,7 +435,91 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     // if there is a separate Lua thread, it starts the update now
     mLuaWorker->allowUpdate(frameStart, frameNumber, *stats);
 
-    mViewer->renderingTraversals();
+    // H1 sim-peer spike: simulation (AI, physics, scripts) ran in updateTraversal() above;
+    // drawing is this call alone. Skipping it is the entire headless saving — GL is paid
+    // once at init and zero per frame. allowUpdate/finishUpdate stay paired around it.
+    if (!sHeadless)
+        mViewer->renderingTraversals();
+
+#ifdef __EMSCRIPTEN__
+    // ?perfstats=1 (QA): expose the per-frame CPU phase split (Cull vs Draw traversal, ms) to JS
+    // as window.__omwPhase, WITHOUT the F3 stats HUD (which itself costs ~5ms and pollutes the
+    // measurement). "rest" = window.__frameMs - cull - draw (update/physics/AI/GUI/Lua). Collection
+    // is enabled once (takes effect from the next frame); GPU timer queries are omitted (unreliable
+    // on WebGL2). Zero cost when the flag is off.
+    {
+        static int s_perf = getenv("OPENMW_PERF_STATS") ? 1 : 0;
+        if (s_perf)
+        {
+            osgViewer::Viewer::Cameras cams;
+            mViewer->getCameras(cams);
+            // Re-arm EVERY frame rather than latching with a static. The latch version left
+            // collectStats("engine") reading FALSE and the attribute map empty: whatever it armed
+            // on the first perfstats frame was not what the ScopedProfiles later wrote through, so
+            // every subsystem bucket stayed 0 while cull/draw worked. Both are idempotent map
+            // assignments (osg/Stats:73), so re-arming is cheaper than reasoning about which
+            // object won the race.
+            for (osg::Camera* c : cams)
+                if (c->getStats())
+                    c->getStats()->collectStats("rendering", true);
+            stats->collectStats("engine", true); // ScopedProfile buckets (prefix + "_time_taken")
+            double cull = 0.0, draw = 0.0, v = 0.0;
+            for (osg::Camera* c : cams)
+            {
+                osg::Stats* cs = c->getStats();
+                if (!cs)
+                    continue;
+                if (cs->getAttribute(frameNumber, "Cull traversal time taken", v))
+                    cull += v;
+                if (cs->getAttribute(frameNumber, "Draw traversal time taken", v))
+                    draw += v;
+            }
+            // DIAGNOSTIC (?perfkeys=1): the subsystem buckets below were reading zero while cull/draw
+            // read fine, from this same osg::Stats. Rather than guess at the cause a fourth time,
+            // publish the frame's actual attribute keys so the names and presence can be read
+            // directly from the console. Costs a string build, so it is behind its own env flag.
+            if (getenv("OPENMW_PERF_KEYS"))
+            {
+                std::string keys;
+                for (const auto& [k, val] : stats->getAttributeMap(frameNumber))
+                {
+                    keys += k;
+                    keys += '=';
+                    keys += std::to_string(val);
+                    keys += '\n';
+                }
+                const bool engineOn = stats->collectStats("engine");
+                EM_ASM({ globalThis.__omwPhaseKeys = UTF8ToString($0); globalThis.__omwPhaseEngineOn = !!$1; },
+                    keys.c_str(), engineOn ? 1 : 0);
+            }
+
+            // Rest-phase subsystem breakdown (engine ScopedProfile buckets, prefix + "_time_taken").
+            // NB: Lua is inline on this build (see mwlua/worker.cpp), so UserStatsType::Lua never
+            // fires and only LuaSyncUpdate does -- report the sum or the bucket reads a false 0.
+            auto sub = [&](const char* key) { double x = 0.0; stats->getAttribute(frameNumber, key, x); return x * 1000.0; };
+            // clang-format off
+            // NB: no comma inside the EM_ASM code block — the C preprocessor would split it as a
+            // macro argument. Build the object with separate statements instead.
+            EM_ASM({
+                globalThis.__omwPhase = {};
+                globalThis.__omwPhase.cull = $0;
+                globalThis.__omwPhase.draw = $1;
+                globalThis.__omwPhase.physics = $2;
+                globalThis.__omwPhase.mechanics = $3;
+                globalThis.__omwPhase.world = $4;
+                globalThis.__omwPhase.lua = $5;
+                globalThis.__omwPhase.gui = $6;
+                globalThis.__omwPhase.input = $7;
+                globalThis.__omwPhase.sound = $8;
+                globalThis.__omwPhase.script = $9;
+            },
+                cull * 1000.0, draw * 1000.0, sub("physics_time_taken"), sub("mechanics_time_taken"),
+                sub("world_time_taken"), (sub("lua_time_taken") + sub("luasyncupdate_time_taken")), sub("gui_time_taken"),
+                sub("input_time_taken"), sub("sound_time_taken"), sub("script_time_taken"));
+            // clang-format on
+        }
+    }
+#endif
 
     mLuaWorker->finishUpdate(frameStart, frameNumber, *stats);
 
@@ -408,6 +576,7 @@ OMW::Engine::~Engine()
     mMechanicsManager = nullptr;
     mDialogueManager = nullptr;
     mJournal = nullptr;
+    mGuiWindowManager = nullptr; // the concrete view dies with the owner below
     mWindowManager = nullptr;
     mScriptManager = nullptr;
     mWorld = nullptr;
@@ -490,8 +659,25 @@ void OMW::Engine::setSkipMenu(bool skipMenu, bool newGame)
 void OMW::Engine::createWindow()
 {
     const int screen = Settings::video().mScreen;
+#ifdef __EMSCRIPTEN__
+    // The harness owns the canvas size (dpr + pixel budget, window.__renderW/H). Ignore any
+    // persisted [Video] resolution: on web the only resolution dial is the SCENE render scale
+    // ([Video] internal render scale, applied by the post-processor), and a small resolution
+    // persisted by the pre-scale scheme must not shrink the canvas — that would blur the GUI.
+    // clang-format off
+    const int width = EM_ASM_INT({
+        return Math.max(320, Math.round(globalThis.__renderW || ((globalThis.innerWidth || 1280) * (globalThis.devicePixelRatio || 1))));
+    });
+    const int height = EM_ASM_INT({
+        return Math.max(240, Math.round(globalThis.__renderH || ((globalThis.innerHeight || 720) * (globalThis.devicePixelRatio || 1))));
+    });
+    // clang-format on
+    Settings::video().mResolutionX.set(width);
+    Settings::video().mResolutionY.set(height);
+#else
     const int width = Settings::video().mResolutionX;
     const int height = Settings::video().mResolutionY;
+#endif
     const Settings::WindowMode windowMode = Settings::video().mWindowMode;
     const bool windowBorder = Settings::video().mWindowBorder;
     const SDLUtil::VSyncMode vsync = Settings::video().mVsyncMode;
@@ -535,6 +721,13 @@ void OMW::Engine::createWindow()
         checkSDLError(SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, antialiasing));
     }
 
+    // H1 sim-peer spike (Phase H): create the window HIDDEN and never render (frame()
+    // skips renderingTraversals). A real GL context is still created so RenderingManager
+    // constructs normally — the saving is per-frame, not at init. On a displayless Linux
+    // box this becomes SDL_VIDEODRIVER=offscreen instead of a hidden window.
+    if (std::getenv("OPENMW_HEADLESS") != nullptr)
+        flags |= SDL_WINDOW_HIDDEN;
+
     osg::ref_ptr<SDLUtil::GraphicsWindowSDL2> graphicsWindow;
     while (!graphicsWindow || !graphicsWindow->valid())
     {
@@ -570,10 +763,20 @@ void OMW::Engine::createWindow()
         SDL_GL_GetDrawableSize(mWindow, &dw, &dh);
         if (dw != w || dh != h)
         {
-            SDL_SetWindowSize(mWindow, width / (dw / w), height / (dh / h));
+            // width / (dw/w) == width * w / dw. Computed in floating point and rounded: as integer
+            // division, (dw/w) truncates a fractional device-pixel ratio (Windows 125%/150%, browser
+            // zoom) to 1, so the window was never scaled down and the drawable stayed oversized —
+            // and truncates to 0 when the drawable is smaller than the window, dividing by zero.
+            const int sw = dw > 0 ? static_cast<int>(static_cast<double>(width) * w / dw + 0.5) : width;
+            const int sh = dh > 0 ? static_cast<int>(static_cast<double>(height) * h / dh + 0.5) : height;
+            SDL_SetWindowSize(mWindow, sw, sh);
         }
 
+#ifndef __EMSCRIPTEN__
+        // No OS window title bar in the browser (canvas only), and the PNG readerwriter isn't
+        // built — skip the window icon load entirely (it would just log "no png readerwriter").
         setWindowIcon();
+#endif
 
         osg::ref_ptr<osg::GraphicsContext::Traits> traits = new osg::GraphicsContext::Traits;
         SDL_GetWindowPosition(mWindow, &traits->x, &traits->y);
@@ -820,9 +1023,22 @@ void OMW::Engine::prepareEngine()
     mStereoManager->disableStereoForNode(guiRoot);
     rootNode->addChild(guiRoot);
 
-    mWindowManager = std::make_unique<MWGui::WindowManager>(mWindow, mViewer, guiRoot, mResourceSystem.get(),
-        mWorkQueue.get(), mCfgMgr.getLogPath(), mScriptConsoleMode, mTranslationDataStorage, mEncoding, mExportFonts,
-        Version::getOpenmwVersionDescription(), mCfgMgr);
+    // E2 (MP): a headless sim peer takes the null implementation — no MyGUI init, no
+    // font/skin/layout loading, no initUI(). Single-player risk: none; the real
+    // WindowManager is constructed exactly as before on every non-headless run.
+    if (std::getenv("OPENMW_HEADLESS") != nullptr)
+    {
+        mWindowManager = std::make_unique<MWGui::NullWindowManager>();
+        mGuiWindowManager = nullptr;
+    }
+    else
+    {
+        auto guiWindowManager = std::make_unique<MWGui::WindowManager>(mWindow, mViewer, guiRoot,
+            mResourceSystem.get(), mWorkQueue.get(), mCfgMgr.getLogPath(), mScriptConsoleMode,
+            mTranslationDataStorage, mEncoding, mExportFonts, Version::getOpenmwVersionDescription(), mCfgMgr);
+        mGuiWindowManager = guiWindowManager.get();
+        mWindowManager = std::move(guiWindowManager);
+    }
     mEnvironment.setWindowManager(*mWindowManager);
 
     mInputManager = std::make_unique<MWInput::InputManager>(mWindow, mViewer, mScreenCaptureHandler, keybinderUser,
@@ -851,7 +1067,8 @@ void OMW::Engine::prepareEngine()
         return nullptr;
     });
 
-    mWindowManager->setStore(mWorld->getStore());
+    if (mGuiWindowManager != nullptr)
+        mGuiWindowManager->setStore(mWorld->getStore());
 
     // Load translation data
     mTranslationDataStorage.setEncoder(mEncoder.get());
@@ -883,8 +1100,6 @@ void OMW::Engine::prepareEngine()
 
     Loading::Listener* listener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
     Loading::AsyncListener asyncListener(*listener);
-    auto dataLoading = std::async(std::launch::async,
-        [&] { mWorld->loadData(mFileCollections, mContentFiles, mGroundcoverFiles, mEncoder.get(), &asyncListener); });
 
     if (!mSkipMenu)
     {
@@ -894,22 +1109,71 @@ void OMW::Engine::prepareEngine()
     }
 
     listener->loadingOn();
+#ifdef __EMSCRIPTEN__
+    // No background-thread data loading on the web: spinning the main thread on a
+    // std::async future deadlocks/stalls against worker->main GL proxying. Load
+    // synchronously on the main thread instead (blocks during load, then proceeds).
+    mWorld->loadData(mFileCollections, mContentFiles, mGroundcoverFiles, mEncoder.get(), &asyncListener);
+#else
+    auto dataLoading = std::async(std::launch::async,
+        [&] { mWorld->loadData(mFileCollections, mContentFiles, mGroundcoverFiles, mEncoder.get(), &asyncListener); });
     {
         using namespace std::chrono_literals;
         while (dataLoading.wait_for(50ms) != std::future_status::ready)
             asyncListener.update();
         dataLoading.get();
     }
+#endif
     listener->loadingOff();
 
     mWorld->init(mMaxRecastLogLevel, mViewer, std::move(rootNode), mWorkQueue.get(), *mUnrefQueue);
     mEnvironment.setWorldScene(mWorld->getWorldScene());
     mWorld->setupPlayer();
     mWorld->setRandomSeed(mRandomSeed);
-    mWindowManager->initUI();
+    if (mGuiWindowManager != nullptr)
+        mGuiWindowManager->initUI();
     mLuaManager->initPostLoad();
 
     // scripts
+#ifdef __EMSCRIPTEN__
+    // F27, first slice. MWScript is lexed and parsed at RUNTIME, lazily, the first time each
+    // script executes (scriptmanagerimp.cpp:39 pulls mScriptText out of the store, wraps it in an
+    // istringstream and runs the full Compiler::Scanner). GOTY ships ~2000 of them, so the normal
+    // experience is: play, trip a script, pay for a lexer -- unpredictably, on the main thread,
+    // during play.
+    //
+    // The real fix is to bake bytecode offline and drop components/compiler (5,005 lines) out of
+    // the wasm entirely. That needs a serialisation format for mParser.getProgram() plus the
+    // locals table, and a loader; it is the rest of F27.
+    //
+    // This is the part that is one line: compile them all up front instead. It does not remove the
+    // work, it MOVES it -- out of unpredictable mid-play stalls and into the loading screen, where
+    // a stall is free and the player is already waiting. That is the same trade every other Phase 2
+    // bake makes, just paid at boot rather than at build time, and it is a strict improvement on
+    // paying it at a random moment while walking through Balmora.
+    //
+    // MEASURED, and left OFF because of what the number said. Booting with retail data and
+    // window.__omwBoot (F24), comparing post-runtime boot work (firstFrame - runtimeInit, because
+    // the wasm compile itself varies by seconds between runs depending on the HTTP cache):
+    //
+    //     lazy          4505 - 362  = 4143ms      "compiled 1206 of 1207 scripts"
+    //     compile-all   7733 - 2078 = 5655ms      => ~1.5s added to boot
+    //
+    // 1.5s is too much to spend on a loading screen for a game whose whole delivery pitch is a
+    // URL -- F24 exists because time-to-playable is the number this product is judged on. So this
+    // does not move the work to a better place, it moves it to the worst place.
+    //
+    // What the measurement actually establishes is that the REST of F27 is worth doing: 1.5s of
+    // lexing and parsing, for a result that is identical on every machine and every run, is
+    // exactly the thing an offline bake deletes rather than relocates. Serialise
+    // mParser.getProgram() plus the locals table, ship it, drop components/compiler (5,005 lines)
+    // out of the wasm, and the 1.5s goes to zero instead of moving.
+    //
+    // OPENMW_COMPILE_ALL=1 opts in, for anyone who would rather take the boot cost than the
+    // mid-play stalls until that lands.
+    if (std::getenv("OPENMW_COMPILE_ALL") != nullptr)
+        mCompileAll = true;
+#endif
     if (mCompileAll)
     {
         std::pair<int, int> result = mScriptManager->compileAll();
@@ -928,6 +1192,208 @@ void OMW::Engine::prepareEngine()
     // starts a separate lua thread if "lua num threads" > 0
     mLuaWorker = std::make_unique<MWLua::Worker>(*mLuaManager);
 }
+
+#ifdef __EMSCRIPTEN__
+// A hidden/backgrounded browser tab throttles setTimeout (and freezes requestAnimationFrame),
+// which stalls the emscripten main loop. Expose a pump so JS can drive frames from a
+// MessageChannel (which is NOT throttled in hidden tabs), keeping the game running/interactive.
+namespace
+{
+    void (*g_emTick)(void*) = nullptr;
+    void* g_emArg = nullptr;
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_pump_frame()
+{
+    // Re-entrancy guard: a long frame can spin the browser event loop (e.g. via a proxied
+    // main-thread call), which dispatches a queued MessageChannel message and would call this
+    // again mid-frame — recursively re-locking OpenMW's non-recursive mutexes → pthread deadlock.
+    static bool inTick = false;
+    if (inTick)
+        return;
+    if (g_emTick && g_emArg)
+    {
+        // Exception-safe: if a frame throws (C++ or a foreign/JS exception unwinding out of a
+        // JS library call), the guard MUST reset — the JS pump swallows the exception and keeps
+        // calling, so a stuck inTick=true turns every later pump into an instant no-op: the
+        // header keeps counting "60fps" of 0ms skips while the game is permanently frozen.
+        // Catch here (the engine's cooperative video branch runs outside Engine::frame's own
+        // try/catch), log the cause, and let the next frame carry on.
+        inTick = true;
+        try
+        {
+            g_emTick(g_emArg);
+        }
+        catch (const std::exception& e)
+        {
+            printf("omw_pump_frame: frame threw: %s\n", e.what());
+        }
+        catch (...)
+        {
+            printf("omw_pump_frame: frame threw a non-C++ (likely JS) exception\n");
+        }
+        inTick = false;
+    }
+}
+
+// Flush user settings to the persistent config (called from index.html's pagehide/hidden
+// lifecycle handlers). Without this, changing settings and refreshing the page loses them:
+// the Options window only saves on CLOSE, and even then the async IDBFS sync needs a beat.
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_save_settings()
+{
+    try
+    {
+        Settings::Manager::saveUser("/userdata/config/openmw/settings.cfg");
+    }
+    catch (const std::exception& e)
+    {
+        printf("omw_save_settings: %s\n", e.what());
+    }
+}
+
+// Change the render resolution at runtime (Options -> Video Apply, and the harness's debounced
+// browser-window-resize handler). Goes through SDL so the canvas drawing buffer resizes and
+// SDL_WINDOWEVENT_SIZE_CHANGED fires -> OpenMW::windowResized() resizes viewport/FBOs/GUI —
+// exactly the desktop window-resize path.
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_set_resolution(int w, int h)
+{
+    if (w < 320 || h < 240 || w > 16384 || h > 16384)
+        return;
+    SDL_Window* window = SDL_GL_GetCurrentWindow();
+    if (window)
+        SDL_SetWindowSize(window, w, h);
+    // Keep the [Video] resolution setting in sync with the actual drawing-buffer size so the
+    // Options resolution list highlights the real current size. On emscripten the normal
+    // SDL_WINDOWEVENT_SIZE_CHANGED -> WindowManager::windowResized() -> mResolutionX/Y.set() path
+    // is unreliable (SDL_SetWindowSize doesn't always dispatch it), which left the setting stale
+    // after a browser-window resize -> list/highlight mismatch. Setting it directly is idempotent
+    // with windowResized() when that does fire.
+    Settings::video().mResolutionX.set(w);
+    Settings::video().mResolutionY.set(h);
+}
+
+// Scene render-scale bridge (QA/harness; the Options resolution tiers set the same setting from
+// C++). Renders the 3D scene at `s` × the canvas resolution via the post-processor chain; the
+// canvas and GUI stay native. Dispatches the change immediately (mirrors SettingsWindow::apply()).
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_set_render_scale(float s)
+{
+    if (!(s >= 0.2f && s <= 1.f))
+        return;
+    Settings::video().mInternalRenderScale.set(s);
+    // Only valid once the game is running (like omw_debug_look); boot-time seeding goes through
+    // the ?rs= settings layer instead.
+    MWBase::Environment::get().getWorld()->processChangedSettings(Settings::Manager::getPendingChanges());
+    Settings::Manager::resetPendingChanges();
+}
+
+// OS-clipboard -> SDL bridge: the harness's document 'paste' listener pushes the real browser
+// clipboard text here so the in-game Ctrl+V (which reads SDL's internal clipboard) sees it.
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_set_clipboard(const char* text)
+{
+    if (text)
+        SDL_SetClipboardText(text);
+}
+
+// Debug: point the camera (yaw/pitch in degrees) so we can verify object rendering without mouse-look.
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_debug_look(float yawDeg, float pitchDeg)
+{
+    auto world = MWBase::Environment::get().getWorld();
+    MWRender::Camera* cam = world->getCamera();
+    if (cam)
+    {
+        cam->setYaw(osg::DegreesToRadians(yawDeg), true);
+        cam->setPitch(osg::DegreesToRadians(pitchDeg), true);
+    }
+}
+
+// Debug: teleport the player to an absolute world position (within the loaded worldspace).
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_debug_teleport(float x, float y, float z)
+{
+    auto world = MWBase::Environment::get().getWorld();
+    MWWorld::Ptr p = world->getPlayerPtr();
+    if (!p.isEmpty())
+        world->moveObject(p, osg::Vec3f(x, y, z), true, true);
+}
+
+// Debug: start dialogue with the nearest NPC (same as pointing at it and pressing Activate).
+// Returns the number of NPCs found in range (0 = none nearby).
+extern "C" EMSCRIPTEN_KEEPALIVE int omw_debug_activate()
+{
+    auto world = MWBase::Environment::get().getWorld();
+    MWWorld::Ptr player = world->getPlayerPtr();
+    if (player.isEmpty())
+        return -1;
+    const float* pp = player.getRefData().getPosition().pos;
+    osg::Vec3f pos(pp[0], pp[1], pp[2]);
+    std::vector<MWWorld::Ptr> actors;
+    MWBase::Environment::get().getMechanicsManager()->getActorsInRange(pos, 8000.f, actors);
+    MWWorld::Ptr target;
+    float best = std::numeric_limits<float>::max();
+    int npcCount = 0;
+    for (MWWorld::Ptr& a : actors)
+    {
+        if (a == player || !a.getClass().isNpc())
+            continue;
+        npcCount++;
+        const float* ap = a.getRefData().getPosition().pos;
+        float d = (osg::Vec3f(ap[0], ap[1], ap[2]) - pos).length2();
+        if (d < best)
+        {
+            best = d;
+            target = a;
+        }
+    }
+    if (!target.isEmpty())
+        MWBase::Environment::get().getWindowManager()->pushGuiMode(MWGui::GM_Dialogue, target);
+    return npcCount;
+}
+
+// Debug: set the in-game hour (0-24) — e.g. 12 = noon. For verifying time-of-day rendering.
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_debug_sethour(float hour)
+{
+    // Same path the vanilla console/scripts use: set the GameHour global.
+    MWBase::Environment::get().getWorld()->setGlobalFloat(MWWorld::Globals::sGameHour, hour);
+}
+
+// Debug: teleport the player to an exterior cell (like the console "COE x y"). Triggers a full
+// exterior worldspace load — used to repro/validate the navmesh cell-load path from JS.
+extern "C" EMSCRIPTEN_KEEPALIVE void omw_debug_coe(int x, int y)
+{
+    MWBase::World* world = MWBase::Environment::get().getWorld();
+    MWWorld::Ptr player = world->getPlayerPtr();
+    if (player.isEmpty())
+        return;
+    ESM::Position pos;
+    const osg::Vec2f posFromIndex
+        = ESM::indexToPosition(ESM::ExteriorCellLocation(x, y, ESM::Cell::sDefaultWorldspaceId), true);
+    pos.pos[0] = posFromIndex.x();
+    pos.pos[1] = posFromIndex.y();
+    pos.pos[2] = 0;
+    pos.rot[0] = pos.rot[1] = pos.rot[2] = 0;
+    MWWorld::ActionTeleport(ESM::RefId::esm3ExteriorCell(x, y), pos, false).execute(player);
+    player = world->getPlayerPtr();
+    world->adjustPosition(player, false);
+}
+
+// Debug: give the player a fresh weapon, equip it, and draw it. Reproduces/validates the
+// gear-equip path — a cache-miss weapon mesh loaded on the main thread — that used to freeze
+// the browser (WorkQueue worker/main contention). Returns 1 on success, 0/-1 on failure.
+extern "C" EMSCRIPTEN_KEEPALIVE int omw_debug_giveweapon()
+{
+    MWBase::World* world = MWBase::Environment::get().getWorld();
+    MWWorld::Ptr player = world->getPlayerPtr();
+    if (player.isEmpty())
+        return -1;
+    MWWorld::InventoryStore& store = player.getClass().getInventoryStore(player);
+    // Qualify: InventoryStore::add(ConstPtr,…) name-hides the RefId convenience overload.
+    MWWorld::ContainerStoreIterator it
+        = store.MWWorld::ContainerStore::add(ESM::RefId::stringRefId("iron dagger"), 1, false);
+    if (it == store.end())
+        return 0;
+    store.equip(MWWorld::InventoryStore::Slot_CarriedRight, it);
+    world->getPlayer().setDrawState(MWMechanics::DrawState::Weapon);
+    return 1;
+}
+#endif
 
 // Initialise and enter main loop.
 void OMW::Engine::go()
@@ -952,6 +1418,45 @@ void OMW::Engine::go()
     // Setup viewer
     mViewer = new osgViewer::Viewer;
     mViewer->setReleaseContextAtEndOfFrameHint(false);
+#ifdef __EMSCRIPTEN__
+    // OSG defaults to DrawThreadPerContext, running draw + GL-object compilation on a
+    // separate thread from the GL context. Under emscripten that proxies GL calls to a
+    // null GL thread and aborts. Force everything onto the single GL thread.
+    mViewer->setThreadingModel(osgViewer::ViewerBase::SingleThreaded);
+
+    // F48 -- MEASURED AND CLOSED 2026-08-28. Nothing to do here; the call that used to sit on
+    // this line was a no-op, and the interesting result is why.
+    //
+    // The finding said OSG force-enables VAO *support* but never sets the per-drawable flag, so
+    // State.cpp's test
+    //     _forceVertexArrayObject || (_isVertexArrayObjectSupported && drawable->_useVertexArrayObject)
+    // was false for every draw. The proposed fix was DisplaySettings::VERTEX_ARRAY_OBJECT, which
+    // sets _forceVertexBufferObject and _forceVertexArrayObject. But osg-emscripten.patch ALREADY
+    // sets both, unconditionally, in State::State() under `#elif defined(__EMSCRIPTEN__)`. The
+    // hint was assigning flags that were already true.
+    //
+    // A/B in Balmora (Chrome, RTX 4080, ~726 draws/frame), behind ?forcevao=1 so both arms ran the
+    // same binary: every counter came back identical to one decimal place -- total 4385.3,
+    // bindVertexArray 501.4, vertexAttribPointer 237.4, enableVertexAttribArray 236.5. Not close;
+    // the same. That is the signature of a flag that was already set.
+    //
+    // A follow-up measurement corrected a wrong reading of those numbers, recorded here because it
+    // was nearly written up as a new finding. The 501 binds/frame against only 237
+    // vertexAttribPointer looked like "VAOs bound but re-specified anyway = pure overhead". It is
+    // the opposite. osg::Drawable::draw sets `vas->setRequiresSetArrays(getDataVariance()==DYNAMIC)`
+    // after each draw, and Geometry::drawImplementation early-returns on !getRequiresSetArrays() --
+    // so a STATIC drawable specifies its attributes once and every later frame is bind-and-draw.
+    // A cold drawable issues 3-5 attrib pointers; measured steady state is 0.64 per bind, i.e.
+    // roughly 80-85% of bound drawables are skipping re-specification. The binds are what BUY that
+    // skip. VAO reuse is working as designed.
+    //
+    // Remaining headroom here is small and bounded: attribute calls are 501 of 4385 GL calls per
+    // frame (~11%), and only the share belonging to genuinely-static geometry is recoverable. Worth
+    // a look only after the uniform traffic (43%) is dealt with.
+    // The `null function` this path used to trap on was real: OSG was configured
+    // OPENGL_PROFILE=GLES2 against a WebGL2/ES3 target, so isVAOSupported could never resolve
+    // honestly. build-osg.sh now says GLES2+GLES3 (F50) and OSG_GLES3_FEATURES is 1.
+#endif
 
     // Do not try to outsmart the OS thread scheduler (see bug #4785).
     mViewer->setUseConfigureAffinity(false);
@@ -975,7 +1480,19 @@ void OMW::Engine::go()
     {
         stats.open(path, std::ios_base::out);
         if (stats.is_open())
+        {
             Log(Debug::Info) << "OSG stats will be written to: " << path;
+            // E1: the per-manager resource cache report (cachestats.cpp: Node/SceneManager,
+            // Nif, BulletShape, Keyframe, Image ...) is written only while
+            // collectStats("resource") is armed, which nothing but the in-game stats
+            // overlay ever does -- a headless peer with a stats file got 47k Viewer/Camera
+            // frame lines and not one resource attribute. Asking for the file IS asking for
+            // the report: arm it here, for every build, the moment the file opens. (A first
+            // attempt armed it inside the ?perfstats QA block -- wasm-only and off by
+            // default -- which the native peer never executes.)
+            mViewer->getViewerStats()->collectStats("resource", true);
+            mViewer->getViewerStats()->collectStats("engine", true);
+        }
         else
             Log(Debug::Warning) << "Failed to open file to write OSG stats \"" << path
                                 << "\": " << std::generic_category().message(errno);
@@ -1016,6 +1533,19 @@ void OMW::Engine::go()
     else
     {
         mStateManager->newGame(!mNewGame);
+#ifdef __EMSCRIPTEN__
+        // The example-suite starts at midnight, so the freshly-loaded world is pitch black.
+        // Jump to mid-morning so the world is immediately lit and visible on boot. (chargen is
+        // auto-confirmed in charactercreation.cpp; together this drops the player straight into
+        // a visible, playable daytime world without any throttle-dependent GUI interaction.)
+        // Gated to the example suite only (OPENMW_EXAMPLE_SUITE set by the harness for ?nomw):
+        // retail Morrowind must keep its authored start time — 1:1 behavior.
+        if (getenv("OPENMW_EXAMPLE_SUITE") != nullptr
+            && mStateManager->getState() == MWState::StateManager::State_Running)
+        {
+            mWorld->advanceTime(10.0);
+        }
+#endif
     }
 
     if (!mStartupScript.empty() && mStateManager->getState() == MWState::StateManager::State_Running)
@@ -1027,11 +1557,112 @@ void OMW::Engine::go()
     MWWorld::DateTimeManager& timeManager = *mWorld->getTimeManager();
     Misc::FrameRateLimiter frameRateLimiter = Misc::makeFrameRateLimiter(mEnvironment.getFrameRateLimit());
     const std::chrono::steady_clock::duration maxSimulationInterval(std::chrono::milliseconds(200));
+
+#ifdef __EMSCRIPTEN__
+    // A browser owns the event loop and we must never block the main thread, or no
+    // rendered frame is ever presented to the compositor. Drive one simulation frame
+    // per requestAnimationFrame tick via emscripten_set_main_loop and yield back.
+    struct EmscriptenLoop
+    {
+        OMW::Engine* engine;
+        MWWorld::DateTimeManager* timeManager;
+        Misc::FrameRateLimiter* frameRateLimiter;
+        std::chrono::steady_clock::duration maxSimulationInterval;
+
+        static void tick(void* arg)
+        {
+            auto& ctx = *static_cast<EmscriptenLoop*>(arg);
+            OMW::Engine* self = ctx.engine;
+            MWWorld::DateTimeManager& timeManager = *ctx.timeManager;
+            if (self->mViewer->done() || self->mStateManager->hasQuitRequest())
+            {
+                // Browser-correct quit: a silently-cancelled loop leaves a frozen tab. Sync the
+                // IDBFS state and hand the page a clear end-of-session overlay (__omwOnQuit).
+                // clang-format off
+                EM_ASM({
+                    try { if (globalThis.__omwSyncfs) globalThis.__omwSyncfs(); else if (typeof FS !== 'undefined' && FS.syncfs) FS.syncfs(false, function(){}); } catch(e){}
+                    try { Module.__omwRunning = 0; } catch(e){}
+                    try { if (globalThis.__omwOnQuit) globalThis.__omwOnQuit(); } catch(e){}
+                });
+                // clang-format on
+                g_emTick = nullptr; // stop future pump ticks
+                emscripten_cancel_main_loop();
+                return;
+            }
+            // Expose "a game is in progress" to the harness: drives the unsaved-progress
+            // tab-close guard (registered only while running, to stay bfcache-friendly).
+            {
+                static int lastRunning = -1;
+                const int running = self->mStateManager->getState() == MWBase::StateManager::State_Running ? 1 : 0;
+                if (running != lastRunning)
+                {
+                    lastRunning = running;
+                    EM_ASM({ Module.__omwRunning = $0; }, running);
+                }
+            }
+            const double dt = std::chrono::duration_cast<std::chrono::duration<double>>(
+                                  std::min(ctx.frameRateLimiter->getLastFrameDuration(), ctx.maxSimulationInterval))
+                                  .count()
+                * timeManager.getSimulationTimeScale();
+            self->mViewer->advance(timeManager.getRenderingSimulationTime());
+            const unsigned frameNumber = self->mViewer->getFrameStamp()->getFrameNumber();
+            if (!self->frame(frameNumber, static_cast<float>(dt)))
+                return;
+            timeManager.updateIsPaused();
+            if (!timeManager.isPaused())
+            {
+                timeManager.setSimulationTime(timeManager.getSimulationTime() + dt);
+                timeManager.setRenderingSimulationTime(timeManager.getRenderingSimulationTime() + dt);
+            }
+            ctx.frameRateLimiter->limit();
+
+        }
+    };
+    // Heap-allocated: emscripten_set_main_loop with simulate_infinite_loop unwinds this
+    // stack frame, so the context must outlive go().
+    auto* loop = new EmscriptenLoop{ this, &timeManager,
+        new Misc::FrameRateLimiter(Misc::makeFrameRateLimiter(mEnvironment.getFrameRateLimit())),
+        maxSimulationInterval };
+    g_emTick = &EmscriptenLoop::tick;
+    g_emArg = loop;
+    // SINGLE frame driver: the MessageChannel pump in index.html calls omw_pump_frame()
+    // (-> this tick). The pump paces itself with requestAnimationFrame while the tab is
+    // visible (vsync-aligned) and free-runs unthrottled when hidden. We deliberately do NOT
+    // also register emscripten_set_main_loop — the dual-driver setup ticked the engine twice
+    // per vsync (rAF loop + pump), wasting CPU and jittering pacing. go() simply returns;
+    // main() exits; the runtime stays alive (EXIT_RUNTIME=0) and the engine object is leaked
+    // in main() so the pump can keep ticking it.
+    return;
+#else
+    // E3 (MP): FIXED simulation timestep, HEADLESS ONLY. The wall-clock dt makes physics
+    // adaptively non-deterministic under load by design (calculateStepConfig abandons the
+    // fixed step on overrun), so AI and movement resolution silently degrade when the host
+    // is busy — the "some NPCs behave differently under load" class of bug, which on an
+    // authoritative peer becomes everyone's bug at once. The peer is paced by its own
+    // framerate limit (settings.cfg, 20 fps), so a fixed dt of 1/limit keeps game time
+    // honest while making each tick simulate the same amount.
+    //
+    // MUST stay headless-only: a fixed dt in single-player makes game time run slow on a
+    // struggling machine — the 200 ms hitch clamp exists precisely to prevent that. This
+    // buys CONSISTENCY, not replay determinism (Misc::Rng stays process-global).
+    //
+    // CATCH-UP (backlog 115): a fixed 1/limit per tick made the peer's clock LOAD-DEPENDENT --
+    // a tick that took 80 ms still advanced game time 50 ms, so under load the peer fell
+    // behind wall-clock and every duration-based assert compared two clocks. The dt is now
+    // the real elapsed time whenever a tick overran the budget, capped at 250 ms so a stall
+    // (cell load, GC) does not teleport the simulation; a tick within budget keeps the fixed
+    // step, so the common case is unchanged.
+    static const bool headlessFixedDt = std::getenv("OPENMW_HEADLESS") != nullptr;
+    const double fixedDt = 1.0 / std::max(1.0f, Settings::video().mFramerateLimit.get());
+    constexpr double headlessMaxDt = 0.25;
     while (!mViewer->done() && !mStateManager->hasQuitRequest())
     {
-        const double dt = std::chrono::duration_cast<std::chrono::duration<double>>(
-                              std::min(frameRateLimiter.getLastFrameDuration(), maxSimulationInterval))
-                              .count()
+        const double realDt = std::chrono::duration_cast<std::chrono::duration<double>>(
+            frameRateLimiter.getLastFrameDuration()).count();
+        const double dt = (headlessFixedDt
+                              ? std::min(std::max(realDt, fixedDt), headlessMaxDt)
+                              : std::min(realDt,
+                                    std::chrono::duration_cast<std::chrono::duration<double>>(maxSimulationInterval).count()))
             * timeManager.getSimulationTimeScale();
 
         mViewer->advance(timeManager.getRenderingSimulationTime());
@@ -1069,6 +1700,7 @@ void OMW::Engine::go()
     }
 
     mLuaWorker->join();
+#endif
 
     // Save user settings
     Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");

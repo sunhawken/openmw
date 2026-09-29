@@ -1,4 +1,8 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "camera.hpp"
+
+#include <cstdlib>
 
 #include <osg/Camera>
 
@@ -55,8 +59,17 @@ namespace MWRender
               | MWPhysics::CollisionType_CameraOnly)
         , mCamera(camera)
         , mAnimation(nullptr)
+#ifdef __EMSCRIPTEN__
+        // Example suite only (OPENMW_EXAMPLE_SUITE): default to third-person — the suite's
+        // first-person body mesh renders as a black full-body blob (it has no proper hands-only
+        // 1st-person skin). Retail Morrowind keeps the stock first-person default (1:1).
+        // Users can still toggle the view as usual.
+        , mFirstPersonView(getenv("OPENMW_EXAMPLE_SUITE") == nullptr)
+        , mMode(getenv("OPENMW_EXAMPLE_SUITE") == nullptr ? Mode::FirstPerson : Mode::ThirdPerson)
+#else
         , mFirstPersonView(true)
         , mMode(Mode::FirstPerson)
+#endif
         , mVanityAllowed(true)
         , mDeferredRotationAllowed(true)
         , mProcessViewChange(false)
@@ -86,11 +99,27 @@ namespace MWRender
 
     osg::Vec3d Camera::calculateTrackedPosition() const
     {
-        if (!mTrackingNode)
+        osg::NodePathList nodepaths;
+        if (mTrackingNode)
+            nodepaths = mTrackingNode->getParentalNodePaths();
+        if (!mTrackingNode || nodepaths.empty())
+        {
+#ifdef __EMSCRIPTEN__
+            // The player's first-person tracking bone ("Camera"/"Head") can be missing when the
+            // NPC skeleton fails to attach (see "Can't find attachment node Head"). Without a
+            // tracking node the camera collapses to world origin (0,0,0), putting the whole cell
+            // outside the view frustum so only the camera-relative sky renders. Fall back to the
+            // tracked actor's real world position so the world stays in-frustum and visible.
+            if (!mTrackingPtr.isEmpty())
+            {
+                const float* p = mTrackingPtr.getRefData().getPosition().pos;
+                osg::Vec3d res(p[0], p[1], p[2]);
+                res.z() += mHeight * mHeightScale; // approximate eye height
+                return res;
+            }
+#endif
             return osg::Vec3d();
-        osg::NodePathList nodepaths = mTrackingNode->getParentalNodePaths();
-        if (nodepaths.empty())
-            return osg::Vec3d();
+        }
         osg::Matrix worldMat = osg::computeLocalToWorld(nodepaths[0]);
         osg::Vec3d res = worldMat.getTrans();
         if (mMode != Mode::FirstPerson)

@@ -1,4 +1,8 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #version 330
+#ifndef OMW_VGUARD_LIB_CORE_FRAGMENT_MULTIVIEW_GLSL
+#define OMW_VGUARD_LIB_CORE_FRAGMENT_MULTIVIEW_GLSL
 
 #extension GL_OVR_multiview : require
 #extension GL_OVR_multiview2 : require
@@ -52,3 +56,4 @@ vec4 sampleOpaqueDepthTex(vec2 uv)
 {
     return texture(opaqueDepthTex, vec3((uv), gl_ViewID_OVR));
 }
+#endif

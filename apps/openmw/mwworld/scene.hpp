@@ -119,6 +119,37 @@ namespace MWWorld
 
         osg::Vec2i mCurrentGridCenter;
 
+        // MP SIMULATION ANCHORS. Vanilla keeps ONE grid of active cells, centred on the player,
+        // and unloads everything else — so a headless sim peer could only ever simulate the one
+        // place its avatar stood. Serving players spread across the world then meant one ~450 MB
+        // peer process PER occupied cell, which does not scale past a handful of players.
+        //
+        // These are extra centres the server asks this process to keep active. Cells within
+        // mHalfGridSize of ANY anchor stay loaded; actors near any anchor keep processing. The
+        // marginal cost of an anchor is that region's cells (meshes, collision, navmesh) rather
+        // than a whole second engine, because the ESM store and every subsystem are shared.
+        // Empty of anchors — every normal client — this is exactly vanilla behaviour.
+        //
+        // TWO REPRESENTATIONS, ONE SOURCE. The server sends WORLD POSITIONS (each player's
+        // live pose). mSimAnchorPositions keeps them raw for the mechanics range checks —
+        // 7168 units around each player, exactly what a single-player client gets. The grid
+        // coordinates derived from them drive cell LOADING (mSimAnchors), and only a change
+        // in the DERIVED set re-runs the grid: positions move every tick, and rebuilding the
+        // grid every resend for no reason is the one expensive mistake this split prevents.
+        // The old cell-centre form covered the anchored cell but reached only ~3072 units
+        // into any neighbour (centre-to-corner is 5793 against a 7168 range), leaving a ring
+        // of loaded-but-frozen cells — the same bug class the anchors exist to fix.
+        std::vector<osg::Vec3f> mSimAnchorPositions;
+        std::vector<osg::Vec2i> mSimAnchors;
+
+        // Interiors held for the server, by cell name. An interior has NO grid coordinate, so
+        // it cannot be expressed in mSimAnchors — which is why a peer used to be able to
+        // simulate an interior only by standing in it, and why Morrowind's opening (entirely
+        // indoors) had no simulator at all unless the peer happened to be in that exact room.
+        // These are kept loaded and their actors keep processing regardless of where this
+        // process's own player stands, exactly like an exterior anchor.
+        std::vector<ESM::RefId> mSimAnchorInteriors;
+
         // Load and unload cells as necessary to create a cell grid with "X" and "Y" in the center
         void changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent = true);
 
@@ -141,6 +172,24 @@ namespace MWWorld
             const DetourNavigator::UpdateGuard* navigatorUpdateGuard);
 
     public:
+        /// Extra simulation anchors to keep active, in addition to the player's own grid.
+        /// Server-driven (the sim peer's world server sends the list); empty for a real
+        /// client. Exteriors are WORLD POSITIONS (players' live poses); `interiors` are held
+        /// by name — an interior has no grid coordinate to anchor on.
+        void setSimAnchors(
+            const std::vector<osg::Vec3f>& anchors, const std::vector<ESM::RefId>& interiors = {});
+
+        /// True when `cell` is an interior this process is holding for the server. Actors there
+        /// must keep processing however far the local player is, because "distance" is
+        /// meaningless across a door.
+        bool isAnchoredInterior(const MWWorld::CellStore* cell) const;
+
+        /// True when `cell` is within the active grid of the player or any simulation anchor.
+        bool isWithinActiveGrids(int x, int y) const;
+
+        /// World-space positions of the simulation anchors, for range checks in mechanics.
+        std::vector<osg::Vec3f> getSimAnchorPositions() const;
+
         Scene(MWWorld::World& world, MWRender::RenderingManager& rendering, MWPhysics::PhysicsSystem* physics,
             DetourNavigator::Navigator& navigator);
 

@@ -1,7 +1,13 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "worldimp.hpp"
 
 #include <charconv>
 #include <vector>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <osg/ComputeBoundsVisitor>
 #include <osg/Group>
@@ -85,6 +91,8 @@
 #include "../mwscript/globalscripts.hpp"
 
 #include "../mwclass/door.hpp"
+
+#include "../mwmp/puppets.hpp"
 
 #include "../mwphysics/actor.hpp"
 #include "../mwphysics/collisiontype.hpp"
@@ -234,6 +242,27 @@ namespace MWWorld
     {
         mPhysics = std::make_unique<MWPhysics::PhysicsSystem>(mResourceSystem, rootNode);
 
+#ifdef __EMSCRIPTEN__
+        // Web: use the REAL navigator so AI pathfinding works, with ONE background updater
+        // pthread (like async physics — exterior tile generation is far too heavy for the main
+        // thread; a bulk drain there froze the tab for tens of seconds). The main thread never
+        // waits on it: wait() is a no-op under emscripten. The navmesh.db SQLite cache stays off
+        // (its writer thread proxies heavy FS writes to the main thread, starving the render
+        // loop). Overridden in code so settings.cfg/defaults.bin stay untouched.
+        if (Settings::navigator().mEnable)
+        {
+            auto navigatorSettings = DetourNavigator::makeSettingsFromSettingsManager(maxRecastLogLevel);
+            navigatorSettings.mRecast.mSwimHeightScale = mSwimHeightScale;
+            navigatorSettings.mAsyncNavMeshUpdaterThreads = 1;
+            navigatorSettings.mEnableNavMeshDiskCache = false;
+            navigatorSettings.mWriteToNavMeshDb = false;
+            mNavigator = DetourNavigator::makeNavigator(navigatorSettings, mUserDataPath);
+        }
+        else
+        {
+            mNavigator = DetourNavigator::makeNavigatorStub();
+        }
+#else
         if (Settings::navigator().mEnable)
         {
             auto navigatorSettings = DetourNavigator::makeSettingsFromSettingsManager(maxRecastLogLevel);
@@ -244,6 +273,7 @@ namespace MWWorld
         {
             mNavigator = DetourNavigator::makeNavigatorStub();
         }
+#endif
 
         mRendering = std::make_unique<MWRender::RenderingManager>(
             viewer, rootNode, mResourceSystem, workQueue, *mNavigator, mGroundcoverStore, unrefQueue);
@@ -329,6 +359,9 @@ namespace MWWorld
             }
         }
 
+#ifndef __EMSCRIPTEN__
+        // Desktop: playVideo() blocks in a nested loop until the intro ends/skips, so the rest of
+        // the new-game handoff (below, and the fades in StateManager::newGame) runs only afterwards.
         if (!bypass)
         {
             std::string_view video = Fallback::Map::getString("Movies_New_Game");
@@ -339,6 +372,7 @@ namespace MWWorld
                 MWBase::Environment::get().getWindowManager()->playVideo(video, true);
             }
         }
+#endif
 
         // enable collision
         if (!mPhysics->toggleCollisionMode())
@@ -349,6 +383,29 @@ namespace MWWorld
 
         // Initial seed.
         mPrng.seed(mRandomSeed);
+
+#ifdef __EMSCRIPTEN__
+        // Emscripten: playVideo() is cooperative (returns immediately; frames are pumped from the
+        // main loop). Because startNewGame runs re-entrantly inside a frame, the whole handoff would
+        // otherwise complete UNDER the intro, leaving it a stale overlay the user had to hand-dismiss.
+        // Start it LAST, with the world/player already set up underneath, so updateVideoPlayback's
+        // end-of-stream (or Esc) teardown cleanly reveals the running game — an auto-advancing intro.
+        // ?skipintro=1 (index.html sets Module.__omwSkipIntro): hard bypass of the cooperative
+        // intro video. Guaranteed path into the game for anyone the video path still trips up —
+        // no video means no video-related freeze, period. The world/player are already set up
+        // above, so skipping playVideo() drops straight into the running prison-ship cell.
+        bool skipIntro = false;
+        skipIntro = EM_ASM_INT({ return (typeof Module !== 'undefined' && Module.__omwSkipIntro) ? 1 : 0; }) != 0;
+        if (!bypass && !skipIntro)
+        {
+            std::string_view video = Fallback::Map::getString("Movies_New_Game");
+            if (!video.empty())
+            {
+                MWBase::Environment::get().getSoundManager()->stopMusic();
+                MWBase::Environment::get().getWindowManager()->playVideo(video, true);
+            }
+        }
+#endif
     }
 
     void World::clear()
@@ -531,12 +588,21 @@ namespace MWWorld
     {
         mTimeManager->updateGlobalInt(name, value);
         mGlobalVariables[name].setInteger(value);
+        // MP (E5): these writes were silent — quest state advanced by MWScript was invisible
+        // to Lua, so an authoritative peer could not broadcast it. The time globals churn
+        // every frame and are already synced by their own channel; skip them.
+        const std::string_view n = name.getValue();
+        if (n != Globals::sGameHour.getValue() && n != Globals::sTimeScale.getValue())
+            MWBase::Environment::get().getLuaManager()->globalVariableChanged(n, static_cast<float>(value));
     }
 
     void World::setGlobalFloat(GlobalVariableName name, float value)
     {
         mTimeManager->updateGlobalFloat(name, value);
         mGlobalVariables[name].setFloat(value);
+        const std::string_view n = name.getValue();
+        if (n != Globals::sGameHour.getValue() && n != Globals::sTimeScale.getValue())
+            MWBase::Environment::get().getLuaManager()->globalVariableChanged(n, value);
     }
 
     int World::getGlobalInt(GlobalVariableName name) const
@@ -723,6 +789,10 @@ namespace MWWorld
         if (!reference.getRefData().isEnabled())
         {
             reference.getRefData().enable();
+            // Multiplayer (backlog 213/218): the one choke every scripted Enable passes through,
+            // whichever cell the ref is in. scripts/mp relays it under the OBJECT's cell.
+            MWMP::recordScriptNote({ "enable", reference.getCellRef().getRefNum(), true, {}, 1,
+                MWMP::cellKeyOf(*reference.getCell()) });
 
             if (mWorldScene->getActiveCells().find(reference.getCell()) != mWorldScene->getActiveCells().end()
                 && reference.getCellRef().getCount())
@@ -768,6 +838,8 @@ namespace MWWorld
             throw std::runtime_error("can not disable player object");
 
         reference.getRefData().disable();
+        MWMP::recordScriptNote({ "enable", reference.getCellRef().getRefNum(), false, {}, 1,
+            MWMP::cellKeyOf(*reference.getCell()) }); // see enable()
 
         if (reference.getCellRef().getRefNum().hasContentFile())
         {
@@ -2669,6 +2741,34 @@ namespace MWWorld
         }
 
         return ESM::RefId();
+    }
+
+    bool World::isAnchoredInterior(const MWWorld::CellStore* cell) const
+    {
+        return mWorldScene->isAnchoredInterior(cell);
+    }
+
+    bool World::isWithinActiveGrids(int x, int y) const
+    {
+        return mWorldScene->isWithinActiveGrids(x, y);
+    }
+
+    std::vector<osg::Vec3f> World::getSimAnchorPositions() const
+    {
+        return mWorldScene->getSimAnchorPositions();
+    }
+
+    void World::adjustActorPosition(const MWWorld::Ptr& actor, const osg::Vec3f& offset)
+    {
+        MWPhysics::Actor* physicActor = mPhysics->getActor(actor);
+        if (physicActor != nullptr)
+            physicActor->adjustPosition(offset);
+    }
+
+    void World::setSimAnchors(
+        const std::vector<osg::Vec3f>& anchors, const std::vector<ESM::RefId>& interiors)
+    {
+        mWorldScene->setSimAnchors(anchors, interiors);
     }
 
     ESM::RefId World::findExteriorPosition(std::string_view nameId, ESM::Position& pos)

@@ -90,6 +90,14 @@ namespace MWMechanics
         void turnActorToFacePlayer(const MWWorld::Ptr& actor, Actor& actorState, const osg::Vec3f& dir) const;
 
         void rest(double hours, bool sleep) const;
+
+        /** Level of the AVATAR nearest `pos`, or 0 when this process simulates none.
+            Levelled lists ask "what level is the player here", and on the sim peer
+            getPlayer() is an idle dummy at level 1 -- so a party of veterans got level-1
+            spawns everywhere. Nearest, not highest: one peer simulates cells all over the
+            world, and a level 40 player on the other side of it must not inflate the
+            creatures that greet a level 2 one. */
+        int nearestAvatarLevel(const osg::Vec3f& pos) const;
         ///< Update actors while the player is waiting or sleeping.
 
         void updateSneaking(CharacterController* ctrl, float duration);
@@ -105,6 +113,10 @@ namespace MWMechanics
 
         int countDeaths(const ESM::RefId& id) const;
         ///< Return the number of deaths for actors with the given ID.
+
+        // Added by Virtastic (OpenMW-Web MP): set the shared kill tally for a record id so a
+        // networked WorldKillCount can satisfy GetDeadCount quest gates on every client.
+        void setDeaths(const ESM::RefId& id, int count) { mDeathCount[id] = count; }
 
         bool isAttackPreparing(const MWWorld::Ptr& ptr) const;
         bool isRunning(const MWWorld::Ptr& ptr) const;

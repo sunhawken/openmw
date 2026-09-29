@@ -1,4 +1,8 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "globalmap.hpp"
+
+#include <cstdlib>
 
 #include <osg/Geometry>
 #include <osg/Group>
@@ -210,7 +214,7 @@ namespace MWRender
             mOverlayTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
             mOverlayTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
             mOverlayTexture->setResizeNonPowerOfTwoHint(false);
-            mOverlayTexture->setInternalFormat(GL_RGBA);
+            mOverlayTexture->setInternalFormat(GL_RGBA8); // sized format for a renderable WebGL2 color attachment
             mOverlayTexture->setTextureSize(mWidth, mHeight);
         }
 
@@ -265,6 +269,16 @@ namespace MWRender
 
     void GlobalMap::render()
     {
+        // The simulation peer runs headless and draws nothing, so it has no global map to
+        // build. It must still not DIE trying: ImageManager returns the shared 8x8 warning
+        // image for every texture under OPENMW_HEADLESS (deliberately — mechanics, physics and
+        // navigation never read pixels), and the LUT validation below rejects 8x8 and throws.
+        // The peer then crash-looped on startup, taking cell authority with it, while the
+        // deploy reported success because it only checked that the binary could be spawned.
+        static const bool sHeadless = std::getenv("OPENMW_HEADLESS") != nullptr;
+        if (sHeadless)
+            return;
+
         const MWWorld::ESMStore& esmStore = *MWBase::Environment::get().getESMStore();
 
         // get the size of the world
@@ -315,6 +329,7 @@ namespace MWRender
         float srcBottom)
     {
         osg::ref_ptr<osg::Camera> camera(new osg::Camera);
+        camera->setName("GlobalMap");
         camera->setNodeMask(Mask_RenderToTexture);
         camera->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
         camera->setViewMatrix(osg::Matrix::identity());
@@ -334,7 +349,18 @@ namespace MWRender
 
         camera->setUpdateCallback(new CameraUpdateGlobalCallback(this));
 
-        camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT, osg::Camera::PIXEL_BUFFER_RTT);
+        // NO PIXEL_BUFFER FALLBACK. PIXEL_BUFFER_RTT is a pbuffer, which does not exist under
+        // WebGL at all -- so on this build the second argument names a path that cannot
+        // possibly work, and anything that declines the FBO path lands there and renders
+        // garbage instead of failing loudly. The minimap rendering solid white/blue/black is
+        // exactly that shape, and these three cameras were the only ones in the engine still
+        // naming the fallback; every other RTT here already asks for FRAME_BUFFER_OBJECT
+        // alone.
+        //
+        // Stated honestly: this has not been reproduced, so it is not proven to be the cause.
+        // It is removing a path that provably cannot work on the target platform, which is
+        // worth doing on its own merits.
+        camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
         camera->attach(osg::Camera::COLOR_BUFFER, mOverlayTexture);
 
         // no need for a depth buffer
@@ -346,6 +372,13 @@ namespace MWRender
             osg::ref_ptr<osg::Image> image(new osg::Image);
             image->setPixelFormat(mOverlayImage->getPixelFormat());
             image->setDataType(mOverlayImage->getDataType());
+#ifdef __EMSCRIPTEN__
+            // WebGL2: the image color attachment must carry a sized, renderable internal
+            // format, otherwise the RTT renderbuffer is created with format 0 (unsized) and
+            // the FBO is incomplete (0x8cd6). The GL_RGBA8 texture attach above is overwritten
+            // by this image attach (same COLOR_BUFFER slot), so the format must be set here.
+            image->setInternalTextureFormat(GL_RGBA8);
+#endif
             camera->attach(osg::Camera::COLOR_BUFFER, image);
 
             ImageDest imageDest;

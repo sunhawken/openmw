@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_COMPONENTS_MISC_FRAMERATELIMITER_H
 #define OPENMW_COMPONENTS_MISC_FRAMERATELIMITER_H
 
@@ -24,6 +26,7 @@ namespace Misc
         {
             const auto passed = now - mLastMeasurement;
             const auto left = mMaxFrameDuration - passed;
+#ifndef __EMSCRIPTEN__
             if (left > left.zero())
             {
                 std::this_thread::sleep_for(left);
@@ -31,6 +34,12 @@ namespace Misc
                 mLastFrameDuration = mMaxFrameDuration;
             }
             else
+#else
+            // Never sleep on the browser main thread: it blocks the event loop (the
+            // "Blocking on the main thread" warning); frame pacing is handled by the
+            // rAF-paced MessageChannel pump in index.html.
+            (void)left;
+#endif
             {
                 mLastMeasurement = now;
                 mLastFrameDuration = passed;

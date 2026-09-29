@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "sdlinputwrapper.hpp"
 
 #include <components/debug/debuglog.hpp>
@@ -47,8 +49,12 @@ namespace SDLUtil
         SDL_GetWindowSize(mSDLWindow, &w, &h);
         int dw, dh;
         SDL_GL_GetDrawableSize(mSDLWindow, &dw, &dh);
-        mScaleX = static_cast<Uint16>(dw / w);
-        mScaleY = static_cast<Uint16>(dh / h);
+        // NB: dw/w must be floating-point. Integer division truncates a non-integer device-pixel
+        // ratio (Windows display scaling 125%/150%/175%, or browser zoom) to 1, and truncates a
+        // drawable smaller than the window (zoomed out) to 0 — the former silently stops scaling
+        // the mouse, the latter divides by zero. Retina (ratio exactly 2) is why this went unseen.
+        mScaleX = w > 0 ? static_cast<float>(dw) / static_cast<float>(w) : 1.f;
+        mScaleY = h > 0 ? static_cast<float>(dh) / static_cast<float>(h) : 1.f;
     }
 
     void InputWrapper::capture(bool windowEventsOnly)
@@ -95,8 +101,16 @@ namespace SDLUtil
                     if (!_handleWarpMotion(evt.motion))
                     {
                         // If in relative mode, don't trigger events unless window has focus
+#ifdef __EMSCRIPTEN__
+                        // Under emscripten, SDL emits MOUSEMOTION with xrel/yrel derived from
+                        // canvas mousemove deltas even when Pointer Lock isn't held and the
+                        // canvas reports no input focus. Always deliver motion so first-person
+                        // camera look works without requiring a pointer-lock gesture.
+                        mMouseListener->mouseMoved(_packageMouseMotion(evt));
+#else
                         if (!mWantRelative || mWindowHasFocus)
                             mMouseListener->mouseMoved(_packageMouseMotion(evt));
+#endif
 
                         // Try to keep the mouse inside the window
                         if (mWindowHasFocus)
@@ -418,16 +432,21 @@ namespace SDLUtil
     MouseMotionEvent InputWrapper::_packageMouseMotion(const SDL_Event& evt)
     {
         MouseMotionEvent packEvt = {};
-        packEvt.x = mMouseX * mScaleX;
-        packEvt.y = mMouseY * mScaleY;
+        // mMouseX/Y cache the last position in WINDOW units; the scale to drawable pixels is applied
+        // here, once. (Previously the scaled value was cached and then scaled again on this path,
+        // which double-scaled the position reported with mouse-wheel events whenever scale != 1.)
+        packEvt.x = static_cast<Sint32>(mMouseX * mScaleX);
+        packEvt.y = static_cast<Sint32>(mMouseY * mScaleY);
         packEvt.z = mMouseZ;
 
         if (evt.type == SDL_MOUSEMOTION)
         {
-            packEvt.x = mMouseX = evt.motion.x * mScaleX;
-            packEvt.y = mMouseY = evt.motion.y * mScaleY;
-            packEvt.xrel = evt.motion.xrel * mScaleX;
-            packEvt.yrel = evt.motion.yrel * mScaleY;
+            mMouseX = evt.motion.x;
+            mMouseY = evt.motion.y;
+            packEvt.x = static_cast<Sint32>(mMouseX * mScaleX);
+            packEvt.y = static_cast<Sint32>(mMouseY * mScaleY);
+            packEvt.xrel = static_cast<Sint32>(evt.motion.xrel * mScaleX);
+            packEvt.yrel = static_cast<Sint32>(evt.motion.yrel * mScaleY);
             packEvt.type = SDL_MOUSEMOTION;
             if (mFirstMouseMove)
             {

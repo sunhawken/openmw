@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "configurationmanager.hpp"
 
 #include <fstream>
@@ -147,8 +149,9 @@ namespace Files
         }
         mScreenshotPath = mUserDataPath / "screenshots";
 
-        std::filesystem::create_directories(getUserConfigPath());
-        std::filesystem::create_directories(mScreenshotPath);
+        Log(Debug::Info) << "[wasm] userConfig=" << getUserConfigPath() << " userData=" << mUserDataPath << " screenshot=" << mScreenshotPath;
+        if (!getUserConfigPath().empty()) std::filesystem::create_directories(getUserConfigPath());
+        if (!mScreenshotPath.empty()) std::filesystem::create_directories(mScreenshotPath);
 
         // probably not necessary but validate the creation of the screenshots directory and fallback to the original
         // behavior if it fails

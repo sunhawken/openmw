@@ -1,6 +1,12 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "luamanagerimp.hpp"
 
 #include <filesystem>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <MyGUI_InputManager.h>
 #include <osg/Stats>
@@ -35,10 +41,13 @@
 #include "../mwworld/scene.hpp"
 #include "../mwworld/worldmodel.hpp"
 
+#include "../mwmp/netmanager.hpp"
+
 #include "luabindings.hpp"
 #include "playerscripts.hpp"
 #include "types/types.hpp"
 #include "userdataserializer.hpp"
+#include <cstdlib>
 
 namespace MWLua
 {
@@ -198,6 +207,25 @@ namespace MWLua
                 mGlobalStorage.save(view.sol(), userConfigPath / "global_storage.bin");
             mPlayerStorage.save(view.sol(), userConfigPath / "player_storage.bin");
         });
+
+#ifdef __EMSCRIPTEN__
+        // The storage landed in MEMFS-backed IDBFS; flush it to IndexedDB NOW so a
+        // crash/close right after saving cannot lose it (the JS harness only syncs on a timer).
+        EM_ASM({
+            try
+            {
+                // Route through the serialized guard (index.html) so overlapping saves
+                // don't race the IDBFS reconciliation and drop writes; fall back to raw.
+                if (typeof window !== 'undefined' && globalThis.__omwSyncfs)
+                    globalThis.__omwSyncfs();
+                else if (typeof FS !== 'undefined' && FS.syncfs)
+                    FS.syncfs(false, function() {});
+            }
+            catch (e)
+            {
+            }
+        });
+#endif
     }
 
     void LuaManager::sendLocalEvent(
@@ -246,6 +274,10 @@ namespace MWLua
         for (const LuaUtil::ScriptsContainerWeakPtr& ptr : mActiveLocalScripts)
             asLocal(ptr)->statsNextFrame();
 
+        // Multiplayer (omw-mp/1): inject frames received since last frame as MP_* global events
+        // BEFORE finalizeEventBatch so they are delivered by callEventHandlers this same frame.
+        MWMP::NetManager::instance().pumpInboundToLua(mLuaEvents);
+
         mLuaEvents.finalizeEventBatch();
 
         MWWorld::DateTimeManager& timeManager = *MWBase::Environment::get().getWorld()->getTimeManager();
@@ -277,6 +309,9 @@ namespace MWLua
 
             mScriptTracker.unloadInactiveScripts(lua);
         });
+
+        // Multiplayer: everything queued by openmw.mp during this frame goes out in one batch.
+        MWMP::NetManager::instance().flushOutbound();
     }
 
     void LuaManager::objectTeleported(const MWWorld::Ptr& ptr)
@@ -291,6 +326,21 @@ namespace MWLua
         }
         else
             mEngineEvents.addToQueue(EngineEvents::OnTeleported{ getId(ptr) });
+    }
+
+    void LuaManager::itemTransferred(const MWWorld::Ptr& container, const ESM::RefId& itemId, int count, bool added)
+    {
+        if (mPlayer.isEmpty())
+            return; // world still loading; initial fills are not transactions
+        mEngineEvents.addToQueue(
+            EngineEvents::OnItemTransferred{ getId(container), itemId.serializeText(), count, added });
+    }
+
+    void LuaManager::globalVariableChanged(std::string_view name, float value)
+    {
+        if (mPlayer.isEmpty())
+            return; // The game is not started yet (including the initial load's own writes).
+        mGlobalScripts.onGlobalVariableChanged(name, value);
     }
 
     void LuaManager::questUpdated(const ESM::RefId& questId, int stage)
@@ -370,16 +420,38 @@ namespace MWLua
         }
     }
 
+    // A delayed action is allowed to change the game state: MP's `mp.resurrect` resumes a world
+    // that ended the moment the player died. The menu scripts' `onStateChanged` handlers create
+    // delayed actions of their own, which addAction() forbids while the queue is being applied --
+    // so notifying them from inside the pass made two vanilla handlers (settings, console) throw
+    // on every respawn, silently disabling their subsystems. Defer the notification instead: the
+    // state really has changed, the menu just hears about it once the pass is over.
+    void LuaManager::notifyMenuStateChanged()
+    {
+        if (mApplyingDelayedActions)
+            mPendingMenuStateChanged = true;
+        else
+            mMenuScripts.stateChanged();
+    }
+
     void LuaManager::applyDelayedActions()
     {
-        BoolScopeGuard applyingGuard(mApplyingDelayedActions);
-        for (DelayedAction& action : mActionQueue)
-            action.apply();
-        mActionQueue.clear();
+        {
+            BoolScopeGuard applyingGuard(mApplyingDelayedActions);
+            for (DelayedAction& action : mActionQueue)
+                action.apply();
+            mActionQueue.clear();
 
-        if (mTeleportPlayerAction)
-            mTeleportPlayerAction->apply();
-        mTeleportPlayerAction.reset();
+            if (mTeleportPlayerAction)
+                mTeleportPlayerAction->apply();
+            mTeleportPlayerAction.reset();
+        }
+        // Outside the guard: these handlers may legitimately queue actions for the next pass.
+        if (mPendingMenuStateChanged)
+        {
+            mPendingMenuStateChanged = false;
+            mMenuScripts.stateChanged();
+        }
     }
 
     void LuaManager::clear()
@@ -448,20 +520,20 @@ namespace MWLua
         if (!mGlobalScriptsStarted)
             mGlobalScripts.addAutoStartedScripts();
         mGlobalScriptsStarted = true;
-        mMenuScripts.stateChanged();
+        notifyMenuStateChanged();
     }
 
     void LuaManager::gameEnded()
     {
         // TODO: disable scripts and global storage when the game is actually unloaded
         // mGlobalStorage.setActive(false);
-        mMenuScripts.stateChanged();
+        notifyMenuStateChanged();
     }
 
     void LuaManager::noGame()
     {
         clear();
-        mMenuScripts.stateChanged();
+        notifyMenuStateChanged();
     }
 
     void LuaManager::uiModeChanged(const MWWorld::Ptr& arg)
@@ -674,8 +746,12 @@ namespace MWLua
 
     void LuaManager::inputEvent(const InputEvent& event)
     {
-        if (!MyGUI::InputManager::getInstance().isModalAny()
-            && !MWBase::Environment::get().getWindowManager()->isConsoleMode())
+        // HEADLESS: MyGUI singletons were never created (NullWindowManager) and touching one
+        // recurses to death in LogManager::getInstance(). No modal can exist without a GUI.
+        static const bool headless = std::getenv("OPENMW_HEADLESS") != nullptr;
+        if (headless
+            || (!MyGUI::InputManager::getInstance().isModalAny()
+                && !MWBase::Environment::get().getWindowManager()->isConsoleMode()))
         {
             mInputEvents.push_back(event);
         }

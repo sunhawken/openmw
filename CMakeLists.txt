@@ -1,3 +1,5 @@
+# Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+# See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 cmake_minimum_required(VERSION 3.16.0)
 
 #  set the timestamps of extracted contents to the time of extraction
@@ -293,12 +295,10 @@ set(USED_OSG_COMPONENTS
     )
 set(USED_OSG_PLUGINS
     osgdb_bmp
-    osgdb_dae
     osgdb_dds
     osgdb_freetype
     osgdb_jpeg
     osgdb_osg
-    osgdb_png
     osgdb_serializers_osg
     osgdb_tga)
 
@@ -795,7 +795,10 @@ endif()
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CUSTOM_CPACK_OS_NAME}-${CUSTOM_CPACK_ARCHITECTURE}")
 
 # Apple bundling
-if (APPLE)
+# Guarded on USE_QT as well as APPLE: the block copies Qt plugins into the app bundle, which
+# only exist when the launcher/wizard are built. A tools-off build (e.g. the headless
+# multiplayer sim peer) has no Qt at all and previously failed configure right here.
+if (APPLE AND USE_QT)
     if(CMAKE_VERSION VERSION_LESS 3.19)
         message(FATAL_ERROR "macOS packaging requires CMake 3.19 or higher to sign macOS app bundles.")
     endif()

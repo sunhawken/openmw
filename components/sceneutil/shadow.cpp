@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "shadow.hpp"
 
 #include <osgShadow/ShadowSettings>
@@ -76,6 +78,14 @@ namespace SceneUtil
 
         mShadowSettings->setMultipleShadowMapHint(osgShadow::ShadowSettings::CASCADED);
 
+#ifdef __EMSCRIPTEN__
+        // Force orthographic shadow projection: the perspective-shadow-map warp is view-dependent
+        // and would re-introduce shadow swim on camera rotation that the stable-basis + texel-snap
+        // changes in mwshadowtechnique.cpp are there to prevent. OpenMW forces the PSM shader define
+        // to 0 anyway, so this only pins the projection to match.
+        mShadowSettings->setShadowMapProjectionHint(osgShadow::ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP);
+#endif
+
         if (settings.mEnableDebugHud)
             mShadowTechnique->enableDebugHUD();
         else
@@ -95,6 +105,17 @@ namespace SceneUtil
         fakeShadowMapTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
         fakeShadowMapTexture->setShadowComparison(true);
         fakeShadowMapTexture->setShadowCompareFunc(osg::Texture::ShadowCompareFunc::ALWAYS);
+#ifdef __EMSCRIPTEN__
+        // WebGL2 needs a SIZED depth internal format (unsized GL_DEPTH_COMPONENT + GL_FLOAT is
+        // an invalid texImage2D combination) and non-mipmap filtering (depth textures cannot
+        // generate mipmaps; image-based OSG textures default to a mipmapped MIN_FILTER).
+        static_cast<osg::Texture2D*>(fakeShadowMapTexture.get())->setInternalFormat(GL_DEPTH_COMPONENT32F);
+        fakeShadowMapTexture->setSourceFormat(GL_DEPTH_COMPONENT);
+        fakeShadowMapTexture->setSourceType(GL_FLOAT);
+        fakeShadowMapTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
+        fakeShadowMapTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
+        fakeShadowMapTexture->setUseHardwareMipMapGeneration(false);
+#endif
         for (unsigned int i = mShadowSettings->getBaseShadowTextureUnit();
              i < mShadowSettings->getBaseShadowTextureUnit() + mShadowSettings->getNumShadowMapsPerLight(); ++i)
         {

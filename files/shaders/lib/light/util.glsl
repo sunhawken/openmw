@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef LIB_LIGHT_UTIL
 #define LIB_LIGHT_UTIL
 
@@ -52,7 +54,7 @@ float calcAttenuation(PointLight light, float dist) {
 }
 
 int getClusterTileIndex(vec2 screenRes, vec3 gridSize, float near, vec2 screenCoord, float viewSpaceZ) {
-    int zTile = int((log(abs(viewSpaceZ) / near) * int(gridSize.z)) / log(clusterFar / near));
+    int zTile = int((log(abs(viewSpaceZ) / near) * gridSize.z) / log(clusterFar / near));
     vec2 tileSize = screenRes / vec2(gridSize.xy);
     ivec3 tile = ivec3(screenCoord / tileSize, zTile);
     int tileIndex = tile.x + (tile.y * int(gridSize.x)) + (tile.z * int(gridSize.x) * int(gridSize.y));

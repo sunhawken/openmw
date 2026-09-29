@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 uniform_float uGamma {
     default = 2.2;
     min = 0.1;
@@ -61,9 +63,13 @@ shared {
         return scramblify(v.x*0.6491 + v.y*0.029 + z);
     }
 
-    float time = fract(omw.simulationTime);
     vec4 scramblev2(vec2 v)
     {
+        // `time` must be a local, not a file-scope global initialized from a uniform: in GLSL ES
+        // 3.00 (WebGL2) a global initializer must be a constant expression, so the original
+        // `float time = fract(omw.simulationTime);` at file scope fails to compile there, which made
+        // the whole bloom program fail to link and render as a flat tint.
+        float time = fract(omw.simulationTime);
         v *= 61.12;
         vec2 fwup = vec2(scramblev2_inner(v, fract(time)), scramblev2_inner(v, fract(time*fract(v.x)) + 0.18943));
         return vec4(0.5) - vec4(fwup, fwup);

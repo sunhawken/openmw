@@ -2,6 +2,8 @@
 #define GAME_MWWORLD_WORLDIMP_H
 
 #include <osg/Timer>
+#include <osg/Vec2i>
+#include <osg/Vec3f>
 #include <osg/ref_ptr>
 
 #include <components/debug/debuglog.hpp>
@@ -188,6 +190,14 @@ namespace MWWorld
     public:
         WorldModel& getWorldModel() { return mWorldModel; }
         Scene& getWorldScene() { return *mWorldScene; }
+
+        std::vector<osg::Vec3f> getSimAnchorPositions() const override;
+        void adjustActorPosition(const MWWorld::Ptr& actor, const osg::Vec3f& offset) override;
+
+        void setSimAnchors(const std::vector<osg::Vec3f>& anchors,
+            const std::vector<ESM::RefId>& interiors) override;
+        bool isAnchoredInterior(const MWWorld::CellStore* cell) const override;
+        bool isWithinActiveGrids(int x, int y) const override;
 
         // FIXME
         void addContainerScripts(const Ptr& reference, CellStore* cell) override;

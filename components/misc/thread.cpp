@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "thread.hpp"
 
 #include <components/debug/debuglog.hpp>
@@ -66,7 +68,9 @@ namespace Misc
 {
     void setCurrentThreadIdlePriority()
     {
-        Log(Debug::Warning) << "Idle thread priority is not supported on this system";
+        // Not actionable — a statement of platform capability (e.g. Emscripten has no thread
+        // priority API), not a problem. Debug level so it doesn't read as a warning in the log.
+        Log(Debug::Debug) << "Idle thread priority is not supported on this system";
     }
 }
 

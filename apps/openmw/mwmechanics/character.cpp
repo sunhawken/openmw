@@ -33,6 +33,7 @@
 
 #include <components/sceneutil/positionattitudetransform.hpp>
 
+#include "../mwmp/puppets.hpp"
 #include "../mwrender/animation.hpp"
 
 #include "../mwbase/environment.hpp"
@@ -1159,6 +1160,8 @@ namespace MWMechanics
                 mAnimation->releaseArrow(mAttackStrength);
                 mReadyToHit = false;
             }
+            else if (MWMP::isPuppet(mPtr.getCellRef().getRefNum()))
+                mAnimation->detachArrow(); // MP #137: a puppet whose hit was cancelled drops the glued arrow
         }
         else if (action == "shoot follow attach")
             mAnimation->attachArrow();
@@ -2252,8 +2255,16 @@ namespace MWMechanics
                         {
                             DynamicStat<float> health = cls.getCreatureStats(mPtr).getHealth();
                             float realHealthLost = healthLost * (1.0f - 0.25f * fatigueTerm);
-                            health.setCurrent(health.getCurrent() - realHealthLost);
-                            cls.getCreatureStats(mPtr).setHealth(health);
+                            // The avatar on the peer takes the fall for a peer-ruled player
+                            // (mwmp/puppets.hpp peerRulesBody); the report lands in the bars.
+                            // A puppet's holder takes it too — local damage would kill an NPC
+                            // puppet for good on this client (backlog 290).
+                            if (!(isPlayer && MWMP::peerRulesBody())
+                                && !MWMP::isPuppet(mPtr.getCellRef().getRefNum()))
+                            {
+                                health.setCurrent(health.getCurrent() - realHealthLost);
+                                cls.getCreatureStats(mPtr).setHealth(health);
+                            }
                             sndMgr->playSound3D(mPtr, ESM::RefId::stringRefId("Health Damage"), 1.0f, 1.0f);
                             if (isPlayer)
                                 MWBase::Environment::get().getWindowManager()->activateHitOverlay();

@@ -1,6 +1,9 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef OPENMW_MWGUI_VIDEOWIDGET_H
 #define OPENMW_MWGUI_VIDEOWIDGET_H
 
+#include <cstddef>
 #include <memory>
 
 #include <MyGUI_Widget.h>
@@ -61,6 +64,26 @@ namespace MWGui
         const VFS::Manager* mVFS;
         std::unique_ptr<MyGUI::ITexture> mTexture;
         std::unique_ptr<Video::VideoPlayer> mPlayer;
+#ifdef __EMSCRIPTEN__
+        // The osg::Texture2D currently wrapped by mTexture. Used by the cooperative update()
+        // to detect when a new video's texture has appeared (including a menu->intro swap,
+        // where the previous video's texture is still attached) and re-bind it.
+        void* mAttachedTexture = nullptr;
+        void attachCurrentTexture();
+
+    public:
+        // Monotonic per-frame upload counter of the current video texture (0 if none).
+        // Lets the cooperative driver detect a decoder that claims to be playing but has
+        // stopped producing frames (end-of-stream clock stall) and force-end it.
+        //
+        // size_t, not unsigned: the value hashes in an object POINTER, and under wasm64 that
+        // pointer is 64-bit. Truncating it to 32 bits let two images sitting in different 4 GiB
+        // regions produce the same counter -- which reads to the caller as "no new frame" and
+        // force-ends a perfectly healthy video after 10 seconds.
+        std::size_t getFrameCounter() const;
+
+    private:
+#endif
     };
 
 }

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #version 120
 #pragma import_defines(FORCE_OPAQUE, DISTORTION)
 
@@ -27,6 +29,9 @@ varying float linearDepth;
 
 varying vec3 passViewPos;
 varying vec3 passNormal;
+#if @useGLES
+varying float passClipDist; // water reflection/refraction clip (see objects.vert)
+#endif
 
 uniform vec2 screenRes;
 uniform float far;
@@ -48,6 +53,10 @@ uniform float distortionStrength;
 
 void main()
 {
+#if @useGLES
+    if (passClipDist < 0.0)
+        discard;
+#endif
 #if @diffuseMap
     gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV);
 

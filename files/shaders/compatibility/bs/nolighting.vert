@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #version 120
 
 #if @useGPUShader4
@@ -15,6 +17,11 @@ varying vec3 passViewPos;
 varying float euclideanDepth;
 varying float linearDepth;
 varying float passFalloff;
+#if @useGLES
+varying float passClipDist; // water reflection/refraction clip (see objects.vert)
+uniform vec4 clipPlane;
+uniform mat4 osg_ViewMatrixInverse;
+#endif
 
 uniform bool useFalloff;
 uniform vec4 falloffParams;
@@ -29,7 +36,11 @@ void main(void)
     gl_Position = modelToClip(gl_Vertex);
 
     vec4 viewPos = modelToView(gl_Vertex);
+#if @useGLES
+    passClipDist = dot((osg_ViewMatrixInverse * viewPos).xyz, clipPlane.xyz) + clipPlane.w;
+#else
     gl_ClipVertex = viewPos;
+#endif
     euclideanDepth = length(viewPos.xyz);
     linearDepth = getLinearDepth(gl_Position.z, viewPos.z);
 

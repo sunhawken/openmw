@@ -1,6 +1,14 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "statemanagerimp.hpp"
 
+#include "../mwmp/netmanager.hpp"
+
 #include <filesystem>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <SDL_clipboard.h>
 
@@ -177,8 +185,14 @@ void MWState::StateManager::newGame(bool bypass)
         mState = State_Running;
         MWBase::Environment::get().getLuaManager()->gameLoaded();
 
+#ifndef __EMSCRIPTEN__
+        // Desktop: startNewGame() already blocked on the intro video, so these fades run after it.
+        // Emscripten: the intro is cooperative and still playing here (started last in startNewGame),
+        // so an instant fade-to-black over it would blank the movie. Its own updateVideoPlayback
+        // teardown reveals the running game when the intro ends/skips, so skip the pre-fade.
         MWBase::Environment::get().getWindowManager()->fadeScreenOut(0);
         MWBase::Environment::get().getWindowManager()->fadeScreenIn(1);
+#endif
     }
     catch (std::exception& e)
     {
@@ -210,6 +224,19 @@ void MWState::StateManager::resumeGame()
 
 void MWState::StateManager::saveGame(std::string_view description, const Slot* slot)
 {
+    // MP (Phase 5): THE SERVER KEEPS THE SAVE. A client-side savegame of a server-owned
+    // world is a fork the server will never honour — loading it would rewind quests,
+    // inventory and position that live authoritatively in the world's PlayerDoc. One guard
+    // at this chokepoint covers the menu, quicksave, autosave, the wait dialog and the
+    // console. Solo is an MP session too (a private world on the server); only the non-MP
+    // local game keeps saves.
+    if (MWMP::NetManager::instance().state() == MWMP::NetManager::State::Joined)
+    {
+        MWBase::Environment::get().getWindowManager()->messageBox(
+            "Saving is disabled in multiplayer. Your character is saved on the server, continuously.");
+        return;
+    }
+
     MWBase::Environment::get().getLuaManager()->applyDelayedActions();
 
     MWState::Character* character = getCurrentCharacter();
@@ -342,6 +369,25 @@ void MWState::StateManager::saveGame(std::string_view description, const Slot* s
         Settings::saves().mCharacter.set(Files::pathToUnicodeString(slot->mPath.parent_path().filename()));
         mLastSavegame = slot->mPath;
 
+#ifdef __EMSCRIPTEN__
+        // The save landed in MEMFS-backed IDBFS (/userdata); flush it to IndexedDB NOW so a
+        // crash/close right after saving cannot lose it (the JS harness only syncs on a timer).
+        EM_ASM({
+            try
+            {
+                // Route through the serialized guard (index.html) so overlapping saves
+                // don't race the IDBFS reconciliation and drop writes; fall back to raw.
+                if (typeof window !== 'undefined' && globalThis.__omwSyncfs)
+                    globalThis.__omwSyncfs();
+                else if (typeof FS !== 'undefined' && FS.syncfs)
+                    FS.syncfs(false, function() {});
+            }
+            catch (e)
+            {
+            }
+        });
+#endif
+
         const auto finish = std::chrono::steady_clock::now();
 
         Log(Debug::Info) << '\'' << description << "' is saved in "
@@ -450,6 +496,14 @@ struct SaveVersionTooNewError : SaveFormatVersionError
 
 void MWState::StateManager::loadGame(const Character* character, const std::filesystem::path& filepath)
 {
+    // MP (Phase 5): same rule as saveGame above — the one save is the server's.
+    if (MWMP::NetManager::instance().state() == MWMP::NetManager::State::Joined)
+    {
+        MWBase::Environment::get().getWindowManager()->messageBox(
+            "Loading is disabled in multiplayer. Your character is saved on the server, continuously.");
+        return;
+    }
+
     try
     {
         cleanup();
@@ -708,11 +762,36 @@ void MWState::StateManager::quickLoad()
 {
     if (Character* currentCharacter = getCurrentCharacter())
     {
-        if (currentCharacter->begin() == currentCharacter->end())
+        if (currentCharacter->begin() != currentCharacter->end())
+        {
+            // use requestLoad, otherwise we can crash by loading during the wrong part of the frame
+            requestLoad(currentCharacter, currentCharacter->begin()->mPath);
             return;
-        // use requestLoad, otherwise we can crash by loading during the wrong part of the frame
-        requestLoad(currentCharacter, currentCharacter->begin()->mPath);
+        }
     }
+
+#ifdef __EMSCRIPTEN__
+    // QoL fallback: at the main menu there is no current character/slot, so desktop quickLoad is a
+    // no-op. On Emscripten, F9 instead loads the most-recently-written save across all characters,
+    // so the browser player can resume with a single keypress. Desktop behavior is unchanged.
+    const Character* newestCharacter = nullptr;
+    const Slot* newestSlot = nullptr;
+    for (auto characterIt = mCharacterManager.begin(); characterIt != mCharacterManager.end(); ++characterIt)
+    {
+        // Slots are sorted ascending by timestamp, and Character::begin() is a reverse iterator,
+        // so begin() is the newest slot for this character.
+        if (characterIt->begin() == characterIt->end())
+            continue;
+        const Slot& candidate = *characterIt->begin();
+        if (newestSlot == nullptr || newestSlot->mTimeStamp < candidate.mTimeStamp)
+        {
+            newestSlot = &candidate;
+            newestCharacter = &*characterIt;
+        }
+    }
+    if (newestCharacter != nullptr && newestSlot != nullptr)
+        requestLoad(newestCharacter, newestSlot->mPath);
+#endif
 }
 
 void MWState::StateManager::deleteGame(const MWState::Character* character, const MWState::Slot* slot)

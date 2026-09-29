@@ -5,6 +5,8 @@
 
 #include "quest.hpp"
 
+#include <functional>
+
 namespace MWDialogue
 {
     /// \brief The player's journal
@@ -14,8 +16,19 @@ namespace MWDialogue
         TQuestContainer mQuests;
         TTopicContainer mTopics;
 
+        // Multiplayer stash (see MWBase::Journal::stash). Session-only by design: the server
+        // holds the durable copy of a character's journal, so losing this to a crash costs
+        // nothing — the next login rebuilds from the server. That is what makes it impossible
+        // for a disconnect to leave a player holding someone else's campaign.
+        TEntryContainer mStashedJournal;
+        TQuestContainer mStashedQuests;
+        TTopicContainer mStashedTopics;
+        bool mStashed = false;
+
     private:
         Topic& getTopic(const ESM::RefId& id);
+
+        void addEntryStamped(const ESM::RefId& id, int index, const std::function<StampedJournalEntry()>& make);
 
         bool isThere(const ESM::RefId& topicId, const ESM::RefId& infoId = ESM::RefId()) const;
 
@@ -23,6 +36,10 @@ namespace MWDialogue
         Journal();
 
         void clear() override;
+
+        void stash() override;
+        void unstash() override;
+        bool isStashed() const override { return mStashed; }
 
         Quest* getQuestOrNull(const ESM::RefId& id) override;
         ///< Gets a pointer to the requested quest. Will return nullptr if the quest has not been started.
@@ -33,6 +50,9 @@ namespace MWDialogue
         void addEntry(const ESM::RefId& id, int index, const MWWorld::Ptr& actor) override;
         ///< Add a journal entry.
         /// @param actor Used as context for replacing of escape sequences (%name, etc).
+
+        void addEntryAt(const ESM::RefId& id, int index, const MWWorld::Ptr& actor, int day, int month,
+            int dayOfMonth) override;
 
         void setJournalIndex(const ESM::RefId& id, int index) override;
         ///< Set the journal index without adding an entry.

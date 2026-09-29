@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #ifndef COMPONENTS_STD140_UBO_H
 #define COMPONENTS_STD140_UBO_H
 
@@ -122,6 +124,16 @@ namespace Std140
             ((structDefinition += ("    " + std::string(CArgs::sTypeName) + " " + std::string(CArgs::sName) + ";\n")),
                 ...);
             return structDefinition + "};";
+        }
+
+        // Flat individual-uniform declarations (`uniform <type> <prefix><name>;`) used instead of a
+        // struct uniform on GL implementations (ANGLE/WebGL2) that read struct-member uniforms as 0.
+        static std::string getFlatDefinition(const std::string& prefix)
+        {
+            std::string out;
+            ((out += ("uniform " + std::string(CArgs::sTypeName) + " " + prefix + std::string(CArgs::sName) + ";\n")),
+                ...);
+            return out;
         }
 
         using BufferType = std::array<char, getGPUSize()>;

@@ -1,3 +1,5 @@
+// Modified by Virtastic (https://virtastic.app) for the OpenMW-Web port, 2025-2026.
+// See WASM_ADAPTATIONS.md at the repository root for details of the changes.
 #include "color.hpp"
 
 #include <algorithm>
@@ -101,7 +103,7 @@ namespace SceneUtil
 
     void getColorFormatSourceFormatAndType(GLenum internalFormat, GLenum& sourceFormat, GLenum& sourceType)
     {
-        if (getColorFormatChannelCount(internalFormat == 4))
+        if (getColorFormatChannelCount(internalFormat) == 4)
             sourceFormat = GL_RGBA;
         else
             sourceFormat = GL_RGB;
@@ -135,7 +137,15 @@ namespace SceneUtil
 
         void SelectColorFormatOperation::operator()([[maybe_unused]] osg::GraphicsContext* graphicsContext)
         {
+#ifdef __EMSCRIPTEN__
+            // WebGL2: unsized GL_RGB/UNSIGNED_BYTE is NOT color-renderable as an FBO attachment ->
+            // GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT (0x8cd6). mSupportedFormats is never populated
+            // (Engine never calls setSupportedFormats), so this default would otherwise stick at
+            // GL_RGB and break the water reflection/refraction + localmap RTTs. Use sized RGBA8.
+            sColorInternalFormat = GL_RGBA8;
+#else
             sColorInternalFormat = GL_RGB;
+#endif
 
             for (auto supportedFormat : mSupportedFormats)
             {
