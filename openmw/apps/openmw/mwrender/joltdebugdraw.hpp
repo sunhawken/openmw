@@ -56,6 +56,11 @@ namespace MWRender
             {
             }
 
+            // Shaders are built on first draw, not at creation: JPH::DebugRenderer::Initialize()
+            // creates batches while the physics system is constructed, before the rendering
+            // manager has published the lighting defines the "debug" shader needs.
+            bool mShadersCreated = false;
+
             virtual void AddRef() override { ++mRefCount; }
             virtual void Release() override
             {
