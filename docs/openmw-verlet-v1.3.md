@@ -13,3 +13,5 @@ This build keeps the v1.2 Verlet, Wiggle and Jiggle work and changes the advance
 - Closing the main settings screen also closes the advanced Jiggle setup window.
 
 Build label: OpenMW-Verlet-v1.3
+
+Build retry: include fix for JiggleZOffset API visibility on Windows CI.
