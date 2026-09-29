@@ -1,11 +1,11 @@
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i[3-6]86")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i[3-6]86" AND NOT EMSCRIPTEN)
     set(MOC_SOURCES
         MaskedOcclusionCulling.cpp
         MaskedOcclusionCullingAVX2.cpp
         MaskedOcclusionCullingAVX512.cpp
     )
 else()
-    # ARM/other: base file only (SSE2/SSE4.1 via sse2neon on ARM)
+    # ARM/WebAssembly/other: base file only (SSE2/SSE4.1 via sse2neon on ARM, SIMD128 on wasm)
     set(MOC_SOURCES
         MaskedOcclusionCulling.cpp
     )
@@ -14,7 +14,10 @@ endif()
 add_library(maskedoc STATIC ${MOC_SOURCES})
 target_include_directories(maskedoc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i[3-6]86")
+if(EMSCRIPTEN)
+    # WebAssembly: SSE4.1 intrinsics are emulated on top of wasm SIMD128.
+    set_source_files_properties(MaskedOcclusionCulling.cpp PROPERTIES COMPILE_FLAGS "-msimd128 -msse4.1")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i[3-6]86")
     if(MSVC)
         # Main file must be compiled at SSE2 baseline (no AVX)
         set_source_files_properties(MaskedOcclusionCulling.cpp PROPERTIES COMPILE_FLAGS "/arch:SSE2")

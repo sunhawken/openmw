@@ -47,6 +47,14 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
     # and will enable floating point exceptions during simulation to detect divisions by zero. 
     set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF)
 
+    if(EMSCRIPTEN)
+        # Jolt enables its SSE4.x code paths whenever __wasm_simd128__ is defined, which the
+        # web build's global -msimd128 always does. Those paths need Emscripten's SSE4.2
+        # emulation headers, which USE_WASM_SIMD turns on (-msimd128 -msse4.2, PUBLIC so every
+        # translation unit including Jolt headers agrees on the same instruction set).
+        set(USE_WASM_SIMD ON)
+    endif()
+
     include(FetchContent)
     FetchContent_Declare(joltphysics
         URL https://github.com/jrouwe/JoltPhysics/archive/refs/tags/v5.3.0.zip

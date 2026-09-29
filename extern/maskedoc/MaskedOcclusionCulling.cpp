@@ -34,8 +34,8 @@
 
 static MaskedOcclusionCulling::Implementation DetectCPUFeatures(MaskedOcclusionCulling::pfnAlignedAlloc alignedAlloc, MaskedOcclusionCulling::pfnAlignedFree alignedFree)
 {
-#if defined(__aarch64__) || defined(__ARM_NEON)
-	// ARM via sse2neon: all SSE/SSE4.1 intrinsics are available
+#if defined(__aarch64__) || defined(__ARM_NEON) || defined(__EMSCRIPTEN__)
+	// ARM via sse2neon / WebAssembly via Emscripten SIMD128: all SSE/SSE4.1 intrinsics are available
 	(void)alignedAlloc; (void)alignedFree;
 	return MaskedOcclusionCulling::SSE41;
 #else
@@ -351,6 +351,11 @@ namespace MaskedOcclusionCullingSSE2
 		dp = _mm_add_ps(dp, _mm_shuffle_ps(dp, dp, _MM_SHUFFLE(0, 1, 2, 3)));
 		return dp;
 	}
+#if defined(__EMSCRIPTEN__)
+	// No rounding-mode control on wasm; the SSE4.1 emulation's floor/ceil are exact.
+	FORCE_INLINE __m128 _mmw_floor_ps(const __m128 &a) { return _mm_floor_ps(a); }
+	FORCE_INLINE __m128 _mmw_ceil_ps(const __m128 &a) { return _mm_ceil_ps(a); }
+#else
 	FORCE_INLINE __m128 _mmw_floor_ps(const __m128 &a)
 	{ 
 		int originalMode = _MM_GET_ROUNDING_MODE();
@@ -367,6 +372,7 @@ namespace MaskedOcclusionCullingSSE2
 		_MM_SET_ROUNDING_MODE(originalMode);
 		return rounded;
 	}
+#endif
 	FORCE_INLINE __m128i _mmw_transpose_epi8(const __m128i &a)
 	{
 		// Perform transpose through two 16->8 bit pack and byte shifts
@@ -417,7 +423,7 @@ namespace MaskedOcclusionCullingSSE2
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Object construction and allocation
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#if !defined(__aarch64__) && !defined(__ARM_NEON)
+#if !defined(__aarch64__) && !defined(__ARM_NEON) && !defined(__EMSCRIPTEN__)
 namespace MaskedOcclusionCullingAVX512
 {
 	extern MaskedOcclusionCulling *CreateMaskedOcclusionCulling(pfnAlignedAlloc alignedAlloc, pfnAlignedFree alignedFree);
@@ -444,7 +450,7 @@ MaskedOcclusionCulling *MaskedOcclusionCulling::Create(Implementation RequestedS
 		impl = RequestedSIMD;
 
 	// Return best supported version
-#if !defined(__aarch64__) && !defined(__ARM_NEON)
+#if !defined(__aarch64__) && !defined(__ARM_NEON) && !defined(__EMSCRIPTEN__)
 	if (object == nullptr && impl >= AVX512)
 		object = MaskedOcclusionCullingAVX512::CreateMaskedOcclusionCulling(alignedAlloc, alignedFree); // Use AVX512 version
 	if (object == nullptr && impl >= AVX2)
