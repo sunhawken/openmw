@@ -5,15 +5,20 @@
 #include <components/misc/jigglepolicy.hpp>
 #include <components/misc/jigglezoffset.hpp>
 #include <components/nifosg/matrixtransform.hpp>
+#include <components/sceneutil/skeleton.hpp>
 #include <components/settings/values.hpp>
 
+#include <osg/Math>
 #include <osg/MatrixTransform>
 #include <osg/NodeVisitor>
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <utility>
+
+#include "jiggleglute.hpp"
 
 namespace MWRender
 {
@@ -38,6 +43,48 @@ namespace MWRender
             if (Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos)
                 return Settings::game().mJiggleBoneButtZOffset;
             return 0.f;
+        }
+
+        // Lever arm (game units) used to turn the Naturalis glute angle offsets into a rest-position
+        // shift - roughly the auto-rigger's butt weight-cone radius.
+        constexpr float sGluteLever = 9.f;
+
+        bool isGluteBone(const std::string& boneName)
+        {
+            return Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos;
+        }
+
+        bool isLeftGlute(const std::string& boneName)
+        {
+            return Misc::StringUtils::ciFind(boneName, "l butt") != std::string::npos;
+        }
+
+        // World matrix of the actor's skeleton root. Skinned body meshes (and the auto-rigger's
+        // anchors) live in this space: +X forward, +Y left, +Z up.
+        std::optional<osg::Matrix> findSkeletonWorld(const osg::NodePath& path)
+        {
+            for (std::size_t i = path.size(); i-- > 0;)
+            {
+                if (dynamic_cast<SceneUtil::Skeleton*>(path[i]) != nullptr)
+                {
+                    osg::NodePath skeletonPath(path.begin(), path.begin() + i + 1);
+                    return osg::computeLocalToWorld(skeletonPath);
+                }
+            }
+            return std::nullopt;
+        }
+
+        // Static rest shift from Naturalis's glute Up/Down and Left/Right angle offsets.
+        osg::Vec3f gluteRestOffset(const std::string& boneName, const std::optional<osg::Matrix>& skeletonWorld)
+        {
+            if (!skeletonWorld)
+                return osg::Vec3f();
+            const float upDown = osg::DegreesToRadians(Settings::game().mJiggleGluteUpDownAngle.get());
+            const float leftRight = osg::DegreesToRadians(Settings::game().mJiggleGluteLeftRightAngle.get());
+            // Positive left/right pushes the glutes together: toward -Y for the left glute, +Y for the right.
+            const float inward = isLeftGlute(boneName) ? -1.f : 1.f;
+            const osg::Vec3f local(0.f, inward * sGluteLever * std::sin(leftRight), sGluteLever * std::sin(upDown));
+            return osg::Matrix::transform3x3(local, *skeletonWorld);
         }
     }
 
@@ -93,6 +140,14 @@ namespace MWRender
             parentWorldMatrix = osg::computeLocalToWorld(parentPath);
         }
 
+        // Naturalis-style glute physics applies to butt bones of body Jiggle (not direct Wiggle).
+        const bool glute
+            = !mSettings.mDirect && isGluteBone(node->getName()) && Settings::game().mJiggleGlutePhysics;
+        std::optional<osg::Matrix> skeletonWorld;
+        if (glute && !nodePaths.empty())
+            skeletonWorld = findSkeletonWorld(nodePaths[0]);
+        const osg::Vec3f gluteOffset = glute ? gluteRestOffset(node->getName(), skeletonWorld) : osg::Vec3f();
+
         const double simTime = nv->getFrameStamp() ? nv->getFrameStamp()->getSimulationTime() : 0.0;
 
         if (!mInitialized)
@@ -106,6 +161,7 @@ namespace MWRender
             const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
             osg::Vec3f restWorldPos = (mRestLocalMatrix.getTrans() + simulationOffset) * parentWorldMatrix;
             restWorldPos.z() += zOffsetFor(node->getName());
+            restWorldPos += gluteOffset;
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
             mPreviousRestWorldPos = restWorldPos;
@@ -119,6 +175,7 @@ namespace MWRender
         const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
         osg::Vec3f restWorldPos = (restTranslation + simulationOffset) * parentWorldMatrix;
         restWorldPos.z() += zOffsetFor(node->getName());
+        restWorldPos += gluteOffset;
 
         // Actor-specific Jiggle rules are live. Direct Wiggle metadata has its own
         // independent master switch and is intentionally not governed here.
@@ -257,10 +314,10 @@ namespace MWRender
         float stiffnessMult = (1.f - 0.60f * softness) * (0.75f + 0.85f * quickness) * (1.f - 0.30f * massEffect);
         // lerp(1 -> 0.55) as softness rises; heavier damps more.
         float dampingMult = (1.f - 0.45f * softness) * (1.f + 0.50f * massEffect);
-        const float stiffness = mSettings.mUseBodyResponse
+        float stiffness = mSettings.mUseBodyResponse
             ? baseStiffness * std::max(0.05f, stiffnessMult)
             : baseStiffness;
-        const float damping = mSettings.mUseBodyResponse
+        float damping = mSettings.mUseBodyResponse
             ? baseDamping * std::max(0.f, dampingMult)
             : baseDamping;
 
@@ -269,26 +326,81 @@ namespace MWRender
         // (rotating) parent's local frame, becomes an orientation-dependent forward/back/side shift
         // - reproducing TittyMagic's whole up/down/forward/back/left-right gravity family from one
         // physical term. Heavier+softer bones sag more since equilibrium droop = gravity/stiffness.
-        const float gravity = mSettings.mGravity.value_or(Settings::game().mJiggleBoneGravity);
+        float gravity = mSettings.mGravity.value_or(Settings::game().mJiggleBoneGravity);
+        float mass = std::max(0.001f, mSettings.mMass.value_or(1.f));
+
+        // Glute depth axis: straight out of the buttocks (skeleton -X, i.e. backwards), falling back
+        // to the radial from the parent joint for pre-rigged bones that carry a rest offset.
+        std::optional<osg::Vec3f> depthAxis;
+        if (glute && skeletonWorld)
+        {
+            osg::Vec3f back = osg::Matrix::transform3x3(osg::Vec3f(-1.f, 0.f, 0.f), *skeletonWorld);
+            if (back.normalize() > 1e-6f)
+                depthAxis = back;
+        }
+        if (!depthAxis)
+        {
+            osg::Vec3f radial = restWorldPos - parentWorldMatrix.getTrans();
+            if (radial.normalize() > 1e-3f)
+                depthAxis = radial;
+        }
+
+        // Naturalis BootyMagic joint model: separate swing (rotation spring/damper) and in/out
+        // (depth spring/damper) response, glute mass, and depth in/out force multipliers. Replaces
+        // the shared breast softness/quickness/mass-response shaping for butt bones.
+        const bool gluteResponse = glute && mSettings.mUseBodyResponse;
+        JiggleGlute::Response gluteParams;
+        float depthStiffness = stiffness;
+        float depthDamping = damping;
+        if (gluteResponse)
+        {
+            const float gluteMass = Settings::game().mJiggleGluteAutoMass
+                ? std::clamp(sizeHint / 12.f, 0.f, 1.f)
+                : JiggleGlute::inverseLerp(
+                    JiggleGlute::sMassMin, JiggleGlute::sMassMax, Settings::game().mJiggleGluteMass);
+            gluteParams = JiggleGlute::computeResponse(
+                gluteMass, Settings::game().mJiggleGluteSoftness, Settings::game().mJiggleGluteQuickness);
+            stiffness = baseStiffness * gluteParams.mTangentialStiffness;
+            damping = baseDamping * gluteParams.mTangentialDamping;
+            depthStiffness = baseStiffness * gluteParams.mDepthStiffness;
+            depthDamping = baseDamping * gluteParams.mDepthDamping;
+            mass *= gluteParams.mMass;
+            gravity *= Settings::game().mJiggleGluteGravity;
+            maxDisplacement *= gluteParams.mMaxDisplacement;
+        }
         const osg::Vec3f gravityAccel(0.f, 0.f, -gravity);
-        const float mass = std::max(0.001f, mSettings.mMass.value_or(1.f));
 
         osg::Vec3f displacement = mSimWorldPos - restWorldPos;
-        const osg::Vec3f acceleration
-            = ((displacement * -stiffness) + (mVelocity * -damping) + gravityAccel) / mass;
+        osg::Vec3f springForce = displacement * -stiffness;
+        osg::Vec3f damperForce = mVelocity * -damping;
+        if (gluteResponse && depthAxis)
+        {
+            // Split into the depth (in/out) component and the swing (tangential) remainder.
+            const osg::Vec3f depthDisp = *depthAxis * (displacement * *depthAxis);
+            const osg::Vec3f depthVel = *depthAxis * (mVelocity * *depthAxis);
+            springForce = (displacement - depthDisp) * -stiffness + depthDisp * -depthStiffness;
+            damperForce = (mVelocity - depthVel) * -damping + depthVel * -depthDamping;
+        }
+        const osg::Vec3f acceleration = (springForce + damperForce + gravityAccel) / mass;
         mVelocity += acceleration * fdt;
         mSimWorldPos += mVelocity * fdt;
 
         // Self/body-collision containment: don't let the bone sink toward its parent joint (into
         // the torso) past the limit, and stop its inward velocity at that wall. Bone-space analog
         // of TittyMagic's soft self-collision + distance limit. Uses the outward radial from the
-        // parent joint, so it needs no knowledge of the skeleton's axis convention.
+        // parent joint (or, for glutes, the depth axis), so it needs no knowledge of the skeleton's
+        // axis convention.
         if (mSettings.mSelfCollision.value_or(Settings::game().mJiggleBoneSelfCollision))
         {
             const float selfCollisionLimit = Settings::game().mJiggleBoneSelfCollisionLimit;
             const osg::Vec3f parentOriginWorld = parentWorldMatrix.getTrans();
             osg::Vec3f outwardWorld = restWorldPos - parentOriginWorld;
-            const float outwardLen = outwardWorld.length();
+            float outwardLen = outwardWorld.length();
+            if (glute && depthAxis)
+            {
+                outwardWorld = *depthAxis;
+                outwardLen = 1.f;
+            }
             if (outwardLen > 1e-3f)
             {
                 outwardWorld /= outwardLen;
@@ -311,6 +423,17 @@ namespace MWRender
             displacement.normalize();
             displacement *= maxDisplacement;
             mSimWorldPos = restWorldPos + displacement;
+        }
+
+        // Naturalis glute force physics: how strongly motion pushes the glute into the body (depth
+        // in) or pulls it out (depth out). Shapes the rendered displacement along the depth axis.
+        if (gluteResponse && depthAxis)
+        {
+            const float along = displacement * *depthAxis;
+            const float scale = along >= 0.f
+                ? gluteParams.mDepthOut * Settings::game().mJiggleGluteDepthOut
+                : gluteParams.mDepthIn * Settings::game().mJiggleGluteDepthIn;
+            displacement += *depthAxis * (along * (scale - 1.f));
         }
 
         // "Side sway" scales the horizontal (world XY) part of the jiggle relative to the

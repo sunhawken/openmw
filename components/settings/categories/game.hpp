@@ -189,6 +189,37 @@ namespace Settings
             makeClampSanitizerFloat(-50.f, 50.f) };
         SettingValue<float> mJiggleBoneButtZOffset{ mIndex, "Game", "jiggle bone butt z offset",
             makeClampSanitizerFloat(-50.f, 50.f) };
+        // --- Glute ("booty") physics, ported from everlaster's Naturalis BootyMagic module ---
+        // When on, butt jiggle bones get their own Naturalis-style joint response instead of sharing
+        // the breast softness/quickness/mass-response tuning: separate swing and in/out (depth)
+        // springs, glute mass, depth in/out force response and glute angle targets.
+        SettingValue<bool> mJiggleGlutePhysics{ mIndex, "Game", "jiggle glute physics" };
+        // "Glute Softness (Joint Physics)", 0-100 (Naturalis default 70).
+        SettingValue<float> mJiggleGluteSoftness{ mIndex, "Game", "jiggle glute softness",
+            makeClampSanitizerFloat(0.f, 100.f) };
+        // "Glute Quickness Offset", -1..1. Positive = snappier, negative = slower/heavier.
+        SettingValue<float> mJiggleGluteQuickness{ mIndex, "Game", "jiggle glute quickness",
+            makeClampSanitizerFloat(-1.f, 1.f) };
+        // Derive glute mass from the bone's size hint (like Naturalis's volume-based mass). When off,
+        // "jiggle glute mass" is used instead.
+        SettingValue<bool> mJiggleGluteAutoMass{ mIndex, "Game", "jiggle glute auto mass" };
+        // "Glute Weight" in kg, 1-3 (Naturalis GLUTE_JOINT_MASS range).
+        SettingValue<float> mJiggleGluteMass{ mIndex, "Game", "jiggle glute mass",
+            makeClampSanitizerFloat(1.f, 3.f) };
+        // Multiplier on "jiggle bone gravity" for glutes (Naturalis glute gravity multipliers = 0.5).
+        SettingValue<float> mJiggleGluteGravity{ mIndex, "Game", "jiggle glute gravity",
+            makeClampSanitizerFloat(0.f, 2.f) };
+        // "Force Physics Depth In / Depth Out Multiplier", 0-2.
+        SettingValue<float> mJiggleGluteDepthIn{ mIndex, "Game", "jiggle glute depth in",
+            makeClampSanitizerFloat(0.f, 2.f) };
+        SettingValue<float> mJiggleGluteDepthOut{ mIndex, "Game", "jiggle glute depth out",
+            makeClampSanitizerFloat(0.f, 2.f) };
+        // "Up/Down Angle Offset" (-15..15 deg, positive lifts) and "Left/Right Angle Offset"
+        // (-30..30 deg, positive pushes the glutes together, negative pulls them apart).
+        SettingValue<float> mJiggleGluteUpDownAngle{ mIndex, "Game", "jiggle glute up down angle",
+            makeClampSanitizerFloat(-15.f, 15.f) };
+        SettingValue<float> mJiggleGluteLeftRightAngle{ mIndex, "Game", "jiggle glute left right angle",
+            makeClampSanitizerFloat(-30.f, 30.f) };
         // Per-body-mesh breast/butt Z offsets, saved from the in-game sliders and keyed by the
         // player's body mesh so each mesh remembers its own tuning. Entries are "meshpath=breast,butt".
         SettingValue<std::vector<std::string>> mJiggleMeshZOffsets{ mIndex, "Game", "jiggle mesh z offsets" };
