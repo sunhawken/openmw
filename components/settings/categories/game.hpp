@@ -109,6 +109,10 @@ namespace Settings
             makeClampSanitizerFloat(0.f, 4.f) };
         SettingValue<float> mVerletIdleDamping{ mIndex, "Game", "verlet idle damping",
             makeClampSanitizerFloat(0.f, 1.f) };
+        // Number of bones at the attachment end held to their authored animated pose.
+        // Useful for capes: shoulder/upper-arm cloth stays rigid while the lower cape flows.
+        SettingValue<int> mVerletPinCount{ mIndex, "Game", "verlet pin count",
+            makeClampSanitizerInt(1, 8) };
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
