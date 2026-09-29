@@ -345,7 +345,6 @@ namespace MWRender
             = std::clamp(useGlobal ? Settings::game().mVerletFriction.get() : mSettings.mFriction, 0.f, 1.f);
         const float maxStep
             = std::max(0.01f, useGlobal ? Settings::game().mVerletMaxStep.get() : mSettings.mMaxStep);
-        const float movementInfluence = Settings::game().mVerletMovementInfluence;
         const float idleDamping = Settings::game().mVerletIdleDamping;
         const bool idleWind = Settings::game().mVerletIdleWind;
         const int pinCount = std::clamp(mSettings.mPinCount > 0 ? mSettings.mPinCount
@@ -374,17 +373,6 @@ namespace MWRender
             mPreviousPositions[i] += anchorDelta;
         }
 
-        // Root motion is now only a secondary trailing force.  Bound its
-        // frame contribution so a fast animation, frame hitch, or unusually
-        // large actor-scale translation cannot flatten the cloth in one tick.
-        osg::Vec3f boundedAnchorDelta = anchorDelta;
-        const float maxMovementDrag = maxStep * 0.25f;
-        if (boundedAnchorDelta.length2() > maxMovementDrag * maxMovementDrag)
-        {
-            boundedAnchorDelta.normalize();
-            boundedAnchorDelta *= maxMovementDrag;
-        }
-
         for (int substep = 0; substep < substeps; ++substep)
         {
             // Pin the authored attachment region. For capes this keeps the
@@ -407,13 +395,12 @@ namespace MWRender
                     std::sin(phase * 4.117f + 0.9f) * effectiveWindStrength * 0.35f,
                     -gravity);
 
-                // Character motion should pull the cape opposite the root's movement.
-                // Apply a fraction of the per-frame root displacement across substeps;
-                // distal particles trail slightly more than particles near the pin.
-                const float chainT = static_cast<float>(i) / static_cast<float>(mPositions.size() - 1);
-                const osg::Vec3f movementDrag
-                    = boundedAnchorDelta * (-movementInfluence * chainT / static_cast<float>(substeps));
-                osg::Vec3f step = velocity + acceleration * (subDt * subDt) + movementDrag;
+                // Positions and their history were translated by anchorDelta above.
+                // Applying an additional root-motion force here double-counts walking
+                // and running, continuously pulling the chain backward until its
+                // distance constraints solve it into a nearly flat line. Actor
+                // translation therefore must not contribute a second force.
+                osg::Vec3f step = velocity + acceleration * (subDt * subDt);
                 if (step.length2() > maxStep * maxStep)
                 {
                     step.normalize();
