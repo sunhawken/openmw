@@ -18,7 +18,7 @@ namespace MWRender
 {
     namespace
     {
-        constexpr double sMaxDeltaTime = 0.1;
+        constexpr double sMaxDeltaTime = 0.05;
         constexpr float sTeleportResetDistance = 128.f;
         constexpr float sReferenceFps = 30.f;
 
@@ -208,7 +208,9 @@ namespace MWRender
             const osg::Vec3f ab = b - a;
             const float abLen2 = ab.length2();
             const float collisionRadius = std::max(0.01f, radius * capsule.mRadiusScale + margin);
-            const float collisionRadius2 = collisionRadius * collisionRadius;
+            const float contactSlop = std::max(0.f, mSettings.mContactSlop);
+            const float activationRadius = std::max(0.01f, collisionRadius - contactSlop);
+            const float activationRadius2 = activationRadius * activationRadius;
 
             for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
             {
@@ -219,7 +221,7 @@ namespace MWRender
                 const osg::Vec3f closest = a + ab * t;
                 osg::Vec3f outward = mPositions[i] - closest;
                 const float dist2 = outward.length2();
-                if (dist2 >= collisionRadius2)
+                if (dist2 >= activationRadius2)
                     continue;
 
                 float dist = std::sqrt(std::max(dist2, 1e-10f));
@@ -240,12 +242,15 @@ namespace MWRender
                 else
                     outward /= dist;
 
+                // Capture velocity before the positional correction. Otherwise the
+                // correction itself becomes outward velocity on the next substep and
+                // causes contact buzzing/jitter.
+                osg::Vec3f velocity = mPositions[i] - mPreviousPositions[i];
+
                 const osg::Vec3f correction = outward * (collisionRadius - dist);
                 mPositions[i] += correction;
 
-                // Keep tangential motion but remove velocity aimed into the body,
-                // preventing repeated tunnelling and explosive bounce at the surface.
-                osg::Vec3f velocity = mPositions[i] - mPreviousPositions[i];
+                // Keep tangential motion but remove velocity aimed into the body.
                 const float normalVelocity = velocity * outward;
                 if (normalVelocity < 0.f)
                     velocity -= outward * normalVelocity;
@@ -265,14 +270,21 @@ namespace MWRender
         path.push_back(mGroundNode.get());
         const float groundZ = osg::computeLocalToWorld(path).getTrans().z() + 0.5f;
 
+        const float contactSlop = std::max(0.f, mSettings.mContactSlop);
         for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
         {
-            if (mPositions[i].z() >= groundZ)
+            // A small hysteresis band avoids repeatedly entering/leaving contact
+            // from floating-point noise.
+            if (mPositions[i].z() >= groundZ - contactSlop)
                 continue;
+
+            // Preserve the velocity from before the positional correction so the
+            // clamp itself cannot inject a vertical bounce.
+            osg::Vec3f velocity = mPositions[i] - mPreviousPositions[i];
             mPositions[i].z() = groundZ;
-            // Resting contact: no bounce, and floor friction bleeds off sliding.
-            osg::Vec3f velocity = (mPositions[i] - mPreviousPositions[i]) * 0.5f;
-            velocity.z() = std::max(velocity.z(), 0.f);
+            velocity.x() *= 0.5f;
+            velocity.y() *= 0.5f;
+            velocity.z() = 0.f;
             mPreviousPositions[i] = mPositions[i] - velocity;
         }
     }
@@ -350,6 +362,30 @@ namespace MWRender
         const int pinCount = std::clamp(mSettings.mPinCount > 0 ? mSettings.mPinCount
                                                                 : Settings::game().mVerletPinCount.get(),
             1, static_cast<int>(mPositions.size()) - 1);
+
+        const int maxSoftRootCount = std::max(0, static_cast<int>(mPositions.size()) - pinCount);
+        const int softRootCount = std::clamp(mSettings.mSoftRootCount, 0, maxSoftRootCount);
+        const float softRootStrength = std::clamp(mSettings.mSoftRootStrength, 0.f, 1.f);
+        const float velocityDeadzone = std::max(0.f, mSettings.mVelocityDeadzone);
+
+        // Quintic smootherstep has zero slope at both ends, which removes the
+        // visible rigid->physics hinge better than a linear/cubic transition.
+        const auto softRootDynamicWeight = [&](std::size_t index) -> float
+        {
+            if (softRootCount <= 0)
+                return 1.f;
+
+            const std::size_t firstSoft = static_cast<std::size_t>(pinCount);
+            const std::size_t endSoft = firstSoft + static_cast<std::size_t>(softRootCount);
+            if (index < firstSoft || index >= endSoft)
+                return 1.f;
+
+            const float t = static_cast<float>(index - firstSoft + 1)
+                / static_cast<float>(softRootCount + 1);
+            const float smooth = t * t * t * (t * (t * 6.f - 15.f) + 10.f);
+            return 1.f - softRootStrength * (1.f - smooth);
+        };
+
         const bool bodyCollision = Settings::game().mVerletBodyCollision;
         const float bodyCollisionRadius = Settings::game().mVerletBodyCollisionRadius;
         const float bodyCollisionMargin = Settings::game().mVerletBodyCollisionMargin;
@@ -383,10 +419,30 @@ namespace MWRender
                 mPreviousPositions[static_cast<std::size_t>(i)] = restPositions[static_cast<std::size_t>(i)];
             }
 
+            // Soft attachment zone. Move current and previous positions together
+            // so the tether changes position without generating fake velocity.
+            const std::size_t softEnd = std::min(
+                mPositions.size(), static_cast<std::size_t>(pinCount + softRootCount));
+            for (std::size_t i = static_cast<std::size_t>(pinCount); i < softEnd; ++i)
+            {
+                const float followWeight = 1.f - softRootDynamicWeight(i);
+                const osg::Vec3f correction = (restPositions[i] - mPositions[i]) * followWeight;
+                mPositions[i] += correction;
+                mPreviousPositions[i] += correction;
+            }
+
             for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
             {
                 const osg::Vec3f current = mPositions[i];
-                osg::Vec3f velocity = (mPositions[i] - mPreviousPositions[i]) * friction;
+                const float dynamicWeight = softRootDynamicWeight(i);
+                osg::Vec3f velocity = (mPositions[i] - mPreviousPositions[i]) * friction * dynamicWeight;
+
+                if (stationary && velocityDeadzone > 0.f)
+                {
+                    const float displacementThreshold = velocityDeadzone * subDt;
+                    if (velocity.length2() < displacementThreshold * displacementThreshold)
+                        velocity.set(0.f, 0.f, 0.f);
+                }
 
                 const float phase
                     = static_cast<float>(simTime) * windFrequency + static_cast<float>(i) * 0.47f;
@@ -400,7 +456,7 @@ namespace MWRender
                 // and running, continuously pulling the chain backward until its
                 // distance constraints solve it into a nearly flat line. Actor
                 // translation therefore must not contribute a second force.
-                osg::Vec3f step = velocity + acceleration * (subDt * subDt);
+                osg::Vec3f step = velocity + acceleration * (subDt * subDt * dynamicWeight);
                 if (step.length2() > maxStep * maxStep)
                 {
                     step.normalize();
@@ -431,19 +487,39 @@ namespace MWRender
                     if (i == static_cast<std::size_t>(pinCount))
                     {
                         // The previous particle is pinned, so the first free
-                        // particle takes the entire correction.
+                        // particle takes the entire correction. Apply the same
+                        // positional correction to history so it cannot become
+                        // artificial velocity on the next substep.
                         mPositions[i] -= correction;
+                        mPreviousPositions[i] -= correction;
                     }
                     else
                     {
-                        mPositions[i - 1] += correction * 0.5f;
-                        mPositions[i] -= correction * 0.5f;
+                        const osg::Vec3f halfCorrection = correction * 0.5f;
+                        mPositions[i - 1] += halfCorrection;
+                        mPreviousPositions[i - 1] += halfCorrection;
+                        mPositions[i] -= halfCorrection;
+                        mPreviousPositions[i] -= halfCorrection;
                     }
                 }
 
                 if (bodyCollision)
                     solveBodyCollision(pinCount, bodyCollisionRadius, bodyCollisionMargin);
                 solveGround(pinCount);
+            }
+
+            // Kill only sub-millimetre-scale residual motion when the actor is
+            // stationary. Real swinging/falling remains far above this threshold.
+            if (stationary && velocityDeadzone > 0.f)
+            {
+                const float displacementThreshold = velocityDeadzone * subDt;
+                const float threshold2 = displacementThreshold * displacementThreshold;
+                for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
+                {
+                    const osg::Vec3f residual = mPositions[i] - mPreviousPositions[i];
+                    if (residual.length2() < threshold2)
+                        mPreviousPositions[i] = mPositions[i];
+                }
             }
         }
 
@@ -456,6 +532,8 @@ namespace MWRender
                              << " tip displacement=" << tipDistance << " friction=" << frictionBase
                              << " gravity=" << gravity << " wind=" << effectiveWindStrength
                              << " rootSpeed=" << anchorSpeed << " pinCount=" << pinCount
+                             << " softRootCount=" << softRootCount << " velocityDeadzone=" << velocityDeadzone
+                             << " contactSlop=" << mSettings.mContactSlop
                              << " bodyCollision=" << bodyCollision << " bodyRadius=" << bodyCollisionRadius
                              << " globalOverride=" << useGlobal;
         }
