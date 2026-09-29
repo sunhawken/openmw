@@ -298,6 +298,7 @@ namespace MWGui
         getWidget(mWindowModeHint, "WindowModeHint");
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
+        getWidget(mVerletPresetList, "VerletPresetList");
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
         getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
         getWidget(mJiggleAdvancedPanelToggle, "JiggleAdvancedPanelToggle");
@@ -372,6 +373,8 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onLightingMethodButtonChanged);
         mLightsResetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onLightsResetButtonClicked);
+        mVerletPresetList->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onVerletPresetChanged);
         mJiggleOffsetResetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleOffsetResetButtonClicked);
         mBakeBreastToNifButton->eventMouseButtonClick
@@ -964,6 +967,26 @@ namespace MWGui
         const std::size_t lightIndex = mLightingMethodButton->findItemIndexWith(lightingMethodToStr(lightingMethod));
         mLightingMethodButton->setIndexSelected(lightIndex);
         updateMaxLightsComboBox(mMaxLights);
+
+        apply();
+        configureWidgets(mMainWidget, false);
+    }
+
+    void SettingsWindow::onVerletPresetChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
+    {
+        if (pos != 1)
+            return;
+
+        // This preset is intentionally absolute, so its gravity value is not
+        // constrained by the usual low-range slider defaults.
+        auto& game = Settings::game();
+        game.mVerletUseGlobalSettings.set(true);
+        game.mVerletGravity.set(711.f);
+        game.mVerletWindStrength.set(0.f);
+        game.mVerletFriction.set(0.93f);
+        game.mVerletIterations.set(12);
+        game.mVerletSubsteps.set(4);
+        game.mVerletMaxStep.set(12.f);
 
         apply();
         configureWidgets(mMainWidget, false);

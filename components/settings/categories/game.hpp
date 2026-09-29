@@ -93,7 +93,7 @@ namespace Settings
         SettingValue<float> mVerletFriction{ mIndex, "Game", "verlet friction",
             makeClampSanitizerFloat(0.f, 1.f) };
         SettingValue<float> mVerletGravity{ mIndex, "Game", "verlet gravity",
-            makeClampSanitizerFloat(0.f, 50.f) };
+            makeClampSanitizerFloat(0.f, 711.f) };
         SettingValue<float> mVerletWindStrength{ mIndex, "Game", "verlet wind strength",
             makeClampSanitizerFloat(0.f, 50.f) };
         SettingValue<float> mVerletWindFrequency{ mIndex, "Game", "verlet wind frequency",
