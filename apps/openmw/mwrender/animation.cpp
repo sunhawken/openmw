@@ -258,6 +258,14 @@ namespace
             settings.mMaxStep = f;
         else if (key == "verlet_pin_count" && parseVerletInt(value, i))
             settings.mPinCount = std::max(0, i);
+        else if (key == "verlet_soft_root_count" && parseVerletInt(value, i))
+            settings.mSoftRootCount = std::max(0, i);
+        else if (key == "verlet_soft_root_strength" && parseWiggleFloat(value, f))
+            settings.mSoftRootStrength = std::clamp(f, 0.f, 1.f);
+        else if (key == "verlet_velocity_deadzone" && parseWiggleFloat(value, f))
+            settings.mVelocityDeadzone = std::max(0.f, f);
+        else if (key == "verlet_contact_slop" && parseWiggleFloat(value, f))
+            settings.mContactSlop = std::max(0.f, f);
         else if (key == "verlet_collide_legs" && parseWiggleBool(value, b))
             settings.mCollideLegs = b;
         else if (key == "verlet_ground" && parseWiggleBool(value, b))
@@ -292,13 +300,20 @@ namespace
         if (node.getUserValue("verlet_count", count))
             settings.mCount = count;
 
+        int intValue = 0;
+        if (node.getUserValue("verlet_pin_count", intValue))
+            settings.mPinCount = std::max(0, intValue);
+        if (node.getUserValue("verlet_soft_root_count", intValue))
+            settings.mSoftRootCount = std::max(0, intValue);
+
         auto readFloat = [&](std::string_view key) {
             float value = 0.f;
             if (node.getUserValue(std::string(key), value))
                 applyVerletProperty(settings, std::string(key), std::to_string(value));
         };
         for (std::string_view key : { "verlet_friction", "verlet_gravity", "verlet_wind",
-                 "verlet_wind_strength", "verlet_wind_frequency", "verlet_max_step" })
+                 "verlet_wind_strength", "verlet_wind_frequency", "verlet_max_step",
+                 "verlet_soft_root_strength", "verlet_velocity_deadzone", "verlet_contact_slop" })
             readFloat(key);
 
         for (const std::string& description : node.getDescriptions())
