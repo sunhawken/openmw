@@ -2,6 +2,7 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/nifosg/matrixtransform.hpp>
+#include <components/settings/values.hpp>
 
 #include <osg/MatrixTransform>
 #include <osg/NodeVisitor>
@@ -140,7 +141,8 @@ namespace MWRender
         }
 
         const osg::Vec3f anchor = restPositions.front();
-        if ((anchor - mPreviousAnchor).length2() > sTeleportResetDistance * sTeleportResetDistance)
+        const osg::Vec3f anchorDelta = anchor - mPreviousAnchor;
+        if (anchorDelta.length2() > sTeleportResetDistance * sTeleportResetDistance)
         {
             resetToRest(rootParentWorld, simTime);
             traverse(node, nv);
@@ -157,12 +159,37 @@ namespace MWRender
         }
         dt = std::min(dt, sMaxDeltaTime);
 
-        const int substeps = std::clamp(mSettings.mSubsteps, 1, 8);
-        const int iterations = std::clamp(mSettings.mIterations, 1, 32);
+        // NIF metadata is the normal source of cloth tuning. The Verlet tab can
+        // optionally override it live for rapid in-game iteration.
+        if (!Settings::game().mVerletEnabled)
+        {
+            resetToRest(rootParentWorld, simTime);
+            traverse(node, nv);
+            return;
+        }
+
+        const bool useGlobal = Settings::game().mVerletUseGlobalSettings;
+        const int substeps = std::clamp(useGlobal ? Settings::game().mVerletSubsteps.get() : mSettings.mSubsteps, 1, 8);
+        const int iterations
+            = std::clamp(useGlobal ? Settings::game().mVerletIterations.get() : mSettings.mIterations, 1, 32);
+        const float gravity = useGlobal ? Settings::game().mVerletGravity.get() : mSettings.mGravity;
+        const float windStrength = useGlobal ? Settings::game().mVerletWindStrength.get() : mSettings.mWindStrength;
+        const float windFrequency
+            = useGlobal ? Settings::game().mVerletWindFrequency.get() : mSettings.mWindFrequency;
+        const float frictionBase
+            = std::clamp(useGlobal ? Settings::game().mVerletFriction.get() : mSettings.mFriction, 0.f, 1.f);
+        const float maxStep
+            = std::max(0.01f, useGlobal ? Settings::game().mVerletMaxStep.get() : mSettings.mMaxStep);
+        const float movementInfluence = Settings::game().mVerletMovementInfluence;
+        const float idleDamping = Settings::game().mVerletIdleDamping;
+        const bool idleWind = Settings::game().mVerletIdleWind;
+
         const float subDt = static_cast<float>(dt / static_cast<double>(substeps));
-        const float frictionBase = std::clamp(mSettings.mFriction, 0.f, 1.f);
-        const float friction = std::pow(frictionBase, subDt * sReferenceFps);
-        const float maxStep = std::max(0.01f, mSettings.mMaxStep);
+        const float anchorSpeed = static_cast<float>(anchorDelta.length() / std::max(dt, 1e-6));
+        const bool stationary = anchorSpeed < 0.35f;
+        const float effectiveFrictionBase = stationary ? std::min(frictionBase, idleDamping) : frictionBase;
+        const float friction = std::pow(effectiveFrictionBase, subDt * sReferenceFps);
+        const float effectiveWindStrength = (!idleWind && stationary) ? 0.f : windStrength;
 
         for (int substep = 0; substep < substeps; ++substep)
         {
@@ -175,14 +202,20 @@ namespace MWRender
                 const osg::Vec3f current = mPositions[i];
                 osg::Vec3f velocity = (mPositions[i] - mPreviousPositions[i]) * friction;
 
-                const float phase = static_cast<float>(simTime) * mSettings.mWindFrequency
-                    + static_cast<float>(i) * 0.47f;
+                const float phase
+                    = static_cast<float>(simTime) * windFrequency + static_cast<float>(i) * 0.47f;
                 const osg::Vec3f acceleration(
-                    std::sin(phase * 6.28318530718f) * mSettings.mWindStrength,
-                    std::sin(phase * 4.117f + 0.9f) * mSettings.mWindStrength * 0.35f,
-                    -mSettings.mGravity);
+                    std::sin(phase * 6.28318530718f) * effectiveWindStrength,
+                    std::sin(phase * 4.117f + 0.9f) * effectiveWindStrength * 0.35f,
+                    -gravity);
 
-                osg::Vec3f step = velocity + acceleration * (subDt * subDt);
+                // Character motion should pull the cape opposite the root's movement.
+                // Apply a fraction of the per-frame root displacement across substeps;
+                // distal particles trail slightly more than particles near the pin.
+                const float chainT = static_cast<float>(i) / static_cast<float>(mPositions.size() - 1);
+                const osg::Vec3f movementDrag
+                    = anchorDelta * (-movementInfluence * chainT / static_cast<float>(substeps));
+                osg::Vec3f step = velocity + acceleration * (subDt * subDt) + movementDrag;
                 if (step.length2() > maxStep * maxStep)
                 {
                     step.normalize();
@@ -231,7 +264,8 @@ namespace MWRender
             const float tipDistance = (mPositions.back() - restPositions.back()).length();
             Log(Debug::Info) << "Verlet cloth: root=" << node->getName() << " particles=" << mPositions.size()
                              << " tip displacement=" << tipDistance << " friction=" << frictionBase
-                             << " gravity=" << mSettings.mGravity << " wind=" << mSettings.mWindStrength;
+                             << " gravity=" << gravity << " wind=" << effectiveWindStrength
+                             << " rootSpeed=" << anchorSpeed << " globalOverride=" << useGlobal;
         }
 
         traverse(node, nv);
