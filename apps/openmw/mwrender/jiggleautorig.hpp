@@ -1,6 +1,8 @@
 #ifndef OPENMW_MWRENDER_JIGGLEAUTORIG_H
 #define OPENMW_MWRENDER_JIGGLEAUTORIG_H
 
+#include <string_view>
+
 namespace osg
 {
     class Group;
@@ -32,7 +34,8 @@ namespace MWRender
         /// so the sliders track whichever body mesh the player is currently using.
         /// @param allowBodyAutoRig false skips female-body breast/butt/thigh generation while
         /// still allowing model-specific cloth compatibility such as the Rose Sorceress cape.
-        void run(osg::Group* objectRoot, bool isPlayer = false, bool allowBodyAutoRig = true);
+        void run(osg::Group* objectRoot, bool isPlayer = false, bool allowBodyAutoRig = true,
+            std::string_view actorName = {});
     }
 }
 
