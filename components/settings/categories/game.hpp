@@ -113,6 +113,12 @@ namespace Settings
         // Useful for capes: shoulder/upper-arm cloth stays rigid while the lower cape flows.
         SettingValue<int> mVerletPinCount{ mIndex, "Game", "verlet pin count",
             makeClampSanitizerInt(1, 8) };
+        // Capsule collision against the actor torso skeleton so Verlet cloth cannot pass through the body.
+        SettingValue<bool> mVerletBodyCollision{ mIndex, "Game", "verlet body collision" };
+        SettingValue<float> mVerletBodyCollisionRadius{ mIndex, "Game", "verlet body collision radius",
+            makeClampSanitizerFloat(1.f, 40.f) };
+        SettingValue<float> mVerletBodyCollisionMargin{ mIndex, "Game", "verlet body collision margin",
+            makeClampSanitizerFloat(0.f, 10.f) };
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
