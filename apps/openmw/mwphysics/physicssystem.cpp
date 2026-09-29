@@ -180,8 +180,16 @@ namespace MWPhysics
                 case LockingPolicy::NoLocks:
                     return 0;
                 case LockingPolicy::AllowSharedLocks:
+#ifdef __EMSCRIPTEN__
+                    // Workers come from Emscripten's fixed PTHREAD_POOL_SIZE, shared with the navmesh,
+                    // Lua and work-queue threads, and a pthread_create beyond the pool can only finish
+                    // once the main thread yields -- which it never does while waiting on physics jobs.
+                    // One Jolt worker matches the single async physics thread the Bullet build used.
+                    return static_cast<unsigned>(std::clamp<int>(Settings::physics().mAsyncNumThreads, 0, 1));
+#else
                     return static_cast<unsigned>(
                         std::clamp<int>(Settings::physics().mAsyncNumThreads, 0, std::thread::hardware_concurrency()));
+#endif
             }
 
             throw std::runtime_error("Unsupported LockingPolicy: "

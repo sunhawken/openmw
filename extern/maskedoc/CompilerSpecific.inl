@@ -48,9 +48,21 @@
 
 #elif defined(__GNUG__)	|| defined(__clang__) // G++ or clang
 
-#if defined(__aarch64__) || defined(__ARM_NEON)
+#if defined(__aarch64__) || defined(__ARM_NEON) || defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__)
+	// WebAssembly: Emscripten maps SSE..SSE4.1 intrinsics onto wasm SIMD128
+	// (requires -msimd128 -msse4.1). There is no CPUID, so dispatch is fixed to SSE4.1.
+	#include <smmintrin.h>
+	// wasm has no MXCSR: float->int conversion always rounds to nearest-even, which is the only
+	// mode the SSE4.1 rasterizer asks for (PRECISE_COVERAGE). The SSE2 fallback's floor/ceil,
+	// the only code wanting another mode, use real floor/ceil on wasm (MaskedOcclusionCulling.cpp).
+	#ifndef _MM_SET_ROUNDING_MODE
+		#define _MM_SET_ROUNDING_MODE(mode) ((void)(mode))
+	#endif
+#else
 	// ARM/NEON: use sse2neon to translate SSE intrinsics to NEON
 	#include "sse2neon.h"
+#endif
 	#include <stdlib.h>
 	#include <new>
 
@@ -76,7 +88,7 @@
 		free(ptr);
 	}
 
-	// Stubs: CPUID is not available on ARM; DetectCPUFeatures() is guarded separately
+	// Stubs: CPUID is not available on ARM/WebAssembly; DetectCPUFeatures() is guarded separately
 	FORCE_INLINE void __cpuidex(int* cpuinfo, int function, int subfunction)
 	{
 		(void)function; (void)subfunction;
@@ -120,12 +132,13 @@
 		free(ptr);
 	}
 
-	// GCC 11+ provides __cpuidex in <cpuid.h>; clang always has it
-#if !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 11
-	FORCE_INLINE void __cpuidex(int* cpuinfo, int function, int subfunction)
+	// GCC 11+ and clang 19+ provide __cpuidex in <cpuid.h>; older ones only have __cpuid_count
+#if (defined(__clang__) && __clang_major__ < 19) || (!defined(__clang__) && defined(__GNUC__) && __GNUC__ < 11)
+	FORCE_INLINE void moc_cpuidex(int* cpuinfo, int function, int subfunction)
 	{
 		__cpuid_count(function, subfunction, cpuinfo[0], cpuinfo[1], cpuinfo[2], cpuinfo[3]);
 	}
+	#define __cpuidex moc_cpuidex
 #endif
 
 	// GCC 12+ provides _xgetbv via <immintrin.h>; clang always has it

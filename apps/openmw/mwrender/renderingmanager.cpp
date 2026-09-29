@@ -43,6 +43,7 @@
 #include <components/sceneutil/occlusionculling.hpp>
 #include <components/occlusionculling/occlusionstorage.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
+#include <components/sceneutil/rtt.hpp>
 #include <components/sceneutil/shadow.hpp>
 #include <components/sceneutil/stateupdater.hpp>
 #include <components/sceneutil/visitor.hpp>
