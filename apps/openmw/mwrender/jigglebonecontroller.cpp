@@ -107,9 +107,9 @@ namespace MWRender
         const osg::Vec3f restStep = restWorldPos - mPreviousRestWorldPos;
         mPreviousRestWorldPos = restWorldPos;
 
-        // Live master switch for the ordinary Jiggle/Wiggle controller family.
-        // Verlet cloth uses its own controller and is intentionally unaffected.
-        if (!Settings::game().mJiggleBoneControllers)
+        // Live master switch for Blender-authored/direct Wiggle only.
+        // Legacy/auto-rig Jiggle controllers remain independent.
+        if (mSettings.mDirect && !Settings::game().mWiggleBoneControllers)
         {
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
