@@ -1,6 +1,7 @@
 #include "verletclothcontroller.hpp"
 
 #include <components/debug/debuglog.hpp>
+#include <components/misc/strings/algorithm.hpp>
 #include <components/nifosg/matrixtransform.hpp>
 #include <components/sceneutil/visitor.hpp>
 #include <components/settings/values.hpp>
@@ -124,7 +125,18 @@ namespace MWRender
         if (paths.empty() || paths[0].empty())
             return;
 
+        // Scope the lookup to this actor's own skeleton. Starting at the scene
+        // root would mix identically named Bip01 bones from other actors.
         osg::Node* actorRoot = paths[0].front();
+        for (auto it = paths[0].rbegin(); it != paths[0].rend(); ++it)
+        {
+            if (*it && Misc::StringUtils::ciEqual((*it)->getName(), "Bip01"))
+            {
+                actorRoot = *it;
+                break;
+            }
+        }
+
         SceneUtil::NodeMap map;
         SceneUtil::NodeMapVisitor visitor(map);
         actorRoot->accept(visitor);
