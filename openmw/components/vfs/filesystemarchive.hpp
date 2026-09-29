@@ -21,6 +21,8 @@ namespace VFS
 
         std::string getStem() const override;
 
+        const std::filesystem::path& getPath() const { return mPath; }
+
     private:
         std::filesystem::path mPath;
     };

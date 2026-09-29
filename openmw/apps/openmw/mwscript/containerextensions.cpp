@@ -27,8 +27,11 @@
 #include "../mwworld/class.hpp"
 #include "../mwworld/containerstore.hpp"
 #include "../mwworld/esmstore.hpp"
+#include "../mwworld/globalvariablename.hpp"
 #include "../mwworld/inventorystore.hpp"
 #include "../mwworld/manualref.hpp"
+
+#include <components/misc/strings/lower.hpp>
 
 #include "../mwmechanics/actorutil.hpp"
 #include "../mwmechanics/levelledlist.hpp"
@@ -327,6 +330,20 @@ namespace MWScript
 
                 ESM::RefId item = ESM::RefId::stringRefId(runtime.getStringLiteral(runtime[0].mInteger));
                 runtime.pop();
+
+                // Hazaeki transformation: while a humanoid form is active (the global PC_hz_ht != 0),
+                // the engine already renders the form's body/head/hair, so ignore the mod's attempts to
+                // equip its "_sg_hz_*" form skin-suit clothing. This keeps the player's own clothes and
+                // armor equipped over the transformed body instead of being displaced by the suit.
+                if (ptr == MWMechanics::getPlayer()
+                    && Misc::StringUtils::lowerCase(item.getRefIdString()).starts_with("_sg_hz_"))
+                {
+                    const MWBase::World* world = MWBase::Environment::get().getWorld();
+                    constexpr std::string_view pcHzHt = "pc_hz_ht";
+                    if (world->getGlobalVariableType(MWWorld::GlobalVariableName{ pcHzHt }) != ' '
+                        && world->getGlobalFloat(MWWorld::GlobalVariableName{ pcHzHt }) != 0.f)
+                        return;
+                }
 
                 MWWorld::InventoryStore& invStore = ptr.getClass().getInventoryStore(ptr);
                 auto found = invStore.end();

@@ -44,6 +44,7 @@ namespace MWGui
         void onAccept(MyGUI::ListBox* sender, size_t index);
         void onOkClicked(MyGUI::Widget* sender);
         void onBackClicked(MyGUI::Widget* sender);
+        void onRerollClicked(MyGUI::Widget* sender);
 
     private:
         void updateBirths();

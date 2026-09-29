@@ -9,6 +9,7 @@
 #include "recastmeshtiles.hpp"
 #include "waitconditiontype.hpp"
 
+#include <osg/Matrixd>
 #include <osg/Vec3f>
 
 #include <map>
@@ -33,10 +34,10 @@ namespace DetourNavigator
         // holds loaded. Takes effect on the next updateBounds/update. Empty in single player.
         void setSimAnchorGrids(std::vector<CellGridBounds> grids);
 
-        bool addObject(const ObjectId id, const CollisionShape& shape, const btTransform& transform,
+        bool addObject(const ObjectId id, const CollisionShape& shape, const osg::Matrixd& transform,
             const AreaType areaType, const UpdateGuard* guard);
 
-        bool updateObject(ObjectId id, const btTransform& transform, AreaType areaType, const UpdateGuard* guard);
+        bool updateObject(ObjectId id, const osg::Matrixd& transform, AreaType areaType, const UpdateGuard* guard);
 
         void removeObject(const ObjectId id, const UpdateGuard* guard);
 

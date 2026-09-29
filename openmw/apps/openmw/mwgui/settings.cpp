@@ -4,6 +4,25 @@
 
 namespace MWGui
 {
+    WindowSettingValues makeAppearanceWindowSettingValues()
+    {
+        return WindowSettingValues{
+            .mRegular = WindowRectSettingValues {
+                .mX = Settings::windows().mAppearanceX,
+                .mY = Settings::windows().mAppearanceY,
+                .mW = Settings::windows().mAppearanceW,
+                .mH = Settings::windows().mAppearanceH,
+            },
+            .mMaximized = WindowRectSettingValues {
+                .mX = Settings::windows().mAppearanceMaximizedX,
+                .mY = Settings::windows().mAppearanceMaximizedY,
+                .mW = Settings::windows().mAppearanceMaximizedW,
+                .mH = Settings::windows().mAppearanceMaximizedH,
+            },
+            .mIsMaximized = Settings::windows().mAppearanceMaximized,
+        };
+    }
+
     WindowSettingValues makeAlchemyWindowSettingValues()
     {
         return WindowSettingValues{

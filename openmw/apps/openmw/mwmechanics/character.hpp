@@ -179,6 +179,7 @@ namespace MWMechanics
         bool mAttackSuccess{ false };
 
         bool mSkipAnim{ false };
+        bool mSkippedAnimationLastUpdate{ false };
 
         // counted for skill increase
         float mSecondsOfSwimming{ 0.f };
@@ -289,6 +290,7 @@ namespace MWMechanics
             uint32_t loops, bool forceLoop);
         void enableLuaAnimations(bool enable);
         void skipAnim();
+        bool skippedAnimationLastUpdate() const { return mSkippedAnimationLastUpdate; }
         bool isAnimPlaying(std::string_view groupName) const;
         bool isScriptedAnimPlaying() const;
         void clearAnimQueue(bool clearScriptedAnims = false);

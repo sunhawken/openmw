@@ -4,6 +4,8 @@
 #include <components/sceneutil/positionattitudetransform.hpp>
 
 #include <components/esm3/loadcell.hpp>
+#include <components/esm3/loadingr.hpp>
+#include <components/esm3/loadmisc.hpp>
 
 #include <components/esm/util.hpp>
 
@@ -550,7 +552,11 @@ namespace MWScript
                 pos.rot[0] = pos.rot[1] = 0;
                 pos.rot[2] = osg::DegreesToRadians(zRotDegrees);
                 MWWorld::ManualRef ref(*MWBase::Environment::get().getESMStore(), itemID);
-                ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor();
+                // Don't postpone physics for dynamic items - they need dynamic physics immediately
+                // Only postpone for non-actor, non-dynamic items (like statics)
+                bool isDynamic = ref.getPtr().getType() == ESM::Miscellaneous::sRecordId
+                    || ref.getPtr().getType() == ESM::Ingredient::sRecordId;
+                ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor() && !isDynamic;
                 ref.getPtr().getCellRef().setPosition(pos);
                 MWWorld::Ptr placed = MWBase::Environment::get().getWorld()->placeObject(ref.getPtr(), store, pos);
                 placed.getClass().adjustPosition(placed, true);
@@ -596,7 +602,10 @@ namespace MWScript
                 pos.rot[0] = pos.rot[1] = 0;
                 pos.rot[2] = osg::DegreesToRadians(zRotDegrees);
                 MWWorld::ManualRef ref(*MWBase::Environment::get().getESMStore(), itemID);
-                ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor();
+                // Don't postpone physics for dynamic items - they need dynamic physics immediately
+                bool isDynamic = ref.getPtr().getType() == ESM::Miscellaneous::sRecordId
+                    || ref.getPtr().getType() == ESM::Ingredient::sRecordId;
+                ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor() && !isDynamic;
                 ref.getPtr().getCellRef().setPosition(pos);
                 MWWorld::Ptr placed = MWBase::Environment::get().getWorld()->placeObject(ref.getPtr(), store, pos);
                 placed.getClass().adjustPosition(placed, true);
@@ -653,7 +662,10 @@ namespace MWScript
                         }
                         continue;
                     }
-                    ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor();
+                    // Don't postpone physics for dynamic items - they need dynamic physics immediately
+                    bool isDynamic = ref.getPtr().getType() == ESM::Miscellaneous::sRecordId
+                        || ref.getPtr().getType() == ESM::Ingredient::sRecordId;
+                    ref.getPtr().mRef->mData.mPhysicsPostponed = !ref.getPtr().getClass().isActor() && !isDynamic;
 
                     MWWorld::Ptr ptr = MWBase::Environment::get().getWorld()->safePlaceObject(
                         ref.getPtr(), actor, actor.getCell(), direction, distance);

@@ -32,16 +32,16 @@ namespace DetourNavigator
 
         void setSimAnchorGrids(std::vector<CellGridBounds> grids) override;
 
-        void addObject(const ObjectId id, const ObjectShapes& shapes, const btTransform& transform,
+        void addObject(const ObjectId id, const ObjectShapes& shapes, const osg::Matrixd& transform,
             const UpdateGuard* guard) override;
 
-        void addObject(const ObjectId id, const DoorShapes& shapes, const btTransform& transform,
+        void addObject(const ObjectId id, const DoorShapes& shapes, const osg::Matrixd& transform,
             const UpdateGuard* guard) override;
 
-        void updateObject(const ObjectId id, const ObjectShapes& shapes, const btTransform& transform,
+        void updateObject(const ObjectId id, const ObjectShapes& shapes, const osg::Matrixd& transform,
             const UpdateGuard* guard) override;
 
-        void updateObject(const ObjectId id, const DoorShapes& shapes, const btTransform& transform,
+        void updateObject(const ObjectId id, const DoorShapes& shapes, const osg::Matrixd& transform,
             const UpdateGuard* guard) override;
 
         void removeObject(const ObjectId id, const UpdateGuard* guard) override;
@@ -84,7 +84,7 @@ namespace DetourNavigator
         std::unordered_map<ObjectId, ObjectId> mWaterIds;
 
         inline bool addObjectImpl(
-            const ObjectId id, const ObjectShapes& shapes, const btTransform& transform, const UpdateGuard* guard);
+            const ObjectId id, const ObjectShapes& shapes, const osg::Matrixd& transform, const UpdateGuard* guard);
 
         inline void updateAvoidShapeId(const ObjectId id, const ObjectId avoidId, const UpdateGuard* guard);
 

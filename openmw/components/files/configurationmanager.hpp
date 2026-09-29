@@ -34,6 +34,12 @@ namespace Files
         void readConfiguration(boost::program_options::variables_map& variables,
             const boost::program_options::options_description& description, bool quiet = false);
 
+        // Repair the active config files in place: remove duplicate composing entries (content=, groundcover=)
+        // that would otherwise abort startup ("Content file specified more than once"). Keeps the first
+        // occurrence and load order, leaves every other line untouched, and only rewrites a file that changed.
+        // Read-only config dirs are skipped silently. Safe to call after readConfiguration().
+        void repairUserConfig() const;
+
         void filterOutNonExistingPaths(Files::PathContainer& dataDirs) const;
 
         // Replaces tokens (`?local?`, `?global?`, etc.) in paths. Adds `basePath` prefix for relative paths.

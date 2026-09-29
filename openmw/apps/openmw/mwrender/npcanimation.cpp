@@ -12,6 +12,7 @@
 #include <components/debug/debuglog.hpp>
 
 #include <components/misc/rng.hpp>
+#include <components/misc/strings/algorithm.hpp>
 
 #include <components/misc/resourcehelpers.hpp>
 
@@ -41,7 +42,10 @@
 #include "../mwbase/soundmanager.hpp"
 #include "../mwbase/world.hpp"
 
+#include "../mwworld/globalvariablename.hpp"
+
 #include "actorutil.hpp"
+#include "jiggleautorig.hpp"
 #include "postprocessor.hpp"
 #include "renderbin.hpp"
 #include "renderingmanager.hpp"
@@ -277,6 +281,10 @@ namespace MWRender
         , mSoundsDisabled(disableSounds)
         , mAccurateAiming(false)
         , mAimingFactor(0.f)
+        , mHazMangchu(false)
+        , mHazFormCode(-1)
+        , mHazHeadRoll(0)
+        , mHazHairRoll(0)
     {
         mNpc = mPtr.get<ESM::NPC>()->mBase;
 
@@ -471,6 +479,199 @@ namespace MWRender
         return -1;
     }
 
+    ESM::RefId NpcAnimation::hazFormRace(int code)
+    {
+        // PC_hz_ht form codes -> race ids, matching the Hazaeki Shapeshifter Race mod's controller
+        // (SG_HAZ_globolscript). 0 (and any unmapped code) means "no override": the player is shown
+        // as their true Hazaeki self. Creature forms never set PC_hz_ht, so they never reach here.
+        switch (code)
+        {
+            case 1:
+                return ESM::RefId::stringRefId("Argonian");
+            case 2:
+                return ESM::RefId::stringRefId("Breton");
+            case 4:
+                return ESM::RefId::stringRefId("High Elf");
+            case 5:
+                return ESM::RefId::stringRefId("Imperial");
+            case 6:
+                return ESM::RefId::stringRefId("Khajiit");
+            case 7:
+                return ESM::RefId::stringRefId("Nord");
+            case 8:
+                return ESM::RefId::stringRefId("Orc");
+            case 9:
+                return ESM::RefId::stringRefId("Redguard");
+            case 10:
+                return ESM::RefId::stringRefId("Wood Elf");
+            case 11:
+                // Drow City Denizens.esp (a master of the mod) defines this race with a full skin set.
+                return ESM::RefId::stringRefId("Ddrow");
+            case 12:
+                return ESM::RefId::stringRefId("Anen Nirrera");
+            // 13 (Mang'Chu) has no race - its skin ships as clothing-tagged parts and is handled
+            // separately via buildMangchuBodyParts(); see updateBodyRaceOverride().
+            default:
+                return ESM::RefId();
+        }
+    }
+
+    std::vector<const ESM::BodyPart*> NpcAnimation::buildMangchuBodyParts(bool female) const
+    {
+        // The Mang'Chu form's skin ships in the mod as body parts tagged type=clothing, race=Hazaeki
+        // (delivered through the "_sg_hz_tng_*" clothing), so getBodyParts() by race can't find them.
+        // Resolve them by explicit id into the same PRT_-indexed layout getBodyParts() returns, so the
+        // naked-body attach loop in updateParts() renders them exactly like any other race's skin.
+        struct Entry
+        {
+            ESM::PartReferenceType mSlot;
+            std::string_view mMale;
+            std::string_view mFemale;
+        };
+        static const Entry entries[] = {
+            { ESM::PRT_Neck, "_sg_hz_tng_m_neck", "_sg_hz_tng_f_neck" },
+            { ESM::PRT_Cuirass, "_sg_hz_tng_m_chest", "_sg_hz_tng_f_chest" },
+            { ESM::PRT_Groin, "_sg_hz_tng_m_groin", "_sg_hz_tng_f_groin" },
+            { ESM::PRT_RHand, "_sg_hz_tng_m_hands", "_sg_hz_tng_f_hands" },
+            { ESM::PRT_LHand, "_sg_hz_tng_m_hands", "_sg_hz_tng_f_hands" },
+            { ESM::PRT_RWrist, "_sg_hz_tng_m_wrist", "_sg_hz_tng_f_wrist" },
+            { ESM::PRT_LWrist, "_sg_hz_tng_m_wrist", "_sg_hz_tng_f_wrist" },
+            { ESM::PRT_RForearm, "_sg_hz_tng_m_forearm", "_sg_hz_tng_f_forearm" },
+            { ESM::PRT_LForearm, "_sg_hz_tng_m_forearm", "_sg_hz_tng_f_forearm" },
+            { ESM::PRT_RUpperarm, "_sg_hz_tng_m_upper_arm", "_sg_hz_tng_f_upper_arm" },
+            { ESM::PRT_LUpperarm, "_sg_hz_tng_m_upper_arm", "_sg_hz_tng_f_upper_arm" },
+            { ESM::PRT_RFoot, "_sg_hz_tng_m_feet", "_sg_hz_tng_f_feet" },
+            { ESM::PRT_LFoot, "_sg_hz_tng_m_feet", "_sg_hz_tng_f_feet" },
+            { ESM::PRT_RAnkle, "_sg_hz_tng_m_ankle", "_sg_hz_tng_f_ankle" },
+            { ESM::PRT_LAnkle, "_sg_hz_tng_m_ankle", "_sg_hz_tng_f_ankle" },
+            { ESM::PRT_RKnee, "_sg_hz_tng_m_knee", "_sg_hz_tng_f_knee" },
+            { ESM::PRT_LKnee, "_sg_hz_tng_m_knee", "_sg_hz_tng_f_knee" },
+            { ESM::PRT_RLeg, "_sg_hz_tng_m_upper_leg", "_sg_hz_tng_f_upper_leg" },
+            { ESM::PRT_LLeg, "_sg_hz_tng_m_upper_leg", "_sg_hz_tng_f_upper_leg" },
+        };
+
+        std::vector<const ESM::BodyPart*> parts(ESM::PRT_Count, nullptr);
+        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+        for (const Entry& e : entries)
+        {
+            const ESM::BodyPart* bp = store.get<ESM::BodyPart>().search(
+                ESM::RefId::stringRefId(female ? e.mFemale : e.mMale));
+            if (bp)
+                parts[e.mSlot] = bp;
+        }
+        return parts;
+    }
+
+    ESM::RefId NpcAnimation::displayBodyRace() const
+    {
+        return mBodyRaceOverride.empty() ? mNpc->mRace : mBodyRaceOverride;
+    }
+
+    VFS::Path::Normalized NpcAnimation::findRaceHeadOrHair(const ESM::RefId& race, bool female, bool hair) const
+    {
+        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+        const ESM::BodyPart::MeshPart wanted = hair ? ESM::BodyPart::MP_Hair : ESM::BodyPart::MP_Head;
+        // Collect every candidate so the form can pick a random head/hair (as the mod used to via its
+        // random clothing variants). Same-sex parts are preferred, opposite-sex as a fallback set.
+        std::vector<const ESM::BodyPart*> sameSex;
+        std::vector<const ESM::BodyPart*> otherSex;
+        for (const ESM::BodyPart& bp : store.get<ESM::BodyPart>())
+        {
+            if (bp.mData.mFlags & ESM::BodyPart::BPF_NotPlayable)
+                continue;
+            if (bp.mData.mType != ESM::BodyPart::MT_Skin)
+                continue;
+            if (bp.mData.mPart != wanted)
+                continue;
+            if (!(bp.mRace == race))
+                continue;
+            if (ESM::isFirstPersonBodyPart(bp))
+                continue;
+            (isFemalePart(&bp) == female ? sameSex : otherSex).push_back(&bp);
+        }
+        const std::vector<const ESM::BodyPart*>& pick = !sameSex.empty() ? sameSex : otherSex;
+        if (pick.empty())
+            return {};
+        // Head and hair use independent rolls, so any head can pair with any hair (not fixed pairs).
+        const std::size_t index = static_cast<std::size_t>(hair ? mHazHairRoll : mHazHeadRoll) % pick.size();
+        return Misc::ResourceHelpers::correctMeshPath(pick[index]->mModel.getNormalized());
+    }
+
+    void NpcAnimation::updateBodyRaceOverride()
+    {
+        // Only the player is ever transformed by the mod.
+        if (mPtr != MWMechanics::getPlayer())
+            return;
+
+        const MWBase::World* world = MWBase::Environment::get().getWorld();
+
+        // string_view over string literals: static lifetime, so GlobalVariableName's stored view does
+        // not dangle (and this selects the public string_view ctor, not the private const char* one).
+        constexpr std::string_view pcHazaeki = "pc_hazaeki";
+        constexpr std::string_view pcHzHt = "pc_hz_ht";
+
+        // Reading a non-existent global throws, so probe the type first. The override only applies
+        // to a Hazaeki PC (PC_hazaeki != 0) who is in a humanoid form (PC_hz_ht != 0).
+        int code = 0;
+        if (world->getGlobalVariableType(MWWorld::GlobalVariableName{ pcHazaeki }) != ' '
+            && world->getGlobalInt(MWWorld::GlobalVariableName{ pcHazaeki }) != 0
+            && world->getGlobalVariableType(MWWorld::GlobalVariableName{ pcHzHt }) != ' ')
+        {
+            code = static_cast<int>(world->getGlobalFloat(MWWorld::GlobalVariableName{ pcHzHt }));
+        }
+
+        if (code == mHazFormCode)
+            return; // unchanged since the last frame - avoid needless rebuilds
+
+        ESM::RefId race = hazFormRace(code);
+        bool mangchu = (code == 13);
+
+        // Only override when the target actually has skin parts loaded; otherwise leave the real race
+        // in place so an unmapped/unavailable form can't make the body vanish.
+        if (!race.empty())
+        {
+            bool hasParts = false;
+            for (const ESM::BodyPart* p : getBodyParts(race, !mNpc->isMale(), false, false))
+            {
+                if (p)
+                {
+                    hasParts = true;
+                    break;
+                }
+            }
+            if (!hasParts)
+                race = ESM::RefId();
+        }
+        if (mangchu)
+        {
+            bool hasParts = false;
+            for (const ESM::BodyPart* p : buildMangchuBodyParts(!mNpc->isMale()))
+            {
+                if (p)
+                {
+                    hasParts = true;
+                    break;
+                }
+            }
+            mangchu = hasParts;
+        }
+
+        mHazFormCode = code;
+        if (race == mBodyRaceOverride && mangchu == mHazMangchu)
+            return; // resolves to the same appearance - no rebuild needed
+
+        mBodyRaceOverride = race;
+        mHazMangchu = mangchu;
+        // Re-roll head and hair independently on each form change (mirrors the mod's random pick, but
+        // decoupled so any head can pair with any hair rather than fixed head/hair pairs).
+        if (!race.empty() || mangchu)
+        {
+            mHazHeadRoll = Misc::Rng::rollDice(1000);
+            mHazHairRoll = Misc::Rng::rollDice(1000);
+        }
+        rebuild();
+    }
+
     void NpcAnimation::updateNpcBase()
     {
         clearAnimSources();
@@ -508,6 +709,39 @@ namespace MWRender
                 Log(Debug::Warning) << "Warning: Failed to load body part '" << hairName << "'";
         }
 
+        // Hazaeki humanoid form: display the target race's head & hair in place of the PC's own, so
+        // the transformed appearance is complete. Keeps the PC's own part if the form lacks one.
+        if (!isWerewolf && !mBodyRaceOverride.empty())
+        {
+            VFS::Path::Normalized overrideHead = findRaceHeadOrHair(mBodyRaceOverride, isFemale, false);
+            if (!overrideHead.empty())
+                mHeadModel = overrideHead;
+            VFS::Path::Normalized overrideHair = findRaceHeadOrHair(mBodyRaceOverride, isFemale, true);
+            if (!overrideHair.empty())
+                mHairModel = overrideHair;
+        }
+        else if (!isWerewolf && mHazMangchu)
+        {
+            // Mang'Chu head & hair are clothing-tagged parts (no race), so gather all "_sg_hz_tng_*"
+            // head/hair variants by id prefix and pick one with the per-form random roll.
+            const auto pickByPrefix = [&](std::string_view prefix, int roll) -> VFS::Path::Normalized {
+                std::vector<const ESM::BodyPart*> cands;
+                for (const ESM::BodyPart& bp : store.get<ESM::BodyPart>())
+                    if (Misc::StringUtils::ciStartsWith(bp.mId.getRefIdString(), prefix))
+                        cands.push_back(&bp);
+                if (cands.empty())
+                    return {};
+                const std::size_t index = static_cast<std::size_t>(roll) % cands.size();
+                return Misc::ResourceHelpers::correctMeshPath(cands[index]->mModel.getNormalized());
+            };
+            VFS::Path::Normalized head = pickByPrefix(isFemale ? "_sg_hz_tng_f_head_" : "_sg_hz_tng_m_head_", mHazHeadRoll);
+            if (!head.empty())
+                mHeadModel = head;
+            VFS::Path::Normalized hair = pickByPrefix(isFemale ? "_sg_hz_tng_f_hair_" : "_sg_hz_tng_m_hair_", mHazHairRoll);
+            if (!hair.empty())
+                mHairModel = hair;
+        }
+
         if (!isWerewolf && isVampire)
             if (VFS::Path::Normalized vampireHead = getVampireHead(mNpc->mRace, isFemale); !vampireHead.empty())
                 mHeadModel = std::move(vampireHead);
@@ -537,7 +771,12 @@ namespace MWRender
             smodel = Misc::ResourceHelpers::correctActorModelPath(model, mResourceSystem->getVFS());
         }
 
-        setObjectRoot(smodel, true, true, false);
+        // Jiggle physics is female-only: attach the jiggle-bone controllers just for female
+        // NPCs and the female player. Male characters get no jiggle at all. When "jiggle player
+        // only" is set, NPCs are excluded too so only the player jiggles.
+        const bool jiggleAllowed
+            = isFemale && (!Settings::game().mJiggleBonePlayerOnly || mPtr == MWMechanics::getPlayer());
+        setObjectRoot(smodel, true, true, false, jiggleAllowed);
 
         updateParts();
 
@@ -583,6 +822,49 @@ namespace MWRender
         }
 
         return mesh;
+    }
+
+    VFS::Path::Normalized NpcAnimation::resolvePlayerEquipmentMesh(VFS::Path::NormalizedView normalMesh) const
+    {
+        if (!Settings::game().mCurvyBodyMeshes || mPtr != MWMechanics::getPlayer() || mNpc->isMale())
+            return VFS::Path::Normalized(normalMesh);
+
+        constexpr std::string_view meshesPrefix = "meshes/";
+        constexpr std::string_view curvyPrefix = "meshes/curvybody/";
+        const std::string_view path = normalMesh.value();
+        if (!path.starts_with(meshesPrefix) || path.starts_with(curvyPrefix))
+            return VFS::Path::Normalized(normalMesh);
+
+        VFS::Path::Normalized candidate(std::string(curvyPrefix) + std::string(path.substr(meshesPrefix.size())));
+        return mResourceSystem->getVFS()->exists(candidate) ? candidate : VFS::Path::Normalized(normalMesh);
+    }
+
+    VFS::Path::Normalized NpcAnimation::resolvePlayerNakedBodyMesh() const
+    {
+        if (!Settings::game().mCurvyNakedBody || mPtr != MWMechanics::getPlayer() || mNpc->isMale()
+            || mViewMode == VM_FirstPerson || getNpcType() == Type_Werewolf)
+            return {};
+
+        static const std::pair<ESM::RefId, std::string_view> bodyMeshes[] = {
+            { ESM::RefId::stringRefId("breton"), "meshes/bbr/br_f.nif" },
+            { ESM::RefId::stringRefId("dark elf"), "meshes/bbr/de_f.nif" },
+            { ESM::RefId::stringRefId("high elf"), "meshes/bbr/he_f.nif" },
+            { ESM::RefId::stringRefId("imperial"), "meshes/bbr/im_f.nif" },
+            { ESM::RefId::stringRefId("nord"), "meshes/bbr/no_f.nif" },
+            { ESM::RefId::stringRefId("orc"), "meshes/bbr/or_f.nif" },
+            { ESM::RefId::stringRefId("redguard"), "meshes/bbr/rg_f.nif" },
+            { ESM::RefId::stringRefId("wood elf"), "meshes/bbr/we_f.nif" },
+        };
+
+        for (const auto& [race, path] : bodyMeshes)
+        {
+            if (mNpc->mRace == race)
+            {
+                VFS::Path::Normalized candidate(path);
+                return mResourceSystem->getVFS()->exists(candidate) ? candidate : VFS::Path::Normalized();
+            }
+        }
+        return {};
     }
 
     void NpcAnimation::updateParts()
@@ -690,22 +972,78 @@ namespace MWRender
         showCarriedLeft(mShowCarriedLeft);
 
         bool isWerewolf = (getNpcType() == Type_Werewolf);
-        ESM::RefId race = (isWerewolf ? ESM::RefId::stringRefId("werewolf") : mNpc->mRace);
+        // displayBodyRace() returns the Hazaeki transformation's target race when a humanoid form is
+        // active, so the naked skin is the form's race while equipment stays the player's own.
+        ESM::RefId race = (isWerewolf ? ESM::RefId::stringRefId("werewolf") : displayBodyRace());
 
-        const std::vector<const ESM::BodyPart*>& parts
-            = getBodyParts(race, !mNpc->isMale(), mViewMode == VM_FirstPerson, isWerewolf);
+        // The Mang'Chu form has no race, so its skin is resolved by explicit part ids into the same
+        // PRT_-indexed layout; every other case uses the (cached) race lookup.
+        std::vector<const ESM::BodyPart*> mangchuParts;
+        if (mHazMangchu && !isWerewolf)
+            mangchuParts = buildMangchuBodyParts(!mNpc->isMale());
+        const std::vector<const ESM::BodyPart*>& parts = (mHazMangchu && !isWerewolf)
+            ? mangchuParts
+            : getBodyParts(race, !mNpc->isMale(), mViewMode == VM_FirstPerson, isWerewolf);
+
+        // BBR meshes (Curvybody for Morrowind) follow the same multi-geometry convention as Better Bodies:
+        // one NIF contains "Tri Neck", "Tri Chest", "Tri Groin", etc. geometry nodes. OpenMW's
+        // SceneUtil::attach applies the slot's bone-name as a filter (e.g. "Chest" for PRT_Cuirass),
+        // so attaching the BBR mesh to EACH slot individually renders only that slot's geometry.
+        // Only activate this path when the player is actually naked (no equipment owns any body-part slot),
+        // so the curvy body cannot overdraw equipped armor or clothing.
+        // Use mPartslots[part] >= 0 (equipment-owned) not mPartPriorities >= 1, because body-part meshes
+        // attached with slot=-1 also carry priority 1 and would falsely fire the check every subsequent call.
+
+        // When the BBR naked-body feature can activate, clear stale body-part-owned (slot=-1) meshes
+        // from earlier calls so the loop below can re-evaluate BBR vs. BB on every updateParts() call.
+        // Without this, switching from dressed to naked (or vice versa) would leave the wrong mesh in
+        // slots whose priority is already 1 — preventing the desired mesh from loading there.
+        if (Settings::game().mCurvyNakedBody && mPtr == MWMechanics::getPlayer() && !mNpc->isMale())
+        {
+            for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
+                if (mPartslots[part] == -1 && mPartPriorities[part] > 0)
+                    removeIndividualPart(static_cast<ESM::PartReferenceType>(part));
+        }
+
+        bool hasCoveredBodyPart = false;
+        for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
+            hasCoveredBodyPart = hasCoveredBodyPart || (parts[part] && mPartslots[part] >= 0);
+        // Normally the curvy naked (BBR) body is only used when the player is fully naked, reverting
+        // exposed skin to Better Bodies as soon as anything is equipped. But when the equipment-mesh
+        // override ("curvy body meshes") is also on, the player is wearing curvy equipment, so the
+        // exposed skin around it should stay curvy too - use the BBR mesh for the exposed slots
+        // instead of Better Bodies. The loop below only fills slots equipment doesn't own
+        // (priority < 1), and the per-slot bone filter renders only that slot's region, so equipped
+        // armor/clothing is never overdrawn.
+        const bool curvyUnderEquipment = Settings::game().mCurvyBodyMeshes && Settings::game().mCurvyNakedBody;
+        const VFS::Path::Normalized nakedBodyMesh
+            = (hasCoveredBodyPart && !curvyUnderEquipment) ? VFS::Path::Normalized() : resolvePlayerNakedBodyMesh();
+
         for (int part = ESM::PRT_Neck; part < ESM::PRT_Count; ++part)
         {
             if (mPartPriorities[part] < 1)
             {
                 if (const ESM::BodyPart* bodypart = parts[part])
-                    addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1,
-                        Misc::ResourceHelpers::correctMeshPath(bodypart->mModel.getNormalized()));
+                {
+                    // When the BBR naked-body mesh is active, use it for every slot that has a BB
+                    // body part. The per-slot bone filter extracts the correct geometry region from
+                    // the BBR NIF (same "Tri X" naming convention used by Better Bodies).
+                    const VFS::Path::Normalized mesh = !nakedBodyMesh.empty()
+                        ? nakedBodyMesh
+                        : Misc::ResourceHelpers::correctMeshPath(bodypart->mModel.getNormalized());
+                    addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1, mesh);
+                }
             }
         }
 
         if (wasArrowAttached)
             attachArrow();
+
+        // Run model-specific secondary-motion compatibility for every actor after equipment
+        // attachment. Female body auto-rigging is still explicitly gated by sex.
+        const std::string actorDisplayName = std::string(mPtr.getClass().getName(mPtr));
+        JiggleAutoRig::run(
+            mObjectRoot.get(), mPtr == MWMechanics::getPlayer(), !mNpc->isMale(), actorDisplayName);
     }
 
     PartHolderPtr NpcAnimation::insertBoundedPart(VFS::Path::NormalizedView model, std::string_view bonename,
@@ -720,6 +1058,10 @@ namespace MWRender
 
     osg::Vec3f NpcAnimation::runAnimation(float timepassed)
     {
+        // Apply the Hazaeki transformation body override before running the frame. Cheap: it only
+        // reads two globals and rebuilds when the form code actually changes.
+        updateBodyRaceOverride();
+
         osg::Vec3f ret = Animation::runAnimation(timepassed);
 
         mHeadAnimationTime->update(timepassed);
@@ -930,7 +1272,9 @@ namespace MWRender
 
             if (bodypart)
                 addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part.mPart), group, priority,
-                    Misc::ResourceHelpers::correctMeshPath(bodypart->mModel.getNormalized()), enchantedGlow, glowColor);
+                    resolvePlayerEquipmentMesh(
+                        Misc::ResourceHelpers::correctMeshPath(bodypart->mModel.getNormalized())), enchantedGlow,
+                    glowColor);
             else
                 reserveIndividualPart((ESM::PartReferenceType)part.mPart, group, priority);
         }
