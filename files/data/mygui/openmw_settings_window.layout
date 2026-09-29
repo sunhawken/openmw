@@ -3,7 +3,6 @@
     <Widget type="Window" skin="MW_Window" position="0 0 400 485" layer="Settings" name="_Main">
         <Property key="MinSize" value="640 550"/>
         <Widget type="TabControl" skin="TabControl" position="8 8 368 405" align="Stretch" name="SettingsTab">
-            <Property key="ButtonAutoWidth" value="true"/>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Preferences} "/>
                 <Widget type="Widget" position="4 4 352 54" align="Left Top HStretch">
@@ -157,7 +156,6 @@
                         <Property key="Caption" value="#{OMWEngine:MouseDirectionalAttackInvert}"/>
                     </Widget>
                 </Widget>
-            </Widget>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Audio} "/>
                 <Widget type="TextBox" skin="NormalText" position="4 4 352 18" align="Left Top">
@@ -1021,7 +1019,7 @@
                         </Widget>
                     </Widget>
 
-                    <Widget name="ScriptBox" type="Widget" align="Stretch" name="ScriptBox">
+                    <Widget name="ScriptBox" type="Widget" align="Stretch">
                         <UserString key="HStretch" value="true"/>
                         <UserString key="VStretch" value="true"/>
 
