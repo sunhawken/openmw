@@ -1467,7 +1467,7 @@
                 <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="VerletScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>
                     <Property key="VisibleVScroll" value="true"/>
-                    <Property key="CanvasSize" value="344 930"/>
+                    <Property key="CanvasSize" value="344 1020"/>
 
                     <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 330 36" align="Left Top">
                         <Property key="Caption" value="Runtime cloth controls for capes, skirts, hair and tails. NIF values are used unless Global Overrides is enabled."/>
@@ -1575,17 +1575,27 @@
                     </Widget>
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 640 330 18"><Property key="Caption" value="More iterations/substeps = steadier cloth but more CPU cost"/></Widget>
 
-                    <Widget type="TextBox" skin="NormalText" position="6 678 330 18" name="VerletMaxStepText"/>
-                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 698 330 18" name="VerletMaxStepSlider">
+                    <Widget type="TextBox" skin="NormalText" position="6 678 330 18" name="VerletPinCountText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 698 330 18" name="VerletPinCountSlider">
+                        <Property key="Range" value="8"/><Property key="Page" value="1"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet pin count"/><UserString key="SettingValueType" value="Integer"/>
+                        <UserString key="SettingMin" value="1"/><UserString key="SettingMax" value="8"/>
+                        <UserString key="SettingLabelWidget" value="VerletPinCountText"/><UserString key="SettingLabelCaption" value="Pinned Top Bones: {0}"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 718 330 36"><Property key="Caption" value="Higher = more of the shoulder/upper-arm region stays rigid."/></Widget>
+
+                    <Widget type="TextBox" skin="NormalText" position="6 768 330 18" name="VerletMaxStepText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 788 330 18" name="VerletMaxStepSlider">
                         <Property key="Range" value="1000"/><Property key="Page" value="25"/>
                         <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="verlet max step"/><UserString key="SettingValueType" value="Float"/>
                         <UserString key="SettingMin" value="0.25"/><UserString key="SettingMax" value="15"/>
                         <UserString key="SettingLabelWidget" value="VerletMaxStepText"/><UserString key="SettingLabelCaption" value="Max Step: {0}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 718 330 36"><Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/></Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 808 330 36"><Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/></Widget>
 
-                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 770 330 60">
+                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 860 330 60">
                         <Property key="Caption" value="Recommended cape start: Gravity 4.0, Friction 0.94, Wind 3.0, Frequency 0.22, Movement Pull 1.0, Idle Retention 0.82, Iterations 18, Substeps 6, Max Step 3.0."/>
                     </Widget>
                 </Widget>
