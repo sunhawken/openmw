@@ -1,0 +1,27 @@
+name: Export Siff Verlet checkout
+
+on:
+  push:
+    branches:
+      - siff-verlet-physics
+  workflow_dispatch:
+
+jobs:
+  export-checkout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Create real Git bundle
+        shell: bash
+        run: |
+          git checkout -B siff-verlet-physics
+          git bundle create siff-verlet-physics.bundle refs/heads/siff-verlet-physics
+          git bundle verify siff-verlet-physics.bundle
+      - name: Upload checkout bundle
+        uses: actions/upload-artifact@v6
+        with:
+          name: siff-verlet-physics-checkout
+          path: siff-verlet-physics.bundle
+          retention-days: 1
