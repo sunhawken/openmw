@@ -84,7 +84,7 @@ namespace Settings
         SettingValue<bool> mJiggleBoneDebug{ mIndex, "Game", "jiggle bone debug" };
         // Live master toggle for Blender-authored/direct Wiggle controllers only.
         // Ordinary Jiggle/auto-rig physics is intentionally unaffected.
-        SettingValue<bool> mWiggleBoneControllers{ mIndex, "Game", "wiggle controllers" };
+        SettingValue<bool> mWiggleEnabled{ mIndex, "Game", "wiggle enabled" };
 
         // Runtime Verlet cloth controls. Model-authored metadata remains the default;
         // enabling global overrides makes these values live-tunable from the Verlet tab.
