@@ -2,6 +2,7 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/strings/algorithm.hpp>
+#include <components/misc/jigglepolicy.hpp>
 #include <components/nifosg/matrixtransform.hpp>
 #include <components/settings/values.hpp>
 
@@ -117,6 +118,28 @@ namespace MWRender
         const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
         osg::Vec3f restWorldPos = (restTranslation + simulationOffset) * parentWorldMatrix;
         restWorldPos.z() += zOffsetFor(node->getName());
+
+        // Actor-specific Jiggle rules are live. Direct Wiggle metadata has its own
+        // independent master switch and is intentionally not governed here.
+        if (!mSettings.mDirect && !Misc::JigglePolicy::actorEnabled(mIsPlayer, mActorName))
+        {
+            mSimWorldPos = restWorldPos;
+            mVelocity = osg::Vec3f(0, 0, 0);
+            mPreviousRestWorldPos = restWorldPos;
+            mLastSimTime = simTime;
+            const osg::Vec3f newLocalTranslation
+                = restWorldPos * osg::Matrix::inverse(parentWorldMatrix) - simulationOffset;
+            if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
+                nifTransform->setTranslation(newLocalTranslation);
+            else
+            {
+                osg::Matrix newMatrix = mRestLocalMatrix;
+                newMatrix.setTrans(newLocalTranslation);
+                node->setMatrix(newMatrix);
+            }
+            traverse(node, nv);
+            return;
+        }
 
         const osg::Vec3f restStep = restWorldPos - mPreviousRestWorldPos;
         mPreviousRestWorldPos = restWorldPos;
