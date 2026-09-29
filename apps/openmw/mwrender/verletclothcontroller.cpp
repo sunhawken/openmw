@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <utility>
 
 namespace MWRender
@@ -118,7 +119,8 @@ namespace MWRender
 
     void VerletClothController::initializeBodyCollisionNodes(osg::MatrixTransform* node)
     {
-        mBodyCollisionNodes.clear();
+        mBodyCapsules.clear();
+        mGroundNode = nullptr;
         mBodyCollisionInitialized = true;
 
         osg::NodePathList paths = node->getParentalNodePaths();
@@ -133,6 +135,9 @@ namespace MWRender
             if (*it && Misc::StringUtils::ciEqual((*it)->getName(), "Bip01"))
             {
                 actorRoot = *it;
+                // The actor's placement node (Bip01's parent) sits at the feet: use it as the floor.
+                if (std::next(it) != paths[0].rend())
+                    mGroundNode = *std::next(it);
                 break;
             }
         }
@@ -141,54 +146,69 @@ namespace MWRender
         SceneUtil::NodeMapVisitor visitor(map);
         actorRoot->accept(visitor);
 
+        auto addChain = [&](std::initializer_list<const char*> names, float radiusScale) {
+            // Consecutive bones form capsules. Missing bones are simply skipped,
+            // keeping this compatible with variant rigs.
+            osg::MatrixTransform* previous = nullptr;
+            for (const char* name : names)
+            {
+                auto it = map.find(name);
+                if (it == map.end() || !it->second)
+                    continue;
+                if (previous)
+                    mBodyCapsules.push_back({ previous, it->second.get(), radiusScale });
+                previous = it->second.get();
+            }
+        };
+
         // Ordered from pelvis to neck so consecutive entries form torso capsules.
-        // Missing bones are simply skipped, keeping this compatible with variant rigs.
-        for (const char* name : { "Bip01 Pelvis", "Bip01 Spine", "Bip01 Spine1", "Bip01 Spine2", "Bip01 Neck" })
+        addChain({ "Bip01 Pelvis", "Bip01 Spine", "Bip01 Spine1", "Bip01 Spine2", "Bip01 Neck" }, 1.f);
+        if (mSettings.mCollideLegs)
         {
-            auto it = map.find(name);
-            if (it != map.end() && it->second)
-                mBodyCollisionNodes.push_back(it->second);
+            // Limbs are thinner than the torso: thigh ~0.6, calf ~0.42 of the torso radius.
+            for (const char* side : { "L", "R" })
+            {
+                const std::string s = std::string("Bip01 ") + side;
+                auto find = [&](const std::string& n) {
+                    auto it = map.find(n);
+                    return it != map.end() ? it->second.get() : nullptr;
+                };
+                osg::MatrixTransform* thigh = find(s + " Thigh");
+                osg::MatrixTransform* calf = find(s + " Calf");
+                osg::MatrixTransform* foot = find(s + " Foot");
+                if (thigh && calf)
+                    mBodyCapsules.push_back({ thigh, calf, 0.6f });
+                if (calf && foot)
+                    mBodyCapsules.push_back({ calf, foot, 0.42f });
+            }
         }
-    }
-
-    std::vector<osg::Vec3f> VerletClothController::bodyCollisionPoints() const
-    {
-        std::vector<osg::Vec3f> points;
-        points.reserve(mBodyCollisionNodes.size());
-
-        for (const osg::ref_ptr<osg::MatrixTransform>& bone : mBodyCollisionNodes)
-        {
-            if (!bone)
-                continue;
-            const osg::NodePathList paths = bone->getParentalNodePaths();
-            if (paths.empty())
-                continue;
-            points.push_back(osg::computeLocalToWorld(paths[0]).getTrans());
-        }
-        return points;
+        if (!mSettings.mGround)
+            mGroundNode = nullptr;
     }
 
     void VerletClothController::solveBodyCollision(int pinCount, float radius, float margin)
     {
-        if (mBodyCollisionNodes.size() < 2 || radius <= 0.f)
+        if (mBodyCapsules.empty() || radius <= 0.f)
             return;
 
-        const std::vector<osg::Vec3f> points = bodyCollisionPoints();
-        if (points.size() < 2)
-            return;
+        auto worldPos = [](const osg::MatrixTransform* bone) {
+            const osg::NodePathList paths = bone->getParentalNodePaths();
+            return paths.empty() ? osg::Vec3f() : osg::computeLocalToWorld(paths[0]).getTrans();
+        };
 
-        const float collisionRadius = std::max(0.01f, radius + margin);
-        const float collisionRadius2 = collisionRadius * collisionRadius;
-
-        for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
+        for (const BodyCapsule& capsule : mBodyCapsules)
         {
-            for (std::size_t seg = 1; seg < points.size(); ++seg)
-            {
-                const osg::Vec3f a = points[seg - 1];
-                const osg::Vec3f b = points[seg];
-                const osg::Vec3f ab = b - a;
-                const float abLen2 = ab.length2();
+            if (!capsule.mA || !capsule.mB)
+                continue;
+            const osg::Vec3f a = worldPos(capsule.mA.get());
+            const osg::Vec3f b = worldPos(capsule.mB.get());
+            const osg::Vec3f ab = b - a;
+            const float abLen2 = ab.length2();
+            const float collisionRadius = std::max(0.01f, radius * capsule.mRadiusScale + margin);
+            const float collisionRadius2 = collisionRadius * collisionRadius;
 
+            for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
+            {
                 float t = 0.f;
                 if (abLen2 > 1e-6f)
                     t = std::clamp(((mPositions[i] - a) * ab) / abLen2, 0.f, 1.f);
@@ -203,7 +223,7 @@ namespace MWRender
                 if (dist <= 1e-5f)
                 {
                     // Degenerate exact-center case: use the current motion direction first,
-                    // then a stable axis perpendicular to the torso segment.
+                    // then a stable axis perpendicular to the segment.
                     outward = mPositions[i] - mPreviousPositions[i];
                     if (outward.length2() <= 1e-8f)
                     {
@@ -220,7 +240,7 @@ namespace MWRender
                 const osg::Vec3f correction = outward * (collisionRadius - dist);
                 mPositions[i] += correction;
 
-                // Keep tangential motion but remove velocity aimed into the torso,
+                // Keep tangential motion but remove velocity aimed into the body,
                 // preventing repeated tunnelling and explosive bounce at the surface.
                 osg::Vec3f velocity = mPositions[i] - mPreviousPositions[i];
                 const float normalVelocity = velocity * outward;
@@ -228,6 +248,29 @@ namespace MWRender
                     velocity -= outward * normalVelocity;
                 mPreviousPositions[i] = mPositions[i] - velocity;
             }
+        }
+    }
+
+    void VerletClothController::solveGround(int pinCount)
+    {
+        if (!mGroundNode)
+            return;
+        const osg::NodePathList paths = mGroundNode->getParentalNodePaths();
+        if (paths.empty())
+            return;
+        osg::NodePath path = paths[0];
+        path.push_back(mGroundNode.get());
+        const float groundZ = osg::computeLocalToWorld(path).getTrans().z() + 0.5f;
+
+        for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
+        {
+            if (mPositions[i].z() >= groundZ)
+                continue;
+            mPositions[i].z() = groundZ;
+            // Resting contact: no bounce, and floor friction bleeds off sliding.
+            osg::Vec3f velocity = (mPositions[i] - mPreviousPositions[i]) * 0.5f;
+            velocity.z() = std::max(velocity.z(), 0.f);
+            mPreviousPositions[i] = mPositions[i] - velocity;
         }
     }
 
@@ -302,8 +345,9 @@ namespace MWRender
         const float movementInfluence = Settings::game().mVerletMovementInfluence;
         const float idleDamping = Settings::game().mVerletIdleDamping;
         const bool idleWind = Settings::game().mVerletIdleWind;
-        const int pinCount = std::clamp(Settings::game().mVerletPinCount.get(), 1,
-            static_cast<int>(mPositions.size()) - 1);
+        const int pinCount = std::clamp(mSettings.mPinCount > 0 ? mSettings.mPinCount
+                                                                : Settings::game().mVerletPinCount.get(),
+            1, static_cast<int>(mPositions.size()) - 1);
         const bool bodyCollision = Settings::game().mVerletBodyCollision;
         const float bodyCollisionRadius = Settings::game().mVerletBodyCollisionRadius;
         const float bodyCollisionMargin = Settings::game().mVerletBodyCollisionMargin;
@@ -386,6 +430,7 @@ namespace MWRender
 
                 if (bodyCollision)
                     solveBodyCollision(pinCount, bodyCollisionRadius, bodyCollisionMargin);
+                solveGround(pinCount);
             }
         }
 
