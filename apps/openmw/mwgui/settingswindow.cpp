@@ -288,24 +288,29 @@ namespace MWGui
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
         getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
         getWidget(mJiggleAdvancedPanelToggle, "JiggleAdvancedPanelToggle");
-        getWidget(mJiggleAdvancedPanel, "JiggleAdvancedPanel");
-        getWidget(mJiggleMeshScopeCombo, "JiggleMeshScopeCombo");
-        getWidget(mJiggleMeshPathInput, "JiggleMeshPathInput");
-        getWidget(mJiggleNpcNameInput, "JiggleNpcNameInput");
-        getWidget(mJiggleBreastOffsetInput, "JiggleBreastOffsetInput");
-        getWidget(mJiggleButtOffsetInput, "JiggleButtOffsetInput");
-        getWidget(mJiggleMeshOffsetList, "JiggleMeshOffsetList");
-        getWidget(mJiggleBlacklistList, "JiggleBlacklistList");
-        getWidget(mJiggleNpcRuleList, "JiggleNpcRuleList");
-        getWidget(mJiggleUseCurrentMeshButton, "JiggleUseCurrentMeshButton");
-        getWidget(mJiggleSaveMeshOffsetButton, "JiggleSaveMeshOffsetButton");
-        getWidget(mJiggleRemoveMeshOffsetButton, "JiggleRemoveMeshOffsetButton");
-        getWidget(mJiggleAddBlacklistButton, "JiggleAddBlacklistButton");
-        getWidget(mJiggleRemoveBlacklistButton, "JiggleRemoveBlacklistButton");
-        getWidget(mJiggleEnableNpcButton, "JiggleEnableNpcButton");
-        getWidget(mJiggleDisableNpcButton, "JiggleDisableNpcButton");
-        getWidget(mJiggleClearNpcRuleButton, "JiggleClearNpcRuleButton");
-        mJiggleAdvancedPanel->setVisible(false);
+
+        // Advanced Jiggle configuration lives in its own Morrowind-themed window.
+        mJiggleAdvancedLayout = std::make_unique<Layout>("openmw_jiggle_setup.layout");
+        mJiggleAdvancedWindow = mJiggleAdvancedLayout->mMainWidget->castType<MyGUI::Window>();
+        mJiggleAdvancedLayout->getWidget(mJiggleAdvancedCloseButton, "JiggleAdvancedCloseButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleMeshScopeCombo, "JiggleMeshScopeCombo");
+        mJiggleAdvancedLayout->getWidget(mJiggleMeshPathInput, "JiggleMeshPathInput");
+        mJiggleAdvancedLayout->getWidget(mJiggleNpcNameInput, "JiggleNpcNameInput");
+        mJiggleAdvancedLayout->getWidget(mJiggleBreastOffsetInput, "JiggleBreastOffsetInput");
+        mJiggleAdvancedLayout->getWidget(mJiggleButtOffsetInput, "JiggleButtOffsetInput");
+        mJiggleAdvancedLayout->getWidget(mJiggleMeshOffsetList, "JiggleMeshOffsetList");
+        mJiggleAdvancedLayout->getWidget(mJiggleBlacklistList, "JiggleBlacklistList");
+        mJiggleAdvancedLayout->getWidget(mJiggleNpcRuleList, "JiggleNpcRuleList");
+        mJiggleAdvancedLayout->getWidget(mJiggleUseCurrentMeshButton, "JiggleUseCurrentMeshButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleSaveMeshOffsetButton, "JiggleSaveMeshOffsetButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleRemoveMeshOffsetButton, "JiggleRemoveMeshOffsetButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleAddBlacklistButton, "JiggleAddBlacklistButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleRemoveBlacklistButton, "JiggleRemoveBlacklistButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleEnableNpcButton, "JiggleEnableNpcButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleDisableNpcButton, "JiggleDisableNpcButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleClearNpcRuleButton, "JiggleClearNpcRuleButton");
+        configureWidgets(mJiggleAdvancedLayout->mMainWidget, true);
+        mJiggleAdvancedLayout->setVisible(false);
         mJiggleMeshScopeCombo->setIndexSelected(0);
         refreshJiggleAdvancedPanel();
         getWidget(mMaxLights, "MaxLights");
@@ -360,6 +365,8 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onBakeBreastToNifButtonClicked);
         mJiggleAdvancedPanelToggle->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleAdvancedPanelToggleClicked);
+        mJiggleAdvancedCloseButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleAdvancedCloseClicked);
         mJiggleUseCurrentMeshButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleUseCurrentMeshClicked);
         mJiggleSaveMeshOffsetButton->eventMouseButtonClick
@@ -400,6 +407,8 @@ namespace MWGui
         computeMinimumWindowSize();
 
         center();
+        if (mJiggleAdvancedWindow)
+            WindowBase::clampWindowCoordinates(mJiggleAdvancedWindow);
 
         mResetControlsButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onResetDefaultBindings);
@@ -564,9 +573,20 @@ namespace MWGui
 
     void SettingsWindow::onJiggleAdvancedPanelToggleClicked(MyGUI::Widget*)
     {
-        const bool visible = !mJiggleAdvancedPanel->getVisible();
-        mJiggleAdvancedPanel->setVisible(visible);
-        mJiggleAdvancedPanelToggle->setCaption(visible ? "Hide Mesh / NPC Setup" : "Show Mesh / NPC Setup");
+        const bool visible = !mJiggleAdvancedLayout->mMainWidget->getVisible();
+        if (visible)
+        {
+            refreshJiggleAdvancedPanel();
+            WindowBase::clampWindowCoordinates(mJiggleAdvancedWindow);
+        }
+        mJiggleAdvancedLayout->setVisible(visible);
+        mJiggleAdvancedPanelToggle->setCaption(visible ? "Close Advanced Jiggle Setup" : "Open Advanced Jiggle Setup...");
+    }
+
+    void SettingsWindow::onJiggleAdvancedCloseClicked(MyGUI::Widget*)
+    {
+        mJiggleAdvancedLayout->setVisible(false);
+        mJiggleAdvancedPanelToggle->setCaption("Open Advanced Jiggle Setup...");
     }
 
     void SettingsWindow::onJiggleUseCurrentMeshClicked(MyGUI::Widget*)
@@ -1398,6 +1418,8 @@ namespace MWGui
 
     void SettingsWindow::onClose()
     {
+        if (mJiggleAdvancedLayout)
+            mJiggleAdvancedLayout->setVisible(false); // close advanced jiggle
         // Save user settings
         Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");
         MWBase::Environment::get().getLuaManager()->savePermanentStorage(mCfgMgr.getUserConfigPath());
