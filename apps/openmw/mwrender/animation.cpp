@@ -266,6 +266,10 @@ namespace
             settings.mVelocityDeadzone = std::max(0.f, f);
         else if (key == "verlet_contact_slop" && parseWiggleFloat(value, f))
             settings.mContactSlop = std::max(0.f, f);
+        else if (key == "verlet_rotation_carry" && parseWiggleFloat(value, f))
+            settings.mRotationCarry = std::clamp(f, 0.f, 1.f);
+        else if (key == "verlet_lateral_memory" && parseWiggleFloat(value, f))
+            settings.mLateralMemory = std::clamp(f, 0.f, 1.f);
         else if (key == "verlet_collide_legs" && parseWiggleBool(value, b))
             settings.mCollideLegs = b;
         else if (key == "verlet_ground" && parseWiggleBool(value, b))
@@ -313,7 +317,8 @@ namespace
         };
         for (std::string_view key : { "verlet_friction", "verlet_gravity", "verlet_wind",
                  "verlet_wind_strength", "verlet_wind_frequency", "verlet_max_step",
-                 "verlet_soft_root_strength", "verlet_velocity_deadzone", "verlet_contact_slop" })
+                 "verlet_soft_root_strength", "verlet_velocity_deadzone", "verlet_contact_slop",
+                 "verlet_rotation_carry", "verlet_lateral_memory" })
             readFloat(key);
 
         for (const std::string& description : node.getDescriptions())
