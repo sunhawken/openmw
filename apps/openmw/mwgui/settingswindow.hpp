@@ -54,6 +54,24 @@ namespace MWGui
         MyGUI::Button* mLightsResetButton;
         MyGUI::Button* mJiggleOffsetResetButton;
         MyGUI::Button* mBakeBreastToNifButton;
+        MyGUI::Button* mJiggleAdvancedPanelToggle;
+        MyGUI::Widget* mJiggleAdvancedPanel;
+        MyGUI::ComboBox* mJiggleMeshScopeCombo;
+        MyGUI::EditBox* mJiggleMeshPathInput;
+        MyGUI::EditBox* mJiggleNpcNameInput;
+        MyGUI::EditBox* mJiggleBreastOffsetInput;
+        MyGUI::EditBox* mJiggleButtOffsetInput;
+        MyGUI::ListBox* mJiggleMeshOffsetList;
+        MyGUI::ListBox* mJiggleBlacklistList;
+        MyGUI::ListBox* mJiggleNpcRuleList;
+        MyGUI::Button* mJiggleUseCurrentMeshButton;
+        MyGUI::Button* mJiggleSaveMeshOffsetButton;
+        MyGUI::Button* mJiggleRemoveMeshOffsetButton;
+        MyGUI::Button* mJiggleAddBlacklistButton;
+        MyGUI::Button* mJiggleRemoveBlacklistButton;
+        MyGUI::Button* mJiggleEnableNpcButton;
+        MyGUI::Button* mJiggleDisableNpcButton;
+        MyGUI::Button* mJiggleClearNpcRuleButton;
 
         MyGUI::ComboBox* mShadowResolution;
         MyGUI::ComboBox* mShadowUpdateInterval;
@@ -98,6 +116,16 @@ namespace MWGui
         void onLightsResetButtonClicked(MyGUI::Widget* sender);
         void onJiggleOffsetResetButtonClicked(MyGUI::Widget* sender);
         void onBakeBreastToNifButtonClicked(MyGUI::Widget* sender);
+        void onJiggleAdvancedPanelToggleClicked(MyGUI::Widget* sender);
+        void onJiggleUseCurrentMeshClicked(MyGUI::Widget* sender);
+        void onJiggleSaveMeshOffsetClicked(MyGUI::Widget* sender);
+        void onJiggleRemoveMeshOffsetClicked(MyGUI::Widget* sender);
+        void onJiggleAddBlacklistClicked(MyGUI::Widget* sender);
+        void onJiggleRemoveBlacklistClicked(MyGUI::Widget* sender);
+        void onJiggleEnableNpcClicked(MyGUI::Widget* sender);
+        void onJiggleDisableNpcClicked(MyGUI::Widget* sender);
+        void onJiggleClearNpcRuleClicked(MyGUI::Widget* sender);
+        void refreshJiggleAdvancedPanel();
         void onMaxLightsChanged(MyGUI::ComboBox* sender, size_t pos);
 
         void onShadowResolutionChanged(MyGUI::ComboBox* sender, size_t pos);
