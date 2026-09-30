@@ -14,7 +14,7 @@
                 <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 54">
                     <Property key="Caption" value="Easy mode: equip the body/clothing/armor you want, tune the normal Jiggle sliders, then click Add. No mesh path typing is needed."/>
                 </Widget>
-                <Widget type="TextBox" skin="MW_Box" position="8 72 510 70" name="JiggleQuickCurrentInfo">
+                <Widget type="TextBox" skin="NormalText" position="8 72 510 70" name="JiggleQuickCurrentInfo">
                     <Property key="Caption" value="Current outfit: not detected"/>
                     <Property key="TextAlign" value="Left Top"/>
                 </Widget>
