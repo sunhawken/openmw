@@ -105,8 +105,6 @@ namespace Settings
         SettingValue<float> mVerletMaxStep{ mIndex, "Game", "verlet max step",
             makeClampSanitizerFloat(0.01f, 50.f) };
         SettingValue<bool> mVerletIdleWind{ mIndex, "Game", "verlet idle wind" };
-        SettingValue<float> mVerletMovementInfluence{ mIndex, "Game", "verlet movement influence",
-            makeClampSanitizerFloat(0.f, 4.f) };
         SettingValue<float> mVerletIdleDamping{ mIndex, "Game", "verlet idle damping",
             makeClampSanitizerFloat(0.f, 1.f) };
         // Number of bones at the attachment end held to their authored animated pose.
