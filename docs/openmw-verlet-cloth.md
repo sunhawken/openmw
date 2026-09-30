@@ -58,21 +58,3 @@ The same numbering rule works for names such as `Cape_01`.
 
 The chain should consist of undriven secondary bones with mesh weights authored in Blender. Do not put
 independent `wiggle_*` controllers on the same bones; the Verlet chain takes ownership of all members.
-
-## Live movement strength
-
-The **Verlet** tab's **Motion Strength** slider ranges from **0x to 8x** and
-works without enabling **Global Overrides**. It uses the existing `[Game]`
-setting `verlet movement influence`:
-
-- **0x**: disable movement-driven inertia, air resistance and root lift.
-- **1x** (default): retain the NIF's tuned pull-back and upward trailing angle.
-- **2x-8x**: amplify those forces and permit a steeper upward trailing angle.
-
-The slider multiplies authored `verlet_inertia` and `verlet_air_drag`, including
-the airflow acceleration limit. Root lift uses the authored
-`verlet_air_shape_response`; its angle ceiling rises from 65 degrees at 1x to
-at most 85 degrees. Profiles without these metadata controls keep their existing
-gravity/wind behavior. Pins, soft roots, collision handling, shape preservation
-and integration safety limits remain active throughout the range. The setting
-is saved normally and takes effect on existing cloth when simulation resumes.
