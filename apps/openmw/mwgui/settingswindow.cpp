@@ -307,14 +307,6 @@ namespace MWGui
         getWidget(mWindowModeHint, "WindowModeHint");
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
-        getWidget(mVerletPresetList, "VerletPresetList");
-        mVerletPresetList->addItem("Custom");
-        mVerletPresetList->addItem("NIF Metadata (Recommended)");
-        mVerletPresetList->addItem("Factory Defaults (reset all Verlet)");
-        mVerletPresetList->setIndexSelected(0);
-        getWidget(mVerletResetDefaultsButton, "VerletResetDefaultsButton");
-        mVerletResetDefaultsButton->eventMouseButtonClick
-            += MyGUI::newDelegate(this, &SettingsWindow::onVerletResetDefaultsClicked);
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
         getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
         getWidget(mJiggleAdvancedPanelToggle, "JiggleAdvancedPanelToggle");
@@ -397,8 +389,6 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onLightingMethodButtonChanged);
         mLightsResetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onLightsResetButtonClicked);
-        mVerletPresetList->eventComboChangePosition
-            += MyGUI::newDelegate(this, &SettingsWindow::onVerletPresetChanged);
         mJiggleOffsetResetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleOffsetResetButtonClicked);
         mBakeBreastToNifButton->eventMouseButtonClick
@@ -1171,58 +1161,6 @@ namespace MWGui
 
         apply();
         configureWidgets(mMainWidget, false);
-    }
-
-    void SettingsWindow::onVerletResetDefaultsClicked(MyGUI::Widget* /*sender*/)
-    {
-        auto& game = Settings::game();
-        game.mVerletEnabled.set(true);
-        game.mVerletUseGlobalSettings.set(false);
-        game.mVerletIdleWind.set(false);
-        game.mVerletBodyCollision.set(true);
-        resetVerletToDefaults();
-        apply();
-        configureWidgets(mMainWidget, false);
-    }
-
-    void SettingsWindow::resetVerletToDefaults()
-    {
-        auto& game = Settings::game();
-        // Factory defaults: mirrors files/settings-default.cfg so a broken tuning session
-        // can always be undone from the menu.
-        game.mVerletFriction.set(0.94f);
-        game.mVerletGravity.set(4.0f);
-        game.mVerletWindStrength.set(3.0f);
-        game.mVerletWindFrequency.set(0.22f);
-        game.mVerletIterations.set(18);
-        game.mVerletSubsteps.set(6);
-        game.mVerletMaxStep.set(3.0f);
-        game.mVerletIdleDamping.set(0.82f);
-        game.mVerletPinCount.set(3);
-        game.mVerletBodyCollisionRadius.set(12.0f);
-        game.mVerletBodyCollisionMargin.set(1.5f);
-        game.mVerletFeel.set(0.0f);
-    }
-
-    void SettingsWindow::onVerletPresetChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
-    {
-        if (pos != 1 && pos != 2)
-            return;
-
-        // Recommended safe state: let each mesh use its authored Verlet profile.
-        // Keep the global master/collision safety enabled and avoid idle procedural wind.
-        auto& game = Settings::game();
-        game.mVerletEnabled.set(true);
-        game.mVerletUseGlobalSettings.set(false);
-        game.mVerletIdleWind.set(false);
-        game.mVerletBodyCollision.set(true);
-
-        if (pos == 2)
-            resetVerletToDefaults();
-
-        apply();
-        configureWidgets(mMainWidget, false);
-        mVerletPresetList->setIndexSelected(0);
     }
 
     void SettingsWindow::onJiggleOffsetResetButtonClicked(MyGUI::Widget* /*sender*/)

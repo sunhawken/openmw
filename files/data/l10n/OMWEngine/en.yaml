@@ -337,7 +337,7 @@ JiggleTogglesNote: "Enable or disable the in-engine jiggle features."
 JiggleAutoRig: "Enable Jiggle Physics + Auto-Rig"
 JiggleAutoRigTooltip: |-
     Master switch for body Jiggle. When on, existing Jiggle bones simulate and female bodies that lack them can be rigged automatically.
-    Turning it off freezes body Jiggle. Verlet is a separate system. Auto-rigging changes apply when a body is next loaded (reload a save or re-equip).
+    Turning it off freezes body Jiggle. Auto-rigging changes apply when a body is next loaded (reload a save or re-equip).
 JiggleTab: "Jiggle"
 OptionsMenuRealTime: "Options Menu Runs In Real Time"
 OptionsMenuRealTimeTooltip: |-

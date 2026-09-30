@@ -66,6 +66,8 @@
 #include "actorutil.hpp"
 #include "jigglebonecontroller.hpp"
 #include "verletclothcontroller.hpp"
+
+#include <map>
 #include "rotatecontroller.hpp"
 #include "util.hpp"
 #include "vismask.hpp"
@@ -98,20 +100,6 @@ namespace
         return false;
     }
 
-    bool parseFloatValue(const std::string& value, float& out)
-    {
-        try
-        {
-            std::size_t consumed = 0;
-            out = std::stof(value, &consumed);
-            return consumed != 0;
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
     bool parseVerletInt(const std::string& value, int& out)
     {
         try
@@ -124,78 +112,6 @@ namespace
         {
             return false;
         }
-    }
-
-    void applyVerletProperty(MWRender::VerletClothSettings& settings, std::string key, const std::string& value)
-    {
-        key = normalizedKey(std::move(key));
-
-        bool b = false;
-        float f = 0.f;
-        int i = 0;
-
-        if ((key == "verlet_cloth" || key == "verlet_active") && parseBool(value, b))
-            settings.mEnabled = b;
-        else if (key == "verlet_count" && parseVerletInt(value, i))
-            settings.mCount = std::max(0, i);
-        else if (key == "verlet_friction" && parseFloatValue(value, f))
-            settings.mFriction = f;
-        else if (key == "verlet_gravity" && parseFloatValue(value, f))
-            settings.mGravity = f;
-        else if ((key == "verlet_wind" || key == "verlet_wind_strength") && parseFloatValue(value, f))
-            settings.mWindStrength = f;
-        else if (key == "verlet_wind_frequency" && parseFloatValue(value, f))
-            settings.mWindFrequency = f;
-        else if (key == "verlet_iterations" && parseVerletInt(value, i))
-            settings.mIterations = i;
-        else if (key == "verlet_substeps" && parseVerletInt(value, i))
-            settings.mSubsteps = i;
-        else if (key == "verlet_max_step" && parseFloatValue(value, f))
-            settings.mMaxStep = f;
-        else if (key == "verlet_pin_count" && parseVerletInt(value, i))
-            settings.mPinCount = std::max(0, i);
-        else if (key == "verlet_soft_root_count" && parseVerletInt(value, i))
-            settings.mSoftRootCount = std::max(0, i);
-        else if (key == "verlet_soft_root_strength" && parseFloatValue(value, f))
-            settings.mSoftRootStrength = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_velocity_deadzone" && parseFloatValue(value, f))
-            settings.mVelocityDeadzone = std::max(0.f, f);
-        else if (key == "verlet_contact_slop" && parseFloatValue(value, f))
-            settings.mContactSlop = std::max(0.f, f);
-        else if (key == "verlet_rotation_carry" && parseFloatValue(value, f))
-            settings.mRotationCarry = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_lateral_memory" && parseFloatValue(value, f))
-            settings.mLateralMemory = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_max_lateral_deviation" && parseFloatValue(value, f))
-            settings.mMaxLateralDeviation = std::max(0.f, f);
-        else if (key == "verlet_stable_timing" && parseBool(value, b))
-            settings.mStableTiming = b;
-        else if (key == "verlet_project_velocity" && parseBool(value, b))
-            settings.mProjectVelocity = b;
-        else if (key == "verlet_rest_collision_fit" && parseBool(value, b))
-            settings.mRestCollisionFit = b;
-        else if (key == "verlet_align_bones" && parseBool(value, b))
-            settings.mAlignBones = b;
-        else if (key == "verlet_inertia" && parseFloatValue(value, f))
-            settings.mInertia = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_inertia_max_acceleration" && parseFloatValue(value, f))
-            settings.mInertiaMaxAcceleration = std::max(0.f, f);
-        else if (key == "verlet_air_drag" && parseFloatValue(value, f))
-            settings.mAirDrag = std::max(0.f, f);
-        else if (key == "verlet_air_drag_max_acceleration" && parseFloatValue(value, f))
-            settings.mAirDragMaxAcceleration = std::max(0.f, f);
-        else if (key == "verlet_air_shape_response" && parseFloatValue(value, f))
-            settings.mAirShapeResponse = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_sleep_speed" && parseFloatValue(value, f))
-            settings.mSleepSpeed = std::max(0.f, f);
-        else if (key == "verlet_sleep_delay" && parseFloatValue(value, f))
-            settings.mSleepDelay = std::max(0.1f, f);
-        else if (key == "verlet_sleep_amplitude" && parseFloatValue(value, f))
-            settings.mSleepAmplitude = std::max(0.f, f);
-        else if (key == "verlet_collide_legs" && parseBool(value, b))
-            settings.mCollideLegs = b;
-        else if (key == "verlet_ground" && parseBool(value, b))
-            settings.mGround = b;
     }
 
     bool hasSecondaryMotionController(osg::Node* node)
@@ -214,53 +130,31 @@ namespace
         return false;
     }
 
-    MWRender::VerletClothSettings verletSettingsFromNode(const osg::Node& node)
+    /// A chain root is marked with OPENMW_VERLET_CLOTH (or verlet_cloth=true) and verlet_count=N; the
+    /// optional verlet_pin_count=M holds the first M particles at their animated position (default 3).
+    struct VerletRootInfo
     {
-        MWRender::VerletClothSettings settings;
+        bool mEnabled = false;
+        int mCount = 0;
+        int mPin = 3;
+    };
 
+    VerletRootInfo verletRootInfo(const osg::Node& node)
+    {
+        VerletRootInfo info;
         bool b = false;
         if (node.getUserValue("verlet_cloth", b) || node.getUserValue("verlet_active", b))
-            settings.mEnabled = b;
-
-        int count = 0;
-        if (node.getUserValue("verlet_count", count))
-            settings.mCount = count;
-
-        int intValue = 0;
-        if (node.getUserValue("verlet_pin_count", intValue))
-            settings.mPinCount = std::max(0, intValue);
-        if (node.getUserValue("verlet_soft_root_count", intValue))
-            settings.mSoftRootCount = std::max(0, intValue);
-
-        auto readFloat = [&](std::string_view key) {
-            float value = 0.f;
-            if (node.getUserValue(std::string(key), value))
-                applyVerletProperty(settings, std::string(key), std::to_string(value));
-        };
-        for (std::string_view key : { "verlet_friction", "verlet_gravity", "verlet_wind",
-                 "verlet_wind_strength", "verlet_wind_frequency", "verlet_max_step",
-                 "verlet_soft_root_strength", "verlet_velocity_deadzone", "verlet_contact_slop",
-                 "verlet_rotation_carry", "verlet_lateral_memory", "verlet_inertia",
-                 "verlet_inertia_max_acceleration", "verlet_sleep_speed", "verlet_sleep_delay",
-                 "verlet_max_lateral_deviation", "verlet_air_drag", "verlet_air_drag_max_acceleration",
-                 "verlet_sleep_amplitude", "verlet_air_shape_response" })
-            readFloat(key);
-
-        if (node.getUserValue("verlet_stable_timing", b))
-            settings.mStableTiming = b;
-        if (node.getUserValue("verlet_project_velocity", b))
-            settings.mProjectVelocity = b;
-        if (node.getUserValue("verlet_rest_collision_fit", b))
-            settings.mRestCollisionFit = b;
-        if (node.getUserValue("verlet_align_bones", b))
-            settings.mAlignBones = b;
+            info.mEnabled = b;
+        int value = 0;
+        if (node.getUserValue("verlet_count", value))
+            info.mCount = value;
+        if (node.getUserValue("verlet_pin_count", value))
+            info.mPin = std::max(1, value);
 
         for (const std::string& description : node.getDescriptions())
         {
-            const std::string normalized = normalizedKey(description);
-            if (normalized.find("openmw_verlet_cloth") != std::string::npos)
-                settings.mEnabled = true;
-
+            if (normalizedKey(description).find("openmw_verlet_cloth") != std::string::npos)
+                info.mEnabled = true;
             std::size_t start = 0;
             while (start < description.size())
             {
@@ -269,14 +163,22 @@ namespace
                     = description.substr(start, end == std::string::npos ? std::string::npos : end - start);
                 const std::size_t sep = token.find_first_of("=:");
                 if (sep != std::string::npos)
-                    applyVerletProperty(settings, token.substr(0, sep), token.substr(sep + 1));
+                {
+                    const std::string key = normalizedKey(token.substr(0, sep));
+                    int number = 0;
+                    if (key == "verlet_count" && parseVerletInt(token.substr(sep + 1), number))
+                        info.mCount = number;
+                    else if (key == "verlet_pin_count" && parseVerletInt(token.substr(sep + 1), number))
+                        info.mPin = std::max(1, number);
+                    else if ((key == "verlet_cloth" || key == "verlet_active") && parseBool(token.substr(sep + 1), b))
+                        info.mEnabled = b;
+                }
                 if (end == std::string::npos)
                     break;
                 start = end + 1;
             }
         }
-
-        return settings;
+        return info;
     }
 
     std::vector<std::string> numberedVerletChainNames(const std::string& rootName, int count)
@@ -1952,26 +1854,30 @@ namespace MWRender
 
         std::unordered_set<osg::MatrixTransform*> attached;
 
-        // Runtime Verlet cloth chains. A root such as v_01 can opt in with
-        // OPENMW_VERLET_CLOTH / verlet_cloth=true and verlet_count=N. The
-        // sequentially-numbered bones are simulated together, so none of the
-        // member bones should also receive independent JiggleBoneControllers.
+        // Hair / cloth chains (physics-verlet). A root such as v_01 opts in with OPENMW_VERLET_CLOTH and
+        // verlet_count=N. All chains hanging from the same parent bone form one group that a single
+        // controller simulates together, so neighbouring chains move as one sheet. Chain bones must not
+        // also receive independent JiggleBoneControllers.
+        struct VerletGroup
+        {
+            std::vector<std::vector<osg::ref_ptr<osg::MatrixTransform>>> mChains;
+            osg::MatrixTransform* mFirstRoot = nullptr;
+            int mPin = 3;
+        };
+        std::map<const osg::Node*, VerletGroup> verletGroups;
         for (const auto& [name, nodeRef] : getNodeMap())
         {
             osg::MatrixTransform* root = nodeRef.get();
             if (!root || attached.contains(root) || hasSecondaryMotionController(root))
                 continue;
 
-            VerletClothSettings clothSettings = verletSettingsFromNode(*root);
-            if (!clothSettings.mEnabled || clothSettings.mCount < 2)
+            const VerletRootInfo info = verletRootInfo(*root);
+            if (!info.mEnabled || info.mCount < 2)
                 continue;
 
-            const std::vector<std::string> chainNames
-                = numberedVerletChainNames(root->getName(), clothSettings.mCount);
+            const std::vector<std::string> chainNames = numberedVerletChainNames(root->getName(), info.mCount);
             std::vector<osg::ref_ptr<osg::MatrixTransform>> chain;
-            chain.reserve(chainNames.size());
-
-            bool complete = chainNames.size() == static_cast<std::size_t>(clothSettings.mCount);
+            bool complete = chainNames.size() == static_cast<std::size_t>(info.mCount);
             for (const std::string& chainName : chainNames)
             {
                 auto iter = getNodeMap().find(chainName);
@@ -1979,28 +1885,33 @@ namespace MWRender
                 {
                     complete = false;
                     if (debug)
-                        Log(Debug::Warning) << "Verlet cloth: missing chain bone " << chainName
-                                            << " for root " << root->getName();
+                        Log(Debug::Warning) << "Verlet cloth: missing chain bone " << chainName << " for root "
+                                            << root->getName();
                     break;
                 }
                 chain.push_back(iter->second);
             }
-
             if (!complete || chain.size() < 2)
                 continue;
 
-            if (debug)
-                Log(Debug::Info) << "Verlet cloth: attached root=" << root->getName()
-                                 << " particles=" << chain.size();
-
-            root->addUpdateCallback(new VerletClothController(std::move(chain), clothSettings, debug));
-
-            for (const std::string& chainName : chainNames)
+            for (const auto& bone : chain)
+                attached.insert(bone.get());
+            const osg::Node* parent = root->getNumParents() > 0 ? root->getParent(0) : nullptr;
+            VerletGroup& group = verletGroups[parent];
+            if (!group.mFirstRoot)
             {
-                auto iter = getNodeMap().find(chainName);
-                if (iter != getNodeMap().end() && iter->second)
-                    attached.insert(iter->second.get());
+                group.mFirstRoot = root;
+                group.mPin = info.mPin;
             }
+            group.mChains.push_back(std::move(chain));
+        }
+        for (auto& [parent, group] : verletGroups)
+        {
+            if (debug)
+                Log(Debug::Info) << "Verlet cloth: attached " << group.mChains.size() << " chains under "
+                                 << (parent ? parent->getName() : std::string("<none>"));
+            group.mFirstRoot->addUpdateCallback(
+                new VerletClothController(std::move(group.mChains), group.mPin, debug));
         }
 
         // Zero-setup behavior for traditional breast/butt bone names.
