@@ -737,9 +737,9 @@ namespace MWRender
             (frameDelta(0, 0) + frameDelta(1, 1) + frameDelta(2, 2) - 1.0) * 0.5), -1.f, 1.f);
         const float turnSpeed = std::acos(turnCos) / static_cast<float>(frameDt);
         const bool stationary = anchorSpeed < 0.35f && (!mSettings.mStableTiming || turnSpeed < 0.015f);
-        // Pull back to the hanging shape once stationary: strong for stiff cloth, very gentle for soft
-        // cloth so landing or stopping never snaps the chain into place.
-        const float settleMemory = 0.20f + (0.006f - 0.20f) * verletFeel().softness;
+        // Pull back to the hanging shape once stationary: always gentle (even stiff cloth falls back
+        // under gravity over about half a second) so landing or stopping never snaps the chain.
+        const float settleMemory = 0.008f - 0.003f * verletFeel().softness;
         const float memory = stationary && mSettings.mStableTiming && lateralMemory > 0.f
             ? std::max(lateralMemory, settleMemory) : lateralMemory;
         // Vertical motion (jump/fall) also pulls the shape reference so hair lifts on the way down.
@@ -811,7 +811,7 @@ namespace MWRender
             {
                 // Ease the shape reference so it relaxes slowly (softer cloth = slower) instead of
                 // collapsing to the hanging pose in one step when vertical/horizontal speed drops.
-                const float tau = 0.10f + 0.35f * softFeel;
+                const float tau = 0.50f + 0.15f * softFeel;
                 const float blend = 1.f - std::exp(-static_cast<float>(std::max(frameDt, 1e-4)) / tau);
                 const osg::Quat turn = frameDelta.getRotate();
                 if (mShapeOffset.size() != shapePositions.size())
