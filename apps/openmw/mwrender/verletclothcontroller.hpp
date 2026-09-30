@@ -152,6 +152,7 @@ namespace MWRender
         osg::Matrix mPreviousRootParentWorld;
         osg::Matrix mPreviousAirBend;
         std::vector<osg::Vec3f> mPreviousShape;
+        std::vector<osg::Vec3f> mShapeOffset;
         float mFlutterPhase = 0.f;
         std::deque<std::array<float, 4>> mVelocityHistory;
         osg::Vec3f mPreviousRootVelocity;

@@ -125,6 +125,7 @@ namespace MWRender
         mPreviousRootParentWorld = rootParentWorld;
         mPreviousAirBend = osg::Matrix();
         mPreviousShape.clear();
+        mShapeOffset.clear();
         mVelocityHistory.clear();
         mFlutterPhase = static_cast<float>((reinterpret_cast<std::uintptr_t>(this) >> 4) % 628) / 100.f;
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
@@ -152,6 +153,7 @@ namespace MWRender
         mPreviousRootParentWorld = rootParentWorld;
         mPreviousAirBend = osg::Matrix();
         mPreviousShape.clear();
+        mShapeOffset.clear();
         mVelocityHistory.clear();
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
@@ -734,8 +736,11 @@ namespace MWRender
             (frameDelta(0, 0) + frameDelta(1, 1) + frameDelta(2, 2) - 1.0) * 0.5), -1.f, 1.f);
         const float turnSpeed = std::acos(turnCos) / static_cast<float>(frameDt);
         const bool stationary = anchorSpeed < 0.35f && (!mSettings.mStableTiming || turnSpeed < 0.015f);
+        // Pull back to the hanging shape once stationary: strong for stiff cloth, very gentle for soft
+        // cloth so landing or stopping never snaps the chain into place.
+        const float settleMemory = 0.20f + (0.006f - 0.20f) * verletFeel().softness;
         const float memory = stationary && mSettings.mStableTiming && lateralMemory > 0.f
-            ? std::max(lateralMemory, 0.20f) : lateralMemory;
+            ? std::max(lateralMemory, settleMemory) : lateralMemory;
         // Vertical motion (jump/fall) also pulls the shape reference so hair lifts on the way down.
         const float verticalBlend = std::min(1.f, std::abs(mFilteredRootVelocity.z()) / 200.f);
         const float lateralFollow
@@ -763,7 +768,7 @@ namespace MWRender
             {
                 const osg::Vec3f segment = restPositions[i] - restPositions[i - 1];
                 arc += segment.length();
-                const float lag = std::min(0.7f, arc / std::max(currentSpeed, 80.f)) * (0.35f + 0.65f * softFeel);
+                const float lag = std::min(1.1f, arc / std::max(currentSpeed, 80.f)) * (0.6f + 1.4f * softFeel);
                 osg::Vec3f v = velocityAt(simTime - lag);
                 v.z() = mFilteredRootVelocity.z();
                 const float speed = v.length();
@@ -779,7 +784,8 @@ namespace MWRender
                     const float t = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
                         / static_cast<float>(freeCount);
                     const float ease = t * t * (3.f - 2.f * t);
-                    const float weight = 1.f + (ease - 1.f) * curve;
+                    // Root stays vertical, the tip sweeps out further than the mid-chain.
+                    const float weight = (1.f - curve) + curve * ease * (1.f + 0.6f * curve);
                     const float angle = std::min(raw, cap) * weight;
                     osg::Vec3f axis = osg::Vec3f(0.f, 0.f, -1.f) ^ target;
                     if (axis.length() < 1e-3f)
@@ -800,6 +806,22 @@ namespace MWRender
                     meanAngle += angle;
                 }
                 shapePositions[i] = shapePositions[i - 1] + rotated;
+            }
+            {
+                // Ease the shape reference so it relaxes slowly (softer cloth = slower) instead of
+                // collapsing to the hanging pose in one step when vertical/horizontal speed drops.
+                const float tau = 0.10f + 0.35f * softFeel;
+                const float blend = 1.f - std::exp(-static_cast<float>(std::max(frameDt, 1e-4)) / tau);
+                const osg::Quat turn = frameDelta.getRotate();
+                if (mShapeOffset.size() != shapePositions.size())
+                    mShapeOffset.assign(shapePositions.size(), osg::Vec3f());
+                for (std::size_t i = static_cast<std::size_t>(pinCount); i < shapePositions.size(); ++i)
+                {
+                    const osg::Vec3f previous = turn * mShapeOffset[i];
+                    const osg::Vec3f target = shapePositions[i] - restPositions[i];
+                    mShapeOffset[i] = previous + (target - previous) * blend;
+                    shapePositions[i] = restPositions[i] + mShapeOffset[i];
+                }
             }
             if (meanAngle > 0.f && meanAxis.normalize() > 1e-5f)
             {
