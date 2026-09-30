@@ -977,16 +977,13 @@ namespace MWGui
         if (pos != 1)
             return;
 
-        // This preset is intentionally absolute, so its gravity value is not
-        // constrained by the usual low-range slider defaults.
+        // Recommended safe state: let each mesh use its authored Verlet profile.
+        // Keep the global master/collision safety enabled and avoid idle procedural wind.
         auto& game = Settings::game();
-        game.mVerletUseGlobalSettings.set(true);
-        game.mVerletGravity.set(711.f);
-        game.mVerletWindStrength.set(0.f);
-        game.mVerletFriction.set(0.93f);
-        game.mVerletIterations.set(12);
-        game.mVerletSubsteps.set(4);
-        game.mVerletMaxStep.set(12.f);
+        game.mVerletEnabled.set(true);
+        game.mVerletUseGlobalSettings.set(false);
+        game.mVerletIdleWind.set(false);
+        game.mVerletBodyCollision.set(true);
 
         apply();
         configureWidgets(mMainWidget, false);
