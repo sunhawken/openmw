@@ -32,8 +32,7 @@ namespace MWRender
         /// @param isPlayer when true, the actor's body mesh is recorded as the "current player mesh"
         /// and its saved per-mesh Z offset (if any) is pushed into the live breast/butt Z sliders,
         /// so the sliders track whichever body mesh the player is currently using.
-        /// @param allowBodyAutoRig false skips female-body breast/butt/thigh generation while
-        /// still allowing model-specific cloth compatibility such as the Rose Sorceress cape.
+        /// @param allowBodyAutoRig false skips female-body breast/butt/thigh generation.
         void run(osg::Group* objectRoot, bool isPlayer = false, bool allowBodyAutoRig = true,
             std::string_view actorName = {});
     }

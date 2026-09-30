@@ -16,32 +16,6 @@ namespace osg
 
 namespace MWRender
 {
-    /// Per-bone overrides imported from Blender Wiggle Bones metadata.
-    /// Missing values fall back to OpenMW's live global jiggle settings.
-    struct WiggleBoneSettings
-    {
-        bool mDirect = false;
-        std::optional<bool> mActive;
-        std::optional<float> mStiffness;
-        std::optional<float> mDamping;
-        std::optional<float> mAmplitude;
-        std::optional<float> mGravity;
-        std::optional<float> mMass;
-        std::optional<float> mStretch;
-        std::optional<bool> mSelfCollision;
-        // Optional per-bone visual overrides. Model-specific cloth can remain functional even if
-        // body-jiggle sliders are deliberately reduced/disabled by the player.
-        std::optional<float> mMaxDisplacementOverride;
-        std::optional<float> mVisualIntensityOverride;
-        std::optional<float> mSideScaleOverride;
-        bool mUseBodyResponse = true;
-
-        // Optional local-space virtual point used by the spring simulation. The bone itself keeps
-        // its authored bind transform; this only gives identity/injected bones a lever arm so parent
-        // rotation produces inertia (useful for procedural cloth/cape chains).
-        osg::Vec3f mSimulationOffset{ 0.f, 0.f, 0.f };
-    };
-
     /// Applies a lightweight procedural spring-damper secondary-motion effect to a
     /// bone (e.g. breast/butt "jiggle bones" on body-replacer meshes), simulating
     /// physical lag as its parent bone moves. This is NOT rigid-body physics - no
@@ -61,8 +35,7 @@ namespace MWRender
         /// @param isPlayer when true, this bone belongs to the player character. While the
         /// "jiggle player only" setting is on, the manual breast/butt Z-offset sliders (player-mesh
         /// -specific tuning) are applied only to the player's bones and skipped for NPCs.
-        explicit JiggleBoneController(bool debug = false, bool isPlayer = false,
-            WiggleBoneSettings settings = {}, std::string actorName = {});
+        explicit JiggleBoneController(bool debug = false, bool isPlayer = false, std::string actorName = {});
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
@@ -79,9 +52,7 @@ namespace MWRender
         bool mDebug;
         bool mIsPlayer;
         std::string mActorName;
-        WiggleBoneSettings mSettings;
         int mDebugCounter = 0;
-        bool mMotionVerified = false;
     };
 }
 

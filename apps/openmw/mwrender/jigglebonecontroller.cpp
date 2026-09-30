@@ -88,8 +88,7 @@ namespace MWRender
         }
     }
 
-    JiggleBoneController::JiggleBoneController(
-        bool debug, bool isPlayer, WiggleBoneSettings settings, std::string actorName)
+    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, std::string actorName)
         : mSimWorldPos(0, 0, 0)
         , mVelocity(0, 0, 0)
         , mPreviousRestWorldPos(0, 0, 0)
@@ -98,7 +97,6 @@ namespace MWRender
         , mDebug(debug)
         , mIsPlayer(isPlayer)
         , mActorName(std::move(actorName))
-        , mSettings(std::move(settings))
     {
     }
 
@@ -140,9 +138,8 @@ namespace MWRender
             parentWorldMatrix = osg::computeLocalToWorld(parentPath);
         }
 
-        // Naturalis-style glute physics applies to butt bones of body Jiggle (not direct Wiggle).
-        const bool glute
-            = !mSettings.mDirect && isGluteBone(node->getName()) && Settings::game().mJiggleGlutePhysics;
+        // Naturalis-style glute physics applies to butt bones of body Jiggle.
+        const bool glute = isGluteBone(node->getName()) && Settings::game().mJiggleGlutePhysics;
         std::optional<osg::Matrix> skeletonWorld;
         if (glute && !nodePaths.empty())
             skeletonWorld = findSkeletonWorld(nodePaths[0]);
@@ -158,7 +155,7 @@ namespace MWRender
             // mean "rest" drifts to wherever the spring last left off, collapsing
             // the restoring force to ~0 after the very first frame.
             mRestLocalMatrix = node->getMatrix();
-            const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
+            const osg::Vec3f simulationOffset(0.f, 0.f, 0.f);
             osg::Vec3f restWorldPos = (mRestLocalMatrix.getTrans() + simulationOffset) * parentWorldMatrix;
             restWorldPos.z() += zOffsetFor(node->getName());
             restWorldPos += gluteOffset;
@@ -172,14 +169,13 @@ namespace MWRender
         }
 
         const osg::Vec3f restTranslation = mRestLocalMatrix.getTrans();
-        const osg::Vec3f simulationOffset = mSettings.mSimulationOffset;
+        const osg::Vec3f simulationOffset(0.f, 0.f, 0.f);
         osg::Vec3f restWorldPos = (restTranslation + simulationOffset) * parentWorldMatrix;
         restWorldPos.z() += zOffsetFor(node->getName());
         restWorldPos += gluteOffset;
 
-        // Actor-specific Jiggle rules are live. Direct Wiggle metadata has its own
-        // independent master switch and is intentionally not governed here.
-        if (!mSettings.mDirect && !Misc::JigglePolicy::actorEnabled(mIsPlayer, mActorName))
+        // Actor-specific Jiggle rules are live.
+        if (!Misc::JigglePolicy::actorEnabled(mIsPlayer, mActorName))
         {
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
@@ -202,26 +198,6 @@ namespace MWRender
         const osg::Vec3f restStep = restWorldPos - mPreviousRestWorldPos;
         mPreviousRestWorldPos = restWorldPos;
 
-        // Live master switch for Blender-authored/direct Wiggle only.
-        // Legacy/auto-rig Jiggle controllers remain independent.
-        if (mSettings.mDirect && !Settings::game().mWiggleEnabled)
-        {
-            mSimWorldPos = restWorldPos;
-            mVelocity = osg::Vec3f(0, 0, 0);
-            mLastSimTime = simTime;
-            const osg::Vec3f newLocalTranslation
-                = restWorldPos * osg::Matrix::inverse(parentWorldMatrix) - simulationOffset;
-            if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
-                nifTransform->setTranslation(newLocalTranslation);
-            else
-            {
-                osg::Matrix newMatrix = mRestLocalMatrix;
-                newMatrix.setTrans(newLocalTranslation);
-                node->setMatrix(newMatrix);
-            }
-            traverse(node, nv);
-            return;
-        }
         if (restStep.length2() > sTeleportResetDistance * sTeleportResetDistance)
         {
             // Fast travel, cell transitions and scripted teleports can move an actor hundreds or
@@ -247,8 +223,7 @@ namespace MWRender
         // Live master off-switch: the "jiggle auto rig" toggle freezes spring motion, but must
         // leave the manual NIF bone mover active. This lets the Jiggle-tab breast slider position
         // an existing .nif breast bone live even when procedural auto-rigging is disabled.
-        if ((!mSettings.mDirect && !Settings::game().mJiggleAutoRig)
-            || (mSettings.mActive && !*mSettings.mActive))
+        if (!Settings::game().mJiggleAutoRig)
         {
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);
@@ -278,15 +253,10 @@ namespace MWRender
             dt = sMaxDeltaTime;
         const float fdt = static_cast<float>(dt);
 
-        const float baseStiffness = mSettings.mStiffness.value_or(Settings::game().mJiggleBoneStiffness);
-        const float baseDamping = mSettings.mDamping.value_or(Settings::game().mJiggleBoneDamping);
-        float maxDisplacement
-            = mSettings.mMaxDisplacementOverride.value_or(Settings::game().mJiggleBoneMaxDisplacement);
-        if (mSettings.mStretch)
-            maxDisplacement *= std::max(0.f, *mSettings.mStretch);
-        const float baseVisualIntensity
-            = mSettings.mVisualIntensityOverride.value_or(Settings::game().mJiggleBoneIntensity);
-        const float intensity = baseVisualIntensity * std::max(0.f, mSettings.mAmplitude.value_or(1.f));
+        const float baseStiffness = Settings::game().mJiggleBoneStiffness;
+        const float baseDamping = Settings::game().mJiggleBoneDamping;
+        float maxDisplacement = Settings::game().mJiggleBoneMaxDisplacement;
+        const float intensity = Settings::game().mJiggleBoneIntensity;
 
         // --- TittyMagic-style feel: softness / quickness / per-bone mass modulate the base
         // spring, and a real world-space gravity term makes the bone sag + swing. ---
@@ -314,20 +284,16 @@ namespace MWRender
         float stiffnessMult = (1.f - 0.60f * softness) * (0.75f + 0.85f * quickness) * (1.f - 0.30f * massEffect);
         // lerp(1 -> 0.55) as softness rises; heavier damps more.
         float dampingMult = (1.f - 0.45f * softness) * (1.f + 0.50f * massEffect);
-        float stiffness = mSettings.mUseBodyResponse
-            ? baseStiffness * std::max(0.05f, stiffnessMult)
-            : baseStiffness;
-        float damping = mSettings.mUseBodyResponse
-            ? baseDamping * std::max(0.f, dampingMult)
-            : baseDamping;
+        float stiffness = baseStiffness * std::max(0.05f, stiffnessMult);
+        float damping = baseDamping * std::max(0.f, dampingMult);
 
         // Gravity as a real world-space acceleration (down = world -Z). Because the spring solves
         // in world space, the resulting droop stays world-down and, when converted back into the
         // (rotating) parent's local frame, becomes an orientation-dependent forward/back/side shift
         // - reproducing TittyMagic's whole up/down/forward/back/left-right gravity family from one
         // physical term. Heavier+softer bones sag more since equilibrium droop = gravity/stiffness.
-        float gravity = mSettings.mGravity.value_or(Settings::game().mJiggleBoneGravity);
-        float mass = std::max(0.001f, mSettings.mMass.value_or(1.f));
+        float gravity = Settings::game().mJiggleBoneGravity;
+        float mass = 1.f;
 
         // Glute depth axis: straight out of the buttocks (skeleton -X, i.e. backwards), falling back
         // to the radial from the parent joint for pre-rigged bones that carry a rest offset.
@@ -348,7 +314,7 @@ namespace MWRender
         // Naturalis BootyMagic joint model: separate swing (rotation spring/damper) and in/out
         // (depth spring/damper) response, glute mass, and depth in/out force multipliers. Replaces
         // the shared breast softness/quickness/mass-response shaping for butt bones.
-        const bool gluteResponse = glute && mSettings.mUseBodyResponse;
+        const bool gluteResponse = glute;
         JiggleGlute::Response gluteParams;
         float depthStiffness = stiffness;
         float depthDamping = damping;
@@ -390,7 +356,7 @@ namespace MWRender
         // of TittyMagic's soft self-collision + distance limit. Uses the outward radial from the
         // parent joint (or, for glutes, the depth axis), so it needs no knowledge of the skeleton's
         // axis convention.
-        if (mSettings.mSelfCollision.value_or(Settings::game().mJiggleBoneSelfCollision))
+        if (Settings::game().mJiggleBoneSelfCollision)
         {
             const float selfCollisionLimit = Settings::game().mJiggleBoneSelfCollisionLimit;
             const osg::Vec3f parentOriginWorld = parentWorldMatrix.getTrans();
@@ -439,7 +405,7 @@ namespace MWRender
         // "Side sway" scales the horizontal (world XY) part of the jiggle relative to the
         // vertical bounce, so side-to-side / forward-back motion can be emphasised or damped
         // independently of up-down. 1.0 = uniform (old behaviour); 0 = vertical bounce only.
-        const float side = mSettings.mSideScaleOverride.value_or(Settings::game().mJiggleBoneSide);
+        const float side = Settings::game().mJiggleBoneSide;
         const osg::Vec3f shapedDisplacement(displacement.x() * side, displacement.y() * side, displacement.z());
         const osg::Vec3f visualWorldPos = restWorldPos + shapedDisplacement * intensity;
 
@@ -448,15 +414,6 @@ namespace MWRender
 
         // Runtime proof that the final transform which drives skinned cape vertices actually moved,
         // after displacement clamp, side shaping and visual intensity have all been applied.
-        if (!mMotionVerified && Misc::StringUtils::ciFind(node->getName(), "cape") != std::string::npos
-            && (newLocalTranslation - mRestLocalMatrix.getTrans()).length2() > 0.0025f)
-        {
-            mMotionVerified = true;
-            Log(Debug::Info) << "Rose Sorceress cape Wiggle motion VERIFIED: bone=" << node->getName()
-                             << " local displacement="
-                             << (newLocalTranslation - mRestLocalMatrix.getTrans()).length();
-        }
-
         if (mDebug && (mDebugCounter++ % 60) == 0)
         {
             Log(Debug::Warning) << "Jiggle bone debug: node=" << node->getName() << " dt=" << dt
