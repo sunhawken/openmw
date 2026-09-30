@@ -20,6 +20,22 @@ namespace MWRender
 {
     namespace
     {
+        // Everything the single "verlet feel" slider drives (0 = stiff, 1 = water).
+        struct VerletFeel
+        {
+            float softness;
+            float flutter;
+            float curve;
+            float angleRadians;
+            float smoothing;
+        };
+
+        VerletFeel verletFeel()
+        {
+            const float f = std::clamp(Settings::game().mVerletFeel.get(), 0.f, 1.f);
+            return { f, 0.7f * f, f, (40.f + 20.f * f) * static_cast<float>(osg::PI / 180.0), 0.04f + 0.06f * f };
+        }
+
         constexpr double sMaxDeltaTime = 0.05;
         constexpr float sTeleportResetDistance = 128.f;
         constexpr float sReferenceFps = 30.f;
@@ -630,8 +646,8 @@ namespace MWRender
         // Softness turns stiff authored cloth into a light blanket: the shape memory that pulls
         // particles back to the authored contour is weakened and the lateral guard opens up
         // toward the free tip (the root stays tight so the attachment never looks detached).
-        const float softness = std::clamp(Settings::game().mVerletSoftness.get(), 0.f, 1.f);
-        const float flutter = std::clamp(Settings::game().mVerletFlutter.get(), 0.f, 1.f);
+        const float softness = verletFeel().softness;
+        const float flutter = verletFeel().flutter;
         const float lateralMemory = std::clamp(mSettings.mLateralMemory, 0.f, 1.f) * (1.f - 0.85f * softness);
         const float maxLateralDeviation = std::max(0.f, mSettings.mMaxLateralDeviation);
         float chainLength = 0.f;
@@ -682,7 +698,7 @@ namespace MWRender
             }
             // Longer smoothing eases trailing in and out instead of snapping
             // when the animation starts, stops or changes gait.
-            const float smoothing = std::clamp(Settings::game().mVerletMotionSmoothing.get(), 0.02f, 0.4f);
+            const float smoothing = verletFeel().smoothing;
             const float velocityBlend = 1.f - std::exp(-static_cast<float>(frameDt) / smoothing);
             const float accelerationBlend = 1.f - std::exp(-static_cast<float>(frameDt) / (smoothing * 0.5f));
             mFilteredRootAcceleration += (rootAcceleration - mFilteredRootAcceleration) * accelerationBlend;
@@ -691,7 +707,7 @@ namespace MWRender
             mRootVelocityInitialized = true;
             // Softer cloth lags the body more: extra follow-through on every start/stop/turn.
             inertialAcceleration = -mFilteredRootAcceleration * inertia
-                * (1.f + 2.f * std::clamp(Settings::game().mVerletSoftness.get(), 0.f, 1.f));
+                * (1.f + 2.f * verletFeel().softness);
         }
         const float anchorSpeed = static_cast<float>(anchorDelta.length() / std::max(dt, 1e-6));
         const osg::Matrix frameDelta = osg::Matrix::inverse(mPreviousRootParentWorld) * rootParentWorld;
@@ -713,8 +729,7 @@ namespace MWRender
                 const float force = std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration));
                 // Let airflow lift the free length from the root, but stop short
                 // of a horizontal plank: the user-tunable trail angle caps it.
-                const float maxAngle = std::clamp(Settings::game().mVerletTrailAngle.get(), 0.f, 85.f)
-                    * static_cast<float>(osg::PI / 180.0);
+                const float maxAngle = verletFeel().angleRadians;
                 const float angle = std::min(maxAngle, std::atan2(force, std::max(1.f, gravity))
                     * std::clamp(mSettings.mAirShapeResponse, 0.f, 1.f));
                 osg::Vec3f axis = osg::Vec3f(0.f, 0.f, -1.f) ^ airflow;
@@ -723,7 +738,7 @@ namespace MWRender
                 // the animated head/hip and each following segment leans a bit more,
                 // so the root blends in and the tail streams out in a smooth arc
                 // instead of hinging as one rigid plank. curve 0 = rigid (old look).
-                const float curve = std::clamp(Settings::game().mVerletTrailCurve.get(), 0.f, 1.f);
+                const float curve = verletFeel().curve;
                 const std::size_t freeCount = shapePositions.size() - static_cast<std::size_t>(pinCount);
                 float weightSum = 0.f;
                 for (std::size_t i = static_cast<std::size_t>(pinCount); i < shapePositions.size(); ++i)

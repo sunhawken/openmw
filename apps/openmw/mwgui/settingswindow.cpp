@@ -1201,11 +1201,7 @@ namespace MWGui
         game.mVerletPinCount.set(3);
         game.mVerletBodyCollisionRadius.set(12.0f);
         game.mVerletBodyCollisionMargin.set(1.5f);
-        game.mVerletTrailAngle.set(60.0f);
-                game.mVerletMotionSmoothing.set(0.1f);
-        game.mVerletSoftness.set(1.0f);
-        game.mVerletFlutter.set(0.7f);
-        game.mVerletTrailCurve.set(1.0f);
+        game.mVerletFeel.set(1.0f);
     }
 
     void SettingsWindow::onVerletPresetChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
