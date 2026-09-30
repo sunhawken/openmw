@@ -625,8 +625,13 @@ namespace MWRender
         const float rotationCarry = std::clamp(mSettings.mRotationCarry, 0.f, 1.f);
         const float lateralMemory = std::clamp(mSettings.mLateralMemory, 0.f, 1.f);
         const float maxLateralDeviation = std::max(0.f, mSettings.mMaxLateralDeviation);
-        const float inertia = std::clamp(mSettings.mInertia, 0.f, 1.f);
-        const float airDrag = std::max(0.f, mSettings.mAirDrag);
+        // A live multiplier independent of the global gravity/friction overrides.
+        // 1 preserves the authored profile; 0 removes movement-driven pull/lift.
+        // Keep the attachment and anti-flattening constraints at their tuned strength.
+        const float motionStrength = std::clamp(Settings::game().mVerletMovementInfluence.get(), 0.f, 8.f);
+        const float inertia = std::clamp(mSettings.mInertia, 0.f, 1.f) * motionStrength;
+        const float airDrag = std::max(0.f, mSettings.mAirDrag) * motionStrength;
+        const float airDragMaxAcceleration = std::max(0.f, mSettings.mAirDragMaxAcceleration) * motionStrength;
 
         // Quintic smootherstep has zero slope at both ends, which removes the
         // visible rigid->physics hinge better than a linear/cubic transition.
@@ -655,7 +660,9 @@ namespace MWRender
         // but no longer grow stiffer when the renderer produces more frames.
         const float strengthExponent = mSettings.mStableTiming ? subDt * 360.f : 1.f;
         osg::Vec3f inertialAcceleration;
-        if (inertia > 0.f || airDrag > 0.f)
+        // Continue tracking movement at 0x, so raising the slider again does not
+        // compare the current velocity with a stale sample and inject an impulse.
+        if (mSettings.mInertia > 0.f || mSettings.mAirDrag > 0.f)
         {
             const osg::Vec3f rootDelta = rootParentWorld.getTrans() - mPreviousRootParentWorld.getTrans();
             const osg::Vec3f rootVelocity = rootDelta / static_cast<float>(frameDt);
@@ -692,11 +699,13 @@ namespace MWRender
             const float speed = airflow.length();
             if (speed > 1e-5f)
             {
-                const float force = std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration));
+                const float force = std::min(speed * airDrag, airDragMaxAcceleration);
                 // Let high-speed airflow lift the free length from the root.
                 // The old 20-degree cap kept even strong profiles beside the
-                // body. Stay below horizontal to retain downward gravity sag.
-                const float angle = std::min(1.134464f, std::atan2(force, std::max(1.f, gravity))
+                // body. Preserve the authored 65-degree cap at 1x and allow up to
+                // 85 degrees above 1x, while staying below horizontal.
+                const float maxAirAngle = std::min(1.483530f, 1.134464f * std::max(1.f, motionStrength));
+                const float angle = std::min(maxAirAngle, std::atan2(force, std::max(1.f, gravity))
                     * std::clamp(mSettings.mAirShapeResponse, 0.f, 1.f));
                 osg::Vec3f axis = osg::Vec3f(0.f, 0.f, -1.f) ^ airflow;
                 axis.normalize();
@@ -749,7 +758,12 @@ namespace MWRender
         // horizontal-only guard correction leaves the old vertical drop in
         // place, overextending segments and shearing the mesh. Rotating current
         // and previous positions together preserves lengths and stored motion.
-        if (mSettings.mAirShapeResponse > 0.f)
+        // At 0x, undo any preceding lift once, then skip the identity-pivot
+        // arithmetic so disabled motion cannot accumulate roundoff drift.
+        // Air bends rotate around a horizontal axis, so their Z diagonal is
+        // below 1 while an upward tilt remains to be removed.
+        const bool undoPreviousLift = mPreviousAirBend(2, 2) < 1.0;
+        if (mSettings.mAirShapeResponse > 0.f && (motionStrength > 0.f || undoPreviousLift))
         {
             const osg::Matrix carriedAirBend = osg::Matrix::inverse(partialRotation)
                 * mPreviousAirBend * partialRotation;
@@ -878,7 +892,7 @@ namespace MWRender
                     // separate bounded force opposing world motion. Include the
                     // relative particle velocity so it also damps free swinging.
                     osg::Vec3f drag = -(mFilteredRootVelocity + velocity / subDt) * airDrag;
-                    const float limit = std::max(0.f, mSettings.mAirDragMaxAcceleration);
+                    const float limit = airDragMaxAcceleration;
                     if (drag.length2() > limit * limit && drag.length2() > 0.f)
                     {
                         drag.normalize();
@@ -1092,6 +1106,7 @@ namespace MWRender
                              << " softRootCount=" << softRootCount << " velocityDeadzone=" << velocityDeadzone
                              << " contactSlop=" << mSettings.mContactSlop
                              << " rotationCarry=" << rotationCarry << " lateralMemory=" << lateralMemory
+                             << " motionStrength=" << motionStrength
                              << " inertia=" << inertia << " airDrag=" << airDrag
                              << " stableTiming=" << mSettings.mStableTiming
                              << " bodyCollision=" << bodyCollision << " bodyRadius=" << bodyCollisionRadius

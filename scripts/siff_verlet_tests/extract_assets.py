@@ -3,6 +3,17 @@ import sys, time, json
 time.clock=time.perf_counter
 import numpy as np
 from pyffi.formats.nif import NifFormat
+from pyffi.object_models.common import UShort
+
+# PyFFI 2.2.3 defines Num UV Sets twice (byte for modern NIFs, ushort for
+# Morrowind) but can instantiate the modern field even while reading 4.x.
+# Restore the historical field width before reading; leave modern NIFs alone.
+_read_geometry = NifFormat.NiGeometryData.read
+def read_geometry(self, stream, data):
+    if data.version <= 0x04020200 and not isinstance(self._num_uv_sets_value_, UShort):
+        self._num_uv_sets_value_ = UShort()
+    return _read_geometry(self, stream, data)
+NifFormat.NiGeometryData.read = read_geometry
 
 def mat(obj):
     return np.array(obj.as_list(),dtype=np.float64)

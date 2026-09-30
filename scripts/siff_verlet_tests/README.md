@@ -5,7 +5,8 @@ and full Siff skeleton/skin data extracted from NIFs. They are headless numerica
 checks, not gameplay or a replacement for a full OpenMW build.
 
 Requires C++17 compiler, Python, NumPy, SciPy, PyFFI and Pillow for previews.
-The extraction script provides the time.clock compatibility shim for legacy PyFFI.
+The extraction script provides the time.clock compatibility shim and restores
+the historical ushort UV-count field when legacy PyFFI reads Morrowind NIFs.
 From the repository root:
 
 ```sh
@@ -40,3 +41,10 @@ after stopping 0.712 units. Long quiet settle movement is zero and wake passes.
 Actual game animations, terrain and full OSG/runtime integration are absent.
 Ground uses the existing actor-root plane. Full builds/gameplay remain required.
 The optional USE_BASELINE bridge mode needs separate old sources under original/.
+
+The live Motion Strength slider can be checked after the same extraction/build:
+`python3 scripts/siff_verlet_tests/verify_motion_slider.py`. It sweeps 0, 0.25,
+1, 2, 4 and 8x in all eight running directions, checks walking/jumping/extreme
+motion at both endpoints, and tests live 0x/8x changes, range bounds and mesh
+width. Optional `--baseline-library NAME.so` compares 1x bit-for-bit with an
+adapter built from the preceding controller revision using identical profiles.
