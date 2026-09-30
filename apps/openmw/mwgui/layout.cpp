@@ -20,14 +20,26 @@ namespace MWGui
         const std::string mainName = mPrefix + mainWindow;
         for (MyGUI::Widget* widget : mListWindowRoot)
         {
-            if (widget->getName() == mainName)
+            // Normal MyGUI behavior prefixes every named widget. Accept the unprefixed
+            // root too so an older/different MyGUI LayoutManager cannot make the entire
+            // Options window fatal merely because it did not prefix the root name.
+            if (widget->getName() == mainName || widget->getName() == mainWindow)
                 mMainWidget = widget;
 
             // Force the alignment to update immediately
             widget->_setAlign(widget->getSize(), widget->getParentSize());
         }
-        MYGUI_ASSERT(
-            mMainWidget, "root widget name '" << mainWindow << "' in layout '" << mLayoutName << "' not found.");
+
+        // Some MyGUI builds can return a single unnamed/top-level window even though
+        // its children were loaded correctly. A layout owned by OpenMW is required to
+        // have exactly one top-level root, so accepting that sole root is safe and much
+        // friendlier than crashing before the Options menu opens.
+        if (!mMainWidget && mListWindowRoot.size() == 1)
+            mMainWidget = mListWindowRoot.front();
+
+        MYGUI_ASSERT(mMainWidget,
+            "root widget name '" << mainWindow << "' in layout '" << mLayoutName
+                                 << "' not found (loaded " << mListWindowRoot.size() << " top-level widgets).");
     }
 
     void Layout::shutdown()
