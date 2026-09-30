@@ -590,6 +590,11 @@ namespace MWGui
         resetScrollbars();
     }
 
+    namespace
+    {
+        std::string currentJiggleMeshOrEmpty();
+    }
+
     void SettingsWindow::refreshJiggleAdvancedPanel()
     {
         if (!mJiggleMeshOffsetList || !mJiggleBlacklistList || !mJiggleNpcRuleList)
