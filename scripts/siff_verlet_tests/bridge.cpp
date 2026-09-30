@@ -15,7 +15,7 @@
 struct Rig {std::vector<std::unique_ptr<osg::MatrixTransform>> nodes;std::vector<std::unique_ptr<MWRender::VerletClothController>> solvers;osg::NodeVisitor visitor;};
 extern "C" {
 void* rig_create(int n,const int* parents,const char* const* names,const double* local,int nc,const int* starts,const int* chains,const float* settings){
- auto* r=new Rig;for(int i=0;i<n;i++){auto p=std::make_unique<NifOsg::MatrixTransform>();p->name=names[i];for(int j=0;j<16;j++)p->matrix.a[j/4][j%4]=local[i*16+j];r->nodes.push_back(std::move(p));}
+ auto* r=new Rig;for(int i=0;i<n;i++){auto p=std::make_unique<NifOsg::MatrixTransform>();p->name=names[i];for(int j=0;j<16;j++)p->matrix.a[j/4][j%4]=local[i*16+j];p->mScale=std::sqrt(p->matrix(0,0)*p->matrix(0,0)+p->matrix(0,1)*p->matrix(0,1)+p->matrix(0,2)*p->matrix(0,2));r->nodes.push_back(std::move(p));}
  for(int i=0;i<n;i++)if(parents[i]>=0){r->nodes[i]->parent=r->nodes[parents[i]].get();r->nodes[parents[i]]->children.push_back(r->nodes[i].get());}
  for(int c=0;c<nc;c++){std::vector<osg::ref_ptr<osg::MatrixTransform>> chain;for(int i=starts[c];i<starts[c+1];i++)chain.push_back(r->nodes[chains[i]].get());MWRender::VerletClothSettings s;s.mEnabled=true;s.mPinCount=3;s.mSoftRootCount=(int)settings[0];s.mSoftRootStrength=settings[1];s.mFriction=settings[2];s.mGravity=711;s.mWindStrength=0;s.mIterations=32;s.mSubsteps=(int)settings[3];s.mMaxStep=6;s.mRotationCarry=settings[4];s.mLateralMemory=settings[5];s.mVelocityDeadzone=1.2;s.mContactSlop=.08;s.mCollideLegs=true;s.mGround=true;
 #ifndef USE_BASELINE
@@ -23,6 +23,7 @@ void* rig_create(int n,const int* parents,const char* const* names,const double*
  s.mSleepSpeed=2.f;s.mSleepDelay=.8f;
  s.mSleepAmplitude=.18f;
  s.mRestCollisionFit=true;
+ s.mAlignBones=true;
  s.mMaxLateralDeviation=settings[8];
  s.mAirDrag=settings[9];s.mAirDragMaxAcceleration=settings[10];
  s.mAirShapeResponse=settings[11];

@@ -1,8 +1,10 @@
 from run_tests import *
 import itertools,hashlib
+LIBRARY='final.so'
+REPORT_ROOT=ROOT
 
-SETTINGS={'siff_hair':[4,.35,.94,6,1,.08,.30,1800,3.5,5,1500,.08],
-          'siff_regalia':[3,.25,.91,6,.95,.24,.22,1800,2.5,5,1500,.08]}
+SETTINGS={'siff_hair':[4,.35,.94,6,1,.14,.30,1800,3.5,5,1500,.90],
+          'siff_regalia':[3,.25,.91,6,.95,.24,.22,1800,2.5,5,1500,.80]}
 
 def trailing_response(a, speed, deg):
     # Causal check: identical motion with drag enabled versus disabled. Root
@@ -11,7 +13,7 @@ def trailing_response(a, speed, deg):
     u=np.array([math.sin(math.radians(deg)),math.cos(math.radians(deg)),0.])
     snapshots=[]
     for drag in [0, SETTINGS[a.name][9]]:
-        settings=SETTINGS[a.name].copy();settings[9]=drag;r=Rig(a,'final.so',settings);sample=[]
+        settings=SETTINGS[a.name].copy();settings[9]=drag;r=Rig(a,LIBRARY,settings);sample=[]
         for f in range(421):
             t=f/60;p=u*speed*np.clip(t-1,0,3);r.set(0,matrix(p));r.tick(t)
             if f in [180,420]:sample.append(r.positions[:,4:]-p)
@@ -21,9 +23,28 @@ def trailing_response(a, speed, deg):
             'stopped_drag_offset_units':float(np.linalg.norm(settled.mean((0,1)))),
             'steady_drag_tip_trail_units':float(-(cruise[:,-1]@u).mean())}
 
+def full_speed_lift(a,deg):
+    c=run(a,LIBRARY,'full_run',math.radians(deg),settings=SETTINGS[a.name],record=True)
+    u=np.array([math.sin(math.radians(deg)),math.cos(math.radians(deg)),0.])
+    root_angles=[];tip_lifts=[];tip_trails=[]
+    for index in range(54,175):
+        world=c['worlds'][index]
+        p=(np.concatenate([c['history'][index],np.ones((*a.rest.shape[:2],1))],axis=2)@np.linalg.inv(world[0]))[:,:,:3]
+        d=p[:,3]-p[:,2]
+        root_angles.append(np.degrees(np.arctan2(-(d@u),-d[:,2])))
+        tip_lifts.append((p[:,-1]-a.rest[:,-1])[:,2].mean())
+        tip_trails.append(-((p[:,-1]-a.rest[:,-1])@u).mean())
+    poses=c['worlds'][[54,90,120,174]]
+    c.pop('worlds');c.pop('history')
+    return {**c,'minimum_median_free_root_tilt_degrees':float(np.median(root_angles,axis=1).min()),
+            'minimum_individual_free_root_tilt_degrees':float(np.min(root_angles)),
+            'minimum_mean_tip_lift_units':float(min(tip_lifts)),
+            'minimum_mean_tip_trail_units':float(min(tip_trails)),
+            'speed_units_per_second':320,'measured_cruise_interval_seconds':[1.8,5.8]},poses
+
 def extras(a):
     # Uneven timesteps, explicit frame stalls, backwards clock and teleport.
-    r=Rig(a,'final.so',SETTINGS[a.name]);r.tick(0);t=0;worst=1.;width=1.;last=[]
+    r=Rig(a,LIBRARY,SETTINGS[a.name]);r.tick(0);t=0;worst=1.;width=1.;last=[]
     lengths=np.linalg.norm(np.diff(a.rest,axis=1),axis=2)
     sv=[np.linalg.svd(a.rest[:,i]-a.rest[:,i].mean(0),compute_uv=False)[1] for i in range(3,a.rest.shape[1])]
     for i in range(720):
@@ -75,16 +96,18 @@ def mesh_metrics(a,worlds):
             vertices.append(v)
         allframes.append(np.array(vertices));vertex_count+=len(w);normerr=max(normerr,float(np.abs(w.sum(1)-1).max()));maxinfluence=max(maxinfluence,int((w>1e-7).sum(1).max()))
     rest=np.concatenate(allrest);frames=np.concatenate(allframes,axis=1);mask=np.concatenate([x[0] for x in masks]);levels=np.concatenate([x[1] for x in masks])
-    min_width=1.;min_area=1.
+    min_width=1.;min_area=1.;worst={}
     for lv in range(3,a.chain.shape[1]):
         which=mask&(levels==lv)
         if which.sum()<100:continue
         base=rest[which];base_sv=np.linalg.svd(base-base.mean(0),compute_uv=False)
         if base_sv[1]<1e-4:continue
-        for f in frames:
+        for frame_index,f in enumerate(frames):
             v=f[which];sv=np.linalg.svd(v-v.mean(0),compute_uv=False)
-            min_width=min(min_width,float(sv[1]/base_sv[1]));min_area=min(min_area,float((sv[0]*sv[1])/(base_sv[0]*base_sv[1])))
-    return {'checked_vertices':vertex_count,'checked_mesh_frames':len(worlds),'min_surface_band_width_ratio':min_width,'min_surface_band_area_ratio':min_area,'rest_skin_evaluator_max_error':resterr,'max_weight_sum_error':normerr,'max_influences':maxinfluence}
+            ratio=float(sv[1]/base_sv[1])
+            if ratio<min_width:worst={'combined_sample_index':frame_index,'chain_level':lv,'width_ratio':ratio}
+            min_width=min(min_width,ratio);min_area=min(min_area,float((sv[0]*sv[1])/(base_sv[0]*base_sv[1])))
+    return {'checked_vertices':vertex_count,'checked_mesh_frames':len(worlds),'min_surface_band_width_ratio':min_width,'min_surface_band_area_ratio':min_area,'worst_surface_band_sample':worst,'rest_skin_evaluator_max_error':resterr,'max_weight_sum_error':normerr,'max_influences':maxinfluence}
 
 def validate(report):
     failures=[]
@@ -98,37 +121,55 @@ def validate(report):
         if any(t['steady_drag_trail_units'] < .75 or t['stopped_drag_offset_units'] > 1.5 for t in a['trailing_response']):failures.append(n+' trailing/release')
         for i in range(8):
             if a['trailing_response'][i+8]['steady_drag_trail_units'] < 1.3*a['trailing_response'][i]['steady_drag_trail_units']:failures.append(n+' speed response')
+        limits=(45,25,40) if n=='siff_hair' else (35,15,25)
+        for c in a['full_speed_lift']:
+            if c['minimum_median_free_root_tilt_degrees']<limits[0] or c['minimum_mean_tip_lift_units']<limits[1] or c['minimum_mean_tip_trail_units']<limits[2]:
+                failures.append(n+' full-speed root lift '+str(c['direction_deg']))
     return failures
 
 
 def main():
     report={'scope':'Headless execution of actual controller C++; minimal scene/matrix adapter; procedural actor-axis gait; not OpenMW gameplay.','settings':SETTINGS,'assets':{}}
+    source_root=ROOT.parents[1]
+    report['source_sha256']={str(p.relative_to(source_root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in
+        [source_root/'apps/openmw/mwrender'/n for n in ['verletclothcontroller.cpp','verletclothcontroller.hpp','animation.cpp']]+[ROOT/'bridge.cpp',ROOT/'shim.hpp']}
+    report['compiled_adapter_sha256']=hashlib.sha256((ROOT/LIBRARY).read_bytes()).hexdigest()
+    report['opt_in_settings']={'stable_timing':True,'project_velocity':True,'rest_collision_fit':True,'align_bones':True,'pin_count':3,'gravity':711,'iterations':32,'body_collision_radius':12,'body_collision_margin':1.5,'idle_wind':False}
+    REPORT_ROOT.mkdir(parents=True,exist_ok=True)
     for name in SETTINGS:
         a=Asset(name);cases=[]
         sampled_worlds=[]
         for kind in ['walk','run','jump']:
             for deg in range(0,360,45):
-                c=run(a,'final.so',kind,math.radians(deg),settings=SETTINGS[name],record=True)
+                c=run(a,LIBRARY,kind,math.radians(deg),settings=SETTINGS[name],record=True)
                 sampled_worlds.append(c.pop('worlds')[[10,54,90,135]])
                 c.pop('history');cases.append(c)
             print(name,kind,'8 directions completed',flush=True)
         for u in itertools.product([-1,0,1],repeat=3):
             if u!=(0,0,0):
-                c=run(a,'final.so','pull',settings=SETTINGS[name],pull_vector=u);c['pull_direction']=list(u);cases.append(c)
-        for fps in [20,30,60,120,144]:cases.append(run(a,'final.so','extreme',fps=fps,settings=SETTINGS[name]))
+                c=run(a,LIBRARY,'pull',settings=SETTINGS[name],pull_vector=u);c['pull_direction']=list(u);cases.append(c)
+        for fps in [20,30,60,120,144]:cases.append(run(a,LIBRARY,'extreme',fps=fps,settings=SETTINGS[name]))
         extra=extras(a)
         trailing=[trailing_response(a,speed,deg) for speed in [110,320] for deg in range(0,360,45)]
+        lift=[]
+        for deg in range(0,360,45):
+            c,poses=full_speed_lift(a,deg);lift.append(c);sampled_worlds.append(poses)
         # Full mesh checks at snapshots across backward running/jumping/extremes.
         recordings=[]
         for kind in ['run','jump','extreme']:
-            c=run(a,'final.so',kind,math.pi,record=True,settings=SETTINGS[name]);recordings.append(c['worlds'][::max(1,len(c['worlds'])//12)])
-            np.savez_compressed(ROOT/(name+'-'+kind+'-recording.npz'),history=c['history'],worlds=c['worlds'])
+            c=run(a,LIBRARY,kind,math.pi,record=True,settings=SETTINGS[name]);recordings.append(c['worlds'][::max(1,len(c['worlds'])//12)])
+            np.savez_compressed(REPORT_ROOT/(name+'-'+kind+'-recording.npz'),history=c['history'],worlds=c['worlds'])
         mesh=mesh_metrics(a,np.concatenate(recordings+sampled_worlds))
-        report['assets'][name]={'cases':cases,'extra':extra,'trailing_response':trailing,'mesh':mesh,'summary':{'case_count':len(cases)+1+len(trailing),'max_segment_stretch_percent':100*(max(x['max_segment_ratio'] for x in cases+[extra])-1),'min_chain_band_width_percent':100*min(x['min_ring_thickness_ratio'] for x in cases+[extra]),'min_mesh_band_width_percent':100*mesh['min_surface_band_width_ratio'],'settle_speed':extra['long_settle_rms_units_per_s'], 'min_running_trail_units':min(x['steady_drag_trail_units'] for x in trailing if x['speed']==320)}}
+        report['assets'][name]={'cases':cases,'extra':extra,'trailing_response':trailing,'full_speed_lift':lift,'mesh':mesh,'summary':{'case_count':len(cases)+1+len(trailing)+len(lift),'max_segment_stretch_percent':100*(max(x['max_segment_ratio'] for x in cases+[extra]+lift)-1),'min_chain_band_width_percent':100*min(x['min_ring_thickness_ratio'] for x in cases+[extra]+lift),'min_mesh_band_width_percent':100*mesh['min_surface_band_width_ratio'],'settle_speed':extra['long_settle_rms_units_per_s'], 'min_running_trail_units':min(x['steady_drag_trail_units'] for x in trailing if x['speed']==320),
+            'min_full_speed_median_root_tilt_degrees':min(x['minimum_median_free_root_tilt_degrees'] for x in lift)}}
         print(name,report['assets'][name]['summary'],'extra',extra,'mesh',mesh,flush=True)
-        (ROOT/'Directional-Test-Report.json').write_text(json.dumps(report,indent=2))
+        (REPORT_ROOT/'Directional-Test-Report.json').write_text(json.dumps(report,indent=2))
     report['acceptance']={'segment_ratio_max':1.05,'surface_band_width_ratio_min':.65,'stopped_drag_offset_max_units':1.5,'running_to_walking_trail_min_ratio':1.3,'note':'Bone-center ring widths are retained as diagnostics. Mesh volume is assessed on full-resolution skinned surface bands because centerlines are not surface vertices.'}
+    report['acceptance']['full_speed_root_lift']={'hair':{'median_tilt_min_degrees':45,'mean_tip_lift_min_units':25,'mean_tip_trail_min_units':40},'skirt':{'median_tilt_min_degrees':35,'mean_tip_lift_min_units':15,'mean_tip_trail_min_units':25},'scope':'Every compass direction, over the complete 1.8–5.8 s continuous cruise at 320 units/s.'}
     report['failures']=validate(report);report['passed']=not report['failures']
-    (ROOT/'Directional-Test-Report.json').write_text(json.dumps(report,indent=2));print('PASS' if report['passed'] else 'FAIL',report['failures'],flush=True)
+    (REPORT_ROOT/'Directional-Test-Report.json').write_text(json.dumps(report,indent=2));print('PASS' if report['passed'] else 'FAIL',report['failures'],flush=True)
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    import argparse
+    parser=argparse.ArgumentParser();parser.add_argument('--library',default='final.so');parser.add_argument('--output-dir',type=Path,default=ROOT)
+    args=parser.parse_args();LIBRARY=args.library;REPORT_ROOT=args.output_dir.resolve();main()

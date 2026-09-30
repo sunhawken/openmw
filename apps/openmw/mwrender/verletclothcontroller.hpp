@@ -66,6 +66,9 @@ namespace MWRender
         // Bone origins can lie inside a coarse body capsule even when the skinned
         // surface is outside it. Do not make the authored attachment impossible.
         bool mRestCollisionFit = false;
+        // Orient skinned cross-sections with the coherent airflow frame,
+        // preserving bind twist/scale instead of shearing translated bones.
+        bool mAlignBones = false;
 
         // Bounded reaction to parent translation acceleration. Unlike a second
         // anchor-displacement force, this produces starts/stops/jump lag without
@@ -111,6 +114,7 @@ namespace MWRender
         void updateCollisionWorld(const std::vector<osg::Vec3f>& restPositions, float radius, float margin);
         void solveBodyCollision(int pinCount, float radius, float margin);
         void solveGround(int pinCount);
+        void solveGroundParticle(std::size_t i);
 
         std::vector<osg::ref_ptr<osg::MatrixTransform>> mChain;
         std::vector<osg::Matrix> mRestLocalMatrices;
@@ -132,6 +136,7 @@ namespace MWRender
             std::vector<float> mParticleRadii;
         };
         std::vector<WorldCapsule> mWorldCapsules;
+        std::vector<osg::Vec3f> mGroundDrapeDirections;
         std::vector<std::vector<unsigned char>> mBodyContacts;
         std::vector<unsigned char> mGroundContacts;
         float mGroundZ = 0.f;
@@ -142,6 +147,7 @@ namespace MWRender
         VerletClothSettings mSettings;
         osg::Vec3f mPreviousAnchor;
         osg::Matrix mPreviousRootParentWorld;
+        osg::Matrix mPreviousAirBend;
         osg::Vec3f mPreviousRootVelocity;
         osg::Vec3f mFilteredRootAcceleration;
         osg::Vec3f mFilteredRootVelocity;
