@@ -32,7 +32,8 @@ namespace MWRender
 
         VerletFeel verletFeel()
         {
-            const float f = std::clamp(Settings::game().mVerletFeel.get(), 0.f, 1.f);
+            // The slider is stiffness: 0 = flowing like water, 1 = stiff. Internally f = 1 is water.
+            const float f = 1.f - std::clamp(Settings::game().mVerletFeel.get(), 0.f, 1.f);
             return { f, 0.7f * f, f, (40.f + 20.f * f) * static_cast<float>(osg::PI / 180.0), 0.04f + 0.06f * f };
         }
 

@@ -108,7 +108,7 @@ namespace Settings
         // Useful for capes: shoulder/upper-arm cloth stays rigid while the lower cape flows.
         SettingValue<int> mVerletPinCount{ mIndex, "Game", "verlet pin count",
             makeClampSanitizerInt(1, 8) };
-        // Single "Cloth Feel" control: 0 = stiff authored shape, 1 = flowing like water (softness,
+        // Single "Cloth Feel" control: 0 = flowing like water, 1 = stiff authored shape (softness,
         // flutter, trailing curve/angle and motion smoothing are all derived from this one value).
         SettingValue<float> mVerletFeel{ mIndex, "Game", "verlet feel", makeClampSanitizerFloat(0.f, 1.f) };
         // Capsule collision against the actor torso skeleton so Verlet cloth cannot pass through the body.
