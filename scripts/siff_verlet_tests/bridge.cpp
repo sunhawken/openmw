@@ -14,7 +14,6 @@
 #include <memory>
 struct Rig {std::vector<std::unique_ptr<osg::MatrixTransform>> nodes;std::vector<std::unique_ptr<MWRender::VerletClothController>> solvers;osg::NodeVisitor visitor;};
 extern "C" {
-void rig_set_motion_strength(float value){Settings::game().mVerletMovementInfluence.v=value;}
 void* rig_create(int n,const int* parents,const char* const* names,const double* local,int nc,const int* starts,const int* chains,const float* settings){
  auto* r=new Rig;for(int i=0;i<n;i++){auto p=std::make_unique<NifOsg::MatrixTransform>();p->name=names[i];for(int j=0;j<16;j++)p->matrix.a[j/4][j%4]=local[i*16+j];p->mScale=std::sqrt(p->matrix(0,0)*p->matrix(0,0)+p->matrix(0,1)*p->matrix(0,1)+p->matrix(0,2)*p->matrix(0,2));r->nodes.push_back(std::move(p));}
  for(int i=0;i<n;i++)if(parents[i]>=0){r->nodes[i]->parent=r->nodes[parents[i]].get();r->nodes[parents[i]]->children.push_back(r->nodes[i].get());}
