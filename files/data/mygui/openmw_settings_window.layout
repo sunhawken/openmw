@@ -1483,7 +1483,7 @@
                     <Property key="CanvasSize" value="344 1260"/>
 
                     <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 330 36" align="Left Top">
-                        <Property key="Caption" value="Live cloth controls. Motion Strength works with each model's tuning."/>
+                        <Property key="Caption" value="Live cloth controls. Motion Strength works with each model tuning."/>
                     </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 42 160 18" align="Left Top">
