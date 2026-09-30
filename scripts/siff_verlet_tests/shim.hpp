@@ -66,7 +66,11 @@ template<class T,class N>struct NodeCallback{void traverse(N,osg::NodeVisitor*){
 using NodeMap=std::map<std::string,osg::ref_ptr<osg::MatrixTransform>>;
 struct NodeMapVisitor {NodeMap& map;NodeMapVisitor(NodeMap& m):map(m){}void apply(osg::Node& n){if(auto* t=dynamic_cast<osg::MatrixTransform*>(&n))map[n.name]=t;}};
 }
-namespace NifOsg {struct MatrixTransform:osg::MatrixTransform {void setTranslation(const osg::Vec3f& t){matrix.setTrans(t);}};}
+namespace NifOsg {struct MatrixTransform:osg::MatrixTransform {
+ float mScale=1;
+ void setTranslation(const osg::Vec3f& t){matrix.setTrans(t);}
+ void setRotation(const osg::Quat& q){auto r=osg::Matrix::rotate(q);for(int i=0;i<3;i++)for(int j=0;j<3;j++)matrix(i,j)=r(i,j)*mScale;}
+};}
 namespace Misc::StringUtils {inline bool ciEqual(const std::string& a,const std::string& b){if(a.size()!=b.size())return false;for(size_t i=0;i<a.size();i++)if(std::tolower(a[i])!=std::tolower(b[i]))return false;return true;}}
 namespace Debug {constexpr int Info=0;}
 struct Log {Log(int){}template<class T>Log& operator<<(const T&){return *this;}};

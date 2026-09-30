@@ -44,10 +44,10 @@ class Rig:
 def sequence(kind,direction=0,fps=60,duration=6):
     # Actor faces +Y; 180 degrees is backwards, independent of facing yaw.
     u=np.array([math.sin(direction),math.cos(direction),0.])
-    if kind in ['walk','run','jump']:
+    if kind in ['walk','run','jump','full_run']:
         speed=110 if kind=='walk' else 320
         for f in range(int(duration*fps)+1):
-            t=f/fps;start=np.clip(t/.3,0,1);stop=np.clip((4.0-t)/.3,0,1);v=speed*start*stop
+            t=f/fps;start=np.clip(t/.3,0,1);stop=1 if kind=='full_run' else np.clip((4.0-t)/.3,0,1);v=speed*start*stop
             # Position integral of smooth start/cruise/stop via explicit small steps.
             if f==0:p=np.zeros(3)
             else:p=p+u*v/fps
@@ -78,6 +78,17 @@ def animate(r,phase,amount):
             m[:3,:3]=m[:3,:3]@pr@matrix(angles=ang)[:3,:3]@np.linalg.inv(pr)
             r.set(idx,m)
 
+def animate_running_arms(r,phase,amount):
+    # Keep the bind skeleton's wrist accessories with a procedural running pose.
+    # This is a reference gait; no actual OpenMW animation clip is available.
+    for name,sign in [('Bip01 L UpperArm',-1),('Bip01 R UpperArm',1)]:
+        if name not in r.a.names:continue
+        idx=r.a.names.index(name);m=r.a.d['local'][idx].copy()
+        ang=(-sign*.35*math.sin(phase)*amount,sign*1.30*amount,0)
+        parent=r.a.d['parents'][idx];pr=r.a.d['world'][parent,:3,:3]
+        m[:3,:3]=m[:3,:3]@pr@matrix(angles=ang)[:3,:3]@np.linalg.inv(pr)
+        r.set(idx,m)
+
 def run(asset,lib,kind,angle=0,fps=60,record=False,settings=None,pull_vector=None,duration=None):
     r=Rig(asset,lib,settings);history=[];worlds=[];restlen=np.linalg.norm(np.diff(asset.rest,axis=1),axis=2)
     worst=1.;thickness=1.;free_thickness=1.;maxvel=0.;last=[]
@@ -88,6 +99,7 @@ def run(asset,lib,kind,angle=0,fps=60,record=False,settings=None,pull_vector=Non
     duration=duration or (9 if kind=='extreme' else 6)
     for frame,(t,m,phase,amount) in enumerate(sequence(kind,angle,fps,duration)):
         r.set(0,m);animate(r,phase,amount)
+        if kind=='full_run':animate_running_arms(r,phase,amount)
         if kind=='pull' and frame==int(fps):
             u=np.array(pull_vector if pull_vector is not None else [math.sin(angle),math.cos(angle),.45],float);u/=np.linalg.norm(u);r.lib.rig_impulse(r.ptr,*[float(x*150/(fps*6)) for x in u])
         capture=record and frame%max(1,int(fps/24))==0

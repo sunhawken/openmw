@@ -278,6 +278,8 @@ namespace
             settings.mProjectVelocity = b;
         else if (key == "verlet_rest_collision_fit" && parseWiggleBool(value, b))
             settings.mRestCollisionFit = b;
+        else if (key == "verlet_align_bones" && parseWiggleBool(value, b))
+            settings.mAlignBones = b;
         else if (key == "verlet_inertia" && parseWiggleFloat(value, f))
             settings.mInertia = std::clamp(f, 0.f, 1.f);
         else if (key == "verlet_inertia_max_acceleration" && parseWiggleFloat(value, f))
@@ -354,6 +356,8 @@ namespace
             settings.mProjectVelocity = b;
         if (node.getUserValue("verlet_rest_collision_fit", b))
             settings.mRestCollisionFit = b;
+        if (node.getUserValue("verlet_align_bones", b))
+            settings.mAlignBones = b;
 
         for (const std::string& description : node.getDescriptions())
         {

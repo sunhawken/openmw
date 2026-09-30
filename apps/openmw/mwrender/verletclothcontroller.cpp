@@ -36,12 +36,25 @@ namespace MWRender
             return parentWorld;
         }
 
-        void setNodeMatrix(osg::MatrixTransform* node, const osg::Matrix& matrix)
+        void setNodeMatrix(osg::MatrixTransform* node, const osg::Matrix& matrix, bool updateRotation = false)
         {
             if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))
             {
-                // NifOsg::MatrixTransform exposes translation as its fast path, but
-                // preserve the authored rotation/scale too for ordinary OSG nodes.
+                if (updateRotation)
+                {
+                    osg::Matrix rotation = matrix;
+                    for (int row = 0; row < 3; ++row)
+                    {
+                        const double scale = std::sqrt(rotation(row, 0) * rotation(row, 0)
+                            + rotation(row, 1) * rotation(row, 1) + rotation(row, 2) * rotation(row, 2));
+                        if (scale > 1e-8)
+                            for (int col = 0; col < 3; ++col)
+                                rotation(row, col) /= scale;
+                    }
+                    // Use the NIF setter so its stored rotation/scale components
+                    // stay consistent with the matrix used by skinning.
+                    nifTransform->setRotation(rotation.getRotate());
+                }
                 nifTransform->setTranslation(matrix.getTrans());
             }
             else
@@ -93,6 +106,7 @@ namespace MWRender
 
         mPreviousAnchor = mPositions.empty() ? osg::Vec3f() : mPositions.front();
         mPreviousRootParentWorld = rootParentWorld;
+        mPreviousAirBend = osg::Matrix();
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
         mFilteredRootVelocity.set(0.f, 0.f, 0.f);
@@ -116,6 +130,7 @@ namespace MWRender
         if (!mPositions.empty())
             mPreviousAnchor = mPositions.front();
         mPreviousRootParentWorld = rootParentWorld;
+        mPreviousAirBend = osg::Matrix();
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
         mFilteredRootVelocity.set(0.f, 0.f, 0.f);
@@ -133,13 +148,45 @@ namespace MWRender
     void VerletClothController::writeBoneTransforms(const osg::Matrix& rootParentWorld)
     {
         osg::Matrix parentWorld = rootParentWorld;
+        std::vector<osg::Matrix> restWorlds;
+        osg::Matrix restParent = rootParentWorld;
+        if (mSettings.mAlignBones)
+        {
+            for (const osg::Matrix& local : mRestLocalMatrices)
+            {
+                restParent = local * restParent;
+                restWorlds.push_back(restParent);
+            }
+        }
+        const int pinCount = std::clamp(mSettings.mPinCount > 0 ? mSettings.mPinCount
+            : Settings::game().mVerletPinCount.get(), 1, static_cast<int>(mPositions.size()) - 1);
 
         for (std::size_t i = 0; i < mChain.size() && i < mPositions.size(); ++i)
         {
             osg::Matrix local = mRestLocalMatrices[i];
+            if (mSettings.mAlignBones)
+            {
+                osg::Matrix world = restWorlds[i];
+                if (i >= static_cast<std::size_t>(pinCount - 1) && mPositions.size() > 1)
+                {
+                    // The cross-sections share the coherent airflow frame.
+                    // Independent tangent rotations can oppose one another at
+                    // contacts; blending those matrices flattens shared skin.
+                    // Keep authored twist/scale and allow relative cloth motion
+                    // through the independently simulated bone translations.
+                    osg::Quat crossSection;
+                    // Bone-center rings remain anchored around the body; a
+                    // partial common swing preserves their authored breadth
+                    // while turning the skinned sections into the airflow.
+                    crossSection.slerp(0.55, osg::Quat(), mPreviousAirBend.getRotate());
+                    world = world * osg::Matrix::rotate(crossSection);
+                }
+                world.setTrans(mPositions[i]);
+                local = world * osg::Matrix::inverse(parentWorld);
+            }
             const osg::Vec3f localTranslation = mPositions[i] * osg::Matrix::inverse(parentWorld);
             local.setTrans(localTranslation);
-            setNodeMatrix(mChain[i].get(), local);
+            setNodeMatrix(mChain[i].get(), local, mSettings.mAlignBones);
             parentWorld = local * parentWorld;
         }
     }
@@ -217,6 +264,15 @@ namespace MWRender
         const std::vector<osg::Vec3f>& restPositions, float radius, float margin)
     {
         mWorldCapsules.clear();
+        mGroundDrapeDirections.clear();
+        for (const osg::Vec3f& rest : restPositions)
+        {
+            osg::Vec3f radial = rest - mPreviousRootParentWorld.getTrans();
+            radial.z() = 0.f;
+            if (radial.normalize() <= 1e-5f)
+                radial = osg::Vec3f(0.f, 1.f, 0.f);
+            mGroundDrapeDirections.push_back(radial);
+        }
         auto worldPos = [](const osg::MatrixTransform* bone) -> osg::Vec3f {
             const osg::NodePathList paths = bone->getParentalNodePaths();
             if (paths.empty())
@@ -265,17 +321,34 @@ namespace MWRender
     {
         if (mWorldCapsules.empty() || radius <= 0.f)
             return;
-        for (std::size_t capsuleIndex = 0; capsuleIndex < mWorldCapsules.size(); ++capsuleIndex)
+        const std::size_t firstFree = static_cast<std::size_t>(std::max(pinCount, 0));
+        const std::size_t freeCount = mPositions.size() - firstFree;
+        const std::size_t outerCount = mSettings.mStableTiming ? freeCount : mWorldCapsules.size();
+        const std::size_t innerCount = mSettings.mStableTiming ? mWorldCapsules.size() : freeCount;
+        for (std::size_t outer = 0; outer < outerCount; ++outer)
         {
-            const WorldCapsule& capsule = mWorldCapsules[capsuleIndex];
-            const osg::Vec3f a = capsule.mA;
-            const osg::Vec3f b = capsule.mB;
-            const osg::Vec3f ab = b - a;
-            const float abLen2 = ab.length2();
-            const float contactSlop = std::max(0.f, mSettings.mContactSlop);
-
-            for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
+            if (mSettings.mStableTiming)
             {
+                const std::size_t i = firstFree + outer;
+                osg::Vec3f direction = mPositions[i] - mPositions[i - 1];
+                if (direction.normalize() > 1e-5f)
+                {
+                    const osg::Vec3f correction = mPositions[i - 1] + direction * mSegmentLengths[i - 1] - mPositions[i];
+                    mPositions[i] += correction;
+                    mPreviousPositions[i] += correction;
+                }
+            }
+            for (std::size_t inner = 0; inner < innerCount; ++inner)
+            {
+                const std::size_t capsuleIndex = mSettings.mStableTiming ? inner : outer;
+                const std::size_t i = firstFree + (mSettings.mStableTiming ? outer : inner);
+                const WorldCapsule& capsule = mWorldCapsules[capsuleIndex];
+                const osg::Vec3f a = capsule.mA;
+                const osg::Vec3f b = capsule.mB;
+                const osg::Vec3f ab = b - a;
+                const float abLen2 = ab.length2();
+                const float contactSlop = std::max(0.f, mSettings.mContactSlop);
+
                 const float collisionRadius = i < capsule.mParticleRadii.size() ? capsule.mParticleRadii[i]
                     : std::max(0.01f, radius * capsule.mRadiusScale + margin);
                 const float activationRadius = std::max(0.01f, collisionRadius - contactSlop);
@@ -325,8 +398,48 @@ namespace MWRender
                 }
                 mBodyContacts[capsuleIndex][i] = 1;
 
-                const osg::Vec3f correction = outward * (collisionRadius - dist);
-                mPositions[i] += correction;
+                osg::Vec3f corrected = mPositions[i] + outward * (collisionRadius - dist);
+                if (mSettings.mStableTiming && i > 0)
+                {
+                    // A collision normal projection alone can overextend a
+                    // lifted segment, especially near its fixed attachment.
+                    // Project onto the segment sphere and capsule together.
+                    const osg::Vec3f parent = mPositions[i - 1];
+                    const float length = mSegmentLengths[i - 1];
+                    for (int pass = 0; pass < 4 && length > 1e-5f; ++pass)
+                    {
+                        osg::Vec3f direction = corrected - parent;
+                        if (direction.normalize() <= 1e-5f)
+                            break;
+                        corrected = parent + direction * length;
+                        const float s = abLen2 > 1e-6f
+                            ? std::clamp(((corrected - a) * ab) / abLen2, 0.f, 1.f) : 0.f;
+                        const osg::Vec3f center = a + ab * s;
+                        if ((corrected - center).length2() >= collisionRadius * collisionRadius - 1e-5f)
+                            break;
+                        osg::Vec3f normal = parent - center;
+                        const float parentDistance = normal.normalize();
+                        if (parentDistance <= 1e-5f)
+                            break;
+                        const float cosLimit = std::clamp((collisionRadius * collisionRadius
+                            - parentDistance * parentDistance - length * length)
+                            / (2.f * parentDistance * length), -1.f, 1.f);
+                        osg::Vec3f tangent = direction - normal * (direction * normal);
+                        if (tangent.normalize() <= 1e-5f)
+                        {
+                            tangent = ab - normal * (ab * normal);
+                            if (tangent.normalize() <= 1e-5f)
+                            {
+                                tangent = normal ^ osg::Vec3f(0.f, 0.f, 1.f);
+                                if (tangent.normalize() <= 1e-5f)
+                                    tangent = osg::Vec3f(1.f, 0.f, 0.f);
+                            }
+                        }
+                        corrected = parent + (normal * cosLimit
+                            + tangent * std::sqrt(std::max(0.f, 1.f - cosLimit * cosLimit))) * length;
+                    }
+                }
+                mPositions[i] = corrected;
 
                 // Keep tangential motion but remove velocity aimed into the body.
                 const float normalVelocity = velocity * outward;
@@ -334,6 +447,8 @@ namespace MWRender
                     velocity -= outward * normalVelocity;
                 mPreviousPositions[i] = mPositions[i] - velocity;
             }
+            if (mSettings.mStableTiming)
+                solveGroundParticle(firstFree + outer);
         }
     }
 
@@ -341,11 +456,27 @@ namespace MWRender
     {
         if (!mHasGround)
             return;
-        const float groundZ = mGroundZ;
-
-        const float contactSlop = std::max(0.f, mSettings.mContactSlop);
         for (std::size_t i = static_cast<std::size_t>(std::max(pinCount, 0)); i < mPositions.size(); ++i)
+            solveGroundParticle(i);
+    }
+
+    void VerletClothController::solveGroundParticle(std::size_t i)
+    {
+        if (!mHasGround)
+            return;
+        const float groundZ = mGroundZ;
+        const float contactSlop = std::max(0.f, mSettings.mContactSlop);
         {
+            if (mSettings.mStableTiming && i > 0)
+            {
+                osg::Vec3f direction = mPositions[i] - mPositions[i - 1];
+                if (direction.normalize() > 1e-5f)
+                {
+                    const osg::Vec3f correction = mPositions[i - 1] + direction * mSegmentLengths[i - 1] - mPositions[i];
+                    mPositions[i] += correction;
+                    mPreviousPositions[i] += correction;
+                }
+            }
             // A small hysteresis band avoids repeatedly entering/leaving contact
             // from floating-point noise.
             osg::Vec3f velocity = mPositions[i] - mPreviousPositions[i];
@@ -356,13 +487,41 @@ namespace MWRender
                 || (wasContact && mPositions[i].z() >= groundZ && velocity.z() > releaseSpeed))
             {
                 mGroundContacts[i] = 0;
-                continue;
+                return;
             }
             mGroundContacts[i] = 1;
 
             // Preserve the velocity from before the positional correction so the
             // clamp itself cannot inject a vertical bounce.
-            mPositions[i].z() = groundZ;
+            if (mSettings.mStableTiming && i > 0 && mSegmentLengths[i - 1] > 1e-5f)
+            {
+                const osg::Vec3f parent = mPositions[i - 1];
+                const float length = mSegmentLengths[i - 1];
+                const float z = std::clamp((groundZ - parent.z()) / length, -1.f, 1.f);
+                osg::Vec3f lateral(mPositions[i].x() - parent.x(), mPositions[i].y() - parent.y(), 0.f);
+                if (lateral.normalize() <= 1e-5f)
+                    lateral = osg::Vec3f(0.f, 1.f, 0.f);
+                if (i < mGroundDrapeDirections.size() && mFilteredRootVelocity.length2() < 0.35f * 0.35f)
+                {
+                    // Authored tips below the floor have several folded rest
+                    // solutions. Gently return their floor tangent outward
+                    // instead of retaining whichever running direction folded
+                    // them last. Angular steering also handles opposite tangents.
+                    const osg::Vec3f preferred = mGroundDrapeDirections[i];
+                    const float turn = std::atan2(lateral.x() * preferred.y() - lateral.y() * preferred.x(),
+                        lateral * preferred);
+                    const float limit = 2.f * std::max(1e-5f, mPreviousStep)
+                        / static_cast<float>(std::clamp(mSettings.mIterations, 1, 32));
+                    const float angle = std::clamp(turn, -limit, limit);
+                    const float x = lateral.x();
+                    lateral.x() = x * std::cos(angle) - lateral.y() * std::sin(angle);
+                    lateral.y() = x * std::sin(angle) + lateral.y() * std::cos(angle);
+                }
+                mPositions[i] = parent + lateral * (length * std::sqrt(std::max(0.f, 1.f - z * z)));
+                mPositions[i].z() = std::max(groundZ, parent.z() + length * z);
+            }
+            else
+                mPositions[i].z() = groundZ;
             velocity.x() *= 0.5f;
             velocity.y() *= 0.5f;
             velocity.z() = 0.f;
@@ -391,6 +550,9 @@ namespace MWRender
         }
 
         const std::vector<osg::Vec3f> restPositions = restWorldPositions(rootParentWorld);
+        if (mSettings.mStableTiming)
+            for (std::size_t i = 1; i < restPositions.size(); ++i)
+                mSegmentLengths[i - 1] = (restPositions[i] - restPositions[i - 1]).length();
         if (restPositions.size() != mPositions.size())
         {
             resetToRest(rootParentWorld, simTime);
@@ -492,7 +654,6 @@ namespace MWRender
         // Metadata strengths retain their authored 60-fps/six-substep response
         // but no longer grow stiffer when the renderer produces more frames.
         const float strengthExponent = mSettings.mStableTiming ? subDt * 360.f : 1.f;
-        const float lateralFollow = 1.f - std::pow(1.f - lateralMemory, strengthExponent);
         osg::Vec3f inertialAcceleration;
         if (inertia > 0.f || airDrag > 0.f)
         {
@@ -520,7 +681,11 @@ namespace MWRender
             (frameDelta(0, 0) + frameDelta(1, 1) + frameDelta(2, 2) - 1.0) * 0.5), -1.f, 1.f);
         const float turnSpeed = std::acos(turnCos) / static_cast<float>(frameDt);
         const bool stationary = anchorSpeed < 0.35f && (!mSettings.mStableTiming || turnSpeed < 0.015f);
+        const float memory = stationary && mSettings.mStableTiming && lateralMemory > 0.f
+            ? std::max(lateralMemory, 0.20f) : lateralMemory;
+        const float lateralFollow = 1.f - std::pow(1.f - memory, strengthExponent);
         std::vector<osg::Vec3f> shapePositions = restPositions;
+        osg::Matrix airBend;
         if (airDrag > 0.f && mSettings.mAirShapeResponse > 0.f)
         {
             const osg::Vec3f airflow(-mFilteredRootVelocity.x(), -mFilteredRootVelocity.y(), 0.f);
@@ -528,16 +693,19 @@ namespace MWRender
             if (speed > 1e-5f)
             {
                 const float force = std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration));
-                const float angle = std::min(0.35f, std::atan2(force, std::max(1.f, gravity))
+                // Let high-speed airflow lift the free length from the root.
+                // The old 20-degree cap kept even strong profiles beside the
+                // body. Stay below horizontal to retain downward gravity sag.
+                const float angle = std::min(1.134464f, std::atan2(force, std::max(1.f, gravity))
                     * std::clamp(mSettings.mAirShapeResponse, 0.f, 1.f));
                 osg::Vec3f axis = osg::Vec3f(0.f, 0.f, -1.f) ^ airflow;
                 axis.normalize();
                 osg::Quat rotation;
                 rotation.makeRotate(angle, axis);
-                const osg::Matrix bend = osg::Matrix::rotate(rotation);
+                airBend = osg::Matrix::rotate(rotation);
                 const osg::Vec3f attachment = restPositions[static_cast<std::size_t>(pinCount - 1)];
                 for (std::size_t i = static_cast<std::size_t>(pinCount); i < shapePositions.size(); ++i)
-                    shapePositions[i] = (restPositions[i] - attachment) * bend + attachment;
+                    shapePositions[i] = (restPositions[i] - attachment) * airBend + attachment;
             }
         }
         const float effectiveFrictionBase = stationary ? std::min(frictionBase, idleDamping) : frictionBase;
@@ -577,6 +745,23 @@ namespace MWRender
                 mPreviousPositions[i] = translatedPrevious;
             }
         }
+        // Move the free shell coherently as the airflow angle changes. A large
+        // horizontal-only guard correction leaves the old vertical drop in
+        // place, overextending segments and shearing the mesh. Rotating current
+        // and previous positions together preserves lengths and stored motion.
+        if (mSettings.mAirShapeResponse > 0.f)
+        {
+            const osg::Matrix carriedAirBend = osg::Matrix::inverse(partialRotation)
+                * mPreviousAirBend * partialRotation;
+            const osg::Matrix bendDelta = osg::Matrix::inverse(carriedAirBend) * airBend;
+            const osg::Vec3f attachment = restPositions[static_cast<std::size_t>(pinCount - 1)];
+            for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
+            {
+                mPositions[i] = (mPositions[i] - attachment) * bendDelta + attachment;
+                mPreviousPositions[i] = (mPreviousPositions[i] - attachment) * bendDelta + attachment;
+            }
+        }
+        mPreviousAirBend = airBend;
         mPreviousRootParentWorld = rootParentWorld;
 
         // The animated body does not change within this controller's substeps.
@@ -653,7 +838,12 @@ namespace MWRender
                     // is vertical. Preserve the horizontal plane perpendicular
                     // to gravity, leaving world-Z sag free.
                     const osg::Vec3f delta = shapePositions[i] - mPositions[i];
-                    const osg::Vec3f correction(delta.x() * lateralFollow, delta.y() * lateralFollow, 0.f);
+                    // Once movement ends, restore the full resting contour.
+                    // XY-only memory leaves several folded/body-contact poses
+                    // with the same lateral coordinates after a strong lift.
+                    const float verticalFollow = stationary && mSettings.mStableTiming ? lateralFollow : 0.f;
+                    const osg::Vec3f correction(delta.x() * lateralFollow, delta.y() * lateralFollow,
+                        delta.z() * verticalFollow);
                     mPositions[i] += correction;
                     mPreviousPositions[i] += correction;
                 }
@@ -727,10 +917,12 @@ namespace MWRender
                         ? (restPositions[i] - restPositions[i - 1]).length() : mSegmentLengths[i - 1];
                     const osg::Vec3f correction = delta * ((distance - restLength) / distance);
 
-                    if (i == static_cast<std::size_t>(pinCount))
+                    if (mSettings.mStableTiming || i == static_cast<std::size_t>(pinCount))
                     {
-                        // The previous particle is pinned, so the first free
-                        // particle takes the entire correction. Apply the same
+                        // Resolve from the attachment outward for stable rigs.
+                        // Moving a solved parent again leaves long, lifted
+                        // chains stretched at the end of a finite solve. Apply
+                        // the same
                         // positional correction to history so it cannot become
                         // artificial velocity on the next substep.
                         mPositions[i] -= correction;
@@ -771,6 +963,19 @@ namespace MWRender
                             continue;
                         lateral /= distance;
                         const osg::Vec3f correctedWorld = mPositions[i] - lateral * (distance - allowedDeviation);
+                        // The shell guard must not demand an unreachable point
+                        // across a collider or stretch either adjacent segment.
+                        // Let distance/contact solve first; soft memory and the
+                        // coherent bend still restore the free shell smoothly.
+                        const float previousLength = (restPositions[i] - restPositions[i - 1]).length();
+                        if ((correctedWorld - mPositions[i - 1]).length() > previousLength * 1.01f)
+                            continue;
+                        if (i + 1 < mPositions.size())
+                        {
+                            const float nextLength = (restPositions[i + 1] - restPositions[i]).length();
+                            if ((mPositions[i + 1] - correctedWorld).length() > nextLength * 1.01f)
+                                continue;
+                        }
                         osg::Vec3f velocity = mPositions[i] - mPreviousPositions[i];
                         const osg::Vec3f outward = lateral;
                         const float outwardVelocity = velocity * outward;
