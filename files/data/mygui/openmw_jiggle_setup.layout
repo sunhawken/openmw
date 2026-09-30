@@ -10,6 +10,44 @@
             <Property key="ButtonAutoWidth" value="true"/>
 
             <Widget type="TabItem">
+                <Property key="Caption" value=" Quick Setup "/>
+                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 54">
+                    <Property key="Caption" value="Easy mode: equip the body/clothing/armor you want, tune the normal Jiggle sliders, then click Add. No mesh path typing is needed."/>
+                </Widget>
+                <Widget type="TextBox" skin="MW_Box" position="8 72 510 70" name="JiggleQuickCurrentInfo">
+                    <Property key="Caption" value="Current outfit: not detected"/>
+                    <Property key="TextAlign" value="Left Top"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="8 154 510 30" name="JiggleQuickAddAnyButton">
+                    <Property key="Caption" value="Add Current Outfit to Jiggle"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                    <UserString key="Caption_Text" value="Turns on body Jiggle/auto-rig, removes blacklist entries blocking the currently worn mesh, and saves the current live breast/butt offsets for this mesh."/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="8 192 510 30" name="JiggleQuickAddPlayerButton">
+                    <Property key="Caption" value="Save Current Outfit Tuning for Player Only"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                    <UserString key="Caption_Text" value="Adds the current outfit to Jiggle and stores its current live breast/butt offsets specifically for the player."/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="8 238 245 30" name="JiggleQuickBlacklistButton">
+                    <Property key="Caption" value="Exclude Current Outfit"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                    <UserString key="Caption_Text" value="Adds the currently worn mesh to the auto-rig blacklist. Re-equip or reload for auto-rig changes to take effect."/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="273 238 245 30" name="JiggleQuickClearButton">
+                    <Property key="Caption" value="Remove Saved Tuning"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                    <UserString key="Caption_Text" value="Removes Any Actor and Player-only saved Z-offset tuning for the currently worn mesh. It does not blacklist the mesh."/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" position="8 282 510 54">
+                    <Property key="Caption" value="Tip: Add Current Outfit is the normal one-click choice. Re-equip the outfit or reload the save after changing auto-rig inclusion."/>
+                </Widget>
+            </Widget>
+
+            <Widget type="TabItem">
                 <Property key="Caption" value=" Mesh Z Offsets "/>
                 <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 18">
                     <Property key="Caption" value="Choose who this mesh adjustment applies to."/>
