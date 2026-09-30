@@ -128,7 +128,8 @@ namespace MWRender
         mPreviousShape.clear();
         mShapeOffset.clear();
         mVelocityHistory.clear();
-        mFlutterPhase = static_cast<float>((reinterpret_cast<std::uintptr_t>(this) >> 4) % 628) / 100.f;
+        // Every chain shares one phase so the hair/skirt flows uniformly, not as a chain reaction.
+        mFlutterPhase = 0.f;
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
         mFilteredRootVelocity.set(0.f, 0.f, 0.f);
@@ -730,6 +731,8 @@ namespace MWRender
             // Softer cloth lags the body more: extra follow-through on every start/stop/turn.
             inertialAcceleration = -mFilteredRootAcceleration * inertia
                 * (1.f + 2.f * verletFeel().softness);
+            // A landing stop must not slam the cloth down: cap the downward inertial kick.
+            inertialAcceleration.z() = std::max(inertialAcceleration.z(), -600.f);
         }
         const float anchorSpeed = static_cast<float>(anchorDelta.length() / std::max(dt, 1e-6));
         const osg::Matrix frameDelta = osg::Matrix::inverse(mPreviousRootParentWorld) * rootParentWorld;
@@ -761,6 +764,13 @@ namespace MWRender
             const float softFeel = verletFeel().softness;
             const std::size_t freeCount = shapePositions.size() - static_cast<std::size_t>(pinCount);
             const float currentSpeed = mFilteredRootVelocity.length();
+            // Body acceleration in any direction bends the hang direction too: in free fall the cloth is
+            // weightless relative to the body and floats up away from it; starting to run tilts it back.
+            const float accelGain = std::min(1.f, inertia * (1.f + 2.f * softFeel));
+            osg::Vec3f accelTerm = -mFilteredRootAcceleration * accelGain;
+            for (int k = 0; k < 3; ++k)
+                accelTerm[k] = std::clamp(accelTerm[k], -2500.f, 2500.f);
+            accelTerm.z() = std::max(accelTerm.z(), -600.f);
             float arc = 0.f;
             float weightSum = 0.f;
             osg::Vec3f meanAxis;
@@ -774,14 +784,17 @@ namespace MWRender
                 v.z() = mFilteredRootVelocity.z();
                 const float speed = v.length();
                 osg::Vec3f rotated = segment;
-                if (speed > 1e-5f)
+                if (speed > 1e-5f || accelTerm.length() > 50.f)
                 {
-                    const float force = std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration))
-                        * shapeResponse;
-                    osg::Vec3f target = (v * (-force / speed)) + osg::Vec3f(0.f, 0.f, -std::max(1.f, gravity));
+                    const float force = speed > 1e-5f
+                        ? std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration)) * shapeResponse
+                        : 0.f;
+                    const float safeSpeed = speed > 1e-5f ? speed : 1.f;
+                    osg::Vec3f target = (v * (-force / safeSpeed)) + accelTerm
+                        + osg::Vec3f(0.f, 0.f, -std::max(1.f, gravity));
                     target.normalize();
                     const float raw = std::acos(std::clamp(-target.z(), -1.f, 1.f));
-                    const float cap = maxAngle + std::max(0.f, -v.z() / speed) * (2.4f - maxAngle);
+                    const float cap = maxAngle + std::max(0.f, target.z()) * (2.4f - maxAngle);
                     const float t = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
                         / static_cast<float>(freeCount);
                     const float ease = t * t * (3.f - 2.f * t);
