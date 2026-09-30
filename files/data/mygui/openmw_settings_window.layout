@@ -1515,7 +1515,7 @@
                         <UserString key="SettingLabelWidget" value="VerletFeelText"/><UserString key="SettingLabelCaption" value="Cloth Feel: {value}"/>
                     </Widget>
                     <Widget type="EditBox" skin="SandText" position="6 216 330 48" align="Left Top">
-                        <Property key="Caption" value="0 = stiff, follows the authored shape. 1 = flowing like water: soft trailing, free tips, never stops, even when idle."/>
+                        <Property key="Caption" value="0 = flowing like water: soft trailing, free tips, never stops, even when idle. 1 = stiff, follows the authored shape."/>
                         <Property key="MultiLine" value="true"/><Property key="WordWrap" value="true"/><Property key="Static" value="true"/>
                     </Widget>
                     <Widget type="TextBox" skin="NormalText" position="6 266 330 18" align="Left Top" name="VerletGravityText"/>
