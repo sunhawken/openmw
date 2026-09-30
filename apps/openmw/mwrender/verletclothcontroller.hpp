@@ -148,6 +148,7 @@ namespace MWRender
         osg::Vec3f mPreviousAnchor;
         osg::Matrix mPreviousRootParentWorld;
         osg::Matrix mPreviousAirBend;
+        std::vector<osg::Vec3f> mPreviousShape;
         osg::Vec3f mPreviousRootVelocity;
         osg::Vec3f mFilteredRootAcceleration;
         osg::Vec3f mFilteredRootVelocity;

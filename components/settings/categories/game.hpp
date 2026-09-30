@@ -108,6 +108,15 @@ namespace Settings
         // Useful for capes: shoulder/upper-arm cloth stays rigid while the lower cape flows.
         SettingValue<int> mVerletPinCount{ mIndex, "Game", "verlet pin count",
             makeClampSanitizerInt(1, 8) };
+        // Trailing feel: max lean of streaming hair/cloth (degrees), how progressively it
+        // bends from root to tip (0 = rigid plank, 1 = fully progressive) and how gently
+        // motion is smoothed (seconds).
+        SettingValue<float> mVerletTrailAngle{ mIndex, "Game", "verlet trail angle",
+            makeClampSanitizerFloat(0.f, 85.f) };
+        SettingValue<float> mVerletTrailCurve{ mIndex, "Game", "verlet trail curve",
+            makeClampSanitizerFloat(0.f, 1.f) };
+        SettingValue<float> mVerletMotionSmoothing{ mIndex, "Game", "verlet motion smoothing",
+            makeClampSanitizerFloat(0.02f, 0.4f) };
         // Capsule collision against the actor torso skeleton so Verlet cloth cannot pass through the body.
         SettingValue<bool> mVerletBodyCollision{ mIndex, "Game", "verlet body collision" };
         SettingValue<float> mVerletBodyCollisionRadius{ mIndex, "Game", "verlet body collision radius",

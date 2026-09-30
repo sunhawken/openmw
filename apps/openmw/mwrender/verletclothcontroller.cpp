@@ -107,6 +107,7 @@ namespace MWRender
         mPreviousAnchor = mPositions.empty() ? osg::Vec3f() : mPositions.front();
         mPreviousRootParentWorld = rootParentWorld;
         mPreviousAirBend = osg::Matrix();
+        mPreviousShape.clear();
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
         mFilteredRootVelocity.set(0.f, 0.f, 0.f);
@@ -131,6 +132,7 @@ namespace MWRender
             mPreviousAnchor = mPositions.front();
         mPreviousRootParentWorld = rootParentWorld;
         mPreviousAirBend = osg::Matrix();
+        mPreviousShape.clear();
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
         mFilteredRootVelocity.set(0.f, 0.f, 0.f);
@@ -668,9 +670,13 @@ namespace MWRender
                 rootAcceleration.normalize();
                 rootAcceleration *= limit;
             }
-            const float blend = 1.f - std::exp(-static_cast<float>(frameDt) / 0.05f);
-            mFilteredRootAcceleration += (rootAcceleration - mFilteredRootAcceleration) * blend;
-            mFilteredRootVelocity += (rootVelocity - mFilteredRootVelocity) * blend;
+            // Longer smoothing eases trailing in and out instead of snapping
+            // when the animation starts, stops or changes gait.
+            const float smoothing = std::clamp(Settings::game().mVerletMotionSmoothing.get(), 0.02f, 0.4f);
+            const float velocityBlend = 1.f - std::exp(-static_cast<float>(frameDt) / smoothing);
+            const float accelerationBlend = 1.f - std::exp(-static_cast<float>(frameDt) / (smoothing * 0.5f));
+            mFilteredRootAcceleration += (rootAcceleration - mFilteredRootAcceleration) * accelerationBlend;
+            mFilteredRootVelocity += (rootVelocity - mFilteredRootVelocity) * velocityBlend;
             mPreviousRootVelocity = rootVelocity;
             mRootVelocityInitialized = true;
             inertialAcceleration = -mFilteredRootAcceleration * inertia;
@@ -693,19 +699,36 @@ namespace MWRender
             if (speed > 1e-5f)
             {
                 const float force = std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration));
-                // Let high-speed airflow lift the free length from the root.
-                // The old 20-degree cap kept even strong profiles beside the
-                // body. Stay below horizontal to retain downward gravity sag.
-                const float angle = std::min(1.134464f, std::atan2(force, std::max(1.f, gravity))
+                // Let airflow lift the free length from the root, but stop short
+                // of a horizontal plank: the user-tunable trail angle caps it.
+                const float maxAngle = std::clamp(Settings::game().mVerletTrailAngle.get(), 0.f, 85.f)
+                    * static_cast<float>(osg::PI / 180.0);
+                const float angle = std::min(maxAngle, std::atan2(force, std::max(1.f, gravity))
                     * std::clamp(mSettings.mAirShapeResponse, 0.f, 1.f));
                 osg::Vec3f axis = osg::Vec3f(0.f, 0.f, -1.f) ^ airflow;
                 axis.normalize();
-                osg::Quat rotation;
-                rotation.makeRotate(angle, axis);
-                airBend = osg::Matrix::rotate(rotation);
-                const osg::Vec3f attachment = restPositions[static_cast<std::size_t>(pinCount - 1)];
+                // Progressive bend: the bones next to the pinned root keep following
+                // the animated head/hip and each following segment leans a bit more,
+                // so the root blends in and the tail streams out in a smooth arc
+                // instead of hinging as one rigid plank. curve 0 = rigid (old look).
+                const float curve = std::clamp(Settings::game().mVerletTrailCurve.get(), 0.f, 1.f);
+                const std::size_t freeCount = shapePositions.size() - static_cast<std::size_t>(pinCount);
+                float weightSum = 0.f;
                 for (std::size_t i = static_cast<std::size_t>(pinCount); i < shapePositions.size(); ++i)
-                    shapePositions[i] = (restPositions[i] - attachment) * airBend + attachment;
+                {
+                    const float t = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
+                        / static_cast<float>(freeCount);
+                    const float ease = t * t * (3.f - 2.f * t);
+                    const float weight = 1.f + (ease - 1.f) * curve;
+                    weightSum += weight;
+                    osg::Quat segmentRotation;
+                    segmentRotation.makeRotate(angle * weight, axis);
+                    const osg::Vec3f segment = restPositions[i] - restPositions[i - 1];
+                    shapePositions[i] = shapePositions[i - 1] + segmentRotation * segment;
+                }
+                osg::Quat rotation;
+                rotation.makeRotate(angle * weightSum / static_cast<float>(freeCount), axis);
+                airBend = osg::Matrix::rotate(rotation);
             }
         }
         const float effectiveFrictionBase = stationary ? std::min(frictionBase, idleDamping) : frictionBase;
@@ -723,6 +746,16 @@ namespace MWRender
         {
             const osg::Vec3f translatedPosition = mPositions[i] + anchorDelta;
             const osg::Vec3f translatedPrevious = mPreviousPositions[i] + anchorDelta;
+            const bool carryShape = mPreviousShape.size() == mPositions.size();
+            if (carryShape)
+            {
+                if (rotationCarry >= 1.f)
+                    mPreviousShape[i] = mPreviousShape[i] * frameDelta;
+                else if (rotationCarry > 0.f)
+                    mPreviousShape[i] = (mPreviousShape[i] - previousAnchor) * partialRotation + anchor;
+                else
+                    mPreviousShape[i] += anchorDelta;
+            }
 
             if (rotationCarry > 0.f)
             {
@@ -745,22 +778,19 @@ namespace MWRender
                 mPreviousPositions[i] = translatedPrevious;
             }
         }
-        // Move the free shell coherently as the airflow angle changes. A large
-        // horizontal-only guard correction leaves the old vertical drop in
-        // place, overextending segments and shearing the mesh. Rotating current
-        // and previous positions together preserves lengths and stored motion.
-        if (mSettings.mAirShapeResponse > 0.f)
+        // Move the free shell coherently as the airflow shape changes. Shifting current
+        // and previous positions by the change in the (length-preserving) target shape
+        // keeps segment lengths and stored velocity intact.
+        if (mSettings.mAirShapeResponse > 0.f && mPreviousShape.size() == mPositions.size())
         {
-            const osg::Matrix carriedAirBend = osg::Matrix::inverse(partialRotation)
-                * mPreviousAirBend * partialRotation;
-            const osg::Matrix bendDelta = osg::Matrix::inverse(carriedAirBend) * airBend;
-            const osg::Vec3f attachment = restPositions[static_cast<std::size_t>(pinCount - 1)];
             for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
             {
-                mPositions[i] = (mPositions[i] - attachment) * bendDelta + attachment;
-                mPreviousPositions[i] = (mPreviousPositions[i] - attachment) * bendDelta + attachment;
+                const osg::Vec3f delta = shapePositions[i] - mPreviousShape[i];
+                mPositions[i] += delta;
+                mPreviousPositions[i] += delta;
             }
         }
+        mPreviousShape = shapePositions;
         mPreviousAirBend = airBend;
         mPreviousRootParentWorld = rootParentWorld;
 

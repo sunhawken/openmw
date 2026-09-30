@@ -53,6 +53,7 @@ namespace MWGui
         MyGUI::ComboBox* mLightingMethodButton;
         MyGUI::Button* mLightsResetButton;
         MyGUI::ComboBox* mVerletPresetList;
+        MyGUI::Button* mVerletResetDefaultsButton;
         MyGUI::Button* mJiggleOffsetResetButton;
         MyGUI::Button* mBakeBreastToNifButton;
         MyGUI::Button* mJiggleAdvancedPanelToggle;
@@ -123,6 +124,8 @@ namespace MWGui
         void onLightingMethodButtonChanged(MyGUI::ComboBox* sender, size_t pos);
         void onLightsResetButtonClicked(MyGUI::Widget* sender);
         void onVerletPresetChanged(MyGUI::ComboBox* sender, size_t pos);
+        void onVerletResetDefaultsClicked(MyGUI::Widget* sender);
+        void resetVerletToDefaults();
         void onJiggleOffsetResetButtonClicked(MyGUI::Widget* sender);
         void onBakeBreastToNifButtonClicked(MyGUI::Widget* sender);
         void onJiggleAdvancedPanelToggleClicked(MyGUI::Widget* sender);
