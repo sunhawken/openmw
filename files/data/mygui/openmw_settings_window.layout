@@ -1463,7 +1463,7 @@
                 <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="VerletScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>
                     <Property key="VisibleVScroll" value="true"/>
-                    <Property key="CanvasSize" value="344 1420"/>
+                    <Property key="CanvasSize" value="344 1590"/>
 
                     <Widget type="EditBox" skin="NormalText" position="6 4 330 36" align="Left Top">
                         <Property key="Caption" value="Runtime cloth controls. NIF values are used unless Global Overrides is on."/>
@@ -1705,7 +1705,31 @@
                         <Property key="WordWrap" value="true"/>
                         <Property key="Static" value="true"/>
                     </Widget>
-                    <Widget type="EditBox" skin="NormalText" position="6 1330 330 80" align="Left Top">
+                    <Widget type="TextBox" skin="NormalText" position="6 1330 330 18" name="VerletSoftnessText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 1350 330 18" name="VerletSoftnessSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet softness"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="1"/>
+                        <UserString key="SettingLabelWidget" value="VerletSoftnessText"/><UserString key="SettingLabelCaption" value="Softness: {value}"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 1370 330 36" align="Left Top">
+                        <Property key="Caption" value="0 = stiff authored shape, 1 = light blanket. Root stays tight, tips move freely."/><Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/><Property key="Static" value="true"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 1410 330 18" name="VerletFlutterText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 1430 330 18" name="VerletFlutterSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet flutter"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="1"/>
+                        <UserString key="SettingLabelWidget" value="VerletFlutterText"/><UserString key="SettingLabelCaption" value="Flutter: {value}"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 1450 330 36" align="Left Top">
+                        <Property key="Caption" value="Gentle ripple while moving, strongest at the tip. 0 = off."/><Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/><Property key="Static" value="true"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="NormalText" position="6 1500 330 80" align="Left Top">
                         <Property key="Caption" value="Recommended: use NIF Metadata for authored Siff tuning. Global Overrides are for manual testing only; keep Body Collision ON and Wind While Idle OFF."/>
                         <Property key="MultiLine" value="true"/>
                         <Property key="WordWrap" value="true"/>

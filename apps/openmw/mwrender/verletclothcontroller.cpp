@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iterator>
 #include <utility>
 
@@ -108,6 +109,7 @@ namespace MWRender
         mPreviousRootParentWorld = rootParentWorld;
         mPreviousAirBend = osg::Matrix();
         mPreviousShape.clear();
+        mFlutterPhase = static_cast<float>((reinterpret_cast<std::uintptr_t>(this) >> 4) % 628) / 100.f;
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
         mFilteredRootVelocity.set(0.f, 0.f, 0.f);
@@ -625,8 +627,16 @@ namespace MWRender
         const float softRootStrength = std::clamp(mSettings.mSoftRootStrength, 0.f, 1.f);
         const float velocityDeadzone = std::max(0.f, mSettings.mVelocityDeadzone);
         const float rotationCarry = std::clamp(mSettings.mRotationCarry, 0.f, 1.f);
-        const float lateralMemory = std::clamp(mSettings.mLateralMemory, 0.f, 1.f);
+        // Softness turns stiff authored cloth into a light blanket: the shape memory that pulls
+        // particles back to the authored contour is weakened and the lateral guard opens up
+        // toward the free tip (the root stays tight so the attachment never looks detached).
+        const float softness = std::clamp(Settings::game().mVerletSoftness.get(), 0.f, 1.f);
+        const float flutter = std::clamp(Settings::game().mVerletFlutter.get(), 0.f, 1.f);
+        const float lateralMemory = std::clamp(mSettings.mLateralMemory, 0.f, 1.f) * (1.f - 0.85f * softness);
         const float maxLateralDeviation = std::max(0.f, mSettings.mMaxLateralDeviation);
+        float chainLength = 0.f;
+        for (std::size_t i = static_cast<std::size_t>(pinCount); i < mPositions.size(); ++i)
+            chainLength += mSegmentLengths[i - 1];
         const float inertia = std::clamp(mSettings.mInertia, 0.f, 1.f);
         const float airDrag = std::max(0.f, mSettings.mAirDrag);
 
@@ -731,7 +741,9 @@ namespace MWRender
                 airBend = osg::Matrix::rotate(rotation);
             }
         }
-        const float effectiveFrictionBase = stationary ? std::min(frictionBase, idleDamping) : frictionBase;
+        // Less damping while moving lets soft cloth swing and follow through.
+        const float effectiveFrictionBase = stationary ? std::min(frictionBase, idleDamping)
+                                                       : std::pow(frictionBase, 1.f - 0.4f * softness);
         const float friction = std::pow(effectiveFrictionBase, subDt * sReferenceFps);
         const float effectiveWindStrength = (!idleWind && stationary) ? 0.f : windStrength;
 
@@ -902,12 +914,40 @@ namespace MWRender
                     std::sin(phase * 4.117f + 0.9f) * effectiveWindStrength * 0.35f,
                     -gravity);
                 acceleration += inertialAcceleration;
+                if (flutter > 0.f && !stationary)
+                {
+                    // Light-fabric billow: a slow travelling ripple perpendicular to the airflow,
+                    // stronger toward the free tip and with speed. Smooth, no noise, so no jitter.
+                    const float speedFactor = std::min(mFilteredRootVelocity.length() / 300.f, 1.f);
+                    const osg::Vec3f flow(-mFilteredRootVelocity.x(), -mFilteredRootVelocity.y(), 0.f);
+                    osg::Vec3f side(-flow.y(), flow.x(), 0.f);
+                    if (side.normalize() > 1e-5f)
+                    {
+                        const float tipT = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
+                            / static_cast<float>(std::max<std::size_t>(1, mPositions.size() - static_cast<std::size_t>(pinCount)));
+                        const float wave = static_cast<float>(simTime) * 9.f - static_cast<float>(i) * 0.95f + mFlutterPhase;
+                        const float amplitude = flutter * speedFactor * (0.25f + 0.75f * tipT) * 1100.f;
+                        acceleration += side * (std::sin(wave) * amplitude)
+                            + osg::Vec3f(0.f, 0.f, std::sin(wave * 0.7f + 1.3f) * amplitude * 0.6f);
+                    }
+                }
                 if (airDrag > 0.f)
                 {
                     // Frame carry preserves the mesh shell; air resistance is a
                     // separate bounded force opposing world motion. Include the
                     // relative particle velocity so it also damps free swinging.
-                    osg::Vec3f drag = -(mFilteredRootVelocity + velocity / subDt) * airDrag;
+                    // Light fabric is not pushed uniformly: the hem catches more air than the root
+                    // and each panel billows on its own slow rhythm, so the chain curves and the
+                    // panels lift and fall independently instead of moving as one rigid board.
+                    const float dragT = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
+                        / static_cast<float>(
+                            std::max<std::size_t>(1, mPositions.size() - static_cast<std::size_t>(pinCount)));
+                    const float billow = 1.f
+                        + flutter * 0.9f
+                            * std::sin(static_cast<float>(simTime) * 4.5f - static_cast<float>(i) * 0.8f
+                                + mFlutterPhase);
+                    const float dragScale = (1.f - softness * 0.8f * (1.f - dragT)) * billow;
+                    osg::Vec3f drag = -(mFilteredRootVelocity + velocity / subDt) * (airDrag * dragScale);
                     const float limit = std::max(0.f, mSettings.mAirDragMaxAcceleration);
                     if (drag.length2() > limit * limit && drag.length2() > 0.f)
                     {
@@ -988,7 +1028,9 @@ namespace MWRender
                         const float distance = lateral.length();
                         const float tipT = static_cast<float>(i - static_cast<std::size_t>(pinCount))
                             / static_cast<float>(std::max(1, static_cast<int>(mPositions.size()) - pinCount - 1));
-                        const float allowedDeviation = maxLateralDeviation + groundDrapeAllowance * tipT * tipT;
+                        const float softAllowance = softness * 0.45f * chainLength * (0.15f + 0.85f * tipT);
+                        const float allowedDeviation
+                            = maxLateralDeviation + softAllowance + groundDrapeAllowance * tipT * tipT;
                         if (distance <= allowedDeviation)
                             continue;
                         lateral /= distance;

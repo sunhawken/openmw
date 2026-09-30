@@ -149,6 +149,7 @@ namespace MWRender
         osg::Matrix mPreviousRootParentWorld;
         osg::Matrix mPreviousAirBend;
         std::vector<osg::Vec3f> mPreviousShape;
+        float mFlutterPhase = 0.f;
         osg::Vec3f mPreviousRootVelocity;
         osg::Vec3f mFilteredRootAcceleration;
         osg::Vec3f mFilteredRootVelocity;
