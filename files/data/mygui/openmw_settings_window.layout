@@ -1639,7 +1639,7 @@
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 1028 330 36"><Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/></Widget>
 
                     <Widget type="AutoSizedTextBox" skin="NormalText" position="6 1080 330 80">
-                        <Property key="Caption" value="Recommended cape start: Gravity 4.0, Friction 0.94, Wind 3.0, Movement Pull 1.0, Idle Retention 0.82, Pins 3, Body Collision ON, Radius 12, Padding 1.5, Iterations 18, Substeps 6, Max Step 3.0."/>
+                        <Property key="Caption" value="Recommended: use NIF Metadata for authored Siff tuning. Global Overrides are for manual testing only; keep Body Collision ON and Wind While Idle OFF."/>
                     </Widget>
                 </Widget>
             </Widget>
