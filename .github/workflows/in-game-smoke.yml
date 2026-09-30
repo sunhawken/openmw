@@ -6,6 +6,10 @@ on:
       - ci/in-game-smoke
   workflow_dispatch:
 
+concurrency:
+  group: in-game-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   EXAMPLE_SUITE_REVISION: a1ba6fc9d7315c2158ef4c60349fc4e71b7ca343
 
@@ -43,7 +47,7 @@ jobs:
           -D BUILD_BENCHMARKS=OFF
 
       - name: Build OpenMW
-        run: cmake --build . --target openmw -- -j2
+        run: cmake --build . --target openmw -- -j$(nproc)
 
       - name: Verify executable starts
         run: ./openmw --version
