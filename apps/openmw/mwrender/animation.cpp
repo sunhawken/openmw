@@ -72,7 +72,7 @@
 
 namespace
 {
-    std::string normalizedWiggleKey(std::string key)
+    std::string normalizedKey(std::string key)
     {
         std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
             if (c == '-' || c == ' ' || c == '.')
@@ -82,9 +82,9 @@ namespace
         return key;
     }
 
-    bool parseWiggleBool(std::string value, bool& out)
+    bool parseBool(std::string value, bool& out)
     {
-        value = normalizedWiggleKey(std::move(value));
+        value = normalizedKey(std::move(value));
         if (value == "1" || value == "true" || value == "yes" || value == "on")
         {
             out = true;
@@ -98,7 +98,7 @@ namespace
         return false;
     }
 
-    bool parseWiggleFloat(const std::string& value, float& out)
+    bool parseFloatValue(const std::string& value, float& out)
     {
         try
         {
@@ -110,110 +110,6 @@ namespace
         {
             return false;
         }
-    }
-
-    void applyWiggleProperty(MWRender::WiggleBoneSettings& settings, std::string key, const std::string& value)
-    {
-        key = normalizedWiggleKey(std::move(key));
-        bool b = false;
-        float f = 0.f;
-
-        if ((key == "jiggle_enable" || key == "jiggle_active" || key == "wiggle_enable" || key == "wiggle_active"
-                || key == "wiggle_tail")
-            && parseWiggleBool(value, b))
-        {
-            settings.mDirect = true;
-            settings.mActive = b;
-        }
-        else if ((key == "jiggle_collision" || key == "wiggle_collision" || key == "wiggle_self_collision")
-            && parseWiggleBool(value, b))
-        {
-            settings.mDirect = true;
-            settings.mSelfCollision = b;
-        }
-        else if ((key == "jiggle_stiffness" || key == "wiggle_stiffness" || key == "wiggle_stiff")
-            && parseWiggleFloat(value, f))
-        {
-            settings.mDirect = true;
-            settings.mStiffness = f;
-        }
-        else if ((key == "jiggle_dampen" || key == "jiggle_damping" || key == "wiggle_dampen"
-                     || key == "wiggle_damping" || key == "wiggle_damp")
-            && parseWiggleFloat(value, f))
-        {
-            settings.mDirect = true;
-            settings.mDamping = f;
-        }
-        else if ((key == "jiggle_amplitude" || key == "wiggle_amplitude") && parseWiggleFloat(value, f))
-        {
-            settings.mDirect = true;
-            settings.mAmplitude = f;
-        }
-        else if ((key == "jiggle_gravity" || key == "wiggle_gravity") && parseWiggleFloat(value, f))
-        {
-            settings.mDirect = true;
-            settings.mGravity = f;
-        }
-        else if ((key == "jiggle_mass" || key == "wiggle_mass") && parseWiggleFloat(value, f))
-        {
-            settings.mDirect = true;
-            settings.mMass = f;
-        }
-        else if ((key == "jiggle_stretch" || key == "wiggle_stretch") && parseWiggleFloat(value, f))
-        {
-            settings.mDirect = true;
-            settings.mStretch = f;
-        }
-    }
-
-    MWRender::WiggleBoneSettings wiggleSettingsFromNode(const osg::Node& node)
-    {
-        MWRender::WiggleBoneSettings settings;
-
-        auto readBoolValue = [&](std::string_view key) {
-            bool value = false;
-            if (node.getUserValue(std::string(key), value))
-                applyWiggleProperty(settings, std::string(key), value ? "true" : "false");
-        };
-        auto readFloatValue = [&](std::string_view key) {
-            float value = 0.f;
-            if (node.getUserValue(std::string(key), value))
-                applyWiggleProperty(settings, std::string(key), std::to_string(value));
-        };
-
-        for (std::string_view key : { "jiggle_enable", "jiggle_active", "wiggle_enable", "wiggle_active", "wiggle_tail",
-                 "jiggle_collision", "wiggle_collision", "wiggle_self_collision" })
-            readBoolValue(key);
-        for (std::string_view key : { "jiggle_stiffness", "wiggle_stiffness", "wiggle_stiff", "jiggle_dampen",
-                 "jiggle_damping", "wiggle_dampen", "wiggle_damping", "wiggle_damp", "jiggle_amplitude",
-                 "wiggle_amplitude", "jiggle_gravity", "wiggle_gravity", "jiggle_mass", "wiggle_mass",
-                 "jiggle_stretch", "wiggle_stretch" })
-            readFloatValue(key);
-
-        for (const std::string& description : node.getDescriptions())
-        {
-            const std::string normalized = normalizedWiggleKey(description);
-            if (normalized.find("openmw_wiggle") != std::string::npos
-                || normalized.find("wiggle_bone") != std::string::npos
-                || normalized.find("wiggle2") != std::string::npos)
-                settings.mDirect = true;
-
-            std::size_t start = 0;
-            while (start < description.size())
-            {
-                const std::size_t end = description.find_first_of(";\n,", start);
-                const std::string token
-                    = description.substr(start, end == std::string::npos ? std::string::npos : end - start);
-                const std::size_t sep = token.find_first_of("=:");
-                if (sep != std::string::npos)
-                    applyWiggleProperty(settings, token.substr(0, sep), token.substr(sep + 1));
-                if (end == std::string::npos)
-                    break;
-                start = end + 1;
-            }
-        }
-
-        return settings;
     }
 
     bool parseVerletInt(const std::string& value, int& out)
@@ -232,73 +128,73 @@ namespace
 
     void applyVerletProperty(MWRender::VerletClothSettings& settings, std::string key, const std::string& value)
     {
-        key = normalizedWiggleKey(std::move(key));
+        key = normalizedKey(std::move(key));
 
         bool b = false;
         float f = 0.f;
         int i = 0;
 
-        if ((key == "verlet_cloth" || key == "verlet_active") && parseWiggleBool(value, b))
+        if ((key == "verlet_cloth" || key == "verlet_active") && parseBool(value, b))
             settings.mEnabled = b;
         else if (key == "verlet_count" && parseVerletInt(value, i))
             settings.mCount = std::max(0, i);
-        else if (key == "verlet_friction" && parseWiggleFloat(value, f))
+        else if (key == "verlet_friction" && parseFloatValue(value, f))
             settings.mFriction = f;
-        else if (key == "verlet_gravity" && parseWiggleFloat(value, f))
+        else if (key == "verlet_gravity" && parseFloatValue(value, f))
             settings.mGravity = f;
-        else if ((key == "verlet_wind" || key == "verlet_wind_strength") && parseWiggleFloat(value, f))
+        else if ((key == "verlet_wind" || key == "verlet_wind_strength") && parseFloatValue(value, f))
             settings.mWindStrength = f;
-        else if (key == "verlet_wind_frequency" && parseWiggleFloat(value, f))
+        else if (key == "verlet_wind_frequency" && parseFloatValue(value, f))
             settings.mWindFrequency = f;
         else if (key == "verlet_iterations" && parseVerletInt(value, i))
             settings.mIterations = i;
         else if (key == "verlet_substeps" && parseVerletInt(value, i))
             settings.mSubsteps = i;
-        else if (key == "verlet_max_step" && parseWiggleFloat(value, f))
+        else if (key == "verlet_max_step" && parseFloatValue(value, f))
             settings.mMaxStep = f;
         else if (key == "verlet_pin_count" && parseVerletInt(value, i))
             settings.mPinCount = std::max(0, i);
         else if (key == "verlet_soft_root_count" && parseVerletInt(value, i))
             settings.mSoftRootCount = std::max(0, i);
-        else if (key == "verlet_soft_root_strength" && parseWiggleFloat(value, f))
+        else if (key == "verlet_soft_root_strength" && parseFloatValue(value, f))
             settings.mSoftRootStrength = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_velocity_deadzone" && parseWiggleFloat(value, f))
+        else if (key == "verlet_velocity_deadzone" && parseFloatValue(value, f))
             settings.mVelocityDeadzone = std::max(0.f, f);
-        else if (key == "verlet_contact_slop" && parseWiggleFloat(value, f))
+        else if (key == "verlet_contact_slop" && parseFloatValue(value, f))
             settings.mContactSlop = std::max(0.f, f);
-        else if (key == "verlet_rotation_carry" && parseWiggleFloat(value, f))
+        else if (key == "verlet_rotation_carry" && parseFloatValue(value, f))
             settings.mRotationCarry = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_lateral_memory" && parseWiggleFloat(value, f))
+        else if (key == "verlet_lateral_memory" && parseFloatValue(value, f))
             settings.mLateralMemory = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_max_lateral_deviation" && parseWiggleFloat(value, f))
+        else if (key == "verlet_max_lateral_deviation" && parseFloatValue(value, f))
             settings.mMaxLateralDeviation = std::max(0.f, f);
-        else if (key == "verlet_stable_timing" && parseWiggleBool(value, b))
+        else if (key == "verlet_stable_timing" && parseBool(value, b))
             settings.mStableTiming = b;
-        else if (key == "verlet_project_velocity" && parseWiggleBool(value, b))
+        else if (key == "verlet_project_velocity" && parseBool(value, b))
             settings.mProjectVelocity = b;
-        else if (key == "verlet_rest_collision_fit" && parseWiggleBool(value, b))
+        else if (key == "verlet_rest_collision_fit" && parseBool(value, b))
             settings.mRestCollisionFit = b;
-        else if (key == "verlet_align_bones" && parseWiggleBool(value, b))
+        else if (key == "verlet_align_bones" && parseBool(value, b))
             settings.mAlignBones = b;
-        else if (key == "verlet_inertia" && parseWiggleFloat(value, f))
+        else if (key == "verlet_inertia" && parseFloatValue(value, f))
             settings.mInertia = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_inertia_max_acceleration" && parseWiggleFloat(value, f))
+        else if (key == "verlet_inertia_max_acceleration" && parseFloatValue(value, f))
             settings.mInertiaMaxAcceleration = std::max(0.f, f);
-        else if (key == "verlet_air_drag" && parseWiggleFloat(value, f))
+        else if (key == "verlet_air_drag" && parseFloatValue(value, f))
             settings.mAirDrag = std::max(0.f, f);
-        else if (key == "verlet_air_drag_max_acceleration" && parseWiggleFloat(value, f))
+        else if (key == "verlet_air_drag_max_acceleration" && parseFloatValue(value, f))
             settings.mAirDragMaxAcceleration = std::max(0.f, f);
-        else if (key == "verlet_air_shape_response" && parseWiggleFloat(value, f))
+        else if (key == "verlet_air_shape_response" && parseFloatValue(value, f))
             settings.mAirShapeResponse = std::clamp(f, 0.f, 1.f);
-        else if (key == "verlet_sleep_speed" && parseWiggleFloat(value, f))
+        else if (key == "verlet_sleep_speed" && parseFloatValue(value, f))
             settings.mSleepSpeed = std::max(0.f, f);
-        else if (key == "verlet_sleep_delay" && parseWiggleFloat(value, f))
+        else if (key == "verlet_sleep_delay" && parseFloatValue(value, f))
             settings.mSleepDelay = std::max(0.1f, f);
-        else if (key == "verlet_sleep_amplitude" && parseWiggleFloat(value, f))
+        else if (key == "verlet_sleep_amplitude" && parseFloatValue(value, f))
             settings.mSleepAmplitude = std::max(0.f, f);
-        else if (key == "verlet_collide_legs" && parseWiggleBool(value, b))
+        else if (key == "verlet_collide_legs" && parseBool(value, b))
             settings.mCollideLegs = b;
-        else if (key == "verlet_ground" && parseWiggleBool(value, b))
+        else if (key == "verlet_ground" && parseBool(value, b))
             settings.mGround = b;
     }
 
@@ -361,7 +257,7 @@ namespace
 
         for (const std::string& description : node.getDescriptions())
         {
-            const std::string normalized = normalizedWiggleKey(description);
+            const std::string normalized = normalizedKey(description);
             if (normalized.find("openmw_verlet_cloth") != std::string::npos)
                 settings.mEnabled = true;
 
@@ -2107,30 +2003,7 @@ namespace MWRender
             }
         }
 
-        // Direct Blender Wiggle Bones support. Exporters can preserve the add-on's
-        // properties either as OSG user values or as NiStringExtraData/node
-        // descriptions. Any bone carrying those properties opts into secondary
-        // motion regardless of its name and does not depend on OpenMW auto-rig.
-        for (const auto& [name, nodeRef] : getNodeMap())
-        {
-            osg::MatrixTransform* node = nodeRef.get();
-            if (!node || hasSecondaryMotionController(node))
-                continue;
-
-            WiggleBoneSettings settings = wiggleSettingsFromNode(*node);
-            if (!settings.mDirect)
-                continue;
-
-            if (debug)
-                Log(Debug::Warning) << "Wiggle Bones: direct metadata bone " << node->getName();
-
-            node->addUpdateCallback(
-                new JiggleBoneController(debug, isPlayer, std::move(settings), actorName));
-            attached.insert(node);
-        }
-
-        // Preserve existing zero-setup behavior for traditional breast/butt
-        // bone names. Explicit Wiggle Bones metadata wins when both match.
+        // Zero-setup behavior for traditional breast/butt bone names.
         for (std::string_view bone : legacyBoneNames)
         {
             auto iter = getNodeMap().find(bone);
@@ -2150,7 +2023,7 @@ namespace MWRender
             if (debug)
                 Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node
                                     << " actor=" << actorName;
-            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, {}, actorName));
+            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, actorName));
         }
     }
 

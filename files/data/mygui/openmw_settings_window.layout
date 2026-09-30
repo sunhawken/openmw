@@ -1459,24 +1459,6 @@
                     </Widget>
                 </Widget>
             <Widget type="TabItem">
-                <Property key="Caption" value=" Wiggle "/>
-                <Widget type="Widget" position="6 12 344 80" align="Left Top">
-                    <Widget type="HBox" position="0 0 336 28" name="WiggleOnlyToggle">
-                        <Widget type="AutoSizedButton" skin="MW_Button">
-                            <UserString key="SettingCategory" value="Game"/>
-                            <UserString key="SettingName" value="wiggle enabled"/>
-                            <UserString key="SettingType" value="CheckButton"/>
-                        </Widget>
-                        <Widget type="AutoSizedTextBox" skin="SandText">
-                            <Property key="Caption" value="Enable Wiggle"/>
-                        </Widget>
-                    </Widget>
-                    <Widget type="AutoSizedTextBox" skin="NormalText" position="0 38 336 36">
-                        <Property key="Caption" value="Turns Blender-authored/direct Wiggle bones on or off. Does not affect Jiggle or Verlet."/>
-                    </Widget>
-                </Widget>
-            </Widget>
-            <Widget type="TabItem">
                 <Property key="Caption" value=" Verlet "/>
                 <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="VerletScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>

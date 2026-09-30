@@ -56,5 +56,5 @@ The same numbering rule works for names such as `Cape_01`.
 - `verlet_substeps`: integration substeps per rendered frame.
 - `verlet_max_step`: safety clamp for one particle integration step.
 
-The chain should consist of undriven secondary bones with mesh weights authored in Blender. Do not put
+independent Jiggle controllers on the same bones; the Verlet chain takes ownership of all members. (Direct `wiggle_*` metadata support was removed.)
 independent `wiggle_*` controllers on the same bones; the Verlet chain takes ownership of all members.
