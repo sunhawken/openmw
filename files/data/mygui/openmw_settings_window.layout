@@ -1559,7 +1559,7 @@
                     </Widget>
 
                     <Widget type="AutoSizedTextBox" skin="SandText" position="6 432 330 58">
-                        <Property key="Caption" value="Movement response uses each NIF's authored inertia and air-drag metadata. Choose NIF Metadata (Recommended) for Siff."/>
+                        <Property key="Caption" value="Movement response uses each NIF-authored inertia and air-drag metadata. Choose NIF Metadata (Recommended) for Siff."/>
                     </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 502 330 18" name="VerletIdleDampingText"/>
