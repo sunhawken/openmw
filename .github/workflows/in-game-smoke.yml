@@ -28,8 +28,20 @@ jobs:
           sudo apt-get update
 
       - name: Install build and headless-display dependencies
+        shell: bash
         run: |
-          sudo CI/install_debian_deps.sh gcc openmw-deps openmw-deps-dynamic
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if sudo CI/install_debian_deps.sh gcc openmw-deps openmw-deps-dynamic; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Dependency installation failed after 3 attempts."
+              exit 1
+            fi
+            echo "Transient package/Launchpad failure; retrying dependency install..."
+            sleep 5
+          done
           sudo apt-get install -y xvfb git-lfs
           git lfs install
 
