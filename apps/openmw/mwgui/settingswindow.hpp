@@ -6,12 +6,22 @@
 
 #include "windowbase.hpp"
 
+namespace osg
+{
+    class Group;
+}
+namespace Resource
+{
+    class ResourceSystem;
+}
+
 namespace MWGui
 {
     class SettingsWindow : public WindowBase
     {
     public:
-        SettingsWindow(Files::ConfigurationManager& cfgMgr);
+        SettingsWindow(Files::ConfigurationManager& cfgMgr, osg::Group* sceneRoot, Resource::ResourceSystem* resourceSystem);
+        ~SettingsWindow() override;
 
         void onOpen() override;
 
@@ -57,6 +67,11 @@ namespace MWGui
         MyGUI::Button* mBakeBreastToNifButton;
         MyGUI::Button* mJiggleAdvancedPanelToggle;
         std::unique_ptr<Layout> mJiggleAdvancedLayout;
+        std::unique_ptr<class JiggleRetargetPanel> mJiggleRetargetPanel;
+        MyGUI::Button* mJiggleRetargetButton;
+        void onJiggleRetargetClicked(MyGUI::Widget* sender);
+        osg::Group* mSceneRoot;
+        Resource::ResourceSystem* mResourceSystem;
         MyGUI::Window* mJiggleAdvancedWindow;
         MyGUI::TextBox* mJiggleQuickCurrentInfo;
         MyGUI::Button* mJiggleQuickAddAnyButton;

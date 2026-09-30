@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MyGUI type="Layout" version="3.2.0">
+    <Widget type="Window" skin="MW_Window" position="80 0 640 552" layer="Settings" name="_Main">
+        <Property key="Caption" value="Retarget Jiggle"/>
+        <Widget type="EditBox" skin="SandText" position="16 8 608 44" align="Left Top">
+            <Property key="Caption" value="Drag the two dots on the FRONT view onto the breasts and the two dots on the BACK view onto the butt cheeks. L and R are the character own left and right. Save keeps them for this outfit only."/>
+            <Property key="MultiLine" value="true"/>
+            <Property key="WordWrap" value="true"/>
+            <Property key="Static" value="true"/>
+        </Widget>
+        <Widget type="TextBox" skin="NormalText" position="16 52 280 18" align="Left Top" name="FrontLabel">
+            <Property key="Caption" value="Front"/>
+            <Property key="TextAlign" value="Center"/>
+        </Widget>
+        <Widget type="TextBox" skin="NormalText" position="320 52 280 18" align="Left Top" name="BackLabel">
+            <Property key="Caption" value="Back"/>
+            <Property key="TextAlign" value="Center"/>
+        </Widget>
+
+        <Widget type="ImageBox" skin="ImageBox" position="16 72 280 340" align="Left Top" name="FrontView">
+            <Widget type="Button" skin="MW_Button" position="60 130 26 26" align="Left Top" name="MarkBreastR">
+                <Property key="Caption" value="R"/>
+            </Widget>
+            <Widget type="Button" skin="MW_Button" position="200 130 26 26" align="Left Top" name="MarkBreastL">
+                <Property key="Caption" value="L"/>
+            </Widget>
+        </Widget>
+        <Widget type="ImageBox" skin="ImageBox" position="320 72 280 340" align="Left Top" name="BackView">
+            <Widget type="Button" skin="MW_Button" position="200 220 26 26" align="Left Top" name="MarkButtR">
+                <Property key="Caption" value="R"/>
+            </Widget>
+            <Widget type="Button" skin="MW_Button" position="60 220 26 26" align="Left Top" name="MarkButtL">
+                <Property key="Caption" value="L"/>
+            </Widget>
+        </Widget>
+        <Widget type="ImageBox" skin="ImageBox" position="16 72 280 340" align="Left Top" name="FrontLive"/>
+        <Widget type="ImageBox" skin="ImageBox" position="320 72 280 340" align="Left Top" name="BackLive"/>
+
+        <Widget type="TextBox" skin="SandText" position="16 416 608 20" align="Left Top" name="RetargetStatus">
+            <Property key="Caption" value=""/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="16 442 140 26" align="Left Top" name="RetargetAutoButton">
+            <Property key="Caption" value="Auto Positions"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="166 442 180 26" align="Left Top" name="RetargetSaveButton">
+            <Property key="Caption" value="Save For This Outfit"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="356 442 130 26" align="Left Top" name="RetargetForgetButton">
+            <Property key="Caption" value="Forget Saved"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="16 476 250 26" align="Left Top" name="RetargetWalkButton">
+            <Property key="Caption" value="Walking Animation: Off"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="540 476 84 26" align="Left Top" name="RetargetCloseButton">
+            <Property key="Caption" value="Close"/>
+        </Widget>
+    </Widget>
+</MyGUI>

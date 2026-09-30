@@ -16,9 +16,11 @@
 #include <osg/Group>
 #include <osg/MatrixTransform>
 #include <osg/NodeVisitor>
+#include <osg/TriangleIndexFunctor>
 #include <osg/ValueObject>
 
 #include <components/debug/debuglog.hpp>
+#include <components/misc/jiggleanchors.hpp>
 #include <components/misc/jigglezoffset.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/jigglepolicy.hpp>
@@ -124,6 +126,29 @@ namespace MWRender
             return dynamic_cast<const osg::Vec3Array*>(src->getVertexArray());
         }
 
+
+        // Meshes come in two horizontal orientations: x forward / y left (stock Morrowind bodies) or
+        // y forward / x right (Blender-style exports). All detection works in the first frame, so
+        // when a mesh is the second kind it is swizzled: forward = y, left = -x.
+        bool gSwapFrame = false;
+
+        float latOf(const osg::Vec3f& p)
+        {
+            return gSwapFrame ? -p.x() : p.y();
+        }
+        float depOf(const osg::Vec3f& p)
+        {
+            return gSwapFrame ? p.y() : p.x();
+        }
+        osg::Vec3f toRigFrame(const osg::Vec3f& p)
+        {
+            return osg::Vec3f(depOf(p), latOf(p), p.z());
+        }
+        osg::Vec3f fromRigFrame(float dep, float lat, float z)
+        {
+            return gSwapFrame ? osg::Vec3f(-lat, dep, z) : osg::Vec3f(dep, lat, z);
+        }
+
         int boneIndex(const std::vector<std::string>& names, std::string_view bone)
         {
             for (std::size_t i = 0; i < names.size(); ++i)
@@ -173,9 +198,9 @@ namespace MWRender
                 {
                     if (p.z() < zMin || p.z() > zMax)
                         continue;
-                    if (left && p.y() <= cfg.mMinAbsY)
+                    if (left && latOf(p) <= cfg.mMinAbsY)
                         continue;
-                    if (!left && p.y() >= -cfg.mMinAbsY)
+                    if (!left && latOf(p) >= -cfg.mMinAbsY)
                         continue;
                     cand.push_back(p);
                 }
@@ -183,13 +208,81 @@ namespace MWRender
             if (cand.empty())
                 return std::nullopt;
             std::sort(cand.begin(), cand.end(),
-                [&](const osg::Vec3f& a, const osg::Vec3f& b) { return cfg.mMaxX ? a.x() > b.x() : a.x() < b.x(); });
+                [&](const osg::Vec3f& a, const osg::Vec3f& b) { return cfg.mMaxX ? depOf(a) > depOf(b) : depOf(a) < depOf(b); });
             const std::size_t k = std::min<std::size_t>(cfg.mTopK, cand.size());
             osg::Vec3f sum(0, 0, 0);
             for (std::size_t i = 0; i < k; ++i)
                 sum += cand[i];
             return sum / static_cast<float>(k);
         }
+
+        // Pick the frame from the torso: it is always wider than it is deep.
+        void detectFrame(const std::vector<Rig*>& rigs)
+        {
+            gSwapFrame = false;
+            const auto lz = landmarkZ(rigs, "bip01 spine2");
+            if (!lz)
+                return;
+            std::vector<float> xs, ys;
+            for (Rig* rig : rigs)
+            {
+                const osg::Vec3Array* verts = sourceVerts(*rig);
+                if (!verts)
+                    continue;
+                for (const osg::Vec3f& p : *verts)
+                    if (p.z() > *lz - 10.f && p.z() < *lz + 14.f)
+                    {
+                        xs.push_back(p.x());
+                        ys.push_back(p.y());
+                    }
+            }
+            if (xs.size() < 20)
+                return;
+            auto spread = [](std::vector<float>& v) {
+                std::sort(v.begin(), v.end());
+                return v[v.size() * 95 / 100] - v[v.size() * 5 / 100];
+            };
+            gSwapFrame = spread(xs) > spread(ys);
+        }
+
+        // A hand-placed anchor: the user gives (y, z); the depth is the surface of the mesh there (the most
+        // forward vertices for a breast, the most rearward for a butt), found among nearby vertices.
+        osg::Vec3f anchorAt(const std::vector<Rig*>& rigs, const Config& cfg, float y, float z,
+            const std::optional<osg::Vec3f>& fallback)
+        {
+            for (const float radius : { 4.f, 8.f, 14.f })
+            {
+                std::vector<float> depths;
+                for (Rig* rig : rigs)
+                {
+                    const osg::Vec3Array* verts = sourceVerts(*rig);
+                    if (!verts)
+                        continue;
+                    for (const osg::Vec3f& p : *verts)
+                        if (std::abs(latOf(p) - y) < radius && std::abs(p.z() - z) < radius)
+                            depths.push_back(depOf(p));
+                }
+                if (depths.empty())
+                    continue;
+                std::sort(depths.begin(), depths.end(), [&](float a, float b) { return cfg.mMaxX ? a > b : a < b; });
+                const std::size_t k = std::min<std::size_t>(cfg.mTopK, depths.size());
+                float sum = 0.f;
+                for (std::size_t i = 0; i < k; ++i)
+                    sum += depths[i];
+                return fromRigFrame(sum / static_cast<float>(k), y, z);
+            }
+            return fromRigFrame(fallback ? depOf(*fallback) : 0.f, y, z);
+        }
+
+        struct TriangleCollector
+        {
+            std::vector<std::array<unsigned int, 3>> mTriangles;
+            void operator()(unsigned int a, unsigned int b, unsigned int c)
+            {
+                if (a != b && b != c && a != c)
+                    mTriangles.push_back({ a, b, c });
+            }
+        };
 
         // autorig.py Pass 1 cone: sqrt falloff within radius, vertical reach capped at z_radius,
         // same-side guard, returns vertex index -> weight.
@@ -226,9 +319,9 @@ namespace MWRender
             for (std::size_t i = 0; i < verts.size(); ++i)
             {
                 const osg::Vec3f& p = verts[i];
-                if (left && p.y() <= cfg.mMinAbsY)
+                if (left && latOf(p) <= cfg.mMinAbsY)
                     continue;
-                if (!left && p.y() >= -cfg.mMinAbsY)
+                if (!left && latOf(p) >= -cfg.mMinAbsY)
                     continue;
                 if (std::abs(p.z() - anchor.z()) > cfg.mZRadius)
                     continue;
@@ -294,6 +387,7 @@ namespace MWRender
         std::vector<Rig*> rigs;
         rigs.reserve(rc.mRigs.size());
         std::string bodyMeshFile; // the chest/body part (weights spine2) - keys per-mesh Z offsets
+        std::string buttMeshFile; // the part weighted to the pelvis - keys hand-placed butt anchors
         for (Rig* rig : rc.mRigs)
         {
             osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
@@ -309,6 +403,8 @@ namespace MWRender
             if (bodyMeshFile.empty() && !meshFile.empty()
                 && boneIndex(rig->getInfluenceBoneNames(), sBreast.mParent) >= 0)
                 bodyMeshFile = meshFile;
+            if (buttMeshFile.empty() && !meshFile.empty() && boneIndex(rig->getInfluenceBoneNames(), sButt.mParent) >= 0)
+                buttMeshFile = meshFile;
             rigs.push_back(rig);
         }
         if (rigs.empty())
@@ -320,6 +416,11 @@ namespace MWRender
         // outfit has no saved value yet it snaps to 0 (a clean default) rather than leaving the
         // previous outfit's offset in place. The settings window writes slider changes back keyed to
         // this same mesh (see mwgui/settingswindow.cpp).
+        if (isPlayer)
+        {
+            Misc::JiggleAnchors::currentChestMesh() = Misc::StringUtils::lowerCase(bodyMeshFile);
+            Misc::JiggleAnchors::currentPelvisMesh() = Misc::StringUtils::lowerCase(buttMeshFile);
+        }
         if (!bodyMeshFile.empty())
         {
             Misc::JiggleZOffset::setCurrentActorMesh(isPlayer, actorName, bodyMeshFile);
@@ -385,6 +486,7 @@ namespace MWRender
 
         // Anchors are recomputed each pass from whatever meshes are currently attached, so a piece
         // equipped later (e.g. armor covering the chest) is painted from its own geometry.
+        detectFrame(rigs);
         std::array<std::optional<osg::Vec3f>, 6> anchors;
         for (std::size_t t = 0; t < sTargets.size(); ++t)
         {
@@ -393,6 +495,23 @@ namespace MWRender
             const auto lz = landmarkZ(rigs, sTargets[t].mConfig.mLandmark);
             if (lz)
                 anchors[t] = findAnchor(rigs, sTargets[t].mConfig, sTargets[t].mLeft, *lz);
+        }
+
+        // Hand-placed anchors (Retarget Jiggle window) replace the detected ones for the four
+        // breast/butt targets of this outfit's meshes.
+        for (std::size_t t = 0; t < 4; ++t)
+        {
+            const bool breast = t < 2;
+            const std::string lowerMesh = Misc::StringUtils::lowerCase(breast ? bodyMeshFile : buttMeshFile);
+            const auto stored = Misc::JiggleAnchors::lookup(breast ? 'b' : 'u', lowerMesh);
+            if (!stored)
+                continue;
+            const bool left = sTargets[t].mLeft;
+            anchors[t] = anchorAt(rigs, sTargets[t].mConfig, left ? stored->mLeftY : stored->mRightY,
+                left ? stored->mLeftZ : stored->mRightZ, anchors[t]);
+            if (debug)
+                Log(Debug::Warning) << "Jiggle auto-rig: using saved anchor for " << sTargets[t].mBoneNode << " y="
+                                    << anchors[t]->y() << " z=" << anchors[t]->z();
         }
 
         // A mesh may still carry a target's jiggle weights from an earlier pass even after the
@@ -539,5 +658,88 @@ namespace MWRender
 
         if (debug)
             Log(Debug::Warning) << "Jiggle auto-rig: resync done, painted " << paintedMeshes << " mesh(es)";
+    }
+
+    bool JiggleAutoRig::buildRetargetPreview(osg::Group* objectRoot, RetargetPreview& out)
+    {
+        out = RetargetPreview();
+        if (!objectRoot)
+            return false;
+        RigCollector rc;
+        objectRoot->accept(rc);
+        std::vector<Rig*> rigs;
+        std::string chestMesh, pelvisMesh;
+        for (Rig* rig : rc.mRigs)
+        {
+            osg::Node* start = rig->getNumParents() > 0 ? rig->getParent(0) : nullptr;
+            const std::string meshFile = meshFileFor(start);
+            if (meshBlacklisted(meshFile))
+                continue;
+            if (chestMesh.empty() && !meshFile.empty() && boneIndex(rig->getInfluenceBoneNames(), sBreast.mParent) >= 0)
+                chestMesh = meshFile;
+            if (pelvisMesh.empty() && !meshFile.empty() && boneIndex(rig->getInfluenceBoneNames(), sButt.mParent) >= 0)
+                pelvisMesh = meshFile;
+            rigs.push_back(rig);
+        }
+        if (rigs.empty())
+            return false;
+        detectFrame(rigs);
+        out.mChestMesh = Misc::StringUtils::lowerCase(chestMesh);
+        out.mPelvisMesh = Misc::StringUtils::lowerCase(pelvisMesh);
+
+        bool first = true;
+        for (Rig* rig : rigs)
+        {
+            osg::ref_ptr<osg::Geometry> src = rig->getSourceGeometry();
+            const osg::Vec3Array* verts = sourceVerts(*rig);
+            if (!src || !verts || verts->empty())
+                continue;
+            const osg::Vec3Array* normals = dynamic_cast<const osg::Vec3Array*>(src->getNormalArray());
+            if (normals && normals->size() != verts->size())
+                normals = nullptr;
+            osg::TriangleIndexFunctor<TriangleCollector> functor;
+            src->accept(functor);
+            for (const auto& tri : functor.mTriangles)
+            {
+                if (tri[0] >= verts->size() || tri[1] >= verts->size() || tri[2] >= verts->size())
+                    continue;
+                const osg::Vec3f& a = (*verts)[tri[0]];
+                const osg::Vec3f& b = (*verts)[tri[1]];
+                const osg::Vec3f& c = (*verts)[tri[2]];
+                osg::Vec3f faceNormal = (b - a) ^ (c - a);
+                faceNormal.normalize();
+                for (unsigned int index : tri)
+                {
+                    const osg::Vec3f p = toRigFrame((*verts)[index]);
+                    out.mVertices.push_back(p);
+                    out.mNormals.push_back(toRigFrame(normals ? (*normals)[index] : faceNormal));
+                    if (first)
+                    {
+                        out.mYMin = out.mYMax = p.y();
+                        out.mZMin = out.mZMax = p.z();
+                        first = false;
+                    }
+                    out.mYMin = std::min(out.mYMin, p.y());
+                    out.mYMax = std::max(out.mYMax, p.y());
+                    out.mZMin = std::min(out.mZMin, p.z());
+                    out.mZMax = std::max(out.mZMax, p.z());
+                }
+            }
+        }
+        if (out.mVertices.empty())
+            return false;
+
+        for (std::size_t t = 0; t < 4; ++t)
+        {
+            const auto lz = landmarkZ(rigs, sTargets[t].mConfig.mLandmark);
+            if (lz)
+                if (auto anchor = findAnchor(rigs, sTargets[t].mConfig, sTargets[t].mLeft, *lz))
+                    out.mAuto[t] = osg::Vec2f(latOf(*anchor), anchor->z());
+            const auto stored = Misc::JiggleAnchors::lookup(t < 2 ? 'b' : 'u', t < 2 ? out.mChestMesh : out.mPelvisMesh);
+            if (stored)
+                out.mSaved[t] = sTargets[t].mLeft ? osg::Vec2f(stored->mLeftY, stored->mLeftZ)
+                                                  : osg::Vec2f(stored->mRightY, stored->mRightZ);
+        }
+        return true;
     }
 }

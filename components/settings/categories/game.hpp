@@ -194,6 +194,8 @@ namespace Settings
         // Per-body-mesh breast/butt Z offsets, saved from the in-game sliders and keyed by the
         // player's body mesh so each mesh remembers its own tuning. Entries are "meshpath=breast,butt".
         SettingValue<std::vector<std::string>> mJiggleMeshZOffsets{ mIndex, "Game", "jiggle mesh z offsets" };
+        // Hand-placed breast/butt anchors per mesh, edited in the Retarget Jiggle window (see components/misc/jiggleanchors.hpp).
+        SettingValue<std::vector<std::string>> mJiggleMeshAnchors{ mIndex, "Game", "jiggle mesh anchors" };
         // In-engine auto jiggle rigger: procedurally add breast/butt jiggle bones + weights to
         // female body meshes at load that don't already have them (so the .bat pre-rig is optional).
         SettingValue<bool> mJiggleAutoRig{ mIndex, "Game", "jiggle auto rig" };
