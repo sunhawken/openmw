@@ -1870,6 +1870,12 @@ namespace MWRender
             osg::MatrixTransform* root = nodeRef.get();
             if (!root || attached.contains(root) || hasSecondaryMotionController(root))
                 continue;
+            // Only the first root of a group carries the controller. When a later equipment part injects
+            // more chains this scan runs again, and without this mark every other root of an already
+            // simulated group would get a second controller driving the same bones.
+            bool simulated = false;
+            if (root->getUserValue("verlet_simulated", simulated) && simulated)
+                continue;
 
             const VerletRootInfo info = verletRootInfo(*root);
             if (!info.mEnabled || info.mCount < 2)
@@ -1910,6 +1916,9 @@ namespace MWRender
             if (debug)
                 Log(Debug::Info) << "Verlet cloth: attached " << group.mChains.size() << " chains under "
                                  << (parent ? parent->getName() : std::string("<none>"));
+            for (const auto& chain : group.mChains)
+                for (const auto& bone : chain)
+                    bone->setUserValue("verlet_simulated", true);
             group.mFirstRoot->addUpdateCallback(
                 new VerletClothController(std::move(group.mChains), group.mPin, debug));
         }
