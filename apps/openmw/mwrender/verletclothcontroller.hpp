@@ -71,6 +71,7 @@ namespace MWRender
         bool mDebug;
         double mLastTime = -1.0;
         float mAccumulator = 0.f;
+        float mLastReaction = 0.f;
         float mGroundZ = 0.f;
         bool mHasGround = false;
         std::vector<osg::Vec3f> mCapA, mCapB;

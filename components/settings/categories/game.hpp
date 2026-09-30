@@ -85,6 +85,11 @@ namespace Settings
 
         // Master switch for the physics-verlet hair/cloth chains.
         SettingValue<bool> mVerletEnabled{ mIndex, "Game", "verlet enabled" };
+        // Reaction speed scales the simulation clock (slower / faster reaction); root blend pulls the first
+        // free bones toward their animated position so the start of the physics is not visible.
+        SettingValue<float> mVerletReactionSpeed{ mIndex, "Game", "verlet reaction speed",
+            makeClampSanitizerFloat(0.2f, 2.5f) };
+        SettingValue<float> mVerletRootBlend{ mIndex, "Game", "verlet root blend", makeClampSanitizerFloat(0.f, 1.f) };
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };

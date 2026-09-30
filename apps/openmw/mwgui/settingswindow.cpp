@@ -308,6 +308,8 @@ namespace MWGui
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
+        getWidget(mVerletResetButton, "VerletResetButton");
+        mVerletResetButton->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onVerletResetButtonClicked);
         getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
         getWidget(mJiggleAdvancedPanelToggle, "JiggleAdvancedPanelToggle");
 
@@ -1159,6 +1161,16 @@ namespace MWGui
         mLightingMethodButton->setIndexSelected(lightIndex);
         updateMaxLightsComboBox(mMaxLights);
 
+        apply();
+        configureWidgets(mMainWidget, false);
+    }
+
+    void SettingsWindow::onVerletResetButtonClicked(MyGUI::Widget* /*sender*/)
+    {
+        auto& game = Settings::game();
+        game.mVerletEnabled.set(true);
+        game.mVerletReactionSpeed.set(1.0f);
+        game.mVerletRootBlend.set(0.6f);
         apply();
         configureWidgets(mMainWidget, false);
     }
