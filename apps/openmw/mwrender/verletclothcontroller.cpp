@@ -125,6 +125,7 @@ namespace MWRender
         mPreviousRootParentWorld = rootParentWorld;
         mPreviousAirBend = osg::Matrix();
         mPreviousShape.clear();
+        mVelocityHistory.clear();
         mFlutterPhase = static_cast<float>((reinterpret_cast<std::uintptr_t>(this) >> 4) % 628) / 100.f;
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
@@ -151,6 +152,7 @@ namespace MWRender
         mPreviousRootParentWorld = rootParentWorld;
         mPreviousAirBend = osg::Matrix();
         mPreviousShape.clear();
+        mVelocityHistory.clear();
         mPreviousRootVelocity.set(0.f, 0.f, 0.f);
         mFilteredRootAcceleration.set(0.f, 0.f, 0.f);
         mFilteredRootVelocity.set(0.f, 0.f, 0.f);
@@ -549,6 +551,19 @@ namespace MWRender
         }
     }
 
+    osg::Vec3f VerletClothController::velocityAt(double time) const
+    {
+        if (mVelocityHistory.empty())
+            return osg::Vec3f();
+        std::size_t i = mVelocityHistory.size() - 1;
+        while (i > 0 && mVelocityHistory[i][0] > time)
+            --i;
+        const auto& a = mVelocityHistory[i];
+        const auto& b = mVelocityHistory[std::min(i + 1, mVelocityHistory.size() - 1)];
+        const float f = b[0] > a[0] ? std::clamp((static_cast<float>(time) - a[0]) / (b[0] - a[0]), 0.f, 1.f) : 0.f;
+        return osg::Vec3f(a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f);
+    }
+
     void VerletClothController::operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv)
     {
         if (mChain.size() < 2 || !mSettings.mEnabled)
@@ -703,6 +718,10 @@ namespace MWRender
             const float accelerationBlend = 1.f - std::exp(-static_cast<float>(frameDt) / (smoothing * 0.5f));
             mFilteredRootAcceleration += (rootAcceleration - mFilteredRootAcceleration) * accelerationBlend;
             mFilteredRootVelocity += (rootVelocity - mFilteredRootVelocity) * velocityBlend;
+            mVelocityHistory.push_back({ static_cast<float>(simTime), mFilteredRootVelocity.x(), mFilteredRootVelocity.y(),
+                mFilteredRootVelocity.z() });
+            while (mVelocityHistory.size() > 2 && mVelocityHistory.front()[0] < static_cast<float>(simTime) - 1.5f)
+                mVelocityHistory.pop_front();
             mPreviousRootVelocity = rootVelocity;
             mRootVelocityInitialized = true;
             // Softer cloth lags the body more: extra follow-through on every start/stop/turn.
@@ -717,46 +736,78 @@ namespace MWRender
         const bool stationary = anchorSpeed < 0.35f && (!mSettings.mStableTiming || turnSpeed < 0.015f);
         const float memory = stationary && mSettings.mStableTiming && lateralMemory > 0.f
             ? std::max(lateralMemory, 0.20f) : lateralMemory;
-        const float lateralFollow = 1.f - std::pow(1.f - memory, strengthExponent);
+        // Vertical motion (jump/fall) also pulls the shape reference so hair lifts on the way down.
+        const float verticalBlend = std::min(1.f, std::abs(mFilteredRootVelocity.z()) / 200.f);
+        const float lateralFollow
+            = 1.f - std::pow(1.f - std::max(memory, verticalBlend * 0.25f), strengthExponent);
         std::vector<osg::Vec3f> shapePositions = restPositions;
         osg::Matrix airBend;
         if (airDrag > 0.f && mSettings.mAirShapeResponse > 0.f)
         {
-            const osg::Vec3f airflow(-mFilteredRootVelocity.x(), -mFilteredRootVelocity.y(), 0.f);
-            const float speed = airflow.length();
-            if (speed > 1e-5f)
+            // Follow-the-leader in any direction: a segment s units down the chain hangs along the
+            // equilibrium of gravity plus air drag from the velocity the root had when it was s
+            // units ahead on its path, so hair/cloth trail along a curve when turning. The path
+            // direction is delayed; the vertical airflow (jump/fall) is immediate. Sideways,
+            // backward, up and down all use the same rule.
+            const float maxAngle = verletFeel().angleRadians;
+            const float shapeResponse = std::clamp(mSettings.mAirShapeResponse, 0.f, 1.f);
+            const float curve = verletFeel().curve;
+            const float softFeel = verletFeel().softness;
+            const std::size_t freeCount = shapePositions.size() - static_cast<std::size_t>(pinCount);
+            const float currentSpeed = mFilteredRootVelocity.length();
+            float arc = 0.f;
+            float weightSum = 0.f;
+            osg::Vec3f meanAxis;
+            float meanAngle = 0.f;
+            for (std::size_t i = static_cast<std::size_t>(pinCount); i < shapePositions.size(); ++i)
             {
-                const float force = std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration));
-                // Let airflow lift the free length from the root, but stop short
-                // of a horizontal plank: the user-tunable trail angle caps it.
-                const float maxAngle = verletFeel().angleRadians;
-                const float angle = std::min(maxAngle, std::atan2(force, std::max(1.f, gravity))
-                    * std::clamp(mSettings.mAirShapeResponse, 0.f, 1.f));
-                osg::Vec3f axis = osg::Vec3f(0.f, 0.f, -1.f) ^ airflow;
-                axis.normalize();
-                // Progressive bend: the bones next to the pinned root keep following
-                // the animated head/hip and each following segment leans a bit more,
-                // so the root blends in and the tail streams out in a smooth arc
-                // instead of hinging as one rigid plank. curve 0 = rigid (old look).
-                const float curve = verletFeel().curve;
-                const std::size_t freeCount = shapePositions.size() - static_cast<std::size_t>(pinCount);
-                float weightSum = 0.f;
-                for (std::size_t i = static_cast<std::size_t>(pinCount); i < shapePositions.size(); ++i)
+                const osg::Vec3f segment = restPositions[i] - restPositions[i - 1];
+                arc += segment.length();
+                const float lag = std::min(0.7f, arc / std::max(currentSpeed, 80.f)) * (0.35f + 0.65f * softFeel);
+                osg::Vec3f v = velocityAt(simTime - lag);
+                v.z() = mFilteredRootVelocity.z();
+                const float speed = v.length();
+                osg::Vec3f rotated = segment;
+                if (speed > 1e-5f)
                 {
+                    const float force = std::min(speed * airDrag, std::max(0.f, mSettings.mAirDragMaxAcceleration))
+                        * shapeResponse;
+                    osg::Vec3f target = (v * (-force / speed)) + osg::Vec3f(0.f, 0.f, -std::max(1.f, gravity));
+                    target.normalize();
+                    const float raw = std::acos(std::clamp(-target.z(), -1.f, 1.f));
+                    const float cap = maxAngle + std::max(0.f, -v.z() / speed) * (2.4f - maxAngle);
                     const float t = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
                         / static_cast<float>(freeCount);
                     const float ease = t * t * (3.f - 2.f * t);
                     const float weight = 1.f + (ease - 1.f) * curve;
-                    weightSum += weight;
+                    const float angle = std::min(raw, cap) * weight;
+                    osg::Vec3f axis = osg::Vec3f(0.f, 0.f, -1.f) ^ target;
+                    if (axis.length() < 1e-3f)
+                    {
+                        // Airflow straight up/down: flare the chain outward from the body.
+                        osg::Vec3f outward(restPositions[static_cast<std::size_t>(pinCount)].x() - anchor.x(),
+                            restPositions[static_cast<std::size_t>(pinCount)].y() - anchor.y(), 0.f);
+                        if (outward.normalize() < 1e-3f)
+                            outward.set(1.f, 0.f, 0.f);
+                        axis.set(outward.y(), -outward.x(), 0.f);
+                    }
+                    axis.normalize();
                     osg::Quat segmentRotation;
-                    segmentRotation.makeRotate(angle * weight, axis);
-                    const osg::Vec3f segment = restPositions[i] - restPositions[i - 1];
-                    shapePositions[i] = shapePositions[i - 1] + segmentRotation * segment;
+                    segmentRotation.makeRotate(angle, axis);
+                    rotated = segmentRotation * segment;
+                    weightSum += weight;
+                    meanAxis += axis;
+                    meanAngle += angle;
                 }
+                shapePositions[i] = shapePositions[i - 1] + rotated;
+            }
+            if (meanAngle > 0.f && meanAxis.normalize() > 1e-5f)
+            {
                 osg::Quat rotation;
-                rotation.makeRotate(angle * weightSum / static_cast<float>(freeCount), axis);
+                rotation.makeRotate(meanAngle / static_cast<float>(freeCount), meanAxis);
                 airBend = osg::Matrix::rotate(rotation);
             }
+            (void)weightSum;
         }
         // Less damping while moving lets soft cloth swing and follow through.
         // With flutter on, cloth keeps flowing at rest instead of being damped to a stop.
@@ -905,7 +956,7 @@ namespace MWRender
                     // Once movement ends, restore the full resting contour.
                     // XY-only memory leaves several folded/body-contact poses
                     // with the same lateral coordinates after a strong lift.
-                    const float verticalFollow = stationary && mSettings.mStableTiming ? lateralFollow : 0.f;
+                    const float verticalFollow = stationary && mSettings.mStableTiming ? lateralFollow : lateralFollow * verticalBlend;
                     const osg::Vec3f correction(delta.x() * lateralFollow, delta.y() * lateralFollow,
                         delta.z() * verticalFollow);
                     mPositions[i] += correction;

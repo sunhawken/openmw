@@ -7,6 +7,8 @@
 #include <osg/Vec3f>
 #include <osg/ref_ptr>
 
+#include <array>
+#include <deque>
 #include <vector>
 
 namespace osg
@@ -106,6 +108,7 @@ namespace MWRender
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
     private:
+        osg::Vec3f velocityAt(double time) const;
         void initialize(const osg::Matrix& rootParentWorld, double simTime);
         void resetToRest(const osg::Matrix& rootParentWorld, double simTime);
         std::vector<osg::Vec3f> restWorldPositions(const osg::Matrix& rootParentWorld) const;
@@ -150,6 +153,7 @@ namespace MWRender
         osg::Matrix mPreviousAirBend;
         std::vector<osg::Vec3f> mPreviousShape;
         float mFlutterPhase = 0.f;
+        std::deque<std::array<float, 4>> mVelocityHistory;
         osg::Vec3f mPreviousRootVelocity;
         osg::Vec3f mFilteredRootAcceleration;
         osg::Vec3f mFilteredRootVelocity;
