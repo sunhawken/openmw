@@ -141,6 +141,27 @@ namespace
 
 namespace MWPhysics
 {
+    namespace
+    {
+        // Object layers are split across broadphase trees.  A ray query has no
+        // source body from which Jolt can infer the trees to inspect, so derive
+        // them from the requested object-layer mask instead.
+        MultiBroadPhaseLayerFilter getRaycastBroadPhaseLayerFilter(int mask)
+        {
+            std::vector<JPH::BroadPhaseLayer> layers;
+            if (mask & (Layers::WORLD | Layers::DOOR | Layers::HEIGHTMAP | Layers::WATER | Layers::CAMERA_ONLY
+                            | Layers::VISUAL_ONLY))
+                layers.push_back(BroadPhaseLayers::WORLD);
+            if (mask & (Layers::ACTOR | Layers::PROJECTILE | Layers::DYNAMIC_WORLD))
+                layers.push_back(BroadPhaseLayers::MOVING);
+            if (mask & Layers::DEBRIS)
+                layers.push_back(BroadPhaseLayers::DEBRIS);
+            if (mask & Layers::SENSOR)
+                layers.push_back(BroadPhaseLayers::SENSOR);
+            return MultiBroadPhaseLayerFilter(std::move(layers));
+        }
+    }
+
     // If you take larger steps than 1 / 60th of a second you need to do multiple collision steps in order to keep the
     // simulation stable. Do 1 collision step per 1 / 60th of a second (round up).
     static const int cCollisionSteps = 1;
@@ -381,7 +402,7 @@ namespace MWPhysics
         // Filter out layers
         // TODO: restore collision group (if group == 0xff then all layers?)
         // callback.m_collisionFilterGroup = group;
-        JPH::SpecifiedBroadPhaseLayerFilter broadphaseLayerFilter(BroadPhaseLayers::WORLD);
+        auto broadphaseLayerFilter = getRaycastBroadPhaseLayerFilter(mask);
         MaskedObjectLayerFilter objectLayerFilter(mask);
 
         // Cast ray and return closest hit
@@ -435,7 +456,7 @@ namespace MWPhysics
         // Filter out layers
         // TODO: restore - collision group (if group == 0xff then all layers?)
         // callback.m_collisionFilterGroup = group;
-        JPH::SpecifiedBroadPhaseLayerFilter broadphaseLayerFilter(BroadPhaseLayers::WORLD);
+        auto broadphaseLayerFilter = getRaycastBroadPhaseLayerFilter(mask);
         MaskedObjectLayerFilter objectLayerFilter(mask);
 
         ClosestConvexResultCallback callback(transFrom.GetTranslation());
