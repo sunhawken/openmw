@@ -83,40 +83,8 @@ namespace Settings
         SettingValue<bool> mCurvyNakedBody{ mIndex, "Game", "curvy naked body" };
         SettingValue<bool> mJiggleBoneDebug{ mIndex, "Game", "jiggle bone debug" };
 
-        // Runtime Verlet cloth controls. Model-authored metadata remains the default;
-        // enabling global overrides makes these values live-tunable from the Verlet tab.
+        // Master switch for the physics-verlet hair/cloth chains.
         SettingValue<bool> mVerletEnabled{ mIndex, "Game", "verlet enabled" };
-        SettingValue<bool> mVerletUseGlobalSettings{ mIndex, "Game", "verlet use global settings" };
-        SettingValue<float> mVerletFriction{ mIndex, "Game", "verlet friction",
-            makeClampSanitizerFloat(0.f, 1.f) };
-        SettingValue<float> mVerletGravity{ mIndex, "Game", "verlet gravity",
-            makeClampSanitizerFloat(0.f, 711.f) };
-        SettingValue<float> mVerletWindStrength{ mIndex, "Game", "verlet wind strength",
-            makeClampSanitizerFloat(0.f, 50.f) };
-        SettingValue<float> mVerletWindFrequency{ mIndex, "Game", "verlet wind frequency",
-            makeClampSanitizerFloat(0.f, 10.f) };
-        SettingValue<int> mVerletIterations{ mIndex, "Game", "verlet iterations",
-            makeClampSanitizerInt(1, 32) };
-        SettingValue<int> mVerletSubsteps{ mIndex, "Game", "verlet substeps",
-            makeClampSanitizerInt(1, 8) };
-        SettingValue<float> mVerletMaxStep{ mIndex, "Game", "verlet max step",
-            makeClampSanitizerFloat(0.01f, 50.f) };
-        SettingValue<bool> mVerletIdleWind{ mIndex, "Game", "verlet idle wind" };
-        SettingValue<float> mVerletIdleDamping{ mIndex, "Game", "verlet idle damping",
-            makeClampSanitizerFloat(0.f, 1.f) };
-        // Number of bones at the attachment end held to their authored animated pose.
-        // Useful for capes: shoulder/upper-arm cloth stays rigid while the lower cape flows.
-        SettingValue<int> mVerletPinCount{ mIndex, "Game", "verlet pin count",
-            makeClampSanitizerInt(1, 8) };
-        // Single "Cloth Feel" control: 0 = flowing like water, 1 = stiff authored shape (softness,
-        // flutter, trailing curve/angle and motion smoothing are all derived from this one value).
-        SettingValue<float> mVerletFeel{ mIndex, "Game", "verlet feel", makeClampSanitizerFloat(0.f, 1.f) };
-        // Capsule collision against the actor torso skeleton so Verlet cloth cannot pass through the body.
-        SettingValue<bool> mVerletBodyCollision{ mIndex, "Game", "verlet body collision" };
-        SettingValue<float> mVerletBodyCollisionRadius{ mIndex, "Game", "verlet body collision radius",
-            makeClampSanitizerFloat(1.f, 40.f) };
-        SettingValue<float> mVerletBodyCollisionMargin{ mIndex, "Game", "verlet body collision margin",
-            makeClampSanitizerFloat(0.f, 10.f) };
         // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
         // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
         SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
