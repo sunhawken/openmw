@@ -27,7 +27,7 @@
                     <Property key="Caption" value="Use Current"/>
                 </Widget>
                 <Widget type="AutoSizedTextBox" skin="SandText" position="8 116 510 18">
-                    <Property key="Caption" value="Breast Z / Butt Z. Leave blank to use the live Jiggle sliders."/>
+                    <Property key="Caption" value="Breast Z / Butt Z (-50 to 50). Leave blank to use the live Jiggle values."/>
                 </Widget>
                 <Widget type="EditBox" skin="MW_TextEdit" position="8 138 245 24" name="JiggleBreastOffsetInput"/>
                 <Widget type="EditBox" skin="MW_TextEdit" position="273 138 245 24" name="JiggleButtOffsetInput"/>
@@ -73,7 +73,7 @@
                         <UserString key="SettingName" value="jiggle npc default enabled"/>
                         <UserString key="SettingType" value="CheckButton"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Jiggle for NPCs by Default"/></Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Jiggle for NPCs by Default (Player Only OFF)"/></Widget>
                 </Widget>
                 <Widget type="AutoSizedTextBox" skin="NormalText" position="8 82 510 18">
                     <Property key="Caption" value="NPC-specific override by display name"/>
@@ -117,7 +117,7 @@
                             <UserString key="SettingName" value="jiggle glute auto mass"/>
                             <UserString key="SettingType" value="CheckButton"/>
                         </Widget>
-                        <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Auto Glute Weight from bone size"/></Widget>
+                        <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Auto Glute Weight from bone size (disables manual weight)"/></Widget>
                     </Widget>
                     <Widget type="TextBox" skin="NormalText" position="6 116 490 18" align="Left Top" name="JiggleGluteSoftnessText"/>
                     <Widget type="ScrollBar" skin="MW_HScroll" position="6 136 490 18" align="Left Top" name="JiggleGluteSoftnessSlider">
