@@ -53,6 +53,7 @@ namespace MWGui
         MyGUI::ComboBox* mLightingMethodButton;
         MyGUI::Button* mLightsResetButton;
         MyGUI::Button* mJiggleOffsetResetButton;
+        MyGUI::Button* mVerletResetButton;
         MyGUI::Button* mBakeBreastToNifButton;
         MyGUI::Button* mJiggleAdvancedPanelToggle;
         std::unique_ptr<Layout> mJiggleAdvancedLayout;
@@ -122,6 +123,7 @@ namespace MWGui
         void onLightingMethodButtonChanged(MyGUI::ComboBox* sender, size_t pos);
         void onLightsResetButtonClicked(MyGUI::Widget* sender);
         void onJiggleOffsetResetButtonClicked(MyGUI::Widget* sender);
+        void onVerletResetButtonClicked(MyGUI::Widget* sender);
         void onBakeBreastToNifButtonClicked(MyGUI::Widget* sender);
         void onJiggleAdvancedPanelToggleClicked(MyGUI::Widget* sender);
         void onJiggleAdvancedCloseClicked(MyGUI::Widget* sender);

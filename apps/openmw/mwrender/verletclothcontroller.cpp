@@ -282,6 +282,25 @@ namespace MWRender
                 }
             }
         }
+
+        // Root blend: the first free bones are pulled toward their animated position, strongest right under
+        // the pinned roots and fading out smoothly (quintic) along the chain, so the start of the physics
+        // is not visible. Current and previous positions move together, so it adds no velocity.
+        const float blend = std::clamp(Settings::game().mVerletRootBlend.get(), 0.f, 1.f);
+        if (blend > 0.f)
+            for (Chain& chain : mChains)
+            {
+                const int freeCount = static_cast<int>(chain.mPos.size()) - pin;
+                const int span = std::min(8, freeCount - 1);
+                for (int k = 0; k < span; ++k)
+                {
+                    const float t = static_cast<float>(k + 1) / static_cast<float>(span + 1);
+                    const float smooth = t * t * t * (t * (t * 6.f - 15.f) + 10.f);
+                    const osg::Vec3f delta = (chain.mRest[pin + k] - chain.mPos[pin + k]) * (blend * (1.f - smooth));
+                    chain.mPos[pin + k] += delta;
+                    chain.mOld[pin + k] += delta;
+                }
+            }
     }
 
     void VerletClothController::writeBones()
@@ -347,11 +366,23 @@ namespace MWRender
                 mHasGround = false;
         }
 
+        // Reaction speed scales the simulation clock of each step. When it changes, the stored velocity
+        // (position - previous position) is rescaled so the cloth does not jump.
+        const float reaction = std::clamp(Settings::game().mVerletReactionSpeed.get(), 0.2f, 2.5f);
+        if (mLastReaction > 0.f && reaction != mLastReaction)
+        {
+            const float ratio = reaction / mLastReaction;
+            for (Chain& chain : mChains)
+                for (std::size_t i = mPinCount; i < chain.mPos.size(); ++i)
+                    chain.mOld[i] = chain.mPos[i] - (chain.mPos[i] - chain.mOld[i]) * ratio;
+        }
+        mLastReaction = reaction;
+
         mAccumulator += static_cast<float>(dt);
         int steps = 0;
         while (mAccumulator >= sStep && steps < 4)
         {
-            step(sStep);
+            step(sStep * reaction);
             mAccumulator -= sStep;
             ++steps;
         }

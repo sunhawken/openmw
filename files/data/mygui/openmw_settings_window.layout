@@ -1458,6 +1458,49 @@
                     </Widget>
                     </Widget>
                 </Widget>
+            <Widget type="TabItem">
+                <Property key="Caption" value=" Verlet "/>
+                <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="VerletScrollView">
+                    <Property key="CanvasAlign" value="Left Top"/>
+                    <Property key="VisibleVScroll" value="true"/>
+                    <Property key="CanvasSize" value="344 300"/>
+                    <Widget type="HBox" position="6 6 336 28">
+                        <Widget type="AutoSizedButton" skin="MW_Button">
+                            <UserString key="SettingCategory" value="Game"/>
+                            <UserString key="SettingName" value="verlet enabled"/>
+                            <UserString key="SettingType" value="CheckButton"/>
+                        </Widget>
+                        <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Hair and Cloth Physics"/></Widget>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 46 330 18" name="VerletReactionText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 66 330 18" name="VerletReactionSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet reaction speed"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0.2"/><UserString key="SettingMax" value="2.5"/>
+                        <UserString key="SettingLabelWidget" value="VerletReactionText"/><UserString key="SettingLabelCaption" value="Reaction Speed: {value}"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 86 330 48" align="Left Top">
+                        <Property key="Caption" value="Slows down or speeds up how fast the hair and cloth react to movement. 1 = real time."/><Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/><Property key="Static" value="true"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 136 330 18" name="VerletRootBlendText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 156 330 18" name="VerletRootBlendSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet root blend"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="1"/>
+                        <UserString key="SettingLabelWidget" value="VerletRootBlendText"/><UserString key="SettingLabelCaption" value="Root Blend: {value}"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 176 330 48" align="Left Top">
+                        <Property key="Caption" value="Blends the first free bones into the animated root so you cannot see where the physics starts. 0 = off."/><Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/><Property key="Static" value="true"/>
+                    </Widget>
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="6 232 200 24" align="Left Top" name="VerletResetButton">
+                        <Property key="Caption" value="Reset Defaults"/>
+                    </Widget>
+                </Widget>
+            </Widget>
         </Widget>
         <Widget type="AutoSizedButton" skin="MW_Button" position="320 420 56 24" align="Right Bottom" name="OkButton">
             <Property key="ExpandDirection" value="Left"/>
