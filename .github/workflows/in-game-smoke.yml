@@ -1,0 +1,83 @@
+name: In-game smoke test
+
+on:
+  push:
+    branches:
+      - ci/in-game-smoke
+  workflow_dispatch:
+
+env:
+  EXAMPLE_SUITE_REVISION: a1ba6fc9d7315c2158ef4c60349fc4e71b7ca343
+
+jobs:
+  world-launch:
+    name: Launch OpenMW world
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Add OpenMW PPA
+        run: |
+          sudo add-apt-repository ppa:openmw/openmw
+          sudo apt-get update
+
+      - name: Install build and headless-display dependencies
+        run: |
+          sudo CI/install_debian_deps.sh gcc openmw-deps openmw-deps-dynamic
+          sudo apt-get install -y xvfb git-lfs
+          git lfs install
+
+      - name: Configure engine-only build
+        run: >
+          cmake .
+          -D CMAKE_BUILD_TYPE=RelWithDebInfo
+          -D OPENMW_USE_SYSTEM_RECASTNAVIGATION=ON
+          -D USE_SYSTEM_TINYXML=ON
+          -D BUILD_OPENCS=OFF
+          -D BUILD_OPENCS_TESTS=OFF
+          -D BUILD_LAUNCHER=OFF
+          -D BUILD_WIZARD=OFF
+          -D BUILD_UNITTESTS=OFF
+          -D BUILD_BENCHMARKS=OFF
+
+      - name: Build OpenMW
+        run: cmake --build . --target openmw -- -j2
+
+      - name: Verify executable starts
+        run: ./openmw --version
+
+      - name: Fetch pinned OpenMW example world
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir example-suite
+          cd example-suite
+          git init
+          git remote add origin https://gitlab.com/OpenMW/example-suite.git
+          git fetch --depth=1 origin "$EXAMPLE_SUITE_REVISION"
+          git checkout FETCH_HEAD
+          git lfs pull
+
+      - name: Launch world and run in-engine smoke suite
+        shell: bash
+        run: |
+          set -euxo pipefail
+          xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
+            python3 scripts/integration_tests.py \
+              --verbose \
+              --omw ./openmw \
+              --workdir integration_tests_output \
+              example-suite/
+
+      - name: Upload in-game logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: in-game-smoke-logs-${{ github.sha }}
+          path: |
+            integration_tests_output/**
+            openmw.log
+          if-no-files-found: ignore
+          retention-days: 7
