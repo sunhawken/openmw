@@ -315,6 +315,11 @@ namespace MWGui
         // Advanced Jiggle configuration lives in its own Morrowind-themed window.
         mJiggleAdvancedLayout = std::make_unique<Layout>("openmw_jiggle_setup.layout");
         mJiggleAdvancedWindow = mJiggleAdvancedLayout->mMainWidget->castType<MyGUI::Window>();
+        mJiggleAdvancedLayout->getWidget(mJiggleQuickCurrentInfo, "JiggleQuickCurrentInfo");
+        mJiggleAdvancedLayout->getWidget(mJiggleQuickAddAnyButton, "JiggleQuickAddAnyButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleQuickAddPlayerButton, "JiggleQuickAddPlayerButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleQuickBlacklistButton, "JiggleQuickBlacklistButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleQuickClearButton, "JiggleQuickClearButton");
         mJiggleAdvancedLayout->getWidget(mJiggleAdvancedCloseButton, "JiggleAdvancedCloseButton");
         mJiggleAdvancedLayout->getWidget(mJiggleMeshScopeCombo, "JiggleMeshScopeCombo");
         mJiggleAdvancedLayout->getWidget(mJiggleMeshPathInput, "JiggleMeshPathInput");
@@ -395,6 +400,14 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleAdvancedPanelToggleClicked);
         mJiggleAdvancedCloseButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleAdvancedCloseClicked);
+        mJiggleQuickAddAnyButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleQuickAddAnyClicked);
+        mJiggleQuickAddPlayerButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleQuickAddPlayerClicked);
+        mJiggleQuickBlacklistButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleQuickBlacklistClicked);
+        mJiggleQuickClearButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleQuickClearClicked);
         mJiggleUseCurrentMeshButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleUseCurrentMeshClicked);
         mJiggleSaveMeshOffsetButton->eventMouseButtonClick
@@ -582,6 +595,20 @@ namespace MWGui
         if (!mJiggleMeshOffsetList || !mJiggleBlacklistList || !mJiggleNpcRuleList)
             return;
 
+        if (mJiggleQuickCurrentInfo)
+        {
+            const std::string mesh = currentJiggleMeshOrEmpty();
+            if (mesh.empty())
+                mJiggleQuickCurrentInfo->setCaption("Current outfit: not detected\nEquip an outfit/body, then reopen or refresh this window.");
+            else
+            {
+                const std::string info = "Current outfit: " + mesh
+                    + "\nLive offsets — Breast: " + std::to_string(Settings::game().mJiggleBoneBreastZOffset.get())
+                    + "  Butt: " + std::to_string(Settings::game().mJiggleBoneButtZOffset.get());
+                mJiggleQuickCurrentInfo->setCaption(info);
+            }
+        }
+
         mJiggleMeshOffsetList->removeAllItems();
         for (const std::string& entry : Settings::game().mJiggleMeshZOffsets.get())
             mJiggleMeshOffsetList->addItem("Any: " + entry, std::string("any|") + entry);
@@ -617,6 +644,100 @@ namespace MWGui
     {
         mJiggleAdvancedLayout->setVisible(false);
         mJiggleAdvancedPanelToggle->setCaption("Open Advanced Jiggle Setup...");
+    }
+
+    namespace
+    {
+        std::string currentJiggleMeshOrEmpty()
+        {
+            return Misc::StringUtils::lowerCase(Misc::JiggleZOffset::currentPlayerMesh());
+        }
+
+        void removeBlockingBlacklistEntries(std::string_view mesh)
+        {
+            std::vector<std::string> out;
+            for (const std::string& entry : Settings::game().mJiggleAutoRigBlacklist.get())
+            {
+                const std::string pattern = Misc::StringUtils::lowerCase(entry);
+                if (pattern.empty() || mesh.find(pattern) == std::string_view::npos)
+                    out.push_back(entry);
+            }
+            Settings::game().mJiggleAutoRigBlacklist.set(out);
+        }
+    }
+
+    void SettingsWindow::onJiggleQuickAddAnyClicked(MyGUI::Widget*)
+    {
+        const std::string mesh = currentJiggleMeshOrEmpty();
+        if (mesh.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupMeshRequired}");
+            return;
+        }
+
+        Settings::game().mJiggleAutoRig.set(true);
+        Settings::game().mJigglePlayerEnabled.set(true);
+        removeBlockingBlacklistEntries(mesh);
+        Misc::JiggleZOffset::save(mesh, Settings::game().mJiggleBoneBreastZOffset.get(),
+            Settings::game().mJiggleBoneButtZOffset.get());
+        apply();
+        refreshJiggleAdvancedPanel();
+        configureWidgets(mMainWidget, false);
+        MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleQuickAdded}");
+    }
+
+    void SettingsWindow::onJiggleQuickAddPlayerClicked(MyGUI::Widget*)
+    {
+        const std::string mesh = currentJiggleMeshOrEmpty();
+        if (mesh.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupMeshRequired}");
+            return;
+        }
+
+        Settings::game().mJiggleAutoRig.set(true);
+        Settings::game().mJigglePlayerEnabled.set(true);
+        removeBlockingBlacklistEntries(mesh);
+        Misc::JiggleZOffset::saveScoped("player", mesh, Settings::game().mJiggleBoneBreastZOffset.get(),
+            Settings::game().mJiggleBoneButtZOffset.get());
+        apply();
+        refreshJiggleAdvancedPanel();
+        configureWidgets(mMainWidget, false);
+        MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleQuickAddedPlayer}");
+    }
+
+    void SettingsWindow::onJiggleQuickBlacklistClicked(MyGUI::Widget*)
+    {
+        const std::string mesh = currentJiggleMeshOrEmpty();
+        if (mesh.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupMeshRequired}");
+            return;
+        }
+
+        std::vector<std::string> list = Settings::game().mJiggleAutoRigBlacklist.get();
+        const bool exists = std::any_of(list.begin(), list.end(),
+            [&](const std::string& entry) { return Misc::StringUtils::ciEqual(entry, mesh); });
+        if (!exists)
+            list.push_back(mesh);
+        Settings::game().mJiggleAutoRigBlacklist.set(list);
+        refreshJiggleAdvancedPanel();
+        MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleQuickBlacklisted}");
+    }
+
+    void SettingsWindow::onJiggleQuickClearClicked(MyGUI::Widget*)
+    {
+        const std::string mesh = currentJiggleMeshOrEmpty();
+        if (mesh.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupMeshRequired}");
+            return;
+        }
+
+        Misc::JiggleZOffset::reset(mesh);
+        Misc::JiggleZOffset::resetScoped(std::string("player|") + mesh);
+        refreshJiggleAdvancedPanel();
+        MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleQuickCleared}");
     }
 
     void SettingsWindow::onJiggleUseCurrentMeshClicked(MyGUI::Widget*)
