@@ -115,6 +115,11 @@ namespace Settings
             makeClampSanitizerFloat(0.f, 85.f) };
         SettingValue<float> mVerletTrailCurve{ mIndex, "Game", "verlet trail curve",
             makeClampSanitizerFloat(0.f, 1.f) };
+        // Softness 0..1 (1 = light blanket) and flutter 0..1 (gentle ripple while moving).
+        SettingValue<float> mVerletSoftness{ mIndex, "Game", "verlet softness",
+            makeClampSanitizerFloat(0.f, 1.f) };
+        SettingValue<float> mVerletFlutter{ mIndex, "Game", "verlet flutter",
+            makeClampSanitizerFloat(0.f, 1.f) };
         SettingValue<float> mVerletMotionSmoothing{ mIndex, "Game", "verlet motion smoothing",
             makeClampSanitizerFloat(0.02f, 0.4f) };
         // Capsule collision against the actor torso skeleton so Verlet cloth cannot pass through the body.
