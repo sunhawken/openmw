@@ -1,6 +1,7 @@
 #include "settingswindow.hpp"
 
 #include <array>
+#include <cmath>
 
 #include <unicode/locid.h>
 
@@ -271,6 +272,14 @@ namespace MWGui
         getWidget(unusedSlider, widgetName);
         unusedSlider->setVisible(false);
 
+        // Keep the legacy Player Only switch and the newer NPC-default switch as exact
+        // inverses. This preserves the current effective behavior of old configs while
+        // preventing the two UI controls from contradicting each other.
+        const bool npcJiggleByDefault
+            = Settings::game().mJiggleNpcDefaultEnabled && !Settings::game().mJiggleBonePlayerOnly;
+        Settings::game().mJiggleNpcDefaultEnabled.set(npcJiggleByDefault);
+        Settings::game().mJiggleBonePlayerOnly.set(!npcJiggleByDefault);
+
         configureWidgets(mMainWidget, true);
 
         setTitle("#{OMWEngine:SettingsWindow}");
@@ -324,6 +333,9 @@ namespace MWGui
         mJiggleAdvancedLayout->getWidget(mJiggleDisableNpcButton, "JiggleDisableNpcButton");
         mJiggleAdvancedLayout->getWidget(mJiggleClearNpcRuleButton, "JiggleClearNpcRuleButton");
         configureWidgets(mJiggleAdvancedLayout->mMainWidget, true);
+        MyGUI::ScrollBar* gluteMassSlider;
+        mJiggleAdvancedLayout->getWidget(gluteMassSlider, "JiggleGluteMassSlider");
+        gluteMassSlider->setEnabled(!Settings::game().mJiggleGluteAutoMass);
         mJiggleAdvancedLayout->setVisible(false);
         mJiggleMeshScopeCombo->setIndexSelected(0);
         refreshJiggleAdvancedPanel();
@@ -609,25 +621,63 @@ namespace MWGui
 
     void SettingsWindow::onJiggleUseCurrentMeshClicked(MyGUI::Widget*)
     {
-        mJiggleMeshPathInput->setOnlyText(Misc::JiggleZOffset::currentPlayerMesh());
+        const std::string& mesh = Misc::JiggleZOffset::currentPlayerMesh();
+        if (mesh.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupMeshRequired}");
+            return;
+        }
+
+        mJiggleMeshPathInput->setOnlyText(mesh);
+        mJiggleBreastOffsetInput->setOnlyText(std::to_string(Settings::game().mJiggleBoneBreastZOffset.get()));
+        mJiggleButtOffsetInput->setOnlyText(std::to_string(Settings::game().mJiggleBoneButtZOffset.get()));
     }
 
     void SettingsWindow::onJiggleSaveMeshOffsetClicked(MyGUI::Widget*)
     {
         const std::string mesh = mJiggleMeshPathInput->getOnlyText().asUTF8();
         if (mesh.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupMeshRequired}");
             return;
+        }
 
-        auto parseOr = [](const std::string& text, float fallback) {
+        bool valid = true;
+        auto parseOffset = [&valid](const std::string& text, float fallback) {
             if (text.empty())
-                return fallback;
-            try { return std::stof(text); }
-            catch (...) { return fallback; }
+                return std::clamp(fallback, -50.f, 50.f);
+            try
+            {
+                std::size_t consumed = 0;
+                const float value = std::stof(text, &consumed);
+                if (consumed != text.size() || !std::isfinite(value))
+                {
+                    valid = false;
+                    return 0.f;
+                }
+                return std::clamp(value, -50.f, 50.f);
+            }
+            catch (...)
+            {
+                valid = false;
+                return 0.f;
+            }
         };
-        const float breast = parseOr(mJiggleBreastOffsetInput->getOnlyText().asUTF8(),
+
+        const float breast = parseOffset(mJiggleBreastOffsetInput->getOnlyText().asUTF8(),
             Settings::game().mJiggleBoneBreastZOffset);
-        const float butt = parseOr(mJiggleButtOffsetInput->getOnlyText().asUTF8(),
+        const float butt = parseOffset(mJiggleButtOffsetInput->getOnlyText().asUTF8(),
             Settings::game().mJiggleBoneButtZOffset);
+        if (!valid)
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupInvalidOffset}");
+            return;
+        }
+
+        // Reflect any safety clamp in the text fields so the value the user sees is
+        // exactly the value that will be stored.
+        mJiggleBreastOffsetInput->setOnlyText(std::to_string(breast));
+        mJiggleButtOffsetInput->setOnlyText(std::to_string(butt));
 
         const size_t scope = mJiggleMeshScopeCombo->getIndexSelected();
         if (scope == 0)
@@ -638,7 +688,10 @@ namespace MWGui
         {
             const std::string npcName = mJiggleNpcNameInput->getOnlyText().asUTF8();
             if (npcName.empty())
+            {
+                MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupNpcRequired}");
                 return;
+            }
             Misc::JiggleZOffset::saveScoped(
                 Misc::JiggleZOffset::normalizedActorScope(false, npcName), mesh, breast, butt);
         }
@@ -674,7 +727,10 @@ namespace MWGui
     {
         std::string mesh = Misc::StringUtils::lowerCase(mJiggleMeshPathInput->getOnlyText().asUTF8());
         if (mesh.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupMeshRequired}");
             return;
+        }
         std::vector<std::string> list = Settings::game().mJiggleAutoRigBlacklist.get();
         if (std::find(list.begin(), list.end(), mesh) == list.end())
             list.push_back(mesh);
@@ -722,13 +778,25 @@ namespace MWGui
 
     void SettingsWindow::onJiggleEnableNpcClicked(MyGUI::Widget*)
     {
-        updateNpcRule(mJiggleNpcNameInput->getOnlyText().asUTF8(), true, false);
+        const std::string name = mJiggleNpcNameInput->getOnlyText().asUTF8();
+        if (name.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupNpcRequired}");
+            return;
+        }
+        updateNpcRule(name, true, false);
         refreshJiggleAdvancedPanel();
     }
 
     void SettingsWindow::onJiggleDisableNpcClicked(MyGUI::Widget*)
     {
-        updateNpcRule(mJiggleNpcNameInput->getOnlyText().asUTF8(), false, false);
+        const std::string name = mJiggleNpcNameInput->getOnlyText().asUTF8();
+        if (name.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupNpcRequired}");
+            return;
+        }
+        updateNpcRule(name, false, false);
         refreshJiggleAdvancedPanel();
     }
 
@@ -1061,7 +1129,32 @@ namespace MWGui
 
         if (getSettingType(sender) == checkButtonType)
         {
-            Settings::get<bool>(getSettingCategory(sender), getSettingName(sender)).set(newState);
+            const std::string_view settingName = getSettingName(sender);
+            Settings::get<bool>(getSettingCategory(sender), settingName).set(newState);
+
+            // These two controls describe the same default-NPC policy from opposite
+            // directions. Keep them synchronized so neither one can make the other
+            // appear broken.
+            if (settingName == "jiggle player only")
+            {
+                Settings::game().mJiggleNpcDefaultEnabled.set(!newState);
+                if (mJiggleAdvancedLayout)
+                    configureWidgets(mJiggleAdvancedLayout->mMainWidget, false);
+            }
+            else if (settingName == "jiggle npc default enabled")
+            {
+                Settings::game().mJiggleBonePlayerOnly.set(!newState);
+                configureWidgets(mMainWidget, false);
+            }
+            else if (settingName == "jiggle glute auto mass" && mJiggleAdvancedLayout)
+            {
+                // Manual glute mass is not read while auto mass is active. Disable the
+                // slider instead of letting the user change a value that has no effect.
+                MyGUI::ScrollBar* gluteMassSlider;
+                mJiggleAdvancedLayout->getWidget(gluteMassSlider, "JiggleGluteMassSlider");
+                gluteMassSlider->setEnabled(!newState);
+            }
+
             apply();
             return;
         }
