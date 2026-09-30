@@ -32,7 +32,7 @@ namespace MWRender
     {
     public:
         CharacterPreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem, const MWWorld::Ptr& character,
-            int sizeX, int sizeY, const osg::Vec3f& position, const osg::Vec3f& lookAt);
+            int sizeX, int sizeY, const osg::Vec3f& position, const osg::Vec3f& lookAt, float lightSide = 1.f);
         virtual ~CharacterPreview();
 
         int getTextureWidth() const;
@@ -61,6 +61,8 @@ namespace MWRender
         osg::ref_ptr<DrawOnceCallback> mDrawOnceCallback;
         osg::ref_ptr<CharacterPreviewRTTNode> mRTTNode;
 
+        /// -1 lights the subject from behind (used by the back view of the jiggle preview).
+        float mLightSide;
         osg::Vec3f mPosition;
         osg::Vec3f mLookAt;
 
@@ -90,6 +92,27 @@ namespace MWRender
         osg::ref_ptr<osg::Viewport> mViewport;
 
         void onSetup() override;
+    };
+
+    /// Front or back view of a character used by the Retarget Jiggle window; it can play a walking loop in
+    /// real time so the jiggle can be judged in motion.
+    class JigglePreview : public CharacterPreview
+    {
+    public:
+        JigglePreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem, const MWWorld::Ptr& character,
+            bool front);
+        void updatePtr(const MWWorld::Ptr& ptr);
+        void setWalking(bool walking);
+        /// Advances the animation and redraws when walking.
+        void tick(float dt);
+
+    protected:
+        void onSetup() override;
+
+    private:
+        void applyPose();
+        bool mFront;
+        bool mWalking = false;
     };
 
     class UpdateCameraCallback;

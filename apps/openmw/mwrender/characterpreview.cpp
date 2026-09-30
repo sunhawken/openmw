@@ -51,7 +51,7 @@ namespace MWRender
 
         void operator()(osg::Node* node, osg::NodeVisitor* nv)
         {
-            if (!mRendered)
+            if (!mRendered || mLive)
             {
                 mRendered = true;
 
@@ -59,7 +59,9 @@ namespace MWRender
 
                 osg::ref_ptr<osg::FrameStamp> previousFramestamp = const_cast<osg::FrameStamp*>(nv->getFrameStamp());
                 osg::FrameStamp* fs = new osg::FrameStamp(*previousFramestamp);
-                fs->setSimulationTime(0.0);
+                // A live preview keeps real time so animations and secondary motion (jiggle) keep moving.
+                if (!mLive)
+                    fs->setSimulationTime(0.0);
 
                 nv->setFrameStamp(fs);
 
@@ -79,10 +81,14 @@ namespace MWRender
 
         void redrawNextFrame() { mRendered = false; }
 
+        /// Render every frame with real time instead of once at time zero.
+        void setLive(bool live) { mLive = live; }
+
         unsigned int getLastRenderedFrame() const { return mLastRenderedFrame; }
 
     private:
         bool mRendered;
+        bool mLive = false;
         unsigned int mLastRenderedFrame;
         osg::ref_ptr<osg::Node> mSubgraph;
     };
@@ -210,9 +216,11 @@ namespace MWRender
     };
 
     CharacterPreview::CharacterPreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem,
-        const MWWorld::Ptr& character, int sizeX, int sizeY, const osg::Vec3f& position, const osg::Vec3f& lookAt)
+        const MWWorld::Ptr& character, int sizeX, int sizeY, const osg::Vec3f& position, const osg::Vec3f& lookAt,
+        float lightSide)
         : mParent(parent)
         , mResourceSystem(resourceSystem)
+        , mLightSide(lightSide)
         , mPosition(position)
         , mLookAt(lookAt)
         , mCharacter(character)
@@ -286,7 +294,7 @@ namespace MWRender
         float azimuth = osg::DegreesToRadians(Fallback::Map::getFloat("Inventory_DirectionalRotationX"));
         float altitude = osg::DegreesToRadians(Fallback::Map::getFloat("Inventory_DirectionalRotationY"));
         float positionX = -std::cos(azimuth) * std::sin(altitude);
-        float positionY = std::sin(azimuth) * std::sin(altitude);
+        float positionY = std::sin(azimuth) * std::sin(altitude) * mLightSide;
         float positionZ = std::cos(altitude);
         light->setPosition(osg::Vec4(positionX, positionY, positionZ, 0.0));
         light->setDiffuse(osg::Vec4(diffuseR, diffuseG, diffuseB, 1));
@@ -508,6 +516,72 @@ namespace MWRender
 
         auto viewMatrix = osg::Matrixf::lookAt(mPosition * scale.z(), mLookAt * scale.z(), osg::Vec3f(0, 0, 1));
         mRTTNode->setViewMatrix(viewMatrix);
+    }
+
+    // --------------------------------------------------------------------------------------------------
+
+    JigglePreview::JigglePreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem,
+        const MWWorld::Ptr& character, bool front)
+        : CharacterPreview(parent, resourceSystem, character, 512, 768, osg::Vec3f(0, front ? 700.f : -700.f, 71),
+            osg::Vec3f(0, 0, 71), front ? 1.f : -1.f)
+        , mFront(front)
+    {
+    }
+
+    void JigglePreview::updatePtr(const MWWorld::Ptr& ptr)
+    {
+        mCharacter = MWWorld::Ptr(ptr.getBase(), nullptr);
+    }
+
+    void JigglePreview::onSetup()
+    {
+        CharacterPreview::onSetup();
+        osg::Vec3f scale(1.f, 1.f, 1.f);
+        mCharacter.getClass().adjustScale(mCharacter, scale, true);
+        mNode->setScale(scale);
+        mRTTNode->setViewMatrix(osg::Matrixf::lookAt(mPosition * scale.z(), mLookAt * scale.z(), osg::Vec3f(0, 0, 1)));
+    }
+
+    void JigglePreview::setWalking(bool walking)
+    {
+        mWalking = walking;
+        applyPose();
+    }
+
+    void JigglePreview::applyPose()
+    {
+        if (!mAnimation.get())
+            return;
+        mAnimation->showWeapons(false);
+        mAnimation->updateParts();
+        if (!mCurrentAnimGroup.empty())
+            mAnimation->disable(mCurrentAnimGroup);
+
+        if (mWalking && mAnimation->hasAnimation("walkforward"))
+        {
+            mCurrentAnimGroup = "walkforward";
+            mAnimation->play(mCurrentAnimGroup, 1, BlendMask::BlendMask_All, false, 1.0f, "start", "stop", 0.0f,
+                std::numeric_limits<uint32_t>::max(), true);
+        }
+        else
+        {
+            mCurrentAnimGroup = "inventoryhandtohand";
+            mAnimation->play(mCurrentAnimGroup, 1, BlendMask::BlendMask_All, false, 1.0f, "start", "stop", 0.0f, 0);
+        }
+        mAnimation->runAnimation(0.0f);
+        // A walking preview redraws every frame in real time so jiggle moves; a standing one draws once.
+        mDrawOnceCallback->setLive(mWalking);
+        setBlendMode();
+        redraw();
+    }
+
+    void JigglePreview::tick(float dt)
+    {
+        if (!mWalking || !mAnimation.get())
+            return;
+        mAnimation->runAnimation(dt);
+        setBlendMode();
+        redraw();
     }
 
     // --------------------------------------------------------------------------------------------------

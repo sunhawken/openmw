@@ -1,7 +1,14 @@
 #ifndef OPENMW_MWRENDER_JIGGLEAUTORIG_H
 #define OPENMW_MWRENDER_JIGGLEAUTORIG_H
 
+#include <array>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
+
+#include <osg/Vec2f>
+#include <osg/Vec3f>
 
 namespace osg
 {
@@ -35,6 +42,24 @@ namespace MWRender
         /// @param allowBodyAutoRig false skips female-body breast/butt/thigh generation.
         void run(osg::Group* objectRoot, bool isPlayer = false, bool allowBodyAutoRig = true,
             std::string_view actorName = {});
+
+        /// Geometry of an actor's current outfit (all attached body/clothing/armor meshes) plus the
+        /// jiggle anchors, for the Retarget Jiggle window. Positions are mesh space: +x forward,
+        /// +y the character's left, +z up.
+        struct RetargetPreview
+        {
+            std::string mChestMesh; // lower-case mesh file keying the saved breast anchors ("" = none)
+            std::string mPelvisMesh; // lower-case mesh file keying the saved butt anchors
+            std::vector<osg::Vec3f> mVertices; // triangle corners, three per triangle
+            std::vector<osg::Vec3f> mNormals; // one per corner
+            float mYMin = 0.f, mYMax = 0.f, mZMin = 0.f, mZMax = 0.f;
+            /// 0 = breast left, 1 = breast right, 2 = butt left, 3 = butt right; (y, z) in mesh space.
+            std::array<std::optional<osg::Vec2f>, 4> mAuto; // where the auto-rigger would put them
+            std::array<std::optional<osg::Vec2f>, 4> mSaved; // hand-placed positions saved for these meshes
+        };
+
+        /// Fills @p out from @p objectRoot (an actor's object root). Returns false when there is no rigged mesh.
+        bool buildRetargetPreview(osg::Group* objectRoot, RetargetPreview& out);
     }
 }
 

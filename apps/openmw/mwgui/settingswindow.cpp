@@ -1,5 +1,7 @@
 #include "settingswindow.hpp"
 
+#include "jiggleretargetpanel.hpp"
+
 #include <array>
 #include <cmath>
 
@@ -227,6 +229,8 @@ namespace MWGui
 
     void SettingsWindow::onFrame(float duration)
     {
+        if (mJiggleRetargetPanel)
+            mJiggleRetargetPanel->onFrame(duration);
         if (mScriptView->getVisible())
         {
             const auto scriptsSize = mScriptAdapter->getSize();
@@ -260,8 +264,11 @@ namespace MWGui
         return nullptr;
     }
 
-    SettingsWindow::SettingsWindow(Files::ConfigurationManager& cfgMgr)
+    SettingsWindow::SettingsWindow(
+        Files::ConfigurationManager& cfgMgr, osg::Group* sceneRoot, Resource::ResourceSystem* resourceSystem)
         : WindowBase("openmw_settings_window.layout")
+        , mSceneRoot(sceneRoot)
+        , mResourceSystem(resourceSystem)
         , mKeyboardMode(true)
         , mCurrentPage(static_cast<size_t>(-1))
         , mCfgMgr(cfgMgr)
@@ -308,6 +315,9 @@ namespace MWGui
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
+        getWidget(mJiggleRetargetButton, "JiggleRetargetButton");
+        mJiggleRetargetButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJiggleRetargetClicked);
         getWidget(mVerletResetButton, "VerletResetButton");
         mVerletResetButton->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onVerletResetButtonClicked);
         getWidget(mBakeBreastToNifButton, "BakeBreastToNifButton");
@@ -1165,6 +1175,15 @@ namespace MWGui
         configureWidgets(mMainWidget, false);
     }
 
+    SettingsWindow::~SettingsWindow() = default;
+
+    void SettingsWindow::onJiggleRetargetClicked(MyGUI::Widget* /*sender*/)
+    {
+        if (!mJiggleRetargetPanel)
+            mJiggleRetargetPanel = std::make_unique<JiggleRetargetPanel>(mSceneRoot, mResourceSystem);
+        mJiggleRetargetPanel->setVisible(!mJiggleRetargetPanel->isVisible());
+    }
+
     void SettingsWindow::onVerletResetButtonClicked(MyGUI::Widget* /*sender*/)
     {
         auto& game = Settings::game();
@@ -1666,6 +1685,8 @@ namespace MWGui
     {
         if (mJiggleAdvancedLayout)
             mJiggleAdvancedLayout->setVisible(false); // close advanced jiggle
+        if (mJiggleRetargetPanel)
+            mJiggleRetargetPanel->setVisible(false);
         // Save user settings
         Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");
         MWBase::Environment::get().getLuaManager()->savePermanentStorage(mCfgMgr.getUserConfigPath());
