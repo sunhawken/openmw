@@ -1463,18 +1463,22 @@
                 <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 362 384" align="Stretch" name="VerletScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>
                     <Property key="VisibleVScroll" value="true"/>
-                    <Property key="CanvasSize" value="344 1230"/>
+                    <Property key="CanvasSize" value="344 1420"/>
 
-                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 330 36" align="Left Top">
-                        <Property key="Caption" value="Runtime cloth controls for capes, skirts, hair and tails. NIF values are used unless Global Overrides is enabled."/>
+                    <Widget type="EditBox" skin="NormalText" position="6 4 330 36" align="Left Top">
+                        <Property key="Caption" value="Runtime cloth controls. NIF values are used unless Global Overrides is on."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
                     </Widget>
 
-                    <Widget type="TextBox" skin="NormalText" position="6 42 160 18" align="Left Top">
-                        <Property key="Caption" value="Verlet Preset"/>
+                    <Widget type="TextBox" skin="NormalText" position="6 42 90 18" align="Left Top">
+                        <Property key="Caption" value="Preset"/>
                     </Widget>
-                    <Widget type="ComboBox" skin="MW_ComboBox" position="166 38 170 24" align="Left Top" name="VerletPresetList">
-                        <Property key="AddItem" value="Custom"/>
-                        <Property key="AddItem" value="NIF Metadata (Recommended)"/>
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="196 38 140 24" align="Left Top" name="VerletResetDefaultsButton">
+                        <Property key="Caption" value="Reset Defaults"/>
+                    </Widget>
+                    <Widget type="ComboBox" skin="MW_ComboBox" position="60 38 130 24" align="Left Top" name="VerletPresetList">
                     </Widget>
 
                     <Widget type="HBox" position="6 72 336 28">
@@ -1510,7 +1514,12 @@
                         <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="711"/>
                         <UserString key="SettingLabelWidget" value="VerletGravityText"/><UserString key="SettingLabelCaption" value="Verlet Gravity: {value}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 216 330 18"><Property key="Caption" value="Higher = falls/drops down faster"/></Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 216 330 36" align="Left Top">
+                        <Property key="Caption" value="Higher = falls/drops down faster"/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 246 330 18" name="VerletFrictionText"/>
                     <Widget type="ScrollBar" skin="MW_HScroll" position="6 266 330 18" name="VerletFrictionSlider">
@@ -1520,7 +1529,12 @@
                         <UserString key="SettingMin" value="0.70"/><UserString key="SettingMax" value="0.999"/>
                         <UserString key="SettingLabelWidget" value="VerletFrictionText"/><UserString key="SettingLabelCaption" value="Verlet Friction: {value}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 286 330 18"><Property key="Caption" value="Lower = settles faster; higher = more flowing inertia"/></Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 286 330 36" align="Left Top">
+                        <Property key="Caption" value="Lower = settles faster; higher = more flowing inertia"/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 316 330 18" name="VerletWindText"/>
                     <Widget type="ScrollBar" skin="MW_HScroll" position="6 336 330 18" name="VerletWindSlider">
@@ -1540,8 +1554,11 @@
                         <UserString key="SettingLabelWidget" value="VerletWindFrequencyText"/><UserString key="SettingLabelCaption" value="Wind Frequency: {value}"/>
                     </Widget>
 
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 432 330 58">
+                    <Widget type="EditBox" skin="SandText" position="6 432 330 58" align="Left Top">
                         <Property key="Caption" value="Movement response uses each NIF-authored inertia and air-drag metadata. Choose NIF Metadata (Recommended) for Siff."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
                     </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 502 330 18" name="VerletIdleDampingText"/>
@@ -1552,7 +1569,12 @@
                         <UserString key="SettingMin" value="0.50"/><UserString key="SettingMax" value="1.0"/>
                         <UserString key="SettingLabelWidget" value="VerletIdleDampingText"/><UserString key="SettingLabelCaption" value="Idle Retention: {value}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 542 330 18"><Property key="Caption" value="Lower = cape settles downward faster when standing still"/></Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 542 330 36" align="Left Top">
+                        <Property key="Caption" value="Lower = cape settles downward faster when standing still"/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 572 330 18" name="VerletIterationsText"/>
                     <Widget type="ScrollBar" skin="MW_HScroll" position="6 592 330 18" name="VerletIterationsSlider">
@@ -1571,7 +1593,12 @@
                         <UserString key="SettingMin" value="1"/><UserString key="SettingMax" value="8"/>
                         <UserString key="SettingLabelWidget" value="VerletSubstepsText"/><UserString key="SettingLabelCaption" value="Substeps: {value}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 670 330 18"><Property key="Caption" value="More iterations/substeps = steadier cloth but more CPU cost"/></Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 670 330 36" align="Left Top">
+                        <Property key="Caption" value="More iterations/substeps = steadier cloth but more CPU cost"/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 708 330 18" name="VerletPinCountText"/>
                     <Widget type="ScrollBar" skin="MW_HScroll" position="6 728 330 18" name="VerletPinCountSlider">
@@ -1581,7 +1608,12 @@
                         <UserString key="SettingMin" value="1"/><UserString key="SettingMax" value="8"/>
                         <UserString key="SettingLabelWidget" value="VerletPinCountText"/><UserString key="SettingLabelCaption" value="Pinned Top Bones: {value}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 748 330 36"><Property key="Caption" value="Higher = more of the shoulder/upper-arm region stays rigid."/></Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 748 330 36" align="Left Top">
+                        <Property key="Caption" value="Higher = more of the shoulder/upper-arm region stays rigid."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
 
                     <Widget type="HBox" position="6 798 336 28">
                         <Widget type="AutoSizedButton" skin="MW_Button">
@@ -1609,7 +1641,12 @@
                         <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="6"/>
                         <UserString key="SettingLabelWidget" value="VerletBodyMarginText"/><UserString key="SettingLabelCaption" value="Collision Padding: {value}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 934 330 36"><Property key="Caption" value="Capsules follow Pelvis, Spine, Spine1, Spine2 and Neck. Raise radius/padding if the cape still clips."/></Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 934 330 36" align="Left Top">
+                        <Property key="Caption" value="Capsules follow Pelvis, Spine, Spine1, Spine2 and Neck. Raise radius/padding if the cape still clips."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
 
                     <Widget type="TextBox" skin="NormalText" position="6 988 330 18" name="VerletMaxStepText"/>
                     <Widget type="ScrollBar" skin="MW_HScroll" position="6 1008 330 18" name="VerletMaxStepSlider">
@@ -1619,10 +1656,60 @@
                         <UserString key="SettingMin" value="0.25"/><UserString key="SettingMax" value="15"/>
                         <UserString key="SettingLabelWidget" value="VerletMaxStepText"/><UserString key="SettingLabelCaption" value="Max Step: {value}"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="6 1028 330 36"><Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/></Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 1028 330 36" align="Left Top">
+                        <Property key="Caption" value="Safety clamp. Lower values reduce explosive motion after animation spikes."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
 
-                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 1080 330 80">
+                    <Widget type="TextBox" skin="NormalText" position="6 1080 330 18" name="VerletTrailAngleText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 1100 330 18" name="VerletTrailAngleSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet trail angle"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="85"/>
+                        <UserString key="SettingLabelWidget" value="VerletTrailAngleText"/><UserString key="SettingLabelCaption" value="Trail Angle: {value}"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 1120 330 36" align="Left Top">
+                        <Property key="Caption" value="Max lean of streaming hair/cloth at speed. Lower = hangs more, higher = flies out more."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 1160 330 18" name="VerletTrailCurveText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 1180 330 18" name="VerletTrailCurveSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet trail curve"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0"/><UserString key="SettingMax" value="1"/>
+                        <UserString key="SettingLabelWidget" value="VerletTrailCurveText"/><UserString key="SettingLabelCaption" value="Trail Curve: {value}"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 1200 330 36" align="Left Top">
+                        <Property key="Caption" value="0 = whole chain tilts stiffly. Higher = root follows the body, tail streams in a smooth arc."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="NormalText" position="6 1240 330 18" name="VerletMotionSmoothingText"/>
+                    <Widget type="ScrollBar" skin="MW_HScroll" position="6 1260 330 18" name="VerletMotionSmoothingSlider">
+                        <Property key="Range" value="1000"/><Property key="Page" value="25"/>
+                        <UserString key="SettingType" value="Slider"/><UserString key="SettingCategory" value="Game"/>
+                        <UserString key="SettingName" value="verlet motion smoothing"/><UserString key="SettingValueType" value="Float"/>
+                        <UserString key="SettingMin" value="0.02"/><UserString key="SettingMax" value="0.4"/>
+                        <UserString key="SettingLabelWidget" value="VerletMotionSmoothingText"/><UserString key="SettingLabelCaption" value="Motion Smoothing: {value}"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="SandText" position="6 1280 330 36" align="Left Top">
+                        <Property key="Caption" value="Softens start/stop lag. Higher = smoother and lazier, lower = snappier."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                    </Widget>
+                    <Widget type="EditBox" skin="NormalText" position="6 1330 330 80" align="Left Top">
                         <Property key="Caption" value="Recommended: use NIF Metadata for authored Siff tuning. Global Overrides are for manual testing only; keep Body Collision ON and Wind While Idle OFF."/>
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
                     </Widget>
                 </Widget>
             </Widget>
