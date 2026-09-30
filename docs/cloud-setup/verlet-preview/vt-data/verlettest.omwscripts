@@ -1,0 +1,2 @@
+PLAYER: scripts/verlettest/player.lua
+GLOBAL: scripts/verlettest/global.lua
