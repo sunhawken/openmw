@@ -79,6 +79,6 @@ template<class T>struct Value{T v;operator T()const{return v;}T get()const{retur
 struct Game {
  Value<bool> mVerletEnabled{true},mVerletUseGlobalSettings{false},mVerletBodyCollision{true},mVerletIdleWind{false};
  Value<int> mVerletPinCount{3},mVerletSubsteps{6},mVerletIterations{20};
- Value<float> mVerletGravity{711},mVerletWindStrength{0},mVerletWindFrequency{0.8},mVerletFriction{0.94},mVerletMaxStep{6},mVerletIdleDamping{0.90},mVerletBodyCollisionRadius{12},mVerletBodyCollisionMargin{1.5};
+ Value<float> mVerletGravity{711},mVerletWindStrength{0},mVerletWindFrequency{0.8},mVerletFriction{0.94},mVerletMaxStep{6},mVerletIdleDamping{0.90},mVerletBodyCollisionRadius{12},mVerletBodyCollisionMargin{1.5},mVerletMovementInfluence{1};
 };inline Game& game(){static Game g;return g;}
 }
