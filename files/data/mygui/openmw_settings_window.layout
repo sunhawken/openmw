@@ -1,6 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <MyGUI type="Layout" version="3.2.0">
-    <!-- OpenMW Layout::initialise requires the top-level _Main widget below. -->
     <Widget type="Window" skin="MW_Window" position="0 0 400 485" layer="Settings" name="_Main">
         <Property key="MinSize" value="640 550"/>
         <Widget type="TabControl" skin="TabControl" position="8 8 368 405" align="Stretch" name="SettingsTab">
