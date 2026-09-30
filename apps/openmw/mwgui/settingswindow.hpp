@@ -58,6 +58,11 @@ namespace MWGui
         MyGUI::Button* mJiggleAdvancedPanelToggle;
         std::unique_ptr<Layout> mJiggleAdvancedLayout;
         MyGUI::Window* mJiggleAdvancedWindow;
+        MyGUI::TextBox* mJiggleQuickCurrentInfo;
+        MyGUI::Button* mJiggleQuickAddAnyButton;
+        MyGUI::Button* mJiggleQuickAddPlayerButton;
+        MyGUI::Button* mJiggleQuickBlacklistButton;
+        MyGUI::Button* mJiggleQuickClearButton;
         MyGUI::Button* mJiggleAdvancedCloseButton;
         MyGUI::ComboBox* mJiggleMeshScopeCombo;
         MyGUI::EditBox* mJiggleMeshPathInput;
@@ -122,6 +127,10 @@ namespace MWGui
         void onBakeBreastToNifButtonClicked(MyGUI::Widget* sender);
         void onJiggleAdvancedPanelToggleClicked(MyGUI::Widget* sender);
         void onJiggleAdvancedCloseClicked(MyGUI::Widget* sender);
+        void onJiggleQuickAddAnyClicked(MyGUI::Widget* sender);
+        void onJiggleQuickAddPlayerClicked(MyGUI::Widget* sender);
+        void onJiggleQuickBlacklistClicked(MyGUI::Widget* sender);
+        void onJiggleQuickClearClicked(MyGUI::Widget* sender);
         void onJiggleUseCurrentMeshClicked(MyGUI::Widget* sender);
         void onJiggleSaveMeshOffsetClicked(MyGUI::Widget* sender);
         void onJiggleRemoveMeshOffsetClicked(MyGUI::Widget* sender);
