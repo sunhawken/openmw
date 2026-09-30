@@ -689,7 +689,9 @@ namespace MWRender
             mFilteredRootVelocity += (rootVelocity - mFilteredRootVelocity) * velocityBlend;
             mPreviousRootVelocity = rootVelocity;
             mRootVelocityInitialized = true;
-            inertialAcceleration = -mFilteredRootAcceleration * inertia;
+            // Softer cloth lags the body more: extra follow-through on every start/stop/turn.
+            inertialAcceleration = -mFilteredRootAcceleration * inertia
+                * (1.f + 2.f * std::clamp(Settings::game().mVerletSoftness.get(), 0.f, 1.f));
         }
         const float anchorSpeed = static_cast<float>(anchorDelta.length() / std::max(dt, 1e-6));
         const osg::Matrix frameDelta = osg::Matrix::inverse(mPreviousRootParentWorld) * rootParentWorld;
@@ -742,8 +744,10 @@ namespace MWRender
             }
         }
         // Less damping while moving lets soft cloth swing and follow through.
-        const float effectiveFrictionBase = stationary ? std::min(frictionBase, idleDamping)
-                                                       : std::pow(frictionBase, 1.f - 0.4f * softness);
+        // With flutter on, cloth keeps flowing at rest instead of being damped to a stop.
+        const float effectiveFrictionBase = (stationary && flutter <= 0.f)
+            ? std::min(frictionBase, idleDamping)
+            : std::pow(frictionBase, 1.f - 0.5f * softness);
         const float friction = std::pow(effectiveFrictionBase, subDt * sReferenceFps);
         const float effectiveWindStrength = (!idleWind && stationary) ? 0.f : windStrength;
 
@@ -819,8 +823,11 @@ namespace MWRender
                 || (previousCapsules[i].mB - mWorldCapsules[i].mB).length2() > colliderThreshold2;
         if (mHasGround && std::abs(mGroundZ - previousGroundZ) > std::sqrt(colliderThreshold2))
             colliderMoved = true;
+        // Cloth must never freeze: with flutter on (default) the physics keeps flowing even when the
+        // actor is idle, so sleeping is only allowed for a chain whose flutter has been turned off.
+        (void)colliderMoved;
         const bool canSleep = mSettings.mSleepSpeed > 0.f && stationary && !colliderMoved
-            && std::abs(effectiveWindStrength) < 1e-6f && !useGlobal;
+            && std::abs(effectiveWindStrength) < 1e-6f && !useGlobal && flutter <= 0.f && softness <= 0.f;
         if (mSleeping && canSleep)
         {
             for (int i = 0; i < pinCount; ++i)
@@ -914,22 +921,28 @@ namespace MWRender
                     std::sin(phase * 4.117f + 0.9f) * effectiveWindStrength * 0.35f,
                     -gravity);
                 acceleration += inertialAcceleration;
-                if (flutter > 0.f && !stationary)
+                if (flutter > 0.f)
                 {
-                    // Light-fabric billow: a slow travelling ripple perpendicular to the airflow,
-                    // stronger toward the free tip and with speed. Smooth, no noise, so no jitter.
-                    const float speedFactor = std::min(mFilteredRootVelocity.length() / 300.f, 1.f);
+                    // Water-like flow: a slow travelling wave runs down every chain all the
+                    // time (a gentle sway at rest, a strong flowing ripple when moving),
+                    // stronger toward the free tip. Smooth sines only, so no jitter.
+                    const float speedFactor = std::min(mFilteredRootVelocity.length() / 250.f, 1.f);
+                    const float flowAmount = 0.35f + 0.65f * speedFactor;
                     const osg::Vec3f flow(-mFilteredRootVelocity.x(), -mFilteredRootVelocity.y(), 0.f);
-                    osg::Vec3f side(-flow.y(), flow.x(), 0.f);
-                    if (side.normalize() > 1e-5f)
-                    {
-                        const float tipT = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
-                            / static_cast<float>(std::max<std::size_t>(1, mPositions.size() - static_cast<std::size_t>(pinCount)));
-                        const float wave = static_cast<float>(simTime) * 9.f - static_cast<float>(i) * 0.95f + mFlutterPhase;
-                        const float amplitude = flutter * speedFactor * (0.25f + 0.75f * tipT) * 1100.f;
-                        acceleration += side * (std::sin(wave) * amplitude)
-                            + osg::Vec3f(0.f, 0.f, std::sin(wave * 0.7f + 1.3f) * amplitude * 0.6f);
-                    }
+                    osg::Vec3f flowSide(-flow.y(), flow.x(), 0.f);
+                    const float sideBlend = std::min(flow.length() / 40.f, 1.f);
+                    flowSide.normalize();
+                    const osg::Vec3f restSide(std::cos(mFlutterPhase), std::sin(mFlutterPhase), 0.f);
+                    osg::Vec3f side = restSide * (1.f - sideBlend) + flowSide * sideBlend;
+                    side.normalize();
+                    const float tipT = static_cast<float>(i - static_cast<std::size_t>(pinCount) + 1)
+                        / static_cast<float>(
+                            std::max<std::size_t>(1, mPositions.size() - static_cast<std::size_t>(pinCount)));
+                    const float wave
+                        = static_cast<float>(simTime) * 4.2f - static_cast<float>(i) * 0.7f + mFlutterPhase;
+                    const float amplitude = flutter * flowAmount * (0.2f + 0.8f * tipT) * 1400.f;
+                    acceleration += side * (std::sin(wave) * amplitude)
+                        + osg::Vec3f(0.f, 0.f, std::sin(wave * 0.6f + 1.3f) * amplitude * 0.7f);
                 }
                 if (airDrag > 0.f)
                 {
