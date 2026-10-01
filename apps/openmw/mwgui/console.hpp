@@ -126,6 +126,10 @@ namespace MWGui
         void listNames();
 
         void initConsoleHistory();
+
+        /// "bat <file>": runs a text file of console commands; returns false if the command is not "bat"
+        bool runBatchFile(const std::string& command);
+        int mBatchDepth = 0;
     };
 }
 #endif
