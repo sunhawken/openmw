@@ -16,6 +16,7 @@
 #include <components/compiler/scanner.hpp>
 #include <components/files/conversion.hpp>
 #include <components/interpreter/interpreter.hpp>
+#include <components/misc/strings/algorithm.hpp>
 #include <components/misc/utf8stream.hpp>
 #include <components/settings/values.hpp>
 
@@ -230,6 +231,9 @@ namespace MWGui
         else
             print(mConsoleMode + " " + command + "\n");
 
+        if (mConsoleMode.empty() && runBatchFile(command))
+            return;
+
         if (!mConsoleMode.empty() || (command.size() >= 3 && std::string_view(command).substr(0, 3) == "lua"))
         {
             MWBase::Environment::get().getLuaManager()->handleConsoleCommand(mConsoleMode, command, mPtr);
@@ -276,6 +280,83 @@ namespace MWGui
         std::string line;
         while (std::getline(stream, line))
             execute(line);
+    }
+
+    bool Console::runBatchFile(const std::string& command)
+    {
+        // "bat <file>" (Skyrim style): run every line of a text file as a console command. A bare name gets ".txt";
+        // a relative name is looked up next to the OpenMW executable, then in the user config folder (where
+        // openmw.cfg lives), then in the working directory. Blank lines and ";" comment lines are skipped.
+        std::string_view text(command);
+        while (!text.empty() && isWhitespace(text.front()))
+            text.remove_prefix(1);
+        if (text.size() < 4 || !Misc::StringUtils::ciEqual(text.substr(0, 3), "bat") || !isWhitespace(text[3]))
+            return false;
+        text.remove_prefix(4);
+        while (!text.empty() && isWhitespace(text.front()))
+            text.remove_prefix(1);
+        while (!text.empty() && (isWhitespace(text.back()) || text.back() == '\r'))
+            text.remove_suffix(1);
+        if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
+            text = text.substr(1, text.size() - 2);
+        if (text.empty())
+        {
+            printError("Usage: bat <file>   (runs <file>.txt from the OpenMW folder, one console command per line)");
+            return true;
+        }
+
+        std::filesystem::path name = Files::pathFromUnicodeString(text);
+        if (!name.has_extension())
+            name += ".txt";
+        std::filesystem::path found;
+        if (name.is_absolute())
+            found = name;
+        else
+        {
+            for (const auto& dir : { mCfgMgr.getLocalPath(), mCfgMgr.getUserConfigPath(),
+                     std::filesystem::current_path() })
+            {
+                std::error_code ec;
+                if (std::filesystem::is_regular_file(dir / name, ec))
+                {
+                    found = dir / name;
+                    break;
+                }
+            }
+        }
+        if (found.empty() || !std::filesystem::is_regular_file(found))
+        {
+            printError("bat: file \"" + Files::pathToUnicodeString(name) + "\" not found next to openmw, in "
+                + Files::pathToUnicodeString(mCfgMgr.getUserConfigPath()) + " or in the working directory");
+            return true;
+        }
+        if (mBatchDepth >= 8)
+        {
+            printError("bat: files nested more than 8 deep (does a file run itself?) - stopped");
+            return true;
+        }
+
+        std::ifstream stream(found);
+        if (!stream.is_open())
+        {
+            printError("bat: failed to open \"" + Files::pathToUnicodeString(found)
+                + "\": " + std::generic_category().message(errno));
+            return true;
+        }
+        printOK("Running " + Files::pathToUnicodeString(found));
+        ++mBatchDepth;
+        std::string line;
+        while (std::getline(stream, line))
+        {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            const auto first = line.find_first_not_of(" \t");
+            if (first == std::string::npos || line[first] == ';')
+                continue;
+            execute(line.substr(first));
+        }
+        --mBatchDepth;
+        return true;
     }
 
     void Console::clear()
