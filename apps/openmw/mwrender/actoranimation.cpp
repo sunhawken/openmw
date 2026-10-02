@@ -1,10 +1,12 @@
 #include "actoranimation.hpp"
+#include <unordered_set>
 #include <utility>
 
 #include <osg/Group>
 #include <osg/Node>
 #include <osg/Vec4f>
 
+#include <components/debug/debuglog.hpp>
 #include <components/esm3/loadbody.hpp>
 #include <components/esm3/loadcell.hpp>
 #include <components/esm3/loadligh.hpp>
@@ -16,11 +18,14 @@
 #include <components/sceneutil/lightcommon.hpp>
 #include <components/sceneutil/lightmanager.hpp>
 #include <components/sceneutil/lightutil.hpp>
+#include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/skeleton.hpp>
 #include <components/sceneutil/util.hpp>
 #include <components/sceneutil/visitor.hpp>
 
 #include <components/misc/resourcehelpers.hpp>
+#include <components/misc/strings/algorithm.hpp>
+#include <components/misc/strings/lower.hpp>
 
 #include <components/settings/values.hpp>
 
@@ -38,6 +43,7 @@
 #include "../mwworld/ptr.hpp"
 
 #include "actorutil.hpp"
+#include "verletclothcontroller.hpp"
 #include "vismask.hpp"
 
 namespace MWRender
@@ -71,7 +77,75 @@ namespace MWRender
             std::vector<std::pair<osg::Node*, osg::Group*>> mFound;
         };
 
-        bool injectEquipmentCustomBones(const osg::Node* source, osg::Group* actorRoot)
+        // Lowercase names of every bone that a skinned mesh under the visited node is bound to.
+        class SkinnedBoneNameCollector : public osg::NodeVisitor
+        {
+        public:
+            SkinnedBoneNameCollector()
+                : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+            {
+            }
+            void apply(osg::Drawable& drawable) override
+            {
+                if (auto* rig = dynamic_cast<SceneUtil::RigGeometry*>(&drawable))
+                    for (const std::string& name : rig->getInfluenceBoneNames())
+                        mNames.insert(Misc::StringUtils::lowerCase(name));
+            }
+            std::unordered_set<std::string> mNames;
+        };
+
+        bool subtreeUsesAnyName(osg::Node& node, const std::unordered_set<std::string>& names)
+        {
+            if (names.contains(Misc::StringUtils::lowerCase(node.getName())))
+                return true;
+            if (osg::Group* group = node.asGroup())
+                for (unsigned int i = 0; i < group->getNumChildren(); ++i)
+                    if (subtreeUsesAnyName(*group->getChild(i), names))
+                        return true;
+            return false;
+        }
+
+        // Removes every Verlet controller that still simulates one of the given (removed) chain roots.
+        class StaleVerletControllerRemover : public osg::NodeVisitor
+        {
+        public:
+            explicit StaleVerletControllerRemover(const std::vector<osg::ref_ptr<osg::Node>>& removedRoots)
+                : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+                , mRemovedRoots(removedRoots)
+            {
+            }
+            void apply(osg::Node& node) override
+            {
+                osg::Callback* cb = node.getUpdateCallback();
+                while (cb)
+                {
+                    osg::Callback* next = cb->getNestedCallback();
+                    if (auto* verlet = dynamic_cast<VerletClothController*>(cb))
+                        for (const auto& root : mRemovedRoots)
+                            if (verlet->controls(root.get()))
+                            {
+                                node.removeUpdateCallback(cb);
+                                break;
+                            }
+                    cb = next;
+                }
+                traverse(node);
+            }
+
+        private:
+            const std::vector<osg::ref_ptr<osg::Node>>& mRemovedRoots;
+        };
+
+        bool isDescendantOf(const osg::Node* node, const osg::Node* ancestor)
+        {
+            for (; node; node = node->getNumParents() > 0 ? node->getParent(0) : nullptr)
+                if (node == ancestor)
+                    return true;
+            return false;
+        }
+
+        bool injectEquipmentCustomBones(
+            const osg::Node* source, osg::Group* actorRoot, std::vector<osg::ref_ptr<osg::Node>>& injectedRoots)
         {
             if (!source || !actorRoot)
                 return false;
@@ -99,6 +173,7 @@ namespace MWRender
                 osg::Node* copy = static_cast<osg::Node*>(
                     customRoot->clone(osg::CopyOp::DEEP_COPY_NODES));
                 targetParent->addChild(copy);
+                injectedRoots.emplace_back(copy);
                 injected = true;
             }
 
@@ -160,7 +235,8 @@ namespace MWRender
         // their own skinning (for example v_01..v_08 Verlet cape bones).
         // SceneUtil::attach binds the part's RigGeometry to the actor skeleton by
         // bone name, so those custom bones must exist in the actor skeleton first.
-        const bool injectedCustomBones = injectEquipmentCustomBones(templateNode.get(), mObjectRoot.get());
+        const bool injectedCustomBones
+            = injectEquipmentCustomBones(templateNode.get(), mObjectRoot.get(), mInjectedEquipmentBones);
         if (injectedCustomBones)
         {
             if (mSkeleton)
@@ -197,6 +273,54 @@ namespace MWRender
             attachJiggleBoneControllers();
 
         return attached;
+    }
+
+    void ActorAnimation::pruneUnusedEquipmentBones()
+    {
+        if (mInjectedEquipmentBones.empty())
+            return;
+
+        SkinnedBoneNameCollector used;
+        mObjectRoot->accept(used);
+
+        std::vector<osg::ref_ptr<osg::Node>> removedRoots;
+        for (auto it = mInjectedEquipmentBones.begin(); it != mInjectedEquipmentBones.end();)
+        {
+            osg::Node* root = it->get();
+            // A rebuilt skeleton (view change, appearance change) already dropped the old chains.
+            if (root->getNumParents() == 0 || !isDescendantOf(root, mObjectRoot.get()))
+            {
+                it = mInjectedEquipmentBones.erase(it);
+                continue;
+            }
+            if (subtreeUsesAnyName(*root, used.mNames))
+            {
+                ++it;
+                continue;
+            }
+            // No worn mesh is skinned to this chain any more: drop it, and the cloth controller on it.
+            removedRoots.push_back(*it);
+            while (root->getNumParents() > 0)
+                root->getParent(0)->removeChild(root);
+            it = mInjectedEquipmentBones.erase(it);
+        }
+        if (removedRoots.empty())
+            return;
+        if (Settings::game().mJiggleBoneDebug)
+            Log(Debug::Info) << "Verlet cloth: removed " << removedRoots.size()
+                             << " unused equipment chain(s) from the skeleton";
+
+        // Chains hanging from the same bone share one controller, which may live on a chain that stays: it would
+        // keep simulating the removed bones. Drop such controllers; the scan below regroups what is left.
+        StaleVerletControllerRemover staleRemover(removedRoots);
+        mObjectRoot->accept(staleRemover);
+
+        if (mSkeleton)
+            mSkeleton->markDirty();
+        mNodeMap.clear();
+        mNodeMapCreated = false;
+        // Attach the chains of still worn parts whose group controller was removed above or sat on a removed chain.
+        attachJiggleBoneControllers();
     }
 
     std::string ActorAnimation::getShieldMesh(const MWWorld::ConstPtr& shield, bool female) const

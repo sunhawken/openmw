@@ -1014,6 +1014,9 @@ namespace MWRender
         if (wasArrowAttached)
             attachArrow();
 
+        // Unequipped parts may have left their Verlet cloth chains in the skeleton; drop unused ones.
+        pruneUnusedEquipmentBones();
+
         // Run model-specific secondary-motion compatibility for every actor after equipment
         // attachment. Female body auto-rigging is still explicitly gated by sex.
         const std::string actorDisplayName = std::string(mPtr.getClass().getName(mPtr));

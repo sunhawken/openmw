@@ -74,6 +74,15 @@ namespace MWRender
         }
     }
 
+    bool VerletClothController::controls(const osg::Node* bone) const
+    {
+        for (const Chain& chain : mChains)
+            for (const auto& b : chain.mBones)
+                if (b.get() == bone)
+                    return true;
+        return false;
+    }
+
     void VerletClothController::computeRest(Chain& chain) const
     {
         chain.mRest.resize(chain.mBones.size());
