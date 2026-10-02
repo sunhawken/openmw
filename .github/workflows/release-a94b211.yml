@@ -1,0 +1,61 @@
+name: Release a94b211
+
+# One-off: builds the Windows installer for official-jolt-ragdoll @ a94b211 and publishes the release.
+on:
+  push:
+    branches:
+      - claude/release-a94b211
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  Windows:
+    uses: ./.github/workflows/windows.yml
+    with:
+      image: "2022"
+      build-type: Release
+      package: true
+      release: false
+    secrets: inherit
+
+  Publish:
+    needs: Windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: openmw-windows-2022-${{ github.sha }}
+          path: dist
+
+      - name: Name the installer and write checksums
+        working-directory: dist
+        run: |
+          ls -la
+          exe=$(ls *.exe | head -1)
+          mv "$exe" OpenMW-0.51.0-Official-Jolt-Ragdoll-a94b211-Setup.exe
+          sha256sum OpenMW-0.51.0-Official-Jolt-Ragdoll-a94b211-Setup.exe | tr a-f A-F > SHA256SUMS.txt
+          echo "SHA=$(cut -d' ' -f1 SHA256SUMS.txt)" >> $GITHUB_ENV
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.51.0-official-jolt-ragdoll-a94b211
+          target_commitish: a94b211d9433b3434d1048f941a43da2b2951e95
+          name: OpenMW 0.51.0 – Official Jolt Ragdoll (a94b211)
+          prerelease: false
+          draft: false
+          make_latest: true
+          files: |
+            dist/OpenMW-0.51.0-Official-Jolt-Ragdoll-a94b211-Setup.exe
+            dist/SHA256SUMS.txt
+          body: |
+            Windows x64 installer for the official-jolt-ragdoll branch at commit `a94b211d9433b3434d1048f941a43da2b2951e95`.
+
+            New since 33dc0b8:
+            - **Verlet: each chain group attaches once** (#6). Equipping a second item that adds cloth bones (e.g. the Celestial Oracle armor + drapes) no longer puts a second solver on chains that are already simulated.
+            - **Console: `bat <file>`** (#7). Runs a text file of console commands, Skyrim-style: `bat cheats` runs `cheats.txt` from the folder with openmw.exe (then the user config folder, then the working directory). Blank lines and `;` comments are skipped; files can call other files up to 8 levels deep.
+
+            This installer contains OpenMW only; you still need a legal Morrowind game-data installation. It keeps user configuration and saves outside the install directory.
+
+            Installer SHA-256: `${{ env.SHA }}`
