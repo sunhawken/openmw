@@ -90,17 +90,11 @@ namespace Settings
         SettingValue<float> mVerletReactionSpeed{ mIndex, "Game", "verlet reaction speed",
             makeClampSanitizerFloat(0.2f, 2.5f) };
         SettingValue<float> mVerletRootBlend{ mIndex, "Game", "verlet root blend", makeClampSanitizerFloat(0.f, 1.f) };
-        // Restrict all jiggle (auto-rig, controllers, thigh) to the player character only; NPCs
-        // get no jiggle. Applies when a body is next loaded (reload a save or re-equip).
-        SettingValue<bool> mJiggleBonePlayerOnly{ mIndex, "Game", "jiggle player only" };
-        // Fine-grained actor scoping. Player/NPC defaults can be controlled independently and
-        // specific NPC display names can override the NPC default.
+        // Body jiggle is on for the player (when enabled) and for the NPCs named in
+        // "jiggle npc enabled names" (display names, case-insensitive); no other NPC jiggles.
         SettingValue<bool> mJigglePlayerEnabled{ mIndex, "Game", "jiggle player enabled" };
-        SettingValue<bool> mJiggleNpcDefaultEnabled{ mIndex, "Game", "jiggle npc default enabled" };
         SettingValue<std::vector<std::string>> mJiggleNpcEnabledNames{
             mIndex, "Game", "jiggle npc enabled names" };
-        SettingValue<std::vector<std::string>> mJiggleNpcDisabledNames{
-            mIndex, "Game", "jiggle npc disabled names" };
         // Optional per-actor/per-mesh Z tuning entries:
         // "player|mesh=breast;butt" or "npc:name|mesh=breast;butt".
         SettingValue<std::vector<std::string>> mJiggleScopedMeshZOffsets{

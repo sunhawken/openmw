@@ -515,6 +515,12 @@ namespace SceneUtil
         }
     }
 
+    void RigGeometry::makeInfluenceDataUnique()
+    {
+        if (mData && mData->referenceCount() > 1)
+            mData = new InfluenceData(*mData);
+    }
+
     void RigGeometry::setBoneInfo(std::vector<BoneInfo>&& bones)
     {
         if (!mData)

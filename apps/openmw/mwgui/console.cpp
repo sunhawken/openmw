@@ -17,12 +17,12 @@
 #include <components/compiler/scanner.hpp>
 #include <components/files/conversion.hpp>
 #include <components/interpreter/interpreter.hpp>
-#include <components/misc/jigglepolicy.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/utf8stream.hpp>
 #include <components/settings/values.hpp>
 
 #include "apps/openmw/mwgui/textcolours.hpp"
+#include "jigglenpclist.hpp"
 
 #include "../mwscript/extensions.hpp"
 #include "../mwscript/interpretercontext.hpp"
@@ -32,8 +32,6 @@
 #include "../mwbase/scriptmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
-
-#include "../mwrender/renderingmanager.hpp"
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -892,46 +890,23 @@ namespace MWGui
 
     void Console::updateJiggleNpcButton()
     {
-        const bool npc = !mPtr.isEmpty() && mPtr.getClass().isNpc()
-            && mPtr != MWBase::Environment::get().getWorld()->getPlayerPtr();
-        const bool listed = npc
-            && Misc::JigglePolicy::containsName(
-                Settings::game().mJiggleNpcEnabledNames.get(), mPtr.getClass().getName(mPtr));
-        mJiggleNpcButton->setCaption(listed ? "Remove from Jiggle" : "Add to Jiggle");
-        mJiggleNpcButton->setEnabled(npc);
-        mJiggleNpcButton->setAlpha(npc ? 1.f : 0.5f);
+        const std::string_view name = JiggleNpcList::npcName(mPtr);
+        mJiggleNpcButton->setCaption(JiggleNpcList::contains(name) ? "Remove from Jiggle" : "Add to Jiggle");
+        mJiggleNpcButton->setEnabled(!name.empty());
+        mJiggleNpcButton->setAlpha(name.empty() ? 0.5f : 1.f);
     }
 
     void Console::toggleSelectedNpcJiggle(MyGUI::Widget*)
     {
-        if (mPtr.isEmpty() || !mPtr.getClass().isNpc() || mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr())
+        const std::string name(JiggleNpcList::npcName(mPtr));
+        if (name.empty())
         {
             printError("Select an NPC first: click on them while the console is open.");
             return;
         }
-        const std::string name(mPtr.getClass().getName(mPtr));
-        if (name.empty())
-        {
-            printError("The selected NPC has no name; jiggle rules are matched by name.");
-            return;
-        }
-        auto enabled = Settings::game().mJiggleNpcEnabledNames.get();
-        auto disabled = Settings::game().mJiggleNpcDisabledNames.get();
-        const auto sameName = [&](const std::string& item) { return Misc::StringUtils::ciEqual(item, name); };
-        const bool wasListed = std::any_of(enabled.begin(), enabled.end(), sameName);
-        enabled.erase(std::remove_if(enabled.begin(), enabled.end(), sameName), enabled.end());
-        disabled.erase(std::remove_if(disabled.begin(), disabled.end(), sameName), disabled.end());
-        if (!wasListed)
-            enabled.push_back(name);
-        Settings::game().mJiggleNpcEnabledNames.set(enabled);
-        Settings::game().mJiggleNpcDisabledNames.set(disabled);
-
-        // Rebuild the NPC so the auto-rigger runs (or not) with the new rule right away.
-        MWBase::Environment::get().getWorld()->getRenderingManager()->rebuildPtr(mPtr);
-
-        if (wasListed)
+        if (JiggleNpcList::remove(name))
             printOK("Jiggle: removed \"" + name + "\" from jiggle npc enabled names");
-        else
+        else if (JiggleNpcList::add(name))
             printOK("Jiggle: added \"" + name + "\" to jiggle npc enabled names");
         updateJiggleNpcButton();
     }

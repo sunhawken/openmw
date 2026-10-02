@@ -21,6 +21,14 @@ namespace Misc::JiggleZOffset
     // sliders edit the entry for whichever body mesh the player is currently using, so each mesh
     // remembers its own tuning while the sliders stay live for the player.
 
+    // Bumped whenever a stored offset or an actor's current body mesh changes, so jiggle bones can
+    // cache their offset lookup (string parsing) and redo it only when something changed.
+    inline unsigned& generation()
+    {
+        static unsigned sGeneration = 0;
+        return sGeneration;
+    }
+
     // The player's current body mesh path (lowercased VFS path), set by NpcAnimation when the
     // player body is (re)built. Inline so it has a single definition across translation units.
     inline std::string& currentPlayerMesh()
@@ -52,6 +60,7 @@ namespace Misc::JiggleZOffset
         currentActorMeshes()[scope] = std::string(meshFile);
         if (isPlayer)
             currentPlayerMesh() = std::string(meshFile);
+        ++generation();
     }
 
     inline std::string currentActorMesh(bool isPlayer, std::string_view actorName)
@@ -154,6 +163,7 @@ namespace Misc::JiggleZOffset
         if (!replaced)
             out.push_back(key + '=' + std::to_string(breast) + ';' + std::to_string(butt));
         Settings::game().mJiggleScopedMeshZOffsets.set(out);
+        ++generation();
     }
 
     inline void resetScoped(std::string_view entryKey)
@@ -168,6 +178,7 @@ namespace Misc::JiggleZOffset
                 out.push_back(entry);
         }
         Settings::game().mJiggleScopedMeshZOffsets.set(out);
+        ++generation();
     }
 
     // Save (or replace) the offsets for a body mesh; persists to settings.cfg.
@@ -191,6 +202,7 @@ namespace Misc::JiggleZOffset
         if (!replaced)
             out.push_back(std::string(meshFile) + '=' + std::to_string(breast) + ';' + std::to_string(butt));
         Settings::game().mJiggleMeshZOffsets.set(out);
+        ++generation();
     }
 
     // Remove the saved tuning for one body mesh. The next time that naked body, clothing,
@@ -207,6 +219,7 @@ namespace Misc::JiggleZOffset
                 out.push_back(entry);
         }
         Settings::game().mJiggleMeshZOffsets.set(out);
+        ++generation();
     }
 }
 

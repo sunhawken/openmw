@@ -1418,14 +1418,14 @@
                     <Widget type="HBox" position="6 930 336 28">
                         <Widget type="AutoSizedButton" skin="MW_Button">
                             <UserString key="SettingCategory" value="Game"/>
-                            <UserString key="SettingName" value="jiggle player only"/>
+                            <UserString key="SettingName" value="jiggle player enabled"/>
                             <UserString key="SettingType" value="CheckButton"/>
                         </Widget>
                         <Widget type="AutoSizedTextBox" skin="SandText">
-                            <Property key="Caption" value="#{OMWEngine:JigglePlayerOnly}"/>
+                            <Property key="Caption" value="#{OMWEngine:JigglePlayerEnabled}"/>
                             <UserString key="ToolTipType" value="Layout"/>
                             <UserString key="ToolTipLayout" value="TextToolTip"/>
-                            <UserString key="Caption_Text" value="#{OMWEngine:JigglePlayerOnlyTooltip}"/>
+                            <UserString key="Caption_Text" value="#{OMWEngine:JigglePlayerEnabledTooltip}"/>
                         </Widget>
                     </Widget>
                     <Widget type="HBox" position="6 960 336 28">
@@ -1454,10 +1454,10 @@
                         <UserString key="Caption_Text" value="#{OMWEngine:JiggleBakeBreastToNifTooltip}"/>
                     </Widget>
                     <Widget type="AutoSizedButton" skin="MW_Button" position="6 1058 336 28" align="Left Top" name="JiggleAdvancedPanelToggle">
-                        <Property key="Caption" value="Open Advanced Jiggle Setup..."/>
+                        <Property key="Caption" value="Advanced Jiggle Setup / NPC List..."/>
                         <UserString key="ToolTipType" value="Layout"/>
                         <UserString key="ToolTipLayout" value="TextToolTip"/>
-                        <UserString key="Caption_Text" value="Open a separate Morrowind-style window for per-mesh Z offsets, blacklist management, and per-NPC Jiggle rules."/>
+                        <UserString key="Caption_Text" value="Per-mesh Z offsets, the auto-rig blacklist, glute physics and the list of NPCs that jiggle."/>
                     </Widget>
                     </Widget>
                 </Widget>

@@ -273,7 +273,7 @@ EnableRagdollTooltip: |-
     Enable ragdoll physics for dead actors.
     When enabled, dead actors will ragdoll instead of playing a static death animation.
     Note: This feature is experimental and may cause instability.
-JiggleBoneNote: "Jiggle physics. Start with Softness, Quickness and Gravity."
+JiggleBoneNote: "Start with Softness, Quickness, Gravity."
 JiggleStiffnessValue: "Jiggle Stiffness ({value, number, ::.0})"
 JiggleStiffnessLow: "Loose"
 JiggleStiffnessHigh: "Stiff"
@@ -297,11 +297,11 @@ JiggleBakeDone: "Breast Z offset baked into the worn body's NIF. Reload the body
 JiggleBakeNoMesh: "No worn body mesh to bake into."
 JiggleBakeFailed: "Could not bake the breast offset into the NIF:"
 JiggleSetupMeshRequired: "Choose a mesh first. Use Current can fill the player’s currently worn body mesh."
-JiggleSetupNpcRequired: "Enter an NPC display name for this Jiggle rule."
+JiggleSetupNpcRequired: "Type an NPC display name first."
 JiggleSetupInvalidOffset: "Breast and butt offsets must be numeric values from -50 to 50."
-JiggleQuickAdded: "Current outfit added to Jiggle. The live offsets were saved for this mesh. Re-equip the outfit or reload the save if auto-rig needs to rebuild it."
-JiggleQuickAddedPlayer: "Current outfit added to Jiggle with player-only tuning. Re-equip the outfit or reload the save if auto-rig needs to rebuild it."
-JiggleQuickBlacklisted: "Current outfit excluded from automatic Jiggle rigging. Re-equip it or reload the save for the change to take effect."
+JiggleQuickAdded: "Current outfit added to Jiggle. The live offsets were saved for this mesh."
+JiggleQuickAddedPlayer: "Current outfit added to Jiggle with player-only tuning."
+JiggleQuickBlacklisted: "Current outfit excluded from automatic Jiggle rigging."
 JiggleQuickCleared: "Saved Any Actor and Player-only offset tuning was removed for the current outfit."
 JiggleGravityValue: "Jiggle Gravity ({value, number, ::.0})"
 JiggleGravityLow: "Weightless"
@@ -337,20 +337,19 @@ JiggleTogglesNote: "Enable or disable the in-engine jiggle features."
 JiggleAutoRig: "Enable Jiggle Physics + Auto-Rig"
 JiggleAutoRigTooltip: |-
     Master switch for body Jiggle. When on, existing Jiggle bones simulate and female bodies that lack them can be rigged automatically.
-    Turning it off freezes body Jiggle. Auto-rigging changes apply when a body is next loaded (reload a save or re-equip).
+    Turning it off freezes body Jiggle. Applies to the player and listed NPCs at once.
 JiggleTab: "Jiggle"
 OptionsMenuRealTime: "Options Menu Runs In Real Time"
 OptionsMenuRealTimeTooltip: |-
     Keeps the game running while the Options menu is open, instead of pausing, so you can watch movement, physics and jiggle update live as you change settings.
     The console, message boxes and the main menu with no game loaded still pause as normal.
-JigglePlayerOnly: "Player Only"
-JigglePlayerOnlyTooltip: |-
-    Turns Jiggle off for NPCs by default while keeping the player enabled. This mirrors the Advanced Setup NPC-default toggle.
-    A named NPC with a Force ON rule can still be enabled. Applies when that body is next loaded (reload a save or re-equip).
+JigglePlayerEnabled: "Jiggle for the Player"
+JigglePlayerEnabledTooltip: |-
+    Body jiggle for your own character. NPCs never jiggle unless they are on the NPC list: add them in Advanced Jiggle Setup / NPC List, or click one with the console open and press Add to Jiggle.
 JiggleThigh: "Thigh Jiggle"
 JiggleThighTooltip: |-
     Also jiggles the upper-thigh flesh, mirroring the breast jiggle with the same spring, gravity and softness settings. Auto-rigs L/R thigh jiggle bones onto female bodies that lack them.
-    Requires In-Game Auto Jiggle to be on. Applies when a body is next loaded (reload a save or re-equip).
+    Requires In-Game Auto Jiggle to be on. Applies at once to the player and listed NPCs.
 JiggleSeamWelding: "Jiggle Seam Fixer"
 JiggleSeamWeldingTooltip: |-
     Feathers jiggle weights to zero at mesh seams so the cracks jiggle opens between body parts/clothing are closed.

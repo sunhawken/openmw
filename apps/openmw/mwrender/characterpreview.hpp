@@ -42,6 +42,9 @@ namespace MWRender
 
         void rebuild();
 
+        /// The previewed character's third-person model, or nullptr before rebuild().
+        osg::Group* getObjectRoot();
+
         osg::ref_ptr<osg::Texture2D> getTexture();
         /// Get the osg::StateSet required to render the texture correctly, if any.
         osg::StateSet* getTextureStateSet() { return mTextureStateSet; }

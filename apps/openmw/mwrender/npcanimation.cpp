@@ -749,12 +749,9 @@ namespace MWRender
             smodel = Misc::ResourceHelpers::correctActorModelPath(model, mResourceSystem->getVFS());
         }
 
-        // Jiggle physics is female-only: attach the jiggle-bone controllers just for female
-        // NPCs and the female player. Male characters get no jiggle at all. When "jiggle player
-        // only" is set, NPCs are excluded too so only the player jiggles.
-        const bool jiggleAllowed
-            = isFemale && (!Settings::game().mJiggleBonePlayerOnly || mPtr == MWMechanics::getPlayer());
-        setObjectRoot(smodel, true, true, false, jiggleAllowed);
+        // Body jiggle is female-only. Which females jiggle (the player and listed NPCs) is decided per
+        // bone in attachJiggleBoneControllers(); this also lets Verlet cloth chains attach for everyone.
+        setObjectRoot(smodel, true, true, false, isFemale);
 
         updateParts();
 

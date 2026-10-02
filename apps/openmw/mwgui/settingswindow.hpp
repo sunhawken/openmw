@@ -87,6 +87,7 @@ namespace MWGui
         MyGUI::ListBox* mJiggleMeshOffsetList;
         MyGUI::ListBox* mJiggleBlacklistList;
         MyGUI::ListBox* mJiggleNpcRuleList;
+        MyGUI::TextBox* mJiggleNpcCountText = nullptr;
         MyGUI::Button* mJiggleUseCurrentMeshButton;
         MyGUI::Button* mJiggleSaveMeshOffsetButton;
         MyGUI::Button* mJiggleRemoveMeshOffsetButton;
