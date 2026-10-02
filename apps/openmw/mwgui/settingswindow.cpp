@@ -1,5 +1,6 @@
 #include "settingswindow.hpp"
 
+#include "jigglenpclist.hpp"
 #include "jiggleretargetpanel.hpp"
 
 #include <array>
@@ -10,6 +11,7 @@
 #include <MyGUI_ComboBox.h>
 #include <MyGUI_Gui.h>
 #include <MyGUI_LanguageManager.h>
+#include <MyGUI_LayerManager.h>
 #include <MyGUI_ScrollBar.h>
 #include <MyGUI_ScrollView.h>
 #include <MyGUI_TabControl.h>
@@ -279,14 +281,6 @@ namespace MWGui
         getWidget(unusedSlider, widgetName);
         unusedSlider->setVisible(false);
 
-        // Keep the legacy Player Only switch and the newer NPC-default switch as exact
-        // inverses. This preserves the current effective behavior of old configs while
-        // preventing the two UI controls from contradicting each other.
-        const bool npcJiggleByDefault
-            = Settings::game().mJiggleNpcDefaultEnabled && !Settings::game().mJiggleBonePlayerOnly;
-        Settings::game().mJiggleNpcDefaultEnabled.set(npcJiggleByDefault);
-        Settings::game().mJiggleBonePlayerOnly.set(!npcJiggleByDefault);
-
         configureWidgets(mMainWidget, true);
 
         setTitle("#{OMWEngine:SettingsWindow}");
@@ -348,6 +342,7 @@ namespace MWGui
         mJiggleAdvancedLayout->getWidget(mJiggleEnableNpcButton, "JiggleEnableNpcButton");
         mJiggleAdvancedLayout->getWidget(mJiggleDisableNpcButton, "JiggleDisableNpcButton");
         mJiggleAdvancedLayout->getWidget(mJiggleClearNpcRuleButton, "JiggleClearNpcRuleButton");
+        mJiggleAdvancedLayout->getWidget(mJiggleNpcCountText, "JiggleNpcCountText");
         configureWidgets(mJiggleAdvancedLayout->mMainWidget, true);
         MyGUI::ScrollBar* gluteMassSlider;
         mJiggleAdvancedLayout->getWidget(gluteMassSlider, "JiggleGluteMassSlider");
@@ -635,9 +630,11 @@ namespace MWGui
 
         mJiggleNpcRuleList->removeAllItems();
         for (const std::string& name : Settings::game().mJiggleNpcEnabledNames.get())
-            mJiggleNpcRuleList->addItem("[ON] " + name, std::string("on|") + name);
-        for (const std::string& name : Settings::game().mJiggleNpcDisabledNames.get())
-            mJiggleNpcRuleList->addItem("[OFF] " + name, std::string("off|") + name);
+            mJiggleNpcRuleList->addItem(name, name);
+        if (mJiggleNpcCountText)
+            mJiggleNpcCountText->setCaption(
+                "NPCs with jiggle: " + std::to_string(Settings::game().mJiggleNpcEnabledNames.get().size())
+                + (Settings::game().mJigglePlayerEnabled ? "  (player: on)" : "  (player: off)"));
     }
 
     void SettingsWindow::onJiggleAdvancedPanelToggleClicked(MyGUI::Widget*)
@@ -651,13 +648,17 @@ namespace MWGui
             WindowBase::clampWindowCoordinates(mJiggleAdvancedWindow);
         }
         mJiggleAdvancedLayout->setVisible(visible);
-        mJiggleAdvancedPanelToggle->setCaption(visible ? "Close Advanced Jiggle Setup" : "Open Advanced Jiggle Setup...");
+        // Both windows share the Settings layer; without this the new window opens behind Options.
+        if (visible)
+            MyGUI::LayerManager::getInstance().upLayerItem(mJiggleAdvancedWindow);
+        mJiggleAdvancedPanelToggle->setCaption(
+            visible ? "Close Advanced Jiggle Setup" : "Advanced Jiggle Setup / NPC List...");
     }
 
     void SettingsWindow::onJiggleAdvancedCloseClicked(MyGUI::Widget*)
     {
         mJiggleAdvancedLayout->setVisible(false);
-        mJiggleAdvancedPanelToggle->setCaption("Open Advanced Jiggle Setup...");
+        mJiggleAdvancedPanelToggle->setCaption("Advanced Jiggle Setup / NPC List...");
     }
 
     namespace
@@ -695,6 +696,7 @@ namespace MWGui
         Misc::JiggleZOffset::save(mesh, Settings::game().mJiggleBoneBreastZOffset.get(),
             Settings::game().mJiggleBoneButtZOffset.get());
         apply();
+        JiggleNpcList::rebuildJigglingActors();
         refreshJiggleAdvancedPanel();
         configureWidgets(mMainWidget, false);
         MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleQuickAdded}");
@@ -715,6 +717,7 @@ namespace MWGui
         Misc::JiggleZOffset::saveScoped("player", mesh, Settings::game().mJiggleBoneBreastZOffset.get(),
             Settings::game().mJiggleBoneButtZOffset.get());
         apply();
+        JiggleNpcList::rebuildJigglingActors();
         refreshJiggleAdvancedPanel();
         configureWidgets(mMainWidget, false);
         MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleQuickAddedPlayer}");
@@ -735,6 +738,7 @@ namespace MWGui
         if (!exists)
             list.push_back(mesh);
         Settings::game().mJiggleAutoRigBlacklist.set(list);
+        JiggleNpcList::rebuildJigglingActors();
         refreshJiggleAdvancedPanel();
         MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleQuickBlacklisted}");
     }
@@ -870,6 +874,7 @@ namespace MWGui
         if (std::find(list.begin(), list.end(), mesh) == list.end())
             list.push_back(mesh);
         Settings::game().mJiggleAutoRigBlacklist.set(list);
+        JiggleNpcList::rebuildJigglingActors();
         refreshJiggleAdvancedPanel();
     }
 
@@ -886,29 +891,8 @@ namespace MWGui
             if (!Misc::StringUtils::ciEqual(item, *selected))
                 out.push_back(item);
         Settings::game().mJiggleAutoRigBlacklist.set(out);
+        JiggleNpcList::rebuildJigglingActors();
         refreshJiggleAdvancedPanel();
-    }
-
-    namespace
-    {
-        void updateNpcRule(std::string_view name, bool enabled, bool clear)
-        {
-            if (name.empty())
-                return;
-            auto enabledNames = Settings::game().mJiggleNpcEnabledNames.get();
-            auto disabledNames = Settings::game().mJiggleNpcDisabledNames.get();
-            const auto removeName = [&](std::vector<std::string>& list) {
-                list.erase(std::remove_if(list.begin(), list.end(),
-                               [&](const std::string& item) { return Misc::StringUtils::ciEqual(item, name); }),
-                    list.end());
-            };
-            removeName(enabledNames);
-            removeName(disabledNames);
-            if (!clear)
-                (enabled ? enabledNames : disabledNames).push_back(std::string(name));
-            Settings::game().mJiggleNpcEnabledNames.set(enabledNames);
-            Settings::game().mJiggleNpcDisabledNames.set(disabledNames);
-        }
     }
 
     void SettingsWindow::onJiggleEnableNpcClicked(MyGUI::Widget*)
@@ -919,36 +903,44 @@ namespace MWGui
             MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupNpcRequired}");
             return;
         }
-        updateNpcRule(name, true, false);
+        if (!JiggleNpcList::add(name))
+            MWBase::Environment::get().getWindowManager()->messageBox("\"" + name + "\" is already on the list.");
+        mJiggleNpcNameInput->setOnlyText("");
         refreshJiggleAdvancedPanel();
     }
 
     void SettingsWindow::onJiggleDisableNpcClicked(MyGUI::Widget*)
     {
-        const std::string name = mJiggleNpcNameInput->getOnlyText().asUTF8();
+        // "Add Console Selection": the NPC last clicked with the console open.
+        const MWWorld::Ptr selected = MWBase::Environment::get().getWindowManager()->getConsoleSelectedObject();
+        const std::string name(JiggleNpcList::npcName(selected));
         if (name.empty())
         {
-            MWBase::Environment::get().getWindowManager()->messageBox("#{OMWEngine:JiggleSetupNpcRequired}");
+            MWBase::Environment::get().getWindowManager()->messageBox(
+                "No NPC is selected in the console. Open the console (~), click an NPC, then try again.");
             return;
         }
-        updateNpcRule(name, false, false);
+        if (!JiggleNpcList::add(name))
+            MWBase::Environment::get().getWindowManager()->messageBox("\"" + name + "\" is already on the list.");
         refreshJiggleAdvancedPanel();
     }
 
     void SettingsWindow::onJiggleClearNpcRuleClicked(MyGUI::Widget*)
     {
-        std::string name = mJiggleNpcNameInput->getOnlyText().asUTF8();
+        // "Remove Selected": the highlighted list entry, else the typed name.
+        std::string name;
         const size_t index = mJiggleNpcRuleList->getIndexSelected();
-        if (name.empty() && index != MyGUI::ITEM_NONE)
-        {
+        if (index != MyGUI::ITEM_NONE)
             if (const std::string* data = mJiggleNpcRuleList->getItemDataAt<std::string>(index))
-            {
-                const std::size_t sep = data->find('|');
-                if (sep != std::string::npos)
-                    name = data->substr(sep + 1);
-            }
+                name = *data;
+        if (name.empty())
+            name = mJiggleNpcNameInput->getOnlyText().asUTF8();
+        if (name.empty())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("Select a name in the list first.");
+            return;
         }
-        updateNpcRule(name, true, true);
+        JiggleNpcList::remove(name);
         refreshJiggleAdvancedPanel();
     }
 
@@ -1269,19 +1261,19 @@ namespace MWGui
             const std::string_view settingName = getSettingName(sender);
             Settings::get<bool>(getSettingCategory(sender), settingName).set(newState);
 
-            // These two controls describe the same default-NPC policy from opposite
-            // directions. Keep them synchronized so neither one can make the other
-            // appear broken.
-            if (settingName == "jiggle player only")
+            // These are applied when a body is rigged, so rebuild the jiggling actors (the player and
+            // listed NPCs) to show the change now instead of after a re-equip or reload.
+            if (settingName == "jiggle player enabled" || settingName == "jiggle auto rig"
+                || settingName == "jiggle thigh" || settingName == "jiggle seam welding")
             {
-                Settings::game().mJiggleNpcDefaultEnabled.set(!newState);
-                if (mJiggleAdvancedLayout)
-                    configureWidgets(mJiggleAdvancedLayout->mMainWidget, false);
-            }
-            else if (settingName == "jiggle npc default enabled")
-            {
-                Settings::game().mJiggleBonePlayerOnly.set(!newState);
+                JiggleNpcList::rebuildJigglingActors();
+                // The player toggle exists on the Jiggle tab and in the NPC List tab; keep both in step.
                 configureWidgets(mMainWidget, false);
+                if (mJiggleAdvancedLayout)
+                {
+                    configureWidgets(mJiggleAdvancedLayout->mMainWidget, false);
+                    refreshJiggleAdvancedPanel();
+                }
             }
             else if (settingName == "jiggle glute auto mass" && mJiggleAdvancedLayout)
             {

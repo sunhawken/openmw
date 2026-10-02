@@ -20,23 +20,13 @@ namespace Misc::JigglePolicy
         return false;
     }
 
+    /// Who jiggles: the player (when "jiggle player enabled" is on) and the NPCs named in
+    /// "jiggle npc enabled names". Every other NPC has no body jiggle: no auto-rig, no controllers.
     inline bool actorEnabled(bool isPlayer, std::string_view actorName)
     {
         if (isPlayer)
             return Settings::game().mJigglePlayerEnabled;
-
-        // Explicit per-NPC rules are highest priority. This intentionally lets
-        // "Force ON" opt a named NPC in even while the legacy Player Only switch
-        // is enabled, which makes selective NPC setup practical.
-        if (containsName(Settings::game().mJiggleNpcDisabledNames.get(), actorName))
-            return false;
-        if (containsName(Settings::game().mJiggleNpcEnabledNames.get(), actorName))
-            return true;
-
-        if (Settings::game().mJiggleBonePlayerOnly)
-            return false;
-
-        return Settings::game().mJiggleNpcDefaultEnabled;
+        return containsName(Settings::game().mJiggleNpcEnabledNames.get(), actorName);
     }
 }
 

@@ -366,6 +366,53 @@ namespace MWRender
         }
     }
 
+    namespace
+    {
+        // An actor that does not jiggle can still wear a mesh that already carries jiggle weights (a
+        // pre-rigged body). Give its skeleton the bones those weights need, as plain identity children
+        // with no controller (zero per-frame cost), so the mesh is skinned at rest instead of losing
+        // those weights ("RigGeometry did not find bone ...").
+        void addStaticBonesForWeights(osg::Group* objectRoot, const std::vector<Rig*>& rigs, bool debug)
+        {
+            std::array<bool, 6> needed = { false, false, false, false, false, false };
+            bool any = false;
+            for (Rig* rig : rigs)
+                for (const std::string& name : rig->getInfluenceBoneNames())
+                    for (std::size_t t = 0; t < sTargets.size(); ++t)
+                        if (name == sTargets[t].mBoneLower)
+                            needed[t] = any = true;
+            if (!any)
+                return;
+
+            SkeletonFinder sf;
+            objectRoot->accept(sf);
+            if (!sf.mSkeleton)
+                return;
+            bool added = false;
+            for (std::size_t t = 0; t < sTargets.size(); ++t)
+            {
+                if (!needed[t] || sf.mSkeleton->getBone(std::string(sTargets[t].mBoneLower)))
+                    continue;
+                SceneUtil::Bone* parent = sf.mSkeleton->getBone(std::string(sTargets[t].mConfig.mParent));
+                if (!parent || !parent->mNode)
+                    continue;
+                osg::ref_ptr<osg::MatrixTransform> boneNode = new osg::MatrixTransform(osg::Matrix::identity());
+                boneNode->setName(std::string(sTargets[t].mBoneNode));
+                boneNode->setUserValue(sAutoRigMarker, true);
+                parent->mNode->addChild(boneNode);
+                added = true;
+                if (debug)
+                    Log(Debug::Warning) << "Jiggle auto-rig: static bone " << sTargets[t].mBoneNode
+                                        << " for existing weights (actor does not jiggle)";
+            }
+            if (!added)
+                return;
+            sf.mSkeleton->markDirty();
+            for (Rig* rig : rigs)
+                rig->reinitialize();
+        }
+    }
+
     void JiggleAutoRig::run(
         osg::Group* objectRoot, bool isPlayer, bool allowBodyAutoRig, std::string_view actorName)
     {
@@ -380,7 +427,10 @@ namespace MWRender
             return;
 
         if (!Misc::JigglePolicy::actorEnabled(isPlayer, actorName) || !generalAutoRig || !allowBodyAutoRig)
+        {
+            addStaticBonesForWeights(objectRoot, rc.mRigs, debug);
             return;
+        }
 
         // Drop blacklisted meshes up front so they take part in neither anchor detection nor
         // painting (an odd armor can't get bad jiggle nor drag the shared body anchor off).
@@ -647,6 +697,9 @@ namespace MWRender
 
             if (rigChanged)
             {
+                // Paint this actor's copy only: the influence data is shared with every other
+                // instance of the mesh, including actors that do not jiggle and lack these bones.
+                rig->makeInfluenceDataUnique();
                 rig->setBoneInfo(std::move(bones));
                 rig->setInfluences(perVertex);
                 rig->reinitialize();

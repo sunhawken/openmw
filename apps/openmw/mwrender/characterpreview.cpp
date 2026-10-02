@@ -371,6 +371,11 @@ namespace MWRender
         redraw();
     }
 
+    osg::Group* CharacterPreview::getObjectRoot()
+    {
+        return mAnimation ? mAnimation->getObjectRoot() : nullptr;
+    }
+
     void CharacterPreview::redraw()
     {
         mRTTNode->setNodeMask(Mask_RenderToTexture);
