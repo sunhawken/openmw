@@ -5,6 +5,7 @@
 #include <MyGUI_InputManager.h>
 #include <MyGUI_LayerManager.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -21,6 +22,7 @@
 #include <components/settings/values.hpp>
 
 #include "apps/openmw/mwgui/textcolours.hpp"
+#include "jigglenpclist.hpp"
 
 #include "../mwscript/extensions.hpp"
 #include "../mwscript/interpretercontext.hpp"
@@ -29,6 +31,7 @@
 #include "../mwbase/luamanager.hpp"
 #include "../mwbase/scriptmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
+#include "../mwbase/world.hpp"
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -171,6 +174,7 @@ namespace MWGui
         getWidget(mPreviousButton, "button_Previous");
         getWidget(mCaseSensitiveToggleButton, "button_CaseSensitive");
         getWidget(mRegExSearchToggleButton, "button_RegExSearch");
+        getWidget(mJiggleNpcButton, "button_JiggleNpc");
 
         // Set up the command line box
         mCommandLine->eventEditSelectAccept += newDelegate(this, &Console::acceptCommand);
@@ -182,6 +186,8 @@ namespace MWGui
         mPreviousButton->eventMouseButtonClick += newDelegate(this, &Console::findPreviousOccurrence);
         mCaseSensitiveToggleButton->eventMouseButtonClick += newDelegate(this, &Console::toggleCaseSensitiveSearch);
         mRegExSearchToggleButton->eventMouseButtonClick += newDelegate(this, &Console::toggleRegExSearch);
+        mJiggleNpcButton->eventMouseButtonClick += newDelegate(this, &Console::toggleSelectedNpcJiggle);
+        updateJiggleNpcButton();
 
         // Set up the log window
         mHistory->setOverflowToTheLeft(true);
@@ -879,6 +885,30 @@ namespace MWGui
         else
             mPtr = MWWorld::Ptr();
         updateConsoleTitle();
+        updateJiggleNpcButton();
+    }
+
+    void Console::updateJiggleNpcButton()
+    {
+        const std::string_view name = JiggleNpcList::npcName(mPtr);
+        mJiggleNpcButton->setCaption(JiggleNpcList::contains(name) ? "Remove from Jiggle" : "Add to Jiggle");
+        mJiggleNpcButton->setEnabled(!name.empty());
+        mJiggleNpcButton->setAlpha(name.empty() ? 0.5f : 1.f);
+    }
+
+    void Console::toggleSelectedNpcJiggle(MyGUI::Widget*)
+    {
+        const std::string name(JiggleNpcList::npcName(mPtr));
+        if (name.empty())
+        {
+            printError("Select an NPC first: click on them while the console is open.");
+            return;
+        }
+        if (JiggleNpcList::remove(name))
+            printOK("Jiggle: removed \"" + name + "\" from jiggle npc enabled names");
+        else if (JiggleNpcList::add(name))
+            printOK("Jiggle: added \"" + name + "\" to jiggle npc enabled names");
+        updateJiggleNpcButton();
     }
 
     void Console::updateConsoleTitle()

@@ -30,29 +30,9 @@ namespace MWRender
         // Reset instead of feeding it into the spring and carrying a huge velocity into later frames.
         constexpr float sTeleportResetDistance = 128.f;
 
-        // Extra static world-space Z (up/down) nudge for this bone's rest position,
-        // read from the live-tunable settings sliders (Physics tab) rather than baked
-        // into the NIF - identified by bone name since a single controller instance
-        // doesn't otherwise know if it's on a breast or butt bone.
-        float manualZOffsetFor(const std::string& boneName)
-        {
-            // Case-insensitive: auto-rigged bones are named "Bip01 L Breast" while some
-            // externally-rigged NIFs use lowercase "bip01 l breast".
-            if (Misc::StringUtils::ciFind(boneName, "breast") != std::string::npos)
-                return Settings::game().mJiggleBoneBreastZOffset;
-            if (Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos)
-                return Settings::game().mJiggleBoneButtZOffset;
-            return 0.f;
-        }
-
         // Lever arm (game units) used to turn the Naturalis glute angle offsets into a rest-position
         // shift - roughly the auto-rigger's butt weight-cone radius.
         constexpr float sGluteLever = 9.f;
-
-        bool isGluteBone(const std::string& boneName)
-        {
-            return Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos;
-        }
 
         bool isLeftGlute(const std::string& boneName)
         {
@@ -100,49 +80,55 @@ namespace MWRender
     {
     }
 
-    float JiggleBoneController::zOffsetFor(const std::string& boneName) const
+    float JiggleBoneController::zOffsetFor(const std::string& boneName)
     {
-        // NPC bones drop the manual breast/butt Z offset only while "jiggle player only" is on -
-        // that toggle also scopes the player-mesh-specific Z tuning to the player. This is read live,
-        // so already-loaded NPCs stop using the offset the moment the toggle is enabled. When the
-        // toggle is off, NPCs share the same offset as the player, as before. The player's own bones
-        // always use it.
-        if (!mIsPlayer && Settings::game().mJiggleBonePlayerOnly)
+        if (mBoneKind == BoneKind::Unknown)
+        {
+            // Case-insensitive: auto-rigged bones are "Bip01 L Breast", some NIFs use lowercase.
+            if (Misc::StringUtils::ciFind(boneName, "breast") != std::string::npos)
+                mBoneKind = BoneKind::Breast;
+            else if (Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos)
+                mBoneKind = BoneKind::Butt;
+            else
+                mBoneKind = BoneKind::Other;
+        }
+        if (mBoneKind == BoneKind::Other)
             return 0.f;
 
-        const std::string meshFile = Misc::JiggleZOffset::currentActorMesh(mIsPlayer, mActorName);
-        if (!meshFile.empty())
+        const unsigned generation = Misc::JiggleZOffset::generation();
+        if (generation != mZGeneration)
         {
-            if (const auto stored = Misc::JiggleZOffset::lookupForActor(mIsPlayer, mActorName, meshFile))
-            {
-                if (Misc::StringUtils::ciFind(boneName, "breast") != std::string::npos)
-                    return stored->first;
-                if (Misc::StringUtils::ciFind(boneName, "butt") != std::string::npos)
-                    return stored->second;
-            }
+            mZGeneration = generation;
+            mStoredZ.reset();
+            const std::string meshFile = Misc::JiggleZOffset::currentActorMesh(mIsPlayer, mActorName);
+            if (!meshFile.empty())
+                mStoredZ = Misc::JiggleZOffset::lookupForActor(mIsPlayer, mActorName, meshFile);
         }
-        return manualZOffsetFor(boneName);
+        if (mStoredZ)
+            return mBoneKind == BoneKind::Breast ? mStoredZ->first : mStoredZ->second;
+        return mBoneKind == BoneKind::Breast ? Settings::game().mJiggleBoneBreastZOffset.get()
+                                             : Settings::game().mJiggleBoneButtZOffset.get();
     }
 
     void JiggleBoneController::operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv)
     {
-        // getParentalNodePaths() includes `node` itself as the path's last element;
-        // drop it so we get the PARENT's world transform, since the offset needs to
-        // be computed in the parent's space, not the bone's own (about to be modified).
+        // The offset is computed in the PARENT's space, not the bone's own (about to be modified).
+        // The visitor's current path ends with `node`; drop it, reusing one buffer, instead of
+        // node->getParentalNodePaths(), which allocated a list of paths every frame.
         osg::Matrix parentWorldMatrix;
-        osg::NodePathList nodePaths = node->getParentalNodePaths();
-        if (!nodePaths.empty() && nodePaths[0].size() > 1)
+        const osg::NodePath& nodePath = nv->getNodePath();
+        if (nodePath.size() > 1)
         {
-            osg::NodePath parentPath = nodePaths[0];
-            parentPath.pop_back();
-            parentWorldMatrix = osg::computeLocalToWorld(parentPath);
+            mParentPath.assign(nodePath.begin(), nodePath.end() - 1);
+            parentWorldMatrix = osg::computeLocalToWorld(mParentPath);
         }
 
         // Naturalis-style glute physics applies to butt bones of body Jiggle.
-        const bool glute = isGluteBone(node->getName()) && Settings::game().mJiggleGlutePhysics;
+        zOffsetFor(node->getName()); // classifies the bone on the first frame
+        const bool glute = mBoneKind == BoneKind::Butt && Settings::game().mJiggleGlutePhysics;
         std::optional<osg::Matrix> skeletonWorld;
-        if (glute && !nodePaths.empty())
-            skeletonWorld = findSkeletonWorld(nodePaths[0]);
+        if (glute && !nodePath.empty())
+            skeletonWorld = findSkeletonWorld(nodePath);
         const osg::Vec3f gluteOffset = glute ? gluteRestOffset(node->getName(), skeletonWorld) : osg::Vec3f();
 
         const double simTime = nv->getFrameStamp() ? nv->getFrameStamp()->getSimulationTime() : 0.0;

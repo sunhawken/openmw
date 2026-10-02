@@ -1,18 +1,26 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <MyGUI type="Layout" version="3.2.0">
     <Widget type="Window" skin="MW_Window" position="80 60 570 505" layer="Settings" name="_Main">
         <Property key="Caption" value="Advanced Jiggle Setup"/>
         <Property key="MinSize" value="520 450"/>
-        <Widget type="AutoSizedTextBox" skin="NormalText" position="12 8 540 36">
-            <Property key="Caption" value="Configure Jiggle per mesh, per NPC and glute physics. Changes are saved with OpenMW settings."/>
+        <Widget type="EditBox" skin="SandText" position="12 8 540 36">
+            <Property key="MultiLine" value="true"/>
+            <Property key="WordWrap" value="true"/>
+            <Property key="Static" value="true"/>
+            <Property key="TextAlign" value="Left Top"/>
+            <Property key="Caption" value="Per-mesh tuning, the NPC list and glute physics."/>
         </Widget>
-        <Widget type="TabControl" skin="TabControl" position="12 48 546 392" align="Stretch" name="JiggleSetupTabs">
+        <Widget type="TabControl" skin="TabControl" position="12 48 546 376" align="Stretch" name="JiggleSetupTabs">
             <Property key="ButtonAutoWidth" value="true"/>
 
             <Widget type="TabItem">
                 <Property key="Caption" value=" Quick Setup "/>
-                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 54">
-                    <Property key="Caption" value="Easy mode: equip the body/clothing/armor you want, tune the normal Jiggle sliders, then click Add. No mesh path typing is needed."/>
+                <Widget type="EditBox" skin="SandText" position="8 10 510 54">
+                    <Property key="MultiLine" value="true"/>
+                    <Property key="WordWrap" value="true"/>
+                    <Property key="Static" value="true"/>
+                    <Property key="TextAlign" value="Left Top"/>
+                    <Property key="Caption" value="Equip the body/clothing/armor you want, tune the Jiggle sliders, then click Add. Changes apply at once."/>
                 </Widget>
                 <Widget type="TextBox" skin="NormalText" position="8 72 510 70" name="JiggleQuickCurrentInfo">
                     <Property key="Caption" value="Current outfit: not detected"/>
@@ -34,7 +42,7 @@
                     <Property key="Caption" value="Exclude Current Outfit"/>
                     <UserString key="ToolTipType" value="Layout"/>
                     <UserString key="ToolTipLayout" value="TextToolTip"/>
-                    <UserString key="Caption_Text" value="Adds the currently worn mesh to the auto-rig blacklist. Re-equip or reload for auto-rig changes to take effect."/>
+                    <UserString key="Caption_Text" value="Adds the currently worn mesh to the auto-rig blacklist. Applies at once."/>
                 </Widget>
                 <Widget type="AutoSizedButton" skin="MW_Button" position="273 238 245 30" name="JiggleQuickClearButton">
                     <Property key="Caption" value="Remove Saved Tuning"/>
@@ -42,13 +50,17 @@
                     <UserString key="ToolTipLayout" value="TextToolTip"/>
                     <UserString key="Caption_Text" value="Removes Any Actor and Player-only saved Z-offset tuning for the currently worn mesh. It does not blacklist the mesh."/>
                 </Widget>
-                <Widget type="AutoSizedTextBox" skin="SandText" position="8 282 510 54">
-                    <Property key="Caption" value="Tip: Add Current Outfit is the normal one-click choice. Re-equip the outfit or reload the save after changing auto-rig inclusion."/>
+                <Widget type="EditBox" skin="SandText" position="8 282 510 54">
+                    <Property key="MultiLine" value="true"/>
+                    <Property key="WordWrap" value="true"/>
+                    <Property key="Static" value="true"/>
+                    <Property key="TextAlign" value="Left Top"/>
+                    <Property key="Caption" value="Tip: Add Current Outfit is the normal one-click choice."/>
                 </Widget>
             </Widget>
 
             <Widget type="TabItem">
-                <Property key="Caption" value=" Mesh Z Offsets "/>
+                <Property key="Caption" value=" Z Offsets "/>
                 <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 18">
                     <Property key="Caption" value="Choose who this mesh adjustment applies to."/>
                 </Widget>
@@ -75,16 +87,20 @@
                 <Widget type="AutoSizedButton" skin="MW_Button" position="273 172 245 26" name="JiggleRemoveMeshOffsetButton">
                     <Property key="Caption" value="Remove Selected"/>
                 </Widget>
-                <Widget type="ListBox" skin="MW_List" position="8 208 510 144" name="JiggleMeshOffsetList"/>
+                <Widget type="ListBox" skin="MW_List" position="8 208 510 128" name="JiggleMeshOffsetList"/>
             </Widget>
 
             <Widget type="TabItem">
-                <Property key="Caption" value=" Mesh Blacklist "/>
-                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 10 510 36">
+                <Property key="Caption" value=" Blacklist "/>
+                <Widget type="EditBox" skin="SandText" position="8 10 510 36">
+                    <Property key="MultiLine" value="true"/>
+                    <Property key="WordWrap" value="true"/>
+                    <Property key="Static" value="true"/>
+                    <Property key="TextAlign" value="Left Top"/>
                     <Property key="Caption" value="Prevent selected body or armor meshes from being processed by the automatic Jiggle rigger."/>
                 </Widget>
                 <Widget type="AutoSizedTextBox" skin="SandText" position="8 54 510 18">
-                    <Property key="Caption" value="Use the Mesh Z Offsets tab to enter or grab a mesh path, then add it here."/>
+                    <Property key="Caption" value="Get a mesh path on the Z Offsets tab, then add it here."/>
                 </Widget>
                 <Widget type="AutoSizedButton" skin="MW_Button" position="8 82 245 26" name="JiggleAddBlacklistButton">
                     <Property key="Caption" value="Blacklist Mesh"/>
@@ -92,53 +108,53 @@
                 <Widget type="AutoSizedButton" skin="MW_Button" position="273 82 245 26" name="JiggleRemoveBlacklistButton">
                     <Property key="Caption" value="Remove Selected"/>
                 </Widget>
-                <Widget type="ListBox" skin="MW_List" position="8 120 510 232" name="JiggleBlacklistList"/>
+                <Widget type="ListBox" skin="MW_List" position="8 120 510 216" name="JiggleBlacklistList"/>
             </Widget>
 
             <Widget type="TabItem">
-                <Property key="Caption" value=" Player / NPC Rules "/>
-                <Widget type="HBox" position="8 10 510 28">
+                <Property key="Caption" value=" NPC List "/>
+                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 8 510 18">
+                    <Property key="Caption" value="Jiggle is on for the player and for the NPCs on this list only."/>
+                </Widget>
+                <Widget type="HBox" position="8 30 510 28">
                     <Widget type="AutoSizedButton" skin="MW_Button">
                         <UserString key="SettingCategory" value="Game"/>
                         <UserString key="SettingName" value="jiggle player enabled"/>
                         <UserString key="SettingType" value="CheckButton"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Jiggle for Player"/></Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Jiggle for the Player"/></Widget>
                 </Widget>
-                <Widget type="HBox" position="8 42 510 28">
-                    <Widget type="AutoSizedButton" skin="MW_Button">
-                        <UserString key="SettingCategory" value="Game"/>
-                        <UserString key="SettingName" value="jiggle npc default enabled"/>
-                        <UserString key="SettingType" value="CheckButton"/>
-                    </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText"><Property key="Caption" value="Enable Jiggle for NPCs by Default (Player Only OFF)"/></Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" position="8 66 510 18">
+                    <Property key="Caption" value="NPC display name (case-insensitive):"/>
                 </Widget>
-                <Widget type="AutoSizedTextBox" skin="NormalText" position="8 82 510 18">
-                    <Property key="Caption" value="NPC-specific override by display name"/>
+                <Widget type="EditBox" skin="MW_TextEdit" position="8 88 396 24" name="JiggleNpcNameInput"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="412 88 106 24" name="JiggleEnableNpcButton">
+                    <Property key="Caption" value="Add NPC"/>
                 </Widget>
-                <Widget type="EditBox" skin="MW_TextEdit" position="8 104 510 24" name="JiggleNpcNameInput"/>
-                <Widget type="AutoSizedTextBox" skin="SandText" position="8 132 510 18">
-                    <Property key="Caption" value="Name matching is case-insensitive. Force ON/OFF overrides the NPC default."/>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="8 122 250 26" name="JiggleDisableNpcButton">
+                    <Property key="Caption" value="Add Console Selection"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="TextToolTip"/>
+                    <UserString key="Caption_Text" value="Adds the NPC you last clicked with the console open. The console also has an Add to Jiggle button."/>
                 </Widget>
-                <Widget type="AutoSizedButton" skin="MW_Button" position="8 158 160 26" name="JiggleEnableNpcButton">
-                    <Property key="Caption" value="Force ON"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" position="268 122 250 26" name="JiggleClearNpcRuleButton">
+                    <Property key="Caption" value="Remove Selected"/>
                 </Widget>
-                <Widget type="AutoSizedButton" skin="MW_Button" position="181 158 160 26" name="JiggleDisableNpcButton">
-                    <Property key="Caption" value="Force OFF"/>
-                </Widget>
-                <Widget type="AutoSizedButton" skin="MW_Button" position="354 158 164 26" name="JiggleClearNpcRuleButton">
-                    <Property key="Caption" value="Clear Override"/>
-                </Widget>
-                <Widget type="ListBox" skin="MW_List" position="8 196 510 156" name="JiggleNpcRuleList"/>
+                <Widget type="ListBox" skin="MW_List" position="8 158 510 152" name="JiggleNpcRuleList"/>
+                <Widget type="TextBox" skin="SandText" position="8 316 510 18" name="JiggleNpcCountText"/>
             </Widget>
 
             <Widget type="TabItem">
-                <Property key="Caption" value=" Glute Physics "/>
-                <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 530 352" align="Stretch" name="JiggleGluteScrollView">
+                <Property key="Caption" value=" Glute "/>
+                <Widget type="ScrollView" skin="MW_ScrollView" position="0 2 530 336" align="Stretch" name="JiggleGluteScrollView">
                     <Property key="CanvasAlign" value="Left Top"/>
                     <Property key="VisibleVScroll" value="true"/>
                     <Property key="CanvasSize" value="510 660"/>
-                    <Widget type="AutoSizedTextBox" skin="NormalText" position="6 4 490 36" align="Left Top">
+                    <Widget type="EditBox" skin="SandText" position="6 4 490 36" align="Left Top">
+                        <Property key="MultiLine" value="true"/>
+                        <Property key="WordWrap" value="true"/>
+                        <Property key="Static" value="true"/>
+                        <Property key="TextAlign" value="Left Top"/>
                         <Property key="Caption" value="Naturalis (BootyMagic) glute physics for butt jiggle bones. Defaults match Naturalis; changes apply live."/>
                     </Widget>
                     <Widget type="HBox" position="6 46 490 28">
@@ -328,7 +344,7 @@
                 </Widget>
             </Widget>
         </Widget>
-        <Widget type="AutoSizedButton" skin="MW_Button" position="442 454 116 28" align="Right Bottom" name="JiggleAdvancedCloseButton">
+        <Widget type="AutoSizedButton" skin="MW_Button" position="442 430 116 28" align="Right Bottom" name="JiggleAdvancedCloseButton">
             <Property key="Caption" value="Close"/>
         </Widget>
     </Widget>

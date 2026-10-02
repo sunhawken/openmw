@@ -130,6 +130,28 @@ namespace
         return false;
     }
 
+    /// Only the first root of a chain group carries the VerletClothController, which drives every chain hanging
+    /// from the same parent bone. A later scan must not give the other roots of that group a second controller, so
+    /// look for a sibling's controller that already drives this root. This is checked live instead of marking the
+    /// bones: when the controller's root is removed (its item unequipped), the group's remaining chains are free
+    /// to be attached again.
+    bool simulatedByGroupController(const osg::Node* root)
+    {
+        for (unsigned int p = 0; p < root->getNumParents(); ++p)
+        {
+            const osg::Group* parent = root->getParent(p);
+            for (unsigned int c = 0; c < parent->getNumChildren(); ++c)
+            {
+                for (const osg::Callback* cb = parent->getChild(c)->getUpdateCallback(); cb;
+                     cb = cb->getNestedCallback())
+                    if (const auto* verlet = dynamic_cast<const MWRender::VerletClothController*>(cb))
+                        if (verlet->controls(root))
+                            return true;
+            }
+        }
+        return false;
+    }
+
     /// A chain root is marked with OPENMW_VERLET_CLOTH (or verlet_cloth=true) and verlet_count=N; the
     /// optional verlet_pin_count=M holds the first M particles at their animated position (default 3).
     struct VerletRootInfo
@@ -1870,11 +1892,7 @@ namespace MWRender
             osg::MatrixTransform* root = nodeRef.get();
             if (!root || attached.contains(root) || hasSecondaryMotionController(root))
                 continue;
-            // Only the first root of a group carries the controller. When a later equipment part injects
-            // more chains this scan runs again, and without this mark every other root of an already
-            // simulated group would get a second controller driving the same bones.
-            bool simulated = false;
-            if (root->getUserValue("verlet_simulated", simulated) && simulated)
+            if (simulatedByGroupController(root))
                 continue;
 
             const VerletRootInfo info = verletRootInfo(*root);
@@ -1916,9 +1934,6 @@ namespace MWRender
             if (debug)
                 Log(Debug::Info) << "Verlet cloth: attached " << group.mChains.size() << " chains under "
                                  << (parent ? parent->getName() : std::string("<none>"));
-            for (const auto& chain : group.mChains)
-                for (const auto& bone : chain)
-                    bone->setUserValue("verlet_simulated", true);
             group.mFirstRoot->addUpdateCallback(
                 new VerletClothController(std::move(group.mChains), group.mPin, debug));
         }

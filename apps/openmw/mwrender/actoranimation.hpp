@@ -2,6 +2,7 @@
 #define GAME_RENDER_ACTORANIMATION_H
 
 #include <map>
+#include <vector>
 
 #include <osg/ref_ptr>
 
@@ -60,6 +61,11 @@ namespace MWRender
         osg::ref_ptr<osg::Node> attach(
             VFS::Path::NormalizedView model, std::string_view bonename, std::string_view bonefilter, bool isLight);
 
+        /// Removes the custom bones (Verlet cloth chains) an equipment part injected into the skeleton once no worn
+        /// mesh is skinned to them any more, so an unequipped cape or coat stops being simulated. Call after the
+        /// parts were updated.
+        void pruneUnusedEquipmentBones();
+
         PartHolderPtr mScabbard;
         PartHolderPtr mHolsteredShield;
 
@@ -71,6 +77,9 @@ namespace MWRender
 
         typedef std::map<MWWorld::ConstPtr, osg::ref_ptr<SceneUtil::LightSource>> ItemLightMap;
         ItemLightMap mItemLights;
+
+        // Roots of the custom-bone subtrees equipment injected into the skeleton.
+        std::vector<osg::ref_ptr<osg::Node>> mInjectedEquipmentBones;
     };
 
 }
