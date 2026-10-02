@@ -4,10 +4,12 @@
 #include <components/sceneutil/nodecallback.hpp>
 
 #include <osg/Matrix>
+#include <osg/Node>
 #include <osg/Vec3f>
 
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace osg
 {
@@ -32,16 +34,30 @@ namespace MWRender
     public:
         /// @param debug when true, logs bone-lookup and per-frame displacement info
         /// (throttled). Controlled by the "jiggle bone debug" setting in [Game].
-        /// @param isPlayer when true, this bone belongs to the player character. While the
-        /// "jiggle player only" setting is on, the manual breast/butt Z-offset sliders (player-mesh
-        /// -specific tuning) are applied only to the player's bones and skipped for NPCs.
+        /// @param isPlayer when true, this bone belongs to the player character.
+        /// @param actorName the NPC display name, matched against "jiggle npc enabled names".
         explicit JiggleBoneController(bool debug = false, bool isPlayer = false, std::string actorName = {});
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
     private:
-        // The manual Z offset for this bone, or 0 for NPC bones (offsets are player-only).
-        float zOffsetFor(const std::string& boneName) const;
+        // The breast/butt Z offset for this bone: the stored per-mesh tuning for this actor's body,
+        // else the live slider value. The stored lookup parses setting strings, so it is cached and
+        // redone only when Misc::JiggleZOffset::generation() changes.
+        float zOffsetFor(const std::string& boneName);
+
+        enum class BoneKind
+        {
+            Unknown,
+            Other,
+            Breast,
+            Butt,
+        };
+        BoneKind mBoneKind = BoneKind::Unknown;
+        unsigned mZGeneration = ~0u;
+        std::optional<std::pair<float, float>> mStoredZ;
+        // Reused every frame for the parent's node path, so the update does not allocate.
+        osg::NodePath mParentPath;
 
         osg::Vec3f mSimWorldPos;
         osg::Vec3f mVelocity;

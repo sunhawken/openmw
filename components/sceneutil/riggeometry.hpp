@@ -81,6 +81,11 @@ namespace SceneUtil
         /// the seam welder transplanting jiggle weights) on a geometry that may already be live.
         void reinitialize();
 
+        /// Gives this geometry its own copy of the influence data. Copies of a RigGeometry share
+        /// that data with the cached template, so call this before changing bones or weights on
+        /// one instance; otherwise every actor wearing the same mesh gets the change.
+        void makeInfluenceDataUnique();
+
         /// Jiggle seam fix: feather this mesh's jiggle-bone (breast/butt) influence weights to
         /// zero within @p distance (world units) of the mesh's open-edge (seam) boundary, and
         /// renormalize each affected vertex back to 1.0 via its other bones. This pins the seam-ring

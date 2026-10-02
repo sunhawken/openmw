@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
 
 #include <MyGUI_InputManager.h>
+#include <MyGUI_LayerManager.h>
 #include <MyGUI_RenderManager.h>
 #include <MyGUI_Window.h>
 
@@ -20,6 +22,7 @@
 #include "../mwrender/characterpreview.hpp"
 #include "../mwworld/ptr.hpp"
 
+#include "jigglenpclist.hpp"
 #include "windowbase.hpp"
 
 namespace MWGui
@@ -109,6 +112,8 @@ namespace MWGui
         mBackLive->setVisible(false);
         mMainWidget->setVisible(true);
         WindowBase::clampWindowCoordinates(mWindow);
+        // Shares the Settings layer with the Options window; bring it to the front.
+        MyGUI::LayerManager::getInstance().upLayerItem(mWindow);
         refresh();
     }
 
@@ -287,7 +292,22 @@ namespace MWGui
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWWorld::Ptr player = world->getPlayerPtr();
         MWRender::Animation* animation = world->getAnimation(player);
-        mHasPreview = animation && MWRender::JiggleAutoRig::buildRetargetPreview(animation->getObjectRoot(), mPreview);
+        osg::Group* root = animation ? animation->getObjectRoot() : nullptr;
+        // In first person the player's model is only the arms, so read the outfit from a third-person
+        // preview of the player instead (the walking preview when it exists, else a temporary one).
+        std::unique_ptr<MWRender::JigglePreview> thirdPerson;
+        if (world->isFirstPerson())
+        {
+            if (mFrontPreview)
+                root = mFrontPreview->getObjectRoot();
+            else
+            {
+                thirdPerson = std::make_unique<MWRender::JigglePreview>(mSceneRoot, mResourceSystem, player, true);
+                thirdPerson->rebuild();
+                root = thirdPerson->getObjectRoot();
+            }
+        }
+        mHasPreview = root && MWRender::JiggleAutoRig::buildRetargetPreview(root, mPreview);
         if (mHasPreview)
         {
             const float ySpan = std::max(1.f, mPreview.mYMax - mPreview.mYMin);
@@ -390,10 +410,11 @@ namespace MWGui
 
     void JiggleRetargetPanel::applyToPlayer()
     {
-        // Re-run the auto-rigger on the player so the new anchors take effect right away.
+        // Re-run the auto-rigger so the new anchors take effect right away: the anchors are stored per
+        // mesh, so rebuild every actor that jiggles (the player and listed NPCs).
         Settings::game().mJiggleAutoRig.set(true);
         Settings::game().mJigglePlayerEnabled.set(true);
-        MWBase::Environment::get().getWorld()->renderPlayer();
+        JiggleNpcList::rebuildJigglingActors();
         refresh();
     }
 
