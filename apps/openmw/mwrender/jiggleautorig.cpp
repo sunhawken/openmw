@@ -26,11 +26,16 @@
 #include <components/misc/jigglepolicy.hpp>
 #include <components/misc/jigglezoffset.hpp>
 #include <components/misc/strings/lower.hpp>
+#include <components/resource/resourcesystem.hpp>
+#include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/riggeometry.hpp>
 #include <components/sceneutil/skeleton.hpp>
 #include <components/settings/values.hpp>
+#include <components/vfs/pathutil.hpp>
 
 #include "jigglebonecontroller.hpp"
+
+#include "../mwbase/environment.hpp"
 
 namespace MWRender
 {
@@ -118,12 +123,151 @@ namespace MWRender
             SceneUtil::Skeleton* mSkeleton = nullptr;
         };
 
-        const osg::Vec3Array* sourceVerts(const Rig& rig)
+        const osg::Vec3Array* rawSourceVerts(const Rig& rig)
         {
             osg::ref_ptr<osg::Geometry> src = rig.getSourceGeometry();
             if (!src)
                 return nullptr;
             return dynamic_cast<const osg::Vec3Array*>(src->getVertexArray());
+        }
+
+        // Vertices of meshes that are not authored in skeleton space, moved there (see prepareRestVerts).
+        // Valid for one run()/buildRetargetPreview() call only.
+        std::unordered_map<const Rig*, osg::ref_ptr<osg::Vec3Array>> gRestVerts;
+
+        // Every detection and the weight painting read vertices through this, so they all work in one space.
+        const osg::Vec3Array* sourceVerts(const Rig& rig)
+        {
+            const auto it = gRestVerts.find(&rig);
+            if (it != gRestVerts.end())
+                return it->second.get();
+            return rawSourceVerts(rig);
+        }
+
+        int boneIndex(const std::vector<std::string>& names, std::string_view bone);
+
+        using RestBoneMap = std::unordered_map<std::string, osg::Matrixf>;
+
+        void collectRestMatrices(const osg::Node& node, const osg::Matrixf& parent, RestBoneMap& out)
+        {
+            osg::Matrixf world = parent;
+            if (const osg::MatrixTransform* transform
+                = node.asTransform() ? node.asTransform()->asMatrixTransform() : nullptr)
+            {
+                world = osg::Matrixf(transform->getMatrix()) * parent;
+                out.emplace(Misc::StringUtils::lowerCase(node.getName()), world);
+            }
+            if (const osg::Group* group = node.asGroup())
+                for (unsigned int i = 0; i < group->getNumChildren(); ++i)
+                    collectRestMatrices(*group->getChild(i), world, out);
+        }
+
+        // Skeleton-space rest matrices of every bone of the actor's skeleton, read from the unanimated
+        // skeleton NIF (the live skeleton is posed by animation). Cached per skeleton file.
+        const RestBoneMap* restBoneMatrices(const SceneUtil::Skeleton& skeleton)
+        {
+            static std::unordered_map<std::string, RestBoneMap> sCache;
+            std::string file;
+            if (!skeleton.getUserValue("meshFileName", file) || file.empty())
+                return nullptr;
+            const auto found = sCache.find(file);
+            if (found != sCache.end())
+                return &found->second;
+            RestBoneMap& map = sCache[file];
+            try
+            {
+                osg::ref_ptr<const osg::Node> skeletonTemplate
+                    = MWBase::Environment::get().getResourceSystem()->getSceneManager()->getTemplate(
+                        VFS::Path::Normalized(file));
+                if (skeletonTemplate)
+                    collectRestMatrices(*skeletonTemplate, osg::Matrixf(), map);
+            }
+            catch (const std::exception& e)
+            {
+                Log(Debug::Warning) << "Jiggle auto-rig: cannot read skeleton " << file << ": " << e.what();
+            }
+            return &map;
+        }
+
+        // Whether the actor's chest mesh is authored in skeleton space (Better Bodies style bodies, Bellara...):
+        // its torso bones are bound where the rest skeleton has them. Stock Morrowind body parts and clothing
+        // keep their vertices in their own local space instead and reach the skeleton only through each bone's
+        // bind matrix.
+        bool chestMeshInSkeletonSpace(const std::vector<Rig*>& rigs, const RestBoneMap& rest)
+        {
+            static constexpr std::array<std::string_view, 6> sTorso
+                = { "bip01 pelvis", "bip01 spine", "bip01 spine1", "bip01 spine2", "bip01 neck", "bip01 head" };
+            const Rig* chest = nullptr;
+            std::size_t chestVerts = 0;
+            for (const Rig* rig : rigs)
+            {
+                const osg::Vec3Array* verts = rawSourceVerts(*rig);
+                if (verts && verts->size() > chestVerts && boneIndex(rig->getInfluenceBoneNames(), "bip01 spine2") >= 0)
+                {
+                    chest = rig;
+                    chestVerts = verts->size();
+                }
+            }
+            if (!chest)
+                return true;
+            float best = std::numeric_limits<float>::max();
+            for (const Rig::BoneInfo& bone : chest->getBoneInfoList())
+            {
+                const std::string name = Misc::StringUtils::lowerCase(bone.mName);
+                if (std::find(sTorso.begin(), sTorso.end(), name) == sTorso.end())
+                    continue;
+                const auto it = rest.find(name);
+                if (it == rest.end())
+                    continue;
+                const osg::Vec3f bindOrigin = osg::Matrixf::inverse(bone.mInvBindMatrix).getTrans();
+                best = std::min(best, (bindOrigin - it->second.getTrans()).length());
+            }
+            return best < 5.f;
+        }
+
+        // Read raw, a stock Morrowind torso lies on its side and the breast/butt/thigh search lands in the wrong
+        // place, so its meshes are moved into skeleton rest space: each vertex through its own bones' bind
+        // matrices and the rest skeleton. Bodies authored in skeleton space are left exactly as they are, so
+        // their anchors (and anchors saved in the Retarget Jiggle window) do not change.
+        void prepareRestVerts(const std::vector<Rig*>& rigs, const SceneUtil::Skeleton* skeleton)
+        {
+            gRestVerts.clear();
+            const RestBoneMap* rest = skeleton ? restBoneMatrices(*skeleton) : nullptr;
+            if (!rest || rest->empty() || chestMeshInSkeletonSpace(rigs, *rest))
+                return;
+            for (Rig* rig : rigs)
+            {
+                const osg::Vec3Array* src = rawSourceVerts(*rig);
+                if (!src || src->empty())
+                    continue;
+                const std::vector<Rig::BoneInfo> bones = rig->getBoneInfoList();
+                std::vector<std::optional<osg::Matrixf>> toRest(bones.size());
+                for (std::size_t b = 0; b < bones.size(); ++b)
+                {
+                    const auto it = rest->find(Misc::StringUtils::lowerCase(bones[b].mName));
+                    if (it != rest->end())
+                        toRest[b] = bones[b].mInvBindMatrix * it->second;
+                }
+                const std::vector<Rig::BoneWeights> perVertex = rig->getPerVertexInfluences(src->size());
+                osg::ref_ptr<osg::Vec3Array> out = new osg::Vec3Array(*src);
+                for (std::size_t v = 0; v < src->size(); ++v)
+                {
+                    osg::Vec3f sum(0.f, 0.f, 0.f);
+                    float total = 0.f;
+                    for (const auto& [bone, weight] : perVertex[v])
+                        if (bone < toRest.size() && toRest[bone] && weight > 0.f)
+                        {
+                            sum += (*src)[v] * *toRest[bone] * weight;
+                            total += weight;
+                        }
+                    if (total > 1e-4f)
+                        (*out)[v] = sum / total;
+                }
+                gRestVerts[rig] = out;
+            }
+            if (Settings::game().mJiggleAutoRigDebug)
+                Log(Debug::Warning) << "Jiggle auto-rig: moved " << gRestVerts.size()
+                                    << " mesh(es) from local space into skeleton rest space";
         }
 
 
@@ -416,6 +560,7 @@ namespace MWRender
     void JiggleAutoRig::run(
         osg::Group* objectRoot, bool isPlayer, bool allowBodyAutoRig, std::string_view actorName)
     {
+        gRestVerts.clear();
         if (!objectRoot)
             return;
         const bool generalAutoRig = Settings::game().mJiggleAutoRig;
@@ -536,6 +681,7 @@ namespace MWRender
 
         // Anchors are recomputed each pass from whatever meshes are currently attached, so a piece
         // equipped later (e.g. armor covering the chest) is painted from its own geometry.
+        prepareRestVerts(rigs, skeleton);
         detectFrame(rigs);
         std::array<std::optional<osg::Vec3f>, 6> anchors;
         for (std::size_t t = 0; t < sTargets.size(); ++t)
@@ -715,6 +861,7 @@ namespace MWRender
 
     bool JiggleAutoRig::buildRetargetPreview(osg::Group* objectRoot, RetargetPreview& out)
     {
+        gRestVerts.clear();
         out = RetargetPreview();
         if (!objectRoot)
             return false;
@@ -736,6 +883,9 @@ namespace MWRender
         }
         if (rigs.empty())
             return false;
+        SkeletonFinder sf;
+        objectRoot->accept(sf);
+        prepareRestVerts(rigs, sf.mSkeleton);
         detectFrame(rigs);
         out.mChestMesh = Misc::StringUtils::lowerCase(chestMesh);
         out.mPelvisMesh = Misc::StringUtils::lowerCase(pelvisMesh);
@@ -748,7 +898,8 @@ namespace MWRender
             if (!src || !verts || verts->empty())
                 continue;
             const osg::Vec3Array* normals = dynamic_cast<const osg::Vec3Array*>(src->getNormalArray());
-            if (normals && normals->size() != verts->size())
+            // Normals of a mesh moved into rest space no longer match it; shade from the face normals.
+            if (normals && (normals->size() != verts->size() || gRestVerts.contains(rig)))
                 normals = nullptr;
             osg::TriangleIndexFunctor<TriangleCollector> functor;
             src->accept(functor);
