@@ -33,6 +33,7 @@ namespace MWGui
         MyGUI::Button* mPreviousButton;
         MyGUI::Button* mCaseSensitiveToggleButton;
         MyGUI::Button* mRegExSearchToggleButton;
+        MyGUI::Button* mJiggleNpcButton;
 
         typedef std::list<std::string> StringList;
 
@@ -77,6 +78,10 @@ namespace MWGui
 
     private:
         std::string mConsoleMode;
+
+        /// "Add to Jiggle": puts the selected NPC's name on the jiggle npc enabled names list (or takes it off)
+        void toggleSelectedNpcJiggle(MyGUI::Widget* sender);
+        void updateJiggleNpcButton();
 
         void updateConsoleTitle();
 

@@ -5,6 +5,7 @@
 #include <MyGUI_InputManager.h>
 #include <MyGUI_LayerManager.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -16,6 +17,7 @@
 #include <components/compiler/scanner.hpp>
 #include <components/files/conversion.hpp>
 #include <components/interpreter/interpreter.hpp>
+#include <components/misc/jigglepolicy.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/utf8stream.hpp>
 #include <components/settings/values.hpp>
@@ -29,6 +31,9 @@
 #include "../mwbase/luamanager.hpp"
 #include "../mwbase/scriptmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
+#include "../mwbase/world.hpp"
+
+#include "../mwrender/renderingmanager.hpp"
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -171,6 +176,7 @@ namespace MWGui
         getWidget(mPreviousButton, "button_Previous");
         getWidget(mCaseSensitiveToggleButton, "button_CaseSensitive");
         getWidget(mRegExSearchToggleButton, "button_RegExSearch");
+        getWidget(mJiggleNpcButton, "button_JiggleNpc");
 
         // Set up the command line box
         mCommandLine->eventEditSelectAccept += newDelegate(this, &Console::acceptCommand);
@@ -182,6 +188,8 @@ namespace MWGui
         mPreviousButton->eventMouseButtonClick += newDelegate(this, &Console::findPreviousOccurrence);
         mCaseSensitiveToggleButton->eventMouseButtonClick += newDelegate(this, &Console::toggleCaseSensitiveSearch);
         mRegExSearchToggleButton->eventMouseButtonClick += newDelegate(this, &Console::toggleRegExSearch);
+        mJiggleNpcButton->eventMouseButtonClick += newDelegate(this, &Console::toggleSelectedNpcJiggle);
+        updateJiggleNpcButton();
 
         // Set up the log window
         mHistory->setOverflowToTheLeft(true);
@@ -879,6 +887,53 @@ namespace MWGui
         else
             mPtr = MWWorld::Ptr();
         updateConsoleTitle();
+        updateJiggleNpcButton();
+    }
+
+    void Console::updateJiggleNpcButton()
+    {
+        const bool npc = !mPtr.isEmpty() && mPtr.getClass().isNpc()
+            && mPtr != MWBase::Environment::get().getWorld()->getPlayerPtr();
+        const bool listed = npc
+            && Misc::JigglePolicy::containsName(
+                Settings::game().mJiggleNpcEnabledNames.get(), mPtr.getClass().getName(mPtr));
+        mJiggleNpcButton->setCaption(listed ? "Remove from Jiggle" : "Add to Jiggle");
+        mJiggleNpcButton->setEnabled(npc);
+        mJiggleNpcButton->setAlpha(npc ? 1.f : 0.5f);
+    }
+
+    void Console::toggleSelectedNpcJiggle(MyGUI::Widget*)
+    {
+        if (mPtr.isEmpty() || !mPtr.getClass().isNpc() || mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr())
+        {
+            printError("Select an NPC first: click on them while the console is open.");
+            return;
+        }
+        const std::string name(mPtr.getClass().getName(mPtr));
+        if (name.empty())
+        {
+            printError("The selected NPC has no name; jiggle rules are matched by name.");
+            return;
+        }
+        auto enabled = Settings::game().mJiggleNpcEnabledNames.get();
+        auto disabled = Settings::game().mJiggleNpcDisabledNames.get();
+        const auto sameName = [&](const std::string& item) { return Misc::StringUtils::ciEqual(item, name); };
+        const bool wasListed = std::any_of(enabled.begin(), enabled.end(), sameName);
+        enabled.erase(std::remove_if(enabled.begin(), enabled.end(), sameName), enabled.end());
+        disabled.erase(std::remove_if(disabled.begin(), disabled.end(), sameName), disabled.end());
+        if (!wasListed)
+            enabled.push_back(name);
+        Settings::game().mJiggleNpcEnabledNames.set(enabled);
+        Settings::game().mJiggleNpcDisabledNames.set(disabled);
+
+        // Rebuild the NPC so the auto-rigger runs (or not) with the new rule right away.
+        MWBase::Environment::get().getWorld()->getRenderingManager()->rebuildPtr(mPtr);
+
+        if (wasListed)
+            printOK("Jiggle: removed \"" + name + "\" from jiggle npc enabled names");
+        else
+            printOK("Jiggle: added \"" + name + "\" to jiggle npc enabled names");
+        updateJiggleNpcButton();
     }
 
     void Console::updateConsoleTitle()
