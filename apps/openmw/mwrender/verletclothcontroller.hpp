@@ -34,6 +34,9 @@ namespace MWRender
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
+        /// Whether this controller simulates `bone` (one of its chains' bones).
+        bool controls(const osg::Node* bone) const;
+
     private:
         struct Chain
         {
