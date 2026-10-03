@@ -332,16 +332,21 @@ namespace SceneUtil
         }
 
         unsigned int traversalNumber = nv->getTraversalNumber();
-        if (mLastFrameNumber == traversalNumber || (mLastFrameNumber != 0 && !mSkeleton->getActive()))
+        // Reuse the last result when already skinned this frame, or when the bones have not moved since: the
+        // skeleton is inactive, or its update was skipped this frame (off screen or distant animation LOD).
+        if (mLastFrameNumber == traversalNumber
+            || (mLastFrameNumber != 0 && (!mSkeleton->getActive() || mSkeleton->isPoseFrozen(traversalNumber))))
         {
-            osg::Geometry& geom = *getGeometry(mLastFrameNumber);
+            osg::Geometry& geom = *mGeometry[mCurrentBuffer];
             nv->pushOntoNodePath(&geom);
             nv->apply(geom);
             nv->popFromNodePath();
             return;
         }
+        if (mLastFrameNumber != 0)
+            mCurrentBuffer ^= 1u;
         mLastFrameNumber = traversalNumber;
-        osg::Geometry& geom = *getGeometry(mLastFrameNumber);
+        osg::Geometry& geom = *mGeometry[mCurrentBuffer];
 
         mSkeleton->updateBoneMatrices(traversalNumber);
 
@@ -587,12 +592,6 @@ namespace SceneUtil
 
     void RigGeometry::accept(osg::PrimitiveFunctor& func) const
     {
-        getGeometry(mLastFrameNumber)->accept(func);
+        mGeometry[mCurrentBuffer]->accept(func);
     }
-
-    osg::Geometry* RigGeometry::getGeometry(unsigned int frame) const
-    {
-        return mGeometry[frame % 2].get();
-    }
-
 }
