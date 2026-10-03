@@ -1286,6 +1286,11 @@ namespace MWPhysics
         // Run dynamic body sim, broadphase updates etc
         // IMPORTANT: Buoyancy must be applied INSIDE this loop, once per physics substep,
         // to ensure buoyancy and gravity are balanced correctly regardless of frame rate.
+        // Cap the number of catch-up steps per frame. Without a cap a slow frame (e.g. a large battle) queues
+        // several Jolt steps for the next frame, which makes that frame slower still, and the frame rate collapses.
+        // Dropping the excess time only slows down loose dynamic objects while the game is below the cap's rate.
+        constexpr int maxJoltStepsPerFrame = 3;
+        mTimeAccumJolt = std::min(mTimeAccumJolt, mPhysicsDt * maxJoltStepsPerFrame);
         while (mTimeAccumJolt >= mPhysicsDt)
         {
             mTimeAccumJolt -= mPhysicsDt;

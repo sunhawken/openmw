@@ -59,6 +59,13 @@ namespace SceneUtil
 
         bool getActive() const;
 
+        /// True when the update traversal skipped this skeleton in the given frame, so its pose has not changed and
+        /// child rigs can reuse their last skinning result.
+        bool isPoseFrozen(unsigned int traversalNumber) const { return mUpdateSkippedFrame == traversalNumber; }
+
+        /// Semi-active skeletons farther than this from the camera update at a reduced rate. 0 disables.
+        static void setUpdateLodDistance(float distance);
+
         void traverse(osg::NodeVisitor& nv) override;
 
         void markDirty();
@@ -81,6 +88,10 @@ namespace SceneUtil
 
         unsigned int mLastFrameNumber;
         unsigned int mLastCullFrameNumber;
+        unsigned int mUpdateSkippedFrame = 0;
+        float mLastCullDistance = 0.f;
+
+        static float sUpdateLodDistance;
     };
 
 }

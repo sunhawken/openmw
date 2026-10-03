@@ -6,6 +6,7 @@
 #include <components/misc/strings/lower.hpp>
 
 #include <algorithm>
+#include <cstdint>
 
 namespace SceneUtil
 {
@@ -32,6 +33,13 @@ namespace SceneUtil
         TransformPath mPath;
         std::unordered_map<std::string, TransformPath>& mCache;
     };
+
+    float Skeleton::sUpdateLodDistance = 0.f;
+
+    void Skeleton::setUpdateLodDistance(float distance)
+    {
+        sUpdateLodDistance = std::max(0.f, distance);
+    }
 
     Skeleton::Skeleton()
         : mBoneCacheInit(false)
@@ -134,15 +142,44 @@ namespace SceneUtil
 
     void Skeleton::traverse(osg::NodeVisitor& nv)
     {
+        const unsigned int frame = nv.getTraversalNumber();
         if (nv.getVisitorType() == osg::NodeVisitor::UPDATE_VISITOR)
         {
             if (mActive == Inactive && mLastFrameNumber != 0)
+            {
+                mUpdateSkippedFrame = frame;
                 return;
-            if (mActive == SemiActive && mLastFrameNumber != 0 && mLastCullFrameNumber + 3 <= nv.getTraversalNumber())
-                return;
+            }
+            if (mActive == SemiActive && mLastFrameNumber != 0)
+            {
+                if (mLastCullFrameNumber + 3 <= frame)
+                {
+                    mUpdateSkippedFrame = frame;
+                    return;
+                }
+                // Distant actors animate at a reduced rate. Each skeleton gets its own phase so the work is spread
+                // evenly over frames instead of every distant actor updating on the same frame.
+                if (sUpdateLodDistance > 0.f && mLastCullDistance > sUpdateLodDistance)
+                {
+                    const unsigned int interval
+                        = std::min(4u, 1u + static_cast<unsigned int>(mLastCullDistance / sUpdateLodDistance));
+                    const unsigned int phase = static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(this) >> 4);
+                    if ((frame + phase) % interval != 0)
+                    {
+                        mUpdateSkippedFrame = frame;
+                        return;
+                    }
+                }
+            }
         }
         else if (nv.getVisitorType() == osg::NodeVisitor::CULL_VISITOR)
-            mLastCullFrameNumber = nv.getTraversalNumber();
+        {
+            // Several cameras may cull us in one frame (main view, reflections, shadows); keep the nearest.
+            const float distance = nv.getDistanceToViewPoint(osg::Vec3f(), true);
+            if (mLastCullFrameNumber != frame || distance < mLastCullDistance)
+                mLastCullDistance = distance;
+            mLastCullFrameNumber = frame;
+        }
 
         osg::Group::traverse(nv);
     }
