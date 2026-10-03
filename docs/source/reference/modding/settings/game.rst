@@ -92,6 +92,20 @@ Game Settings
    and values above 500 will result in the player inflicting no damage.
 
 .. omw-setting::
+   :title: actor animation lod distance
+   :type: float
+   :range: >= 0
+   :default: 1024
+
+   NPCs and creatures farther than this distance from the camera, in game units,
+   update their animation and skinning at a reduced rate:
+   every 2nd frame past this distance, every 3rd frame past twice this distance,
+   and every 4th frame past three times this distance.
+   Actors are staggered so they do not all update on the same frame.
+   The player is never affected.
+   This greatly reduces the CPU cost of large battles. A value of 0 disables it.
+
+.. omw-setting::
    :title: actors processing range
    :type: int
    :range: 3584 to 7168
