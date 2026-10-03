@@ -335,14 +335,10 @@ namespace MWPhysics
         budgetMeasurement /= mDefaultPhysicsDt;
         // ensure sane minimum value
         budgetMeasurement = std::max(0.00001f, budgetMeasurement);
-        // we're spending almost or more than realtime per physics frame; limit to a single step
-        if (budgetMeasurement > 0.95)
-            maxAllowedSteps = 1;
-        // physics is fairly cheap; limit based on expense
-        if (budgetMeasurement < 0.5)
-            maxAllowedSteps = std::ceil(1.0 / budgetMeasurement);
-        // limit to a reasonable amount
-        maxAllowedSteps = std::min(10, maxAllowedSteps);
+        // Allow only as many fixed steps per frame as fit in ~60% of one physics tick of work. The old rule allowed
+        // ceil(1 / cost) steps, so with ~100 fighting actors (cost ~0.2) a slow frame queued 5 steps, the next frame
+        // was slower still, and the frame rate collapsed. Past the limit we fall back to fewer, longer steps below.
+        maxAllowedSteps = std::clamp(static_cast<int>(0.6f / budgetMeasurement), 1, 10);
 
         // fall back to delta time for this frame if fixed timestep physics would fall behind
         float actualDelta = mDefaultPhysicsDt;
@@ -654,15 +650,17 @@ namespace MWPhysics
         MaybeExclusiveLock lock(mLOSCacheMutex, mLockingPolicy);
 
         auto req = LOSRequest(actor1, actor2);
-        auto result = std::find(mLOSCache.begin(), mLOSCache.end(), req);
-        if (result == mLOSCache.end())
+        const auto found = mLOSCacheIndex.find(req.mRawActors);
+        if (found == mLOSCacheIndex.end())
         {
             req.mResult = hasLineOfSight(actor1.get(), actor2.get());
+            mLOSCacheIndex.emplace(req.mRawActors, mLOSCache.size());
             mLOSCache.push_back(req);
             return req.mResult;
         }
-        result->mAge = 0;
-        return result->mResult;
+        LOSRequest& result = mLOSCache[found->second];
+        result.mAge = 0;
+        return result.mResult;
     }
 
     void PhysicsTaskScheduler::refreshLOSCache()
@@ -855,6 +853,9 @@ namespace MWPhysics
             mLOSCache.erase(
                 std::remove_if(mLOSCache.begin(), mLOSCache.end(), [](const LOSRequest& req) { return req.mStale; }),
                 mLOSCache.end());
+            mLOSCacheIndex.clear();
+            for (std::size_t i = 0; i < mLOSCache.size(); ++i)
+                mLOSCacheIndex.emplace(mLOSCache[i].mRawActors, i);
         }
         mTimeEnd = mTimer->tick();
     }

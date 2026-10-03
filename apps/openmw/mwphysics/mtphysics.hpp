@@ -8,6 +8,7 @@
 #include <set>
 #include <shared_mutex>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <Jolt/Jolt.h>
@@ -120,6 +121,18 @@ namespace MWPhysics
         float mTimeAccum;
         MWRender::JoltDebugDrawer* mDebugDrawer;
         std::vector<LOSRequest> mLOSCache;
+        // Index into mLOSCache keyed by the sorted raw actor pair. With N actors in combat the cache holds up to
+        // N^2 pairs, and engageCombat queries every pair, so a linear search here was O(N^4) per AI tick.
+        struct LOSKeyHash
+        {
+            std::size_t operator()(const std::array<const Actor*, 2>& key) const noexcept
+            {
+                const std::size_t h1 = std::hash<const Actor*>{}(key[0]);
+                const std::size_t h2 = std::hash<const Actor*>{}(key[1]);
+                return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+            }
+        };
+        std::unordered_map<std::array<const Actor*, 2>, std::size_t, LOSKeyHash> mLOSCacheIndex;
         std::set<std::weak_ptr<PtrHolder>, std::owner_less<std::weak_ptr<PtrHolder>>> mUpdateAabb;
 
         LockingPolicy mLockingPolicy;

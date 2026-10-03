@@ -117,7 +117,6 @@ namespace SceneUtil
         void updateBounds(osg::NodeVisitor* nv);
 
         osg::ref_ptr<osg::Geometry> mGeometry[2];
-        osg::Geometry* getGeometry(unsigned int frame) const;
 
         osg::ref_ptr<osg::Geometry> mSourceGeometry;
         osg::ref_ptr<const osg::Vec4Array> mSourceTangents;
@@ -137,6 +136,9 @@ namespace SceneUtil
         std::vector<Bone*> mNodes;
 
         unsigned int mLastFrameNumber{ 0 };
+        // Buffer holding the latest skinning result. New results always go to the other buffer, so the one the
+        // draw thread may still be reading from the previous frame is never overwritten.
+        unsigned int mCurrentBuffer{ 0 };
         bool mBoundsFirstFrame{ true };
 
         bool initFromParentSkeleton(osg::NodeVisitor* nv);
