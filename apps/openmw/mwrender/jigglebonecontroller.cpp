@@ -68,7 +68,7 @@ namespace MWRender
         }
     }
 
-    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, std::string actorName)
+    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, std::string actorName, ESM::FormId refNum)
         : mSimWorldPos(0, 0, 0)
         , mVelocity(0, 0, 0)
         , mPreviousRestWorldPos(0, 0, 0)
@@ -77,6 +77,7 @@ namespace MWRender
         , mDebug(debug)
         , mIsPlayer(isPlayer)
         , mActorName(std::move(actorName))
+        , mRefNum(refNum)
     {
     }
 
@@ -161,7 +162,7 @@ namespace MWRender
         restWorldPos += gluteOffset;
 
         // Actor-specific Jiggle rules are live.
-        if (!Misc::JigglePolicy::actorEnabled(mIsPlayer, mActorName))
+        if (!Misc::JigglePolicy::actorEnabled(mIsPlayer, mActorName, mRefNum))
         {
             mSimWorldPos = restWorldPos;
             mVelocity = osg::Vec3f(0, 0, 0);

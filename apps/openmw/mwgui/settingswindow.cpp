@@ -10,25 +10,33 @@
 
 #include <MyGUI_ComboBox.h>
 #include <MyGUI_Gui.h>
+#include <MyGUI_ImageBox.h>
 #include <MyGUI_LanguageManager.h>
 #include <MyGUI_LayerManager.h>
 #include <MyGUI_ScrollBar.h>
 #include <MyGUI_ScrollView.h>
 #include <MyGUI_TabControl.h>
+#include <MyGUI_TabItem.h>
+#include <MyGUI_TextBox.h>
 #include <MyGUI_UString.h>
 #include <MyGUI_Window.h>
 
 #include <SDL_video.h>
 
+#include <osg/Texture2D>
+
 #include <components/debug/debuglog.hpp>
+#include <components/esm3/loadnpc.hpp>
 #include <components/files/configurationmanager.hpp>
 #include <components/l10n/manager.hpp>
 #include <components/lua_ui/scriptsettings.hpp>
 #include <components/misc/constants.hpp>
 #include <components/misc/display.hpp>
+#include <components/misc/jigglepolicy.hpp>
 #include <components/misc/jigglezoffset.hpp>
 #include <components/misc/nifbonewriter.hpp>
 #include <components/misc/strings/algorithm.hpp>
+#include <components/myguiplatform/myguitexture.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/lightmanager.hpp>
@@ -41,9 +49,15 @@
 #include "../mwbase/inputmanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/soundmanager.hpp"
+#include "../mwbase/statemanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
 #include "../mwlua/luamanagerimp.hpp"
+#include "../mwmechanics/actorutil.hpp"
+#include "../mwrender/characterpreview.hpp"
+#include "../mwworld/class.hpp"
+#include "../mwworld/livecellref.hpp"
+#include "../mwworld/ptr.hpp"
 
 #include "confirmationdialog.hpp"
 #include "weightedsearch.hpp"
@@ -233,6 +247,8 @@ namespace MWGui
     {
         if (mJiggleRetargetPanel)
             mJiggleRetargetPanel->onFrame(duration);
+        if (mJigglePreview)
+            mJigglePreview->tick(duration);
         if (mScriptView->getVisible())
         {
             const auto scriptsSize = mScriptAdapter->getSize();
@@ -309,6 +325,7 @@ namespace MWGui
         getWidget(mLightingMethodButton, "LightingMethodButton");
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mJiggleOffsetResetButton, "JiggleOffsetResetButton");
+        createJigglePreviewWidgets();
         getWidget(mJiggleRetargetButton, "JiggleRetargetButton");
         mJiggleRetargetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onJiggleRetargetClicked);
@@ -592,6 +609,142 @@ namespace MWGui
     void SettingsWindow::onTabChanged(MyGUI::TabControl* /*sender*/, size_t /*index*/)
     {
         resetScrollbars();
+        updateJigglePreview();
+    }
+
+    namespace
+    {
+        constexpr const char* sJigglePreviewMotionNames[] = { "Still", "Walk", "Run", "Bounce" };
+        constexpr const char* sJigglePreviewViewNames[] = { "Front", "Side", "Back", "Chest" };
+        constexpr int sJigglePreviewSidebar = 366; // x where the preview starts: right of the slider column
+    }
+
+    void SettingsWindow::createJigglePreviewWidgets()
+    {
+        getWidget(mJiggleScrollView, "JiggleScrollView");
+        mJiggleTabItem = mJiggleScrollView->getParent();
+        // The slider column keeps its width; the preview takes the rest of the tab.
+        mJiggleScrollView->setAlign(MyGUI::Align::Left | MyGUI::Align::VStretch);
+        mJigglePreviewFrame = mJiggleTabItem->createWidget<MyGUI::Widget>(
+            "", MyGUI::IntCoord(sJigglePreviewSidebar, 2, 1, 1), MyGUI::Align::Default, "JigglePreviewFrame");
+        mJigglePreviewImage = mJigglePreviewFrame->createWidget<MyGUI::ImageBox>(
+            "ImageBox", MyGUI::IntCoord(0, 0, 1, 1), MyGUI::Align::Default, "JigglePreviewImage");
+        mJigglePreviewStatus = mJigglePreviewFrame->createWidget<MyGUI::TextBox>(
+            "SandText", MyGUI::IntCoord(0, 0, 1, 1), MyGUI::Align::Default, "JigglePreviewStatus");
+        mJigglePreviewStatus->setTextAlign(MyGUI::Align::HCenter | MyGUI::Align::Top);
+        mJigglePreviewMotionButton = mJigglePreviewFrame->createWidget<MyGUI::Button>(
+            "MW_Button", MyGUI::IntCoord(0, 0, 1, 1), MyGUI::Align::Default, "JigglePreviewMotionButton");
+        mJigglePreviewViewButton = mJigglePreviewFrame->createWidget<MyGUI::Button>(
+            "MW_Button", MyGUI::IntCoord(0, 0, 1, 1), MyGUI::Align::Default, "JigglePreviewViewButton");
+        mJigglePreviewMotionButton->setUserString("ToolTipType", "Layout");
+        mJigglePreviewMotionButton->setUserString("ToolTipLayout", "TextToolTip");
+        mJigglePreviewMotionButton->setUserString("Caption_Text",
+            "How the preview moves. Bounce hops in place, so you can watch the spring overshoot and settle.");
+        mJigglePreviewViewButton->setUserString("ToolTipType", "Layout");
+        mJigglePreviewViewButton->setUserString("ToolTipLayout", "TextToolTip");
+        mJigglePreviewViewButton->setUserString("Caption_Text", "Camera: front, side, back or a chest close-up.");
+        mJigglePreviewMotionButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJigglePreviewMotionClicked);
+        mJigglePreviewViewButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onJigglePreviewViewClicked);
+        updateJigglePreviewCaptions();
+        mJigglePreviewFrame->setVisible(false);
+    }
+
+    void SettingsWindow::updateJigglePreviewCaptions()
+    {
+        mJigglePreviewMotionButton->setCaption(
+            std::string("Motion: ") + sJigglePreviewMotionNames[mJigglePreviewMotion]);
+        mJigglePreviewViewButton->setCaption(std::string("View: ") + sJigglePreviewViewNames[mJigglePreviewView]);
+    }
+
+    void SettingsWindow::layoutJigglePreview()
+    {
+        if (!mJigglePreviewFrame)
+            return;
+        const MyGUI::IntSize tab = mJiggleTabItem->getSize();
+        const int width = tab.width - sJigglePreviewSidebar - 4;
+        const int height = tab.height - 6;
+        mJigglePreviewFrame->setCoord(sJigglePreviewSidebar, 2, std::max(width, 1), std::max(height, 1));
+        constexpr int buttonH = 26, statusH = 36, gap = 4;
+        const int imageH = std::max(1, height - 2 * (buttonH + gap) - statusH);
+        // Keep the render's 2:3 aspect, centred.
+        int imageW = std::min(width, imageH * 2 / 3);
+        const int fittedH = imageW * 3 / 2;
+        mJigglePreviewImage->setCoord(
+            (width - imageW) / 2, (imageH - fittedH) / 2, std::max(imageW, 1), std::max(fittedH, 1));
+        mJigglePreviewStatus->setCoord(0, imageH, width, statusH);
+        mJigglePreviewMotionButton->setCoord(0, height - 2 * buttonH - gap, width, buttonH);
+        mJigglePreviewViewButton->setCoord(0, height - buttonH, width, buttonH);
+    }
+
+    void SettingsWindow::destroyJigglePreview()
+    {
+        if (mJigglePreviewImage)
+            mJigglePreviewImage->setRenderItemTexture(nullptr);
+        mJigglePreview.reset();
+        mJigglePreviewTexture.reset();
+    }
+
+    void SettingsWindow::updateJigglePreview(bool rebuild)
+    {
+        if (!mJigglePreviewFrame)
+            return;
+        const bool shown = mMainWidget->getVisible()
+            && static_cast<MyGUI::Widget*>(mSettingsTab->getItemSelected()) == mJiggleTabItem;
+        const int width = mJiggleTabItem->getWidth() - sJigglePreviewSidebar - 4;
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const bool inGame = world && !world->getPlayerPtr().isEmpty()
+            && MWBase::Environment::get().getStateManager()->getState() != MWBase::StateManager::State_NoGame;
+        if (!shown || width < 80 || !inGame)
+        {
+            destroyJigglePreview();
+            mJigglePreviewFrame->setVisible(false);
+            return;
+        }
+        mJigglePreviewFrame->setVisible(true);
+        layoutJigglePreview();
+
+        const MWWorld::Ptr player = world->getPlayerPtr();
+        std::string status;
+        if (!Settings::game().mJigglePlayerEnabled)
+            status = "Jiggle is off for your character:\nturn on Player jiggle.";
+        else if (!Settings::game().mJiggleAutoRig)
+            status = "Auto rig is off: only bodies\nwith their own jiggle bones move.";
+        else if (player.getClass().isNpc() && player.get<ESM::NPC>()->mBase->isMale())
+            status = "Male body: only meshes with\ntheir own jiggle bones move.";
+        else
+            status = "Live preview: drag a slider\nand watch it change.";
+        mJigglePreviewStatus->setCaption(status);
+
+        if (mJigglePreview && !rebuild)
+            return;
+        destroyJigglePreview();
+        mJigglePreview = std::make_unique<MWRender::JigglePreview>(mSceneRoot, mResourceSystem, player, true);
+        mJigglePreviewTexture = std::make_unique<MyGUIPlatform::OSGTexture>(
+            mJigglePreview->getTexture(), mJigglePreview->getTextureStateSet());
+        mJigglePreviewImage->setRenderItemTexture(mJigglePreviewTexture.get());
+        mJigglePreviewImage->getSubWidgetMain()->_setUVSet(MyGUI::FloatRect(0.f, 1.f, 1.f, 0.f));
+        mJigglePreview->rebuild();
+        mJigglePreview->setView(static_cast<MWRender::JigglePreview::View>(mJigglePreviewView));
+        mJigglePreview->setAlwaysLive(true);
+        mJigglePreview->setMotion(static_cast<MWRender::JigglePreview::Motion>(mJigglePreviewMotion));
+    }
+
+    void SettingsWindow::onJigglePreviewMotionClicked(MyGUI::Widget* /*sender*/)
+    {
+        mJigglePreviewMotion = (mJigglePreviewMotion + 1) % 4;
+        updateJigglePreviewCaptions();
+        if (mJigglePreview)
+            mJigglePreview->setMotion(static_cast<MWRender::JigglePreview::Motion>(mJigglePreviewMotion));
+    }
+
+    void SettingsWindow::onJigglePreviewViewClicked(MyGUI::Widget* /*sender*/)
+    {
+        mJigglePreviewView = (mJigglePreviewView + 1) % 4;
+        updateJigglePreviewCaptions();
+        if (mJigglePreview)
+            mJigglePreview->setView(static_cast<MWRender::JigglePreview::View>(mJigglePreviewView));
     }
 
     namespace
@@ -1167,7 +1320,10 @@ namespace MWGui
         configureWidgets(mMainWidget, false);
     }
 
-    SettingsWindow::~SettingsWindow() = default;
+    SettingsWindow::~SettingsWindow()
+    {
+        destroyJigglePreview();
+    }
 
     void SettingsWindow::onJiggleRetargetClicked(MyGUI::Widget* /*sender*/)
     {
@@ -1385,7 +1541,17 @@ namespace MWGui
         MWBase::Environment::get().getWindowManager()->processChangedSettings(changed);
         MWBase::Environment::get().getInputManager()->processChangedSettings(changed);
         MWBase::Environment::get().getMechanicsManager()->processChangedSettings(changed);
+        // Settings that change which bones exist need a fresh preview model; the sliders act live.
+        bool rebuildPreview = false;
+        for (const auto& [category, name] : changed)
+            if (category == "Game"
+                && (name == "jiggle auto rig" || name == "jiggle thigh" || name == "jiggle player enabled"
+                    || name == "jiggle auto rig blacklist" || name == "jiggle mesh anchors"
+                    || name == "jiggle seam welding"))
+                rebuildPreview = true;
         Settings::Manager::resetPendingChanges();
+        if (mJigglePreview || rebuildPreview)
+            updateJigglePreview(rebuildPreview);
     }
 
     void SettingsWindow::onKeyboardSwitchClicked(MyGUI::Widget* /*sender*/)
@@ -1670,6 +1836,7 @@ namespace MWGui
         updateVSyncModeSettings();
         resetScrollbars();
         renderScriptSettings();
+        updateJigglePreview(true);
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mOkButton);
     }
 
@@ -1679,6 +1846,9 @@ namespace MWGui
             mJiggleAdvancedLayout->setVisible(false); // close advanced jiggle
         if (mJiggleRetargetPanel)
             mJiggleRetargetPanel->setVisible(false);
+        destroyJigglePreview();
+        if (mJigglePreviewFrame)
+            mJigglePreviewFrame->setVisible(false);
         // Save user settings
         Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");
         MWBase::Environment::get().getLuaManager()->savePermanentStorage(mCfgMgr.getUserConfigPath());
@@ -1688,6 +1858,7 @@ namespace MWGui
     void SettingsWindow::onWindowResize(MyGUI::Window* /*sender*/)
     {
         layoutControlsBox();
+        updateJigglePreview();
     }
 
     void SettingsWindow::computeMinimumWindowSize()

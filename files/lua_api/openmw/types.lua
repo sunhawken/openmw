@@ -1130,6 +1130,25 @@
 -- self.type.setWerewolf(self, false)
 
 ---
+-- Whether body jiggle is on for an NPC or the player (fork extension). A script override set with
+-- @{#NPC.setJiggleEnabled} wins; otherwise the player follows "jiggle player enabled" and NPCs
+-- follow "jiggle npc enabled names".
+-- @function [parent=#NPC] isJiggleEnabled
+-- @param openmw.core#GameObject actor
+-- @return #boolean
+
+---
+-- Force body jiggle on or off for one NPC or the player (fork extension), or pass nil to go back
+-- to the settings. Useful for actors a mod spawns to stand in for others, such as animation
+-- doubles. Overrides last until the game is started or loaded again, so set them again on load.
+-- Can only be used in global scripts or on self in local scripts.
+-- @function [parent=#NPC] setJiggleEnabled
+-- @param openmw.core#GameObject actor
+-- @param #boolean enabled true, false, or nil to clear the override
+-- @usage -- Give a spawned double the same jiggle as the player
+-- types.NPC.setJiggleEnabled(double, types.NPC.isJiggleEnabled(player))
+
+---
 -- Returns the read-only @{#NpcRecord} of an NPC
 -- @function [parent=#NPC] record
 -- @param #any objectOrRecordId

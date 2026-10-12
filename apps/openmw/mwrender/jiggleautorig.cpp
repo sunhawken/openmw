@@ -558,7 +558,7 @@ namespace MWRender
     }
 
     void JiggleAutoRig::run(
-        osg::Group* objectRoot, bool isPlayer, bool allowBodyAutoRig, std::string_view actorName)
+        osg::Group* objectRoot, bool isPlayer, bool allowBodyAutoRig, std::string_view actorName, ESM::FormId refNum)
     {
         gRestVerts.clear();
         if (!objectRoot)
@@ -571,7 +571,7 @@ namespace MWRender
         if (rc.mRigs.empty())
             return;
 
-        if (!Misc::JigglePolicy::actorEnabled(isPlayer, actorName) || !generalAutoRig || !allowBodyAutoRig)
+        if (!Misc::JigglePolicy::actorEnabled(isPlayer, actorName, refNum) || !generalAutoRig || !allowBodyAutoRig)
         {
             addStaticBonesForWeights(objectRoot, rc.mRigs, debug);
             return;
@@ -755,7 +755,7 @@ namespace MWRender
             boneNode->setDataVariance(osg::Object::DYNAMIC);
             boneNode->setUserValue(sAutoRigMarker, true);
             parentNode->addChild(boneNode);
-            boneNode->addUpdateCallback(new JiggleBoneController(debug, isPlayer, std::string(actorName)));
+            boneNode->addUpdateCallback(new JiggleBoneController(debug, isPlayer, std::string(actorName), refNum));
             haveOurBone[t] = true;
             addedAny = true;
             if (debug)

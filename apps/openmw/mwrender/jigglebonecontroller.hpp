@@ -1,6 +1,7 @@
 #ifndef OPENMW_MWRENDER_JIGGLEBONECONTROLLER_H
 #define OPENMW_MWRENDER_JIGGLEBONECONTROLLER_H
 
+#include <components/esm/formid.hpp>
 #include <components/sceneutil/nodecallback.hpp>
 
 #include <osg/Matrix>
@@ -36,7 +37,9 @@ namespace MWRender
         /// (throttled). Controlled by the "jiggle bone debug" setting in [Game].
         /// @param isPlayer when true, this bone belongs to the player character.
         /// @param actorName the NPC display name, matched against "jiggle npc enabled names".
-        explicit JiggleBoneController(bool debug = false, bool isPlayer = false, std::string actorName = {});
+        /// @param refNum the actor's RefNum, for script overrides (Misc::JigglePolicy::overrides()).
+        explicit JiggleBoneController(
+            bool debug = false, bool isPlayer = false, std::string actorName = {}, ESM::FormId refNum = {});
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
@@ -68,6 +71,7 @@ namespace MWRender
         bool mDebug;
         bool mIsPlayer;
         std::string mActorName;
+        ESM::FormId mRefNum;
         int mDebugCounter = 0;
     };
 }

@@ -15,6 +15,7 @@
 namespace osg
 {
     class Texture2D;
+    class Light;
     class Camera;
     class Group;
     class Viewport;
@@ -66,6 +67,8 @@ namespace MWRender
 
         /// -1 lights the subject from behind (used by the back view of the jiggle preview).
         float mLightSide;
+        osg::ref_ptr<osg::Light> mLight;
+        void setLightSide(float side);
         osg::Vec3f mPosition;
         osg::Vec3f mLookAt;
 
@@ -102,11 +105,32 @@ namespace MWRender
     class JigglePreview : public CharacterPreview
     {
     public:
+        enum class Motion
+        {
+            Still,
+            Walk,
+            Run,
+            Bounce, // stands idle and hops in place, so the spring's overshoot and settling show clearly
+        };
+        enum class View
+        {
+            Front,
+            Side,
+            Back,
+            Chest, // front close-up of the chest
+        };
+
         JigglePreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem, const MWWorld::Ptr& character,
             bool front);
         void updatePtr(const MWWorld::Ptr& ptr);
         void setWalking(bool walking);
-        /// Advances the animation and redraws when walking.
+        void setMotion(Motion motion);
+        Motion getMotion() const { return mMotion; }
+        void setView(View view);
+        View getView() const { return mView; }
+        /// Redraw every frame even when still, so slider changes (gravity, offsets) show at once.
+        void setAlwaysLive(bool live);
+        /// Advances the animation and redraws when moving (or always live).
         void tick(float dt);
 
     protected:
@@ -114,8 +138,13 @@ namespace MWRender
 
     private:
         void applyPose();
+        void applyView();
+        bool isLive() const { return mAlwaysLive || mMotion != Motion::Still; }
         bool mFront;
-        bool mWalking = false;
+        Motion mMotion = Motion::Still;
+        View mView;
+        bool mAlwaysLive = false;
+        float mTime = 0.f;
     };
 
     class UpdateCameraCallback;

@@ -6,9 +6,19 @@
 
 #include "windowbase.hpp"
 
+#include <memory>
+
 namespace osg
 {
     class Group;
+}
+namespace MWRender
+{
+    class JigglePreview;
+}
+namespace MyGUIPlatform
+{
+    class OSGTexture;
 }
 namespace Resource
 {
@@ -194,6 +204,27 @@ namespace MWGui
     private:
         void resetScrollbars();
         Files::ConfigurationManager& mCfgMgr;
+
+        // Live jiggle preview beside the Jiggle tab's sliders: the player, rendered every frame while the tab
+        // is shown, so each slider's effect can be watched as it is dragged.
+        MyGUI::Widget* mJiggleTabItem = nullptr;
+        MyGUI::ScrollView* mJiggleScrollView = nullptr;
+        MyGUI::Widget* mJigglePreviewFrame = nullptr;
+        MyGUI::ImageBox* mJigglePreviewImage = nullptr;
+        MyGUI::TextBox* mJigglePreviewStatus = nullptr;
+        MyGUI::Button* mJigglePreviewMotionButton = nullptr;
+        MyGUI::Button* mJigglePreviewViewButton = nullptr;
+        std::unique_ptr<MWRender::JigglePreview> mJigglePreview;
+        std::unique_ptr<MyGUIPlatform::OSGTexture> mJigglePreviewTexture;
+        int mJigglePreviewMotion = 3; // Bounce
+        int mJigglePreviewView = 0; // Front
+        void createJigglePreviewWidgets();
+        void layoutJigglePreview();
+        void updateJigglePreview(bool rebuild = false);
+        void destroyJigglePreview();
+        void updateJigglePreviewCaptions();
+        void onJigglePreviewMotionClicked(MyGUI::Widget* sender);
+        void onJigglePreviewViewClicked(MyGUI::Widget* sender);
     };
 }
 

@@ -2,6 +2,7 @@
 #define OPENMW_MWRENDER_JIGGLEAUTORIG_H
 
 #include <array>
+#include <components/esm/formid.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,7 +42,7 @@ namespace MWRender
         /// so the sliders track whichever body mesh the player is currently using.
         /// @param allowBodyAutoRig false skips female-body breast/butt/thigh generation.
         void run(osg::Group* objectRoot, bool isPlayer = false, bool allowBodyAutoRig = true,
-            std::string_view actorName = {});
+            std::string_view actorName = {}, ESM::FormId refNum = {});
 
         /// Geometry of an actor's current outfit (all attached body/clothing/armor meshes) plus the
         /// jiggle anchors, for the Retarget Jiggle window. Positions are mesh space: +x forward,

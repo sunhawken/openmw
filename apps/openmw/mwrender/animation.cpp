@@ -1872,7 +1872,8 @@ namespace MWRender
         const bool debug = Settings::game().mJiggleBoneDebug;
         const bool isPlayer = mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr();
         const std::string actorName = std::string(mPtr.getClass().getName(mPtr));
-        const bool jiggleActorEnabled = Misc::JigglePolicy::actorEnabled(isPlayer, actorName);
+        const bool jiggleActorEnabled
+            = Misc::JigglePolicy::actorEnabled(isPlayer, actorName, mPtr.getCellRef().getRefNum());
 
         std::unordered_set<osg::MatrixTransform*> attached;
 
@@ -1958,7 +1959,8 @@ namespace MWRender
             if (debug)
                 Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node
                                     << " actor=" << actorName;
-            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, actorName));
+            node->addUpdateCallback(
+                new JiggleBoneController(debug, isPlayer, actorName, mPtr.getCellRef().getRefNum()));
         }
     }
 
