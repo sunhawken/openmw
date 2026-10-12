@@ -1149,6 +1149,20 @@
 -- types.NPC.setJiggleEnabled(double, types.NPC.isJiggleEnabled(player))
 
 ---
+-- Whether an NPC is drawn without its race's height and weight scaling (fork extension).
+-- @function [parent=#NPC] isRaceScaleIgnored
+-- @param openmw.core#GameObject actor
+-- @return #boolean
+
+---
+-- Draw an NPC at height and weight 1 whatever its race (fork extension), so actors of different races
+-- play paired animations exactly as authored. The actor's own scale still applies. Lasts until the game
+-- is started or loaded again. Can only be used in global scripts or on self in local scripts.
+-- @function [parent=#NPC] setRaceScaleIgnored
+-- @param openmw.core#GameObject actor
+-- @param #boolean ignored
+
+---
 -- Returns the read-only @{#NpcRecord} of an NPC
 -- @function [parent=#NPC] record
 -- @param #any objectOrRecordId
