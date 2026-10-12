@@ -145,6 +145,7 @@ namespace MWRender
         View mView;
         bool mAlwaysLive = false;
         float mTime = 0.f;
+        double mClock = 1.0;
     };
 
     class UpdateCameraCallback;

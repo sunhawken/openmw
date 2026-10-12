@@ -60,9 +60,12 @@ namespace MWRender
 
                 osg::ref_ptr<osg::FrameStamp> previousFramestamp = const_cast<osg::FrameStamp*>(nv->getFrameStamp());
                 osg::FrameStamp* fs = new osg::FrameStamp(*previousFramestamp);
-                // A live preview keeps real time so animations and secondary motion (jiggle) keep moving.
+                // A live preview keeps time moving so animations and secondary motion (jiggle) move. It
+                // uses its own clock when it has one: the game's clock stops while a menu pauses the game.
                 if (!mLive)
                     fs->setSimulationTime(0.0);
+                else if (mClock >= 0.0)
+                    fs->setSimulationTime(mClock);
 
                 nv->setFrameStamp(fs);
 
@@ -85,11 +88,15 @@ namespace MWRender
         /// Render every frame with real time instead of once at time zero.
         void setLive(bool live) { mLive = live; }
 
+        /// Simulation time for live frames, advanced by the preview itself (negative: use the game's).
+        void setClock(double clock) { mClock = clock; }
+
         unsigned int getLastRenderedFrame() const { return mLastRenderedFrame; }
 
     private:
         bool mRendered;
         bool mLive = false;
+        double mClock = -1.0;
         unsigned int mLastRenderedFrame;
         osg::ref_ptr<osg::Node> mSubgraph;
     };
@@ -581,8 +588,11 @@ namespace MWRender
                 break;
         }
         setLightSide(mView == View::Back ? -1.f : 1.f);
+        // The camera rides along with the Bounce hop, so the body holds still in the frame and only the jiggle
+        // moves on screen.
         const float s = mNode->getScale().z();
-        mRTTNode->setViewMatrix(osg::Matrixf::lookAt(mPosition * s, mLookAt * s, osg::Vec3f(0, 0, 1)));
+        const osg::Vec3f hop = mNode->getPosition();
+        mRTTNode->setViewMatrix(osg::Matrixf::lookAt(mPosition * s + hop, mLookAt * s + hop, osg::Vec3f(0, 0, 1)));
     }
 
     void JigglePreview::setView(View view)
@@ -653,6 +663,10 @@ namespace MWRender
         if (!isLive() || !mAnimation.get())
             return;
         mTime += dt;
+        // Drive the preview's own clock: jiggle springs step by simulation time, which stands still while the
+        // Options window pauses the game.
+        mClock += dt;
+        mDrawOnceCallback->setClock(mClock);
         mAnimation->runAnimation(dt);
         if (mMotion == Motion::Bounce)
         {
@@ -661,6 +675,7 @@ namespace MWRender
             const float t = std::fmod(mTime, period);
             const float z = t < air ? 4.f * height * t * (air - t) / (air * air) : 0.f;
             mNode->setPosition(osg::Vec3f(0, 0, z));
+            applyView();
         }
         setBlendMode();
         redraw();
