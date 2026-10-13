@@ -62,8 +62,10 @@ namespace MWRender
         // Reused every frame for the parent's node path, so the update does not allocate.
         osg::NodePath mParentPath;
 
-        osg::Vec3f mSimWorldPos;
-        osg::Vec3f mVelocity;
+        osg::Vec3f mOffset; // simulated offset of the bone from its rest point (world axes)
+        osg::Vec3f mVelocity; // its velocity relative to the body
+        osg::Vec3f mRestVelocity; // the rest point's velocity last frame
+        bool mHasRestVelocity = false;
         osg::Vec3f mPreviousRestWorldPos;
         osg::Matrix mRestLocalMatrix;
         bool mInitialized;
@@ -73,6 +75,20 @@ namespace MWRender
         std::string mActorName;
         ESM::FormId mRefNum;
         int mDebugCounter = 0;
+        double mLastSkipLog = -10.0;
+        // Debug only: per-second summary of the rendered displacement (see operator()).
+        struct DebugStats
+        {
+            int mFrames = 0;
+            int mClamped = 0;
+            float mSum = 0.f;
+            float mMax = 0.f;
+            float mTravel = 0.f;
+            float mLagAlong = 0.f; // swing along the body's direction of travel (negative = trailing)
+            float mSpeed = 0.f;
+            osg::Vec3f mLast;
+            double mStart = -1.0;
+        } mStats;
     };
 }
 
