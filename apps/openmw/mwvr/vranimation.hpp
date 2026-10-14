@@ -91,6 +91,7 @@ namespace MWVR
             XrPath topLevelPath;
             std::string spaceName;
             std::string forearmBone;
+            std::string upperArmBone;
             std::unique_ptr<ArmIKController> armController;
             std::string handBone;
             osg::ref_ptr<HandController> handController;
@@ -119,6 +120,7 @@ namespace MWVR
         // modifyMovement() -- see updateBodyLean()'s comment on the difference between this and
         // the lean/tilt signal for why this needs its own delta rather than reusing that offset.
         osg::Vec2f mPhysicalMovementDelta;
+        osg::Vec2f mSmoothedLean; // updateBodyLean()'s low-passed head offset
         std::unique_ptr<MWVR::Crosshair> mCrosshairAmmo;
         std::unique_ptr<MWVR::Crosshair> mCrosshairThrown;
         std::unique_ptr<MWVR::Crosshair> mCrosshairSpell;

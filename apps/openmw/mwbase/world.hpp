@@ -661,7 +661,8 @@ namespace MWBase
 
         virtual std::optional<std::pair<MWWorld::Ptr, osg::Vec3f>> getVRMeleeHitContact(MWWorld::Ptr actor) = 0;
 
-        virtual MWWorld::Ptr placeObject(const MWWorld::ConstPtr& object, const MWRender::RayResult& ray, int amount)
+        virtual MWWorld::Ptr placeObject(
+            const MWWorld::Ptr& object, const MWRender::RayResult& ray, int amount, bool copy = true)
             = 0;
         ///< copy and place an object into the gameworld based on the given intersection
         /// @param object
