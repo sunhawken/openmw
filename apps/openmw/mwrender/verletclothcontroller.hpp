@@ -85,6 +85,7 @@ namespace MWRender
         std::function<std::optional<float>()> mWaterLevel;
         float mWaterZ = 0.f;
         bool mHasWater = false;
+        bool mSubmerged = false;
         std::vector<osg::Vec3f> mCapA, mCapB;
     };
 }

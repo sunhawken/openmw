@@ -20,7 +20,9 @@ to the algorithm: no air drag, wind, springs or tuning sliders.
   the actor's floor, so the cloth cannot pass through the body, and water.
 - Water: when the actor's cell has water, a particle below the water level keeps 88% of its velocity per
   step (drag) and is pushed up with 12% of gravity instead of falling, so hair and cloth float slowly
-  upward while swimming; a submerged particle is held 0.5 units under the surface rather than leaving it.
+  upward while swimming; a submerged particle is held 0.5 units under the surface rather than leaving it, and
+  the root blend pulls it toward the animated shape with only 15% of its strength, so the whole free length floats.
+  With `jiggle bone debug` the log says when a chain group goes under water or comes out.
   The level is read every frame from the actor's current cell.
 
 ## Authoring
