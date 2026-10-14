@@ -25,7 +25,7 @@ namespace XR
 
     ActionSet::~ActionSet()
     {
-        if (mActionSet)
+        if (mActionSet && !Instance::xrInstanceDestroyed())
         {
             CHECK_XRCMD(xrDestroyActionSet(mActionSet));
         }

@@ -36,6 +36,9 @@ namespace XR
 
         XrSession xrSession() { return mXrSession; }
 
+        /// xrDestroySession also destroys the session's spaces: wrappers that outlive it must not destroy theirs.
+        static bool xrSessionDestroyed();
+
         std::array<Stereo::View, 2> locateViews(int64_t predictedDisplayTime, VR::Space& reference) override;
 
         VR::TrackingPose locateSpace(XrSpace space, XrSpace referenceSpace) const;

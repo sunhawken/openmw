@@ -443,11 +443,22 @@ namespace XR
         destroyXrSession();
     }
 
+    namespace
+    {
+        bool sXrSessionDestroyed = false;
+    }
+
+    bool Session::xrSessionDestroyed()
+    {
+        return sXrSessionDestroyed;
+    }
+
     void Session::destroyXrSession()
     {
         if (mXrSession)
         {
             CHECK_XRCMD(xrDestroySession(mXrSession));
+            sXrSessionDestroyed = true;
         }
     }
 
