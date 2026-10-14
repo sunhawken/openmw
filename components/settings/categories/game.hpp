@@ -203,17 +203,9 @@ namespace Settings
         // such meshes are excluded from both anchor detection and weight painting, so an odd armor
         // can neither get bad jiggle nor pollute the shared body anchor.
         SettingValue<std::vector<std::string>> mJiggleAutoRigBlacklist{ mIndex, "Game", "jiggle auto rig blacklist" };
-        // Log auto-rigger anchor/weight detection (throttled).
         SettingValue<bool> mJiggleAutoRigDebug{ mIndex, "Game", "jiggle auto rig debug" };
-        // Auto seam welder: runtime-welds boundary vertices of rigid meshes (armor/clothing
-        // that lack jiggle bones) onto the moving jiggle-mesh vertices they were coincident
-        // with at rest pose, closing the visual cracks jiggle otherwise opens at those seams.
         SettingValue<bool> mJiggleSeamWelding{ mIndex, "Game", "jiggle seam welding" };
-        // Log detection/correspondence details for the seam welder (bone classification and
-        // welded-vertex counts). Throttled.
         SettingValue<bool> mJiggleSeamWeldDebug{ mIndex, "Game", "jiggle seam weld debug" };
-        // Two vertices from different meshes are treated as the same seam point when their
-        // rest-pose (bind) positions are within this distance, in world units.
         SettingValue<float> mJiggleSeamWeldThreshold{ mIndex, "Game", "jiggle seam weld threshold",
             makeClampSanitizerFloat(0.01f, 10.f) };
         // Runtime "tes3cmd clean" for plugins (applied in-memory at load; restart to change).

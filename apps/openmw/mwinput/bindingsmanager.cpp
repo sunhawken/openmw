@@ -12,10 +12,12 @@
 #include <components/files/conversion.hpp>
 #include <components/sdlutil/events.hpp>
 #include <components/sdlutil/sdlmappings.hpp>
+#include <components/vr/vr.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/inputmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
+#include "../mwvr/vrinputmanager.hpp"
 
 #include "actions.hpp"
 
@@ -57,6 +59,14 @@ namespace MWInput
         }
     };
 
+//## VR_PATCH BEGIN
+// The VR input manager needs to forward XR inputs to ICS.
+    ICS::InputControlSystem& BindingsManager::ics()
+    {
+        return *mInputBinder;
+    }
+
+//## VR_PATCH END
     class BindingsListener : public ICS::ChannelListener, public ICS::DetectingBindingListener
     {
     public:
@@ -703,13 +713,14 @@ namespace MWInput
             else if (action == A_Jump && actionIsActive(A_ToggleSpell))
                 action = A_CycleSpellLeft;
         }
+        auto onPress = previousValue <= 0.6 && currentValue > 0.6;
 
-        // Detect press (value goes above threshold)
-        if (previousValue <= 0.6 && currentValue > 0.6)
+        if (action == A_GameMenu && VR::getVR())
+            MWVR::VRInputManager::instance().gameMenuAction(onPress);
+        else if (onPress)
+        {
             manager->executeAction(action);
-        // Detect release (value goes below threshold)
-        else if (previousValue > 0.6 && currentValue <= 0.6)
-            manager->executeActionRelease(action);
+        }
     }
 
     void BindingsManager::saveBindings()

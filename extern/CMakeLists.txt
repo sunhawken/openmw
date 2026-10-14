@@ -54,13 +54,8 @@ if(NOT OPENMW_USE_SYSTEM_JOLT)
         SOURCE_DIR fetched/joltphysics
     )
     FetchContent_MakeAvailableExcludeFromAll(joltphysics)
-
-    # Jolt builds with /Wall /WX. Newer Windows SDK headers (e.g. wingdi.h) emit
-    # C4865 (/Zc:enumTypes migration warning) which /WX turns into a fatal error.
-    # Disable warnings-as-errors for the Jolt target so system-header warnings
-    # don't break the build.
-    if(MSVC)
-        target_compile_options(Jolt PRIVATE /WX- /wd4865)
+    if (MSVC)
+        target_compile_options(Jolt PRIVATE /wd4865)
     endif()
 
     set(JOLT_INCLUDE_DIRS ${joltphysics_SOURCE_DIR} PARENT_SCOPE)
@@ -315,4 +310,27 @@ if ((BUILD_UNITTESTS OR BUILD_OPENCS_TESTS) AND NOT OPENMW_USE_SYSTEM_GOOGLETEST
 
     add_library(GTest::GTest ALIAS gtest)
     add_library(GMock::GMock ALIAS gmock)
+endif()
+
+# Note: This must be placed after OpenSceneGraph to avoid a target name collision on "uninstall", 
+# as OSG does not check that this target doesn't already exist.
+if(BUILD_OPENMW_VR)
+    ########### Import the OpenXR SDK
+    # The openxr-sdk doesn't check the version of system jsoncpp so force it to build its bundled version to avoid errors.
+    # We have to set this policy otherwise cmake will ignore any options we try to set for the openxr build
+    cmake_policy(SET CMP0077 NEW)
+    set(BUILD_WITH_SYSTEM_JSONCPP off) 
+    set(DYNAMIC_LOADER off)
+    include(FetchContent)
+    FetchContent_Declare( 
+        OpenXR 
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git
+        GIT_TAG release-1.0.24
+    )
+    FetchContent_MakeAvailable(OpenXR)
+    
+    if (CMAKE_CXX_COMPILER_ID STREQUAL GNU OR CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+        # Triggered by jsoncpp on some platforms
+        target_compile_options(openxr_loader PRIVATE -Wno-everything)
+    endif()
 endif()

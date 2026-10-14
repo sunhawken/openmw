@@ -298,11 +298,17 @@ namespace LuaUi
             assert(mRoot);
             if (mRoot->widget()->getTypeName() != widgetType(layout()))
             {
-                destroyRoot(mRoot);
-                WidgetExtension* parent = mRoot->getParent();
+                // Everything that needs the old root has to be read before it is destroyed,
+                // and mRoot must not be left pointing at freed memory while the replacement
+                // is built: destroyRoot() frees the widget, and in VR the GUI layers read
+                // mRoot from the cull thread to decide layer visibility and size.
+                WidgetExtension* oldRoot = mRoot;
+                WidgetExtension* parent = oldRoot->getParent();
                 auto children = parent->children();
-                auto it = std::find(children.begin(), children.end(), mRoot);
+                auto it = std::find(children.begin(), children.end(), oldRoot);
                 assert(it != children.end());
+                mRoot = nullptr;
+                destroyRoot(oldRoot);
                 try
                 {
                     mRoot = createWidget(layout(), true, 0);

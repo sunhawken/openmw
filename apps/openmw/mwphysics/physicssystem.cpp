@@ -356,6 +356,39 @@ namespace MWPhysics
         return true;
     }
 
+    // ## VR_PATCH BEGIN
+    // VR still needs getHitContact for realistic combat
+    std::pair<MWWorld::Ptr, osg::Vec3f> PhysicsSystem::getHitContact(const MWWorld::ConstPtr& actor,
+        const osg::Vec3f& origin, const osg::Quat& orient, float queryDistance)
+    {
+        const int hitmask = Layers::WORLD | Layers::DOOR | Layers::HEIGHTMAP | Layers::ACTOR;
+        const MWWorld::Store<ESM::GameSetting>& store
+            = MWBase::Environment::get().getWorld()->getStore().get<ESM::GameSetting>();
+        const float halfXY = osg::DegreesToRadians(store.find("fCombatAngleXY")->mValue.getFloat() * 0.5f);
+        const float halfZ = osg::DegreesToRadians(store.find("fCombatAngleZ")->mValue.getFloat() * 0.5f);
+        const std::array<std::pair<float, float>, 9> samples{ { { 0.f, 0.f }, { -halfXY, 0.f },
+            { halfXY, 0.f }, { 0.f, -halfZ }, { 0.f, halfZ }, { -halfXY, -halfZ }, { -halfXY, halfZ },
+            { halfXY, -halfZ }, { halfXY, halfZ } } };
+
+        RayCastingResult closest;
+        for (const auto& [yaw, pitch] : samples)
+        {
+            const osg::Quat spread
+                = osg::Quat(yaw, osg::Vec3(0.f, 0.f, 1.f)) * osg::Quat(pitch, osg::Vec3(1.f, 0.f, 0.f));
+            const osg::Vec3f endpoint = origin + orient * spread * osg::Vec3f(0.f, queryDistance, 0.f);
+            RayCastingResult result = castRay(origin, endpoint, { actor }, {}, hitmask, Layers::ACTOR);
+            const float distance = (result.mHitPos - origin).length2();
+            if (result.mHit && (!closest.mHit || distance < (closest.mHitPos - origin).length2()))
+                closest = result;
+        }
+
+        if (!closest.mHit)
+            return { MWWorld::Ptr(), osg::Vec3f() };
+        reportCollision(closest.mHitPos, closest.mHitNormal);
+        return { closest.mHitObject, closest.mHitPos };
+    }
+    // ## VR_PATCH END
+
     RayCastingResult PhysicsSystem::castRay(const osg::Vec3f& from, const osg::Vec3f& to,
         const std::vector<MWWorld::ConstPtr>& ignore, const std::vector<MWWorld::Ptr>& targets, int mask,
         int group) const
@@ -1917,8 +1950,6 @@ namespace MWPhysics
         osg::Vec3f normalizedDir = direction;
         normalizedDir.normalize();
 
-        try
-        {
         for (auto& [_, dynObj] : mDynamicObjects)
         {
             // Don't hit the grabbed object
@@ -1961,11 +1992,6 @@ namespace MWPhysics
 
             Log(Debug::Info) << "Melee hit dynamic object: " << dynObj->getPtr().getCellRef().getRefId()
                              << " impulse=" << impulseMagnitude << " mass=" << mass << " dist=" << distance;
-        }
-        }
-        catch (const std::exception& e)
-        {
-            Log(Debug::Error) << "applyMeleeHitToDynamicObjects skipped due to exception: " << e.what();
         }
     }
 

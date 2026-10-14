@@ -98,16 +98,6 @@ jobs:
     #     path: ./build_artifact.7z
     #     name: build_artifact.7z
 
-  MacOS:
-    strategy:
-      fail-fast: true
-      matrix:
-        args:
-          - image: macos-15
-          - image: macos-15-intel
-    uses: ./.github/workflows/macos.yml
-    with:
-      image: ${{ matrix.args.image }}
 
   Windows:
     strategy:
