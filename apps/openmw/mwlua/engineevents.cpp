@@ -1,5 +1,8 @@
 #include "engineevents.hpp"
 
+#include <string>
+#include <vector>
+
 #include <components/debug/debuglog.hpp>
 #include <components/settings/values.hpp>
 
@@ -155,12 +158,30 @@ namespace MWLua
         MWWorld::WorldModel* mWorldModel = MWBase::Environment::get().getWorldModel();
     };
 
-    void EngineEvents::callEngineHandlers()
+    void EngineEvents::callEngineHandlers(const FailureReporter& report)
     {
+        // in the order of the Event variant
+        static constexpr std::string_view names[]
+            = { "OnActive", "OnInactive", "OnConsume", "OnActivate", "OnUseItem", "OnNewExterior", "OnTeleported",
+                  "OnAnimationTextKey", "OnAnimationEnded", "OnSkillUse", "OnSkillLevelUp", "OnJailTimeServed" };
+        static_assert(std::size(names) == std::variant_size_v<Event>);
+        // Taken out first: a handler may queue new events, and one failing event must not drop the others
+        // (a dropped OnActivate is an activation that never happens).
+        std::vector<Event> queue;
+        queue.swap(mQueue);
         Visitor vis(mGlobalScripts);
-        for (const Event& event : mQueue)
-            std::visit(vis, event);
-        mQueue.clear();
+        for (const Event& event : queue)
+        {
+            try
+            {
+                std::visit(vis, event);
+            }
+            catch (const std::exception& e)
+            {
+                const size_t i = event.index();
+                report(std::string("engine event ") + std::string(i < std::size(names) ? names[i] : "?"), &e);
+            }
+        }
     }
 
 }

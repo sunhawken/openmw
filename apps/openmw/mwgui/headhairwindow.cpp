@@ -41,6 +41,11 @@ namespace MWGui
         mHairSlider->eventScrollChangePosition += MyGUI::newDelegate(this, &HeadHairWindow::onHairScroll);
     }
 
+    void HeadHairWindow::setVisible(bool visible)
+    {
+        WindowBase::setVisible(visible && !mInventoryWindow->isDisabledByLua());
+    }
+
     void HeadHairWindow::onOpen()
     {
         collectParts();

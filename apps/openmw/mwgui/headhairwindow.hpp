@@ -27,6 +27,10 @@ namespace MWGui
 
         void onOpen() override;
 
+        // Part of the inventory group: hidden whenever Lua hides the inventory window (e.g. a mod's own
+        // window opened with I.UI.setMode('Interface', { windows = {} })), since it has no Lua id of its own.
+        void setVisible(bool visible) override;
+
     private:
         void collectParts();
         void updateLabels();

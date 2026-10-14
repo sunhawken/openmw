@@ -1,6 +1,7 @@
 #ifndef COMPONENTS_LUA_LUASTATE_H
 #define COMPONENTS_LUA_LUASTATE_H
 
+#include <exception>
 #include <filesystem>
 #include <map>
 #include <typeinfo>
@@ -51,7 +52,7 @@ namespace LuaUtil
 
     public:
         template <class Function>
-        friend int invokeProtectedCall(lua_State*, Function&&);
+        friend int invokeProtectedCall(lua_State*, Function&&, std::exception_ptr&);
         // Returns underlying sol::state.
         sol::state_view& sol() { return mSol; }
 
@@ -69,26 +70,44 @@ namespace LuaUtil
     }
 
     // Pushing to the stack from outside a Lua context crashes the engine if no memory can be allocated to grow the
-    // stack
+    // stack.
+    // A C++ exception (std::exception) thrown by the function is caught inside the protected call and stored in
+    // `cppError`, so it never unwinds through Lua frames (where its type and message could be lost) and the caller
+    // can rethrow the original. Lua errors (lua_error) are left to lua_pcall as before.
     template <class Function>
-    [[nodiscard]] int invokeProtectedCall(lua_State* luaState, Function&& function)
+    [[nodiscard]] int invokeProtectedCall(lua_State* luaState, Function&& function, std::exception_ptr& cppError)
     {
         if (!lua_checkstack(luaState, 2))
             return LUA_ERRMEM;
+        struct Context
+        {
+            std::remove_reference_t<Function>* mFunction;
+            std::exception_ptr* mError;
+        } context{ &function, &cppError };
         lua_pushcfunction(luaState, [](lua_State* state) {
-            void* f = lua_touserdata(state, 1);
-            LuaView view(state);
-            (*static_cast<Function*>(f))(view);
+            auto* ctx = static_cast<Context*>(lua_touserdata(state, 1));
+            try
+            {
+                LuaView view(state);
+                (*ctx->mFunction)(view);
+            }
+            catch (const std::exception&)
+            {
+                *ctx->mError = std::current_exception();
+            }
             return 0;
         });
-        lua_pushlightuserdata(luaState, &function);
+        lua_pushlightuserdata(luaState, &context);
         return lua_pcall(luaState, 1, 0, 0);
     }
 
     template <class Lambda>
     void protectedCall(lua_State* luaState, Lambda&& f)
     {
-        int result = invokeProtectedCall(luaState, std::forward<Lambda>(f));
+        std::exception_ptr cppError;
+        int result = invokeProtectedCall(luaState, std::forward<Lambda>(f), cppError);
+        if (cppError)
+            std::rethrow_exception(cppError);
         switch (result)
         {
             case LUA_OK:
@@ -98,11 +117,13 @@ namespace LuaUtil
             case LUA_ERRRUN:
             {
                 sol::optional<std::string> error = sol::stack::check_get<std::string>(luaState);
-                if (error)
+                lua_pop(luaState, 1); // the error object; it used to be left on the stack on every failure
+                if (error && !error->empty())
                     throw std::runtime_error(*error);
+                throw std::runtime_error(error ? "Lua error with an empty message" : "Lua error (not a string)");
             }
-                [[fallthrough]];
             default:
+                lua_pop(luaState, 1);
                 throw std::runtime_error("Lua error: " + std::to_string(result));
         }
     }
