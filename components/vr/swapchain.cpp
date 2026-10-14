@@ -47,12 +47,14 @@ namespace VR
         if (mColorSwapchain)
          {
              mColorSwapchain->beginFrame(gc);
-             colorTexture = mColorSwapchain->image()->glImage();
+             if (SwapchainImage* image = mColorSwapchain->image())
+                 colorTexture = image->glImage();
          }
          if (mDepthSwapchain)
          {
              mDepthSwapchain->beginFrame(gc);
-             depthTexture = mDepthSwapchain->image()->glImage();
+             if (SwapchainImage* image = mDepthSwapchain->image())
+                 depthTexture = image->glImage();
          }
 
         auto pair = ColorDepthTexturePair(colorTexture, depthTexture);

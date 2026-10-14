@@ -41,6 +41,10 @@ namespace XR
 
         std::string getRuntimeName();
 
+        /// xrDestroyInstance also destroys every handle made from the instance (actions, action sets, spaces,
+        /// sessions): objects that outlive it must not destroy theirs again.
+        static bool xrInstanceDestroyed();
+
     protected:
         void setupExtensionsAndLayers();
         void setupDebugMessenger(void);

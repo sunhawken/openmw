@@ -699,7 +699,8 @@ namespace MWWorld
         float getTargetObject(MWRender::RayResult& result, const osg::Vec3f& origin, const osg::Quat& orientation,
             float maxDistance, bool ignorePlayer, uint32_t ignoreMask) override;
 
-        MWWorld::Ptr placeObject(const MWWorld::ConstPtr& object, const MWRender::RayResult& ray, int amount) override;
+        MWWorld::Ptr placeObject(
+            const MWWorld::Ptr& object, const MWRender::RayResult& ray, int amount, bool copy = true) override;
         ///< copy and place an object into the gameworld based on the given intersection
         /// @param object
         /// @param world position to place object

@@ -54,28 +54,40 @@ namespace MWVR
         }
         ~DropItemAtPointModel() {}
 
-        MWWorld::Ptr dropItemImpl(const MWGui::ItemStack& item, size_t count, bool copy)
+        MWWorld::Ptr dropItemImpl(const MWGui::ItemStack& item, int count, bool copy)
         {
             MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWWorld::Ptr player = world->getPlayerPtr();
 
-            MWWorld::Ptr dropped;
-            if (mVRPointer->canPlaceObject())
-                dropped = world->placeObject(item.mBase, mVRPointer->getPointerRay(), static_cast<int>(count));
-            else
-                dropped = world->dropObjectOnGround(world->getPlayerPtr(), item.mBase, static_cast<int>(count));
-            dropped.getCellRef().setOwner(ESM::RefId());
+            // At the pointer when it rests on a flat surface within reach; otherwise on the ground at the player's
+            // feet, as the desktop drop does when the cursor is off the ground or too far.
+            const MWRender::RayResult& ray = mVRPointer->getPointerRay();
+            const bool atPointer = mVRPointer->canPlaceObject() && ray.mHit
+                && (ray.mHitPointWorld - player.getRefData().getPosition().asVec3()).length() <= sMaxDropDistance;
+
+            const MWWorld::Ptr dropped = atPointer ? world->placeObject(item.mBase, ray, count, copy)
+                                                   : world->dropObjectOnGround(player, item.mBase, count, copy);
+            if (!dropped.isEmpty())
+                dropped.getCellRef().setOwner(ESM::RefId());
 
             return dropped;
         }
 
+        // moveItem() has already taken the whole stack out of the inventory (count 0): move that object into the
+        // world with the dragged count, like MWGui::WorldItemModel.
         MWWorld::Ptr addItem(const MWGui::ItemStack& item, size_t count, bool /*allowAutoEquip*/) override
         {
-            return dropItemImpl(item, count, false);
+            const int prevCount = item.mBase.getCellRef().getCount(false);
+            const int intCount = static_cast<int>(count);
+            item.mBase.getCellRef().setCount(intCount);
+            MWWorld::Ptr ptr = dropItemImpl(item, intCount, false);
+            item.mBase.getCellRef().setCount(prevCount);
+            return ptr;
         }
 
         MWWorld::Ptr copyItem(const MWGui::ItemStack& item, size_t count, bool /*allowAutoEquip*/) override
         {
-            return dropItemImpl(item, count, true);
+            return dropItemImpl(item, static_cast<int>(count), true);
         }
 
         void removeItem(const MWGui::ItemStack& item, size_t count) override
@@ -92,8 +104,10 @@ namespace MWVR
         bool usesContainer(const MWWorld::Ptr&) override { return false; }
 
     private:
-        // Where to drop the item
-        MWRender::RayResult mIntersection;
+        // Farther than this the item goes on the ground at the player's feet instead (pointing across a room puts it
+        // down where you stand, as a click on distant ground does on the desktop).
+        static constexpr float sMaxDropDistance = 400.f;
+
         UserPointer* mVRPointer;
     };
 
@@ -118,20 +132,36 @@ namespace MWVR
 
     void UserPointer::activate()
     {
-        if (mPointerRay.mHit && !(MWVR::VRGUIManager::instance().hasFocus()))
+        if (MWVR::VRGUIManager::instance().hasFocus())
+            return;
+
+        auto wm = MWBase::Environment::get().getWindowManager();
+        auto& dnd = wm->getDragAndDrop();
+        if (dnd.mIsOnDragAndDrop)
         {
-            MWWorld::Ptr target = mPointerRay.mHitObject;
-            auto wm = MWBase::Environment::get().getWindowManager();
-            auto& dnd = wm->getDragAndDrop();
-            if (dnd.mIsOnDragAndDrop)
+            // Pointing away from every window while dragging an item: drop it into the world, at the pointer or (when
+            // the pointer hits nothing, e.g. the sky) at the player's feet.
+            try
             {
-                // Intersected with the world while drag and drop is active
-                // Drop item into the world
                 MWBase::Environment::get().getWorld()->breakInvisibility(MWMechanics::getPlayer());
                 DropItemAtPointModel drop(this);
                 dnd.drop(&drop, nullptr);
+                wm->changePointer("arrow");
             }
-            else if (!target.isEmpty())
+            catch (const std::exception& e)
+            {
+                Log(Debug::Error) << "VR: failed to drop " << dnd.mItem.mBase.toString() << " into the world: "
+                                  << e.what();
+                if (dnd.mIsOnDragAndDrop)
+                    dnd.drop(dnd.mSourceModel, nullptr, false); // back where it came from
+            }
+            return;
+        }
+
+        if (mPointerRay.mHit)
+        {
+            MWWorld::Ptr target = mPointerRay.mHitObject;
+            if (!target.isEmpty())
             {
                 if (wm->isConsoleMode())
                     wm->setConsoleSelectedObject(target);

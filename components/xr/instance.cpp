@@ -147,10 +147,23 @@ namespace XR
         destroyXrInstance();
     }
 
+    namespace
+    {
+        bool sXrInstanceDestroyed = false;
+    }
+
+    bool Instance::xrInstanceDestroyed()
+    {
+        return sXrInstanceDestroyed;
+    }
+
     void Instance::destroyXrInstance()
     {
         if (mXrInstance)
+        {
             CHECK_XRCMD(xrDestroyInstance(mXrInstance));
+            sXrInstanceDestroyed = true;
+        }
     }
 
     std::string XrResultString(XrResult res)

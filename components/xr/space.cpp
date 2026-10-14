@@ -2,19 +2,30 @@
 #include "session.hpp"
 #include "space.hpp"
 
+#include <components/xr/instance.hpp>
+
 #include <cassert>
 
 namespace XR
 {
-    XrSpaceWrapper::~XrSpaceWrapper() 
+    namespace
     {
-        if (mSpace != XR_NULL_HANDLE)
+        // The session (or the instance) destroyed with it already took the space with it.
+        bool spaceStillOwned(XrSpace space)
+        {
+            return space != XR_NULL_HANDLE && !Session::xrSessionDestroyed() && !Instance::xrInstanceDestroyed();
+        }
+    }
+
+    XrSpaceWrapper::~XrSpaceWrapper()
+    {
+        if (spaceStillOwned(mSpace))
             CHECK_XRCMD(xrDestroySpace(mSpace));
     }
 
-    void XrSpaceWrapper::operator=(XrSpace space) 
+    void XrSpaceWrapper::operator=(XrSpace space)
     {
-        if (mSpace != XR_NULL_HANDLE)
+        if (spaceStillOwned(mSpace))
             CHECK_XRCMD(xrDestroySpace(mSpace));
         mSpace = space;
     }

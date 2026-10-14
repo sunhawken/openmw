@@ -348,12 +348,19 @@ namespace VR
 
     osg::ref_ptr<osg::FrameBufferObject> Viewer::getXrFramebuffer(uint32_t view, osg::State* state)
     {
-        uint32_t colorImage = mColorSwapchain[view]->image()->glImage();
+        // No image this frame when the runtime didn't hand one out (session lost or stopping, runtime gone).
+        VR::SwapchainImage* color = mColorSwapchain[view] ? mColorSwapchain[view]->image() : nullptr;
+        if (!color)
+            return nullptr;
+        uint32_t colorImage = color->glImage();
         uint32_t depthImage = 0;
         uint32_t textureTarget = mColorSwapchain[view]->textureTarget();
 
-        if (mSession->appShouldShareDepthInfo())
-            depthImage = mDepthSwapchain[view]->image()->glImage();
+        if (mSession->appShouldShareDepthInfo() && mDepthSwapchain[view])
+        {
+            if (VR::SwapchainImage* depth = mDepthSwapchain[view]->image())
+                depthImage = depth->glImage();
+        }
 
         auto it = mSwapchainFramebuffers.find(std::pair{ colorImage, depthImage });
         if (it == mSwapchainFramebuffers.end())
@@ -381,6 +388,8 @@ namespace VR
         auto* gl = osg::GLExtensions::Get(state->getContextID(), false);
 
         auto dst = getXrFramebuffer(i, state);
+        if (!dst)
+            return; // nothing to draw into this frame
         dst->apply(*state, osg::FrameBufferObject::DRAW_FRAMEBUFFER);
 
         auto width = mSubImages[i].width;
@@ -399,7 +408,7 @@ namespace VR
         Stereo::Manager::instance().multiviewFramebuffer()->layerFbo(i)->apply(
             *state, osg::FrameBufferObject::READ_FRAMEBUFFER);
         gl->glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        if (mSession->appShouldShareDepthInfo())
+        if (mSession->appShouldShareDepthInfo() && dst->hasAttachment(osg::FrameBufferObject::BufferComponent::DEPTH_BUFFER))
         {
             gl->glBlitFramebuffer(
                 srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
