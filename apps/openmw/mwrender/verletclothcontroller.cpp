@@ -25,6 +25,10 @@ namespace MWRender
         constexpr float sParticleRadius = 0.75f;
         constexpr float sTeleportDistance = 128.f;
         constexpr float sMaxCatchUp = 0.25f;
+        // water: a submerged particle keeps this share of its velocity per step (drag) and is pushed up with
+        // this share of gravity (hair and cloth are a little lighter than water, so they rise slowly)
+        constexpr float sWaterDrag = 0.88f;
+        constexpr float sWaterLift = 0.12f;
         // immovable body colliders (units): torso, thigh, calf radii plus a little padding
         constexpr float sTorsoRadius = 12.f + 1.5f;
         constexpr float sThighRadius = 7.2f + 1.5f;
@@ -61,9 +65,10 @@ namespace MWRender
         }
     }
 
-    VerletClothController::VerletClothController(
-        std::vector<std::vector<osg::ref_ptr<osg::MatrixTransform>>> chains, int pinCount, bool debug)
-        : mPinCount(std::max(1, pinCount))
+    VerletClothController::VerletClothController(std::vector<std::vector<osg::ref_ptr<osg::MatrixTransform>>> chains,
+        int pinCount, bool debug, std::function<std::optional<float>()> waterLevel)
+        : mWaterLevel(std::move(waterLevel))
+        , mPinCount(std::max(1, pinCount))
         , mDebug(debug)
     {
         for (auto& bones : chains)
@@ -246,9 +251,18 @@ namespace MWRender
         for (Chain& chain : mChains)
             for (std::size_t i = pin; i < chain.mPos.size(); ++i)
             {
-                const osg::Vec3f velocity = chain.mPos[i] - chain.mOld[i];
+                osg::Vec3f velocity = chain.mPos[i] - chain.mOld[i];
+                float gravity = -sGravity;
+                if (mHasWater && chain.mPos[i].z() < mWaterZ)
+                {
+                    velocity *= sWaterDrag;
+                    gravity = sGravity * sWaterLift;
+                }
                 chain.mOld[i] = chain.mPos[i];
-                chain.mPos[i] += velocity + osg::Vec3f(0.f, 0.f, -sGravity) * (dt * dt);
+                chain.mPos[i] += velocity + osg::Vec3f(0.f, 0.f, gravity) * (dt * dt);
+                // floating hair stays under the surface instead of popping out of it
+                if (mHasWater && chain.mOld[i].z() < mWaterZ && chain.mPos[i].z() > mWaterZ - 0.5f)
+                    chain.mPos[i].z() = std::max(chain.mOld[i].z(), mWaterZ - 0.5f);
             }
 
         for (int it = 0; it < sIterations; ++it)
@@ -365,6 +379,13 @@ namespace MWRender
             mCapA[c] = worldPosition(mCapsules[c].mA.get());
             mCapB[c] = worldPosition(mCapsules[c].mB.get());
         }
+        mHasWater = false;
+        if (mWaterLevel && Settings::game().mVerletWater)
+            if (const std::optional<float> level = mWaterLevel())
+            {
+                mHasWater = true;
+                mWaterZ = *level;
+            }
         mHasGround = mGroundNode != nullptr;
         if (mHasGround)
         {

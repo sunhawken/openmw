@@ -1934,8 +1934,14 @@ namespace MWRender
             if (debug)
                 Log(Debug::Info) << "Verlet cloth: attached " << group.mChains.size() << " chains under "
                                  << (parent ? parent->getName() : std::string("<none>"));
+            // water level of the actor's current cell (read every frame: the actor may change cells)
+            auto waterLevel = [this]() -> std::optional<float> {
+                if (mPtr.isEmpty() || !mPtr.isInCell() || !mPtr.getCell()->getCell()->hasWater())
+                    return std::nullopt;
+                return mPtr.getCell()->getWaterLevel();
+            };
             group.mFirstRoot->addUpdateCallback(
-                new VerletClothController(std::move(group.mChains), group.mPin, debug));
+                new VerletClothController(std::move(group.mChains), group.mPin, debug, std::move(waterLevel)));
         }
 
         // Zero-setup behavior for traditional breast/butt bone names.
