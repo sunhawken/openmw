@@ -94,7 +94,6 @@ namespace MWGui
     class MainMenu;
     class StatsWindow;
     class InventoryWindow;
-    class HeadHairWindow;
     struct JournalWindow;
     class TextInputDialog;
     class InfoBoxDialog;
@@ -451,7 +450,6 @@ namespace MWGui
         std::unique_ptr<DragAndDrop> mDragAndDrop;
         std::unique_ptr<ItemTransfer> mItemTransfer;
         InventoryWindow* mInventoryWindow;
-        HeadHairWindow* mHeadHairWindow;
         ScrollWindow* mScrollWindow;
         BookWindow* mBookWindow;
         CountDialog* mCountDialog;

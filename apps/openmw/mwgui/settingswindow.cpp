@@ -1,5 +1,6 @@
 #include "settingswindow.hpp"
 
+#include "appearancetab.hpp"
 #include "jigglenpclist.hpp"
 #include "jiggleretargetpanel.hpp"
 
@@ -249,6 +250,8 @@ namespace MWGui
             mJiggleRetargetPanel->onFrame(duration);
         if (mJigglePreview)
             mJigglePreview->tick(duration);
+        if (mAppearanceTab)
+            mAppearanceTab->onFrame(duration);
         if (mScriptView->getVisible())
         {
             const auto scriptsSize = mScriptAdapter->getSize();
@@ -610,6 +613,38 @@ namespace MWGui
     {
         resetScrollbars();
         updateJigglePreview();
+        updateAppearanceTab();
+    }
+
+    void SettingsWindow::syncAppearanceTab()
+    {
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const bool inGame = world && !world->getPlayerPtr().isEmpty()
+            && MWBase::Environment::get().getStateManager()->getState() != MWBase::StateManager::State_NoGame
+            && world->getPlayerPtr().getClass().isNpc();
+        if (inGame && !mAppearanceTab)
+        {
+            MyGUI::TabItem* item = mSettingsTab->addItem(
+                " " + MyGUI::LanguageManager::getInstance().replaceTags("#{OMWEngine:AppearanceTitle}") + " ");
+            mAppearanceTab = std::make_unique<AppearanceTab>(item, mSceneRoot, mResourceSystem);
+            computeMinimumWindowSize();
+        }
+        else if (!inGame && mAppearanceTab)
+        {
+            MyGUI::TabItem* item = mAppearanceTab->getTabItem();
+            if (mSettingsTab->getItemSelected() == item)
+                mSettingsTab->setIndexSelected(0);
+            mAppearanceTab.reset();
+            mSettingsTab->removeItem(item);
+        }
+    }
+
+    void SettingsWindow::updateAppearanceTab()
+    {
+        if (!mAppearanceTab)
+            return;
+        mAppearanceTab->setShown(
+            mMainWidget->getVisible() && mSettingsTab->getItemSelected() == mAppearanceTab->getTabItem());
     }
 
     namespace
@@ -1836,7 +1871,9 @@ namespace MWGui
         updateVSyncModeSettings();
         resetScrollbars();
         renderScriptSettings();
+        syncAppearanceTab();
         updateJigglePreview(true);
+        updateAppearanceTab();
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mOkButton);
     }
 
@@ -1849,6 +1886,8 @@ namespace MWGui
         destroyJigglePreview();
         if (mJigglePreviewFrame)
             mJigglePreviewFrame->setVisible(false);
+        if (mAppearanceTab)
+            mAppearanceTab->setShown(false);
         // Save user settings
         Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");
         MWBase::Environment::get().getLuaManager()->savePermanentStorage(mCfgMgr.getUserConfigPath());
@@ -1859,6 +1898,8 @@ namespace MWGui
     {
         layoutControlsBox();
         updateJigglePreview();
+        if (mAppearanceTab)
+            mAppearanceTab->layout();
     }
 
     void SettingsWindow::computeMinimumWindowSize()

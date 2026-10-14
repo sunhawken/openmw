@@ -586,6 +586,10 @@ namespace MWRender
                 mPosition = osg::Vec3f(110, 260, 96);
                 mLookAt = osg::Vec3f(0, 0, 90);
                 break;
+            case View::Face:
+                mPosition = osg::Vec3f(0, 250, 114);
+                mLookAt = osg::Vec3f(0, 0, 114);
+                break;
         }
         setLightSide(mView == View::Back ? -1.f : 1.f);
         // The camera rides along with the Bounce hop, so the body holds still in the frame and only the jiggle

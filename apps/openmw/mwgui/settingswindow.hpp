@@ -27,6 +27,8 @@ namespace Resource
 
 namespace MWGui
 {
+    class AppearanceTab;
+
     class SettingsWindow : public WindowBase
     {
     public:
@@ -132,6 +134,11 @@ namespace MWGui
         size_t mCurrentPage;
 
         void onTabChanged(MyGUI::TabControl* sender, size_t index);
+
+        // Options > Appearance: only while a game is loaded (it edits the player)
+        std::unique_ptr<AppearanceTab> mAppearanceTab;
+        void syncAppearanceTab();
+        void updateAppearanceTab();
         void onOkButtonClicked(MyGUI::Widget* sender);
         void onTextureFilteringChanged(MyGUI::ComboBox* sender, size_t pos);
         void onSliderChangePosition(MyGUI::ScrollBar* scroller, size_t pos);

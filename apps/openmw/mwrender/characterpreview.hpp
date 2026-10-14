@@ -118,6 +118,7 @@ namespace MWRender
             Side,
             Back,
             Chest, // front close-up of the chest
+            Face, // front close-up of the head (Options > Appearance)
         };
 
         JigglePreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem, const MWWorld::Ptr& character,
