@@ -226,6 +226,12 @@ namespace MWPhysics
         void queueHeightFieldRemoval(int x, int y);
         void flushBodyRemovals();
 
+        // ## VR_PATCH BEGIN
+        // VR still needs getHitContact for realistic combat
+        std::pair<MWWorld::Ptr, osg::Vec3f> getHitContact(const MWWorld::ConstPtr& actor, const osg::Vec3f& origin,
+            const osg::Quat& orientation, float queryDistance);
+        // ## VR_PATCH END
+
         /// @param ignore Optional, a list of Ptr to ignore in the list of results. targets are actors to filter for,
         /// ignoring all other actors.
         RayCastingResult castRay(const osg::Vec3f& from, const osg::Vec3f& to,

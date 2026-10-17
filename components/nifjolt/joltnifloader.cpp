@@ -91,29 +91,11 @@ namespace NifJolt
         for (const Nif::NiAVObject* node : roots)
             handleRoot(nif, *node, args);
 
-        // Build the final compound shapes. Never call ShapeResult::Get() without checking for an
-        // error first: an empty/unbuildable compound (e.g. an actor whose meshes produced no valid
-        // triangle shapes, like werewolf skins) makes Create() error, and Get() on an errored Jolt
-        // result throws - which, uncaught on the physics thread, crashes the game. Log and skip.
         if (mCompoundShape)
-        {
-            auto result = mCompoundShape->Create();
-            if (result.HasError())
-                Log(Debug::Error) << "JoltNifLoader compound shape error for " << mShape->mFileName << ": "
-                                  << result.GetError();
-            else
-                mShape->mCollisionShape = result.Get();
-        }
+            mShape->mCollisionShape = mCompoundShape.get()->Create().Get();
 
         if (mAvoidCompoundShape)
-        {
-            auto result = mAvoidCompoundShape->Create();
-            if (result.HasError())
-                Log(Debug::Error) << "JoltNifLoader avoid compound shape error for " << mShape->mFileName << ": "
-                                  << result.GetError();
-            else
-                mShape->mAvoidCollisionShape = result.Get();
-        }
+            mShape->mAvoidCollisionShape = mAvoidCompoundShape.get()->Create().Get();
 
         return mShape;
     }

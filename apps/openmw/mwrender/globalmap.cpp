@@ -345,9 +345,12 @@ namespace MWRender
         imageY = (1.f - float(z / float(Constants::CellSizeInUnits) - mMinY) / (mMaxY - mMinY + 1)) * getHeight();
     }
 
-    void GlobalMap::requestOverlayTextureUpdate(int x, int y, int width, int height,
-        osg::ref_ptr<osg::Texture2D> texture, bool clear, bool cpuCopy, float srcLeft, float srcTop, float srcRight,
-        float srcBottom)
+//## VR_PATCH BEGIN
+// Needs to use osg::Texture for multiview compatibility
+// VR-TODO: Really? Stereo was merged upstream!
+    void GlobalMap::requestOverlayTextureUpdate(int x, int y, int width, int height, osg::ref_ptr<osg::Texture> texture,
+        bool clear, bool cpuCopy, float srcLeft, float srcTop, float srcRight, float srcBottom)
+//## VR_PATCH END
     {
         osg::ref_ptr<osg::Camera> camera(new osg::Camera);
         camera->setNodeMask(Mask_RenderToTexture);
@@ -426,7 +429,11 @@ namespace MWRender
         mActiveCameras.push_back(camera);
     }
 
-    void GlobalMap::exploreCell(int cellX, int cellY, osg::ref_ptr<osg::Texture2D> localMapTexture)
+//## VR_PATCH BEGIN
+// Needs to use osg::Texture for multiview compatibility
+// VR-TODO: Really? Stereo was merged upstream!
+    void GlobalMap::exploreCell(int cellX, int cellY, osg::ref_ptr<osg::Texture> localMapTexture)
+//## VR_PATCH END
     {
         ensureLoaded();
 

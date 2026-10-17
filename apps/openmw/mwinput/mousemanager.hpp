@@ -30,7 +30,7 @@ namespace MWInput
 
         bool injectMouseButtonPress(Uint8 button);
         bool injectMouseButtonRelease(Uint8 button);
-        void injectMouseMove(float xMove, float yMove, float mouseWheelMove);
+        void injectMouseMove(float xMove, float yMove, int mouseWheelMove, bool allowedForVR = false);
         void warpMouse();
         void warpMouseToWidget(MyGUI::Widget* widget);
 
@@ -39,6 +39,7 @@ namespace MWInput
 
         int getMouseMoveX() const { return mMouseMoveX; }
         int getMouseMoveY() const { return mMouseMoveY; }
+        int getMouseWheel() const { return mMouseWheel; }
 
         // Recent, time-decayed mouse/camera "flick" direction in screen pixels.
         // x: right positive, y: down positive. Used for directional melee attacks.
@@ -62,6 +63,14 @@ namespace MWInput
 
         float mFlickX;
         float mFlickY;
+//## VR_PATCH BEGIN
+    public:
+        // void mouseMovedVR(const SDLUtil::MouseMotionEvent& arg);
+        // VR computes mouse position based on intersections with 3d gui elements
+        void setMousePosition(int x, int y);
+    private:
+        float mPreviousXAxis;
+//## VR_PATCH END
     };
 }
 #endif

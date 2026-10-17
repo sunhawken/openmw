@@ -294,6 +294,7 @@ namespace MWLua
                 "removeVfxAction");
         };
 
+
         return LuaUtil::makeReadOnly(api);
     }
 

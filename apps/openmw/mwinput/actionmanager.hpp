@@ -27,6 +27,10 @@ namespace MWInput
 
         bool checkAllowedToUseItems() const;
 
+//## VR_PATCH BEGIN
+        bool checkIsRunning();
+
+//## VR_PATCH END
         void toggleMainMenu();
         void toggleConsole();
         void screenshot();
