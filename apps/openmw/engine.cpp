@@ -455,6 +455,13 @@ OMW::Engine::Engine(Files::ConfigurationManager& configurationManager)
 
 OMW::Engine::~Engine()
 {
+    // ## VR_PATCH BEGIN
+    // The draw thread may still be inside a frame whose callbacks use the stereo manager and the VR viewer;
+    // let it finish before anything it touches is destroyed.
+    if (mViewer)
+        mViewer->stopThreading();
+    // ## VR_PATCH END
+
     if (mScreenCaptureOperation != nullptr)
     {
         mScreenCaptureOperation->stop();
@@ -1137,6 +1144,11 @@ void OMW::Engine::go()
     const std::chrono::steady_clock::duration maxSimulationInterval(std::chrono::milliseconds(200));
     while (!mViewer->done() && !mStateManager->hasQuitRequest())
     {
+        // ## VR_PATCH BEGIN
+        // Without the runtime nothing reaches the headset and every OpenXR call fails: quit instead of hanging.
+        if (VR::getVR() && VR::Session::instance().runtimeLost())
+            mStateManager->requestQuit();
+        // ## VR_PATCH END
         const double dt = std::chrono::duration_cast<std::chrono::duration<double>>(
                               std::min(frameRateLimiter.getLastFrameDuration(), maxSimulationInterval))
                               .count()

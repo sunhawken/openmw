@@ -1,6 +1,7 @@
 #ifndef XR_SESSION_HPP
 #define XR_SESSION_HPP
 
+#include <atomic>
 #include <mutex>
 
 #include <components/vr/constants.hpp>
@@ -46,6 +47,7 @@ namespace XR
         void setReferenceWorldPose(Stereo::Pose pose) override;
 
         std::array<VR::SwapchainConfig, 2> getRecommendedSwapchainConfig() const override;
+        bool runtimeLost() const override { return mRuntimeLost; }
         std::shared_ptr<VR::Space> getReferenceSpace(VR::ReferenceSpace space) override;
         XrSpace createReferenceSpace(VR::ReferenceSpace reference, Stereo::Pose pose);
 
@@ -64,6 +66,8 @@ namespace XR
         void popEvent();
         bool handleSessionStateChanged(const XrEventDataSessionStateChanged& stateChangedEvent);
         bool checkStopCondition();
+        //! Remembers a lost instance/session so the frame loop stops calling into the runtime.
+        void checkRuntimeLost(XrResult result);
 
         void xrInteractionProfileChanged();
 
@@ -99,6 +103,7 @@ namespace XR
         bool mXrSessionShouldStop = false;
         bool mAppShouldSyncFrameLoop = false;
         bool mAppShouldReadInput = false;
+        std::atomic<bool> mRuntimeLost{ false };
 
         bool mMSFTReprojectionModeDepth = false;
     };

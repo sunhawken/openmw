@@ -87,6 +87,9 @@ namespace VR
 
         virtual std::array<SwapchainConfig, 2> getRecommendedSwapchainConfig() const = 0;
 
+        //! True once the VR runtime is gone (instance or session lost); the app should quit.
+        virtual bool runtimeLost() const { return false; }
+
         void setAppShouldShareDepthBuffer(bool arg) { mAppShouldShareDepthBuffer = arg; }
 
         void requestRecenter() { mRecenter = true; }

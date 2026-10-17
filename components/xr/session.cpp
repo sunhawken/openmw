@@ -60,8 +60,20 @@ namespace XR
         mAcquiredResources--;
     }
 
+    void Session::checkRuntimeLost(XrResult result)
+    {
+        if ((result == XR_ERROR_INSTANCE_LOST || result == XR_ERROR_SESSION_LOST) && !mRuntimeLost.exchange(true))
+            Log(Debug::Error) << "OpenXR: the VR runtime was lost (" << XrResultString(result) << "), quitting";
+    }
+
     void Session::newFrame(uint64_t frameNo, bool& shouldSyncFrame, bool& shouldSyncInput)
     {
+        if (mRuntimeLost)
+        {
+            shouldSyncFrame = false;
+            shouldSyncInput = false;
+            return;
+        }
         handleEvents();
         shouldSyncFrame = mAppShouldSyncFrameLoop;
         shouldSyncInput = mAppShouldReadInput;
@@ -76,7 +88,7 @@ namespace XR
         XrFrameState frameState{};
         frameState.type = XR_TYPE_FRAME_STATE;
 
-        CHECK_XRCMD(xrWaitFrame(mXrSession, &frameWaitInfo, &frameState));
+        checkRuntimeLost(CHECK_XRCMD(xrWaitFrame(mXrSession, &frameWaitInfo, &frameState)));
         shouldRender = frameState.shouldRender;
         predictedDisplayTime = frameState.predictedDisplayTime;
         predictedDisplayPeriod = frameState.predictedDisplayPeriod;
@@ -87,7 +99,8 @@ namespace XR
     {
         XrFrameBeginInfo frameBeginInfo{};
         frameBeginInfo.type = XR_TYPE_FRAME_BEGIN_INFO;
-        CHECK_XRCMD(xrBeginFrame(mXrSession, &frameBeginInfo));
+        if (!mRuntimeLost)
+            checkRuntimeLost(CHECK_XRCMD(xrBeginFrame(mXrSession, &frameBeginInfo)));
     }
 
     void Session::syncFrameEnd(VR::Frame& frame)
@@ -248,7 +261,8 @@ namespace XR
             frameEndInfo.layerCount = 0;
             frameEndInfo.layers = nullptr;
         }
-        CHECK_XRCMD(xrEndFrame(mXrSession, &frameEndInfo));
+        if (!mRuntimeLost)
+            checkRuntimeLost(CHECK_XRCMD(xrEndFrame(mXrSession, &frameEndInfo)));
     }
 
     void Session::handleEvents()
