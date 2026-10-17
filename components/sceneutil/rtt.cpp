@@ -259,8 +259,8 @@ namespace SceneUtil
             camera->getBufferAttachmentMap()[osg::Camera::COLOR_BUFFER]._mipMapGeneration = mGenerateMipmaps;
             camera->getBufferAttachmentMap()[osg::Camera::PACKED_DEPTH_STENCIL_BUFFER]._internalFormat
                 = mDepthBufferInternalFormat;
-            camera->getBufferAttachmentMap()[osg::Camera::PACKED_DEPTH_STENCIL_BUFFER]._mipMapGeneration
-                = mGenerateMipmaps;
+            // Depth-stencil formats can't have mipmaps generated (GL_INVALID_OPERATION in glGenerateMipmap).
+            camera->getBufferAttachmentMap()[osg::Camera::PACKED_DEPTH_STENCIL_BUFFER]._mipMapGeneration = false;
         }
 
         return mViewDependentDataMap[cv].get();
