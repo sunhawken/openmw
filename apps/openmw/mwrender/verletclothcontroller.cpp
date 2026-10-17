@@ -1,5 +1,6 @@
 #include "verletclothcontroller.hpp"
 
+#include <components/debug/debuglog.hpp>
 #include <components/misc/strings/algorithm.hpp>
 #include <components/nifosg/matrixtransform.hpp>
 #include <components/sceneutil/visitor.hpp>
@@ -25,6 +26,11 @@ namespace MWRender
         constexpr float sParticleRadius = 0.75f;
         constexpr float sTeleportDistance = 128.f;
         constexpr float sMaxCatchUp = 0.25f;
+        // water: a submerged particle keeps this share of its velocity per step (drag) and is pushed up with
+        // this share of gravity (hair and cloth are a little lighter than water, so they rise slowly)
+        constexpr float sWaterDrag = 0.88f;
+        constexpr float sWaterLift = 0.12f;
+        constexpr float sWaterRootBlend = 0.15f; // share of the root blend left for submerged particles
         // immovable body colliders (units): torso, thigh, calf radii plus a little padding
         constexpr float sTorsoRadius = 12.f + 1.5f;
         constexpr float sThighRadius = 7.2f + 1.5f;
@@ -61,9 +67,10 @@ namespace MWRender
         }
     }
 
-    VerletClothController::VerletClothController(
-        std::vector<std::vector<osg::ref_ptr<osg::MatrixTransform>>> chains, int pinCount, bool debug)
-        : mPinCount(std::max(1, pinCount))
+    VerletClothController::VerletClothController(std::vector<std::vector<osg::ref_ptr<osg::MatrixTransform>>> chains,
+        int pinCount, bool debug, std::function<std::optional<float>()> waterLevel)
+        : mWaterLevel(std::move(waterLevel))
+        , mPinCount(std::max(1, pinCount))
         , mDebug(debug)
     {
         for (auto& bones : chains)
@@ -246,9 +253,18 @@ namespace MWRender
         for (Chain& chain : mChains)
             for (std::size_t i = pin; i < chain.mPos.size(); ++i)
             {
-                const osg::Vec3f velocity = chain.mPos[i] - chain.mOld[i];
+                osg::Vec3f velocity = chain.mPos[i] - chain.mOld[i];
+                float gravity = -sGravity;
+                if (mHasWater && chain.mPos[i].z() < mWaterZ)
+                {
+                    velocity *= sWaterDrag;
+                    gravity = sGravity * sWaterLift;
+                }
                 chain.mOld[i] = chain.mPos[i];
-                chain.mPos[i] += velocity + osg::Vec3f(0.f, 0.f, -sGravity) * (dt * dt);
+                chain.mPos[i] += velocity + osg::Vec3f(0.f, 0.f, gravity) * (dt * dt);
+                // floating hair stays under the surface instead of popping out of it
+                if (mHasWater && chain.mOld[i].z() < mWaterZ && chain.mPos[i].z() > mWaterZ - 0.5f)
+                    chain.mPos[i].z() = std::max(chain.mOld[i].z(), mWaterZ - 0.5f);
             }
 
         for (int it = 0; it < sIterations; ++it)
@@ -305,7 +321,10 @@ namespace MWRender
                 {
                     const float t = static_cast<float>(k + 1) / static_cast<float>(span + 1);
                     const float smooth = t * t * t * (t * (t * 6.f - 15.f) + 10.f);
-                    const osg::Vec3f delta = (chain.mRest[pin + k] - chain.mPos[pin + k]) * (blend * (1.f - smooth));
+                    // under water the pull toward the animated shape is weak, so the whole free length floats
+                    const bool submerged = mHasWater && chain.mPos[pin + k].z() < mWaterZ;
+                    const float strength = blend * (1.f - smooth) * (submerged ? sWaterRootBlend : 1.f);
+                    const osg::Vec3f delta = (chain.mRest[pin + k] - chain.mPos[pin + k]) * strength;
                     chain.mPos[pin + k] += delta;
                     chain.mOld[pin + k] += delta;
                 }
@@ -365,6 +384,21 @@ namespace MWRender
             mCapA[c] = worldPosition(mCapsules[c].mA.get());
             mCapB[c] = worldPosition(mCapsules[c].mB.get());
         }
+        const bool wasSubmerged = mSubmerged;
+        mHasWater = false;
+        mSubmerged = false;
+        if (mWaterLevel && Settings::game().mVerletWater)
+            if (const std::optional<float> level = mWaterLevel())
+            {
+                mHasWater = true;
+                mWaterZ = *level;
+                for (const Chain& chain : mChains)
+                    if (!chain.mPos.empty() && chain.mPos.back().z() < mWaterZ)
+                        mSubmerged = true;
+            }
+        if (mDebug && mSubmerged != wasSubmerged)
+            Log(Debug::Info) << "Verlet cloth: " << (mSubmerged ? "under water" : "out of the water") << " (level "
+                             << mWaterZ << ", " << mChains.size() << " chains)";
         mHasGround = mGroundNode != nullptr;
         if (mHasGround)
         {
