@@ -1872,7 +1872,8 @@ namespace MWRender
         const bool debug = Settings::game().mJiggleBoneDebug;
         const bool isPlayer = mPtr == MWBase::Environment::get().getWorld()->getPlayerPtr();
         const std::string actorName = std::string(mPtr.getClass().getName(mPtr));
-        const bool jiggleActorEnabled = Misc::JigglePolicy::actorEnabled(isPlayer, actorName);
+        const bool jiggleActorEnabled
+            = Misc::JigglePolicy::actorEnabled(isPlayer, actorName, mPtr.getCellRef().getRefNum());
 
         std::unordered_set<osg::MatrixTransform*> attached;
 
@@ -1934,8 +1935,14 @@ namespace MWRender
             if (debug)
                 Log(Debug::Info) << "Verlet cloth: attached " << group.mChains.size() << " chains under "
                                  << (parent ? parent->getName() : std::string("<none>"));
+            // water level of the actor's current cell (read every frame: the actor may change cells)
+            auto waterLevel = [this]() -> std::optional<float> {
+                if (mPtr.isEmpty() || !mPtr.isInCell() || !mPtr.getCell()->getCell()->hasWater())
+                    return std::nullopt;
+                return mPtr.getCell()->getWaterLevel();
+            };
             group.mFirstRoot->addUpdateCallback(
-                new VerletClothController(std::move(group.mChains), group.mPin, debug));
+                new VerletClothController(std::move(group.mChains), group.mPin, debug, std::move(waterLevel)));
         }
 
         // Zero-setup behavior for traditional breast/butt bone names.
@@ -1958,7 +1965,8 @@ namespace MWRender
             if (debug)
                 Log(Debug::Warning) << "Jiggle bone debug: found " << bone << " node=" << node
                                     << " actor=" << actorName;
-            node->addUpdateCallback(new JiggleBoneController(debug, isPlayer, actorName));
+            node->addUpdateCallback(
+                new JiggleBoneController(debug, isPlayer, actorName, mPtr.getCellRef().getRefNum()));
         }
     }
 

@@ -34,8 +34,10 @@
 
 #include <components/misc/constants.hpp>
 #include <components/misc/convert.hpp>
+#include <components/misc/jigglepolicy.hpp>
 #include <components/misc/mathutil.hpp>
 #include <components/misc/pathhelpers.hpp>
+#include <components/misc/racescaleoverride.hpp>
 #include <components/misc/resourcehelpers.hpp>
 #include <components/misc/rng.hpp>
 
@@ -366,6 +368,8 @@ namespace MWWorld
         mWorldModel.clear();
 
         mStore.clearDynamic();
+        Misc::JigglePolicy::overrides().clear();
+        Misc::RaceScaleOverride::ignored().clear();
 
         if (mPlayer)
         {

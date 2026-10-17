@@ -234,7 +234,25 @@ namespace MWLua
         // Number of consecutive frames LuaManager::update() has thrown. Used to throttle the error log and
         // to recover: on failure the transient Lua queues are flushed so a single poison entry can't keep
         // aborting the whole update every frame (which previously required the player to save/reload).
-        int mUpdateErrorFrames = 0;
+        // Runs one stage of update(); a failure is reported (with the stage name) and the frame goes on.
+        template <class F>
+        void guardedStage(std::string_view what, F&& f)
+        {
+            try
+            {
+                f();
+            }
+            catch (const std::exception& e)
+            {
+                reportFailure(what, &e);
+            }
+            catch (...)
+            {
+                reportFailure(what, nullptr);
+            }
+        }
+        void reportFailure(std::string_view what, const std::exception* e);
+        std::map<std::string, int, std::less<>> mFailureCounts;
 
         // Queued actions that should be done in main thread. Processed by applyQueuedChanges().
         class DelayedAction

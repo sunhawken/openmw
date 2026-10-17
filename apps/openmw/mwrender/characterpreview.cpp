@@ -5,6 +5,7 @@
 #include <osg/BlendFunc>
 #include <osg/Camera>
 #include <osg/Fog>
+#include <osg/Light>
 #include <osg/LightModel>
 #include <osg/LightSource>
 #include <osg/Material>
@@ -59,9 +60,12 @@ namespace MWRender
 
                 osg::ref_ptr<osg::FrameStamp> previousFramestamp = const_cast<osg::FrameStamp*>(nv->getFrameStamp());
                 osg::FrameStamp* fs = new osg::FrameStamp(*previousFramestamp);
-                // A live preview keeps real time so animations and secondary motion (jiggle) keep moving.
+                // A live preview keeps time moving so animations and secondary motion (jiggle) move. It
+                // uses its own clock when it has one: the game's clock stops while a menu pauses the game.
                 if (!mLive)
                     fs->setSimulationTime(0.0);
+                else if (mClock >= 0.0)
+                    fs->setSimulationTime(mClock);
 
                 nv->setFrameStamp(fs);
 
@@ -84,11 +88,15 @@ namespace MWRender
         /// Render every frame with real time instead of once at time zero.
         void setLive(bool live) { mLive = live; }
 
+        /// Simulation time for live frames, advanced by the preview itself (negative: use the game's).
+        void setClock(double clock) { mClock = clock; }
+
         unsigned int getLastRenderedFrame() const { return mLastRenderedFrame; }
 
     private:
         bool mRendered;
         bool mLive = false;
+        double mClock = -1.0;
         unsigned int mLastRenderedFrame;
         osg::ref_ptr<osg::Node> mSubgraph;
     };
@@ -291,12 +299,8 @@ namespace MWRender
         float ambientR = Fallback::Map::getFloat("Inventory_DirectionalAmbientR");
         float ambientG = Fallback::Map::getFloat("Inventory_DirectionalAmbientG");
         float ambientB = Fallback::Map::getFloat("Inventory_DirectionalAmbientB");
-        float azimuth = osg::DegreesToRadians(Fallback::Map::getFloat("Inventory_DirectionalRotationX"));
-        float altitude = osg::DegreesToRadians(Fallback::Map::getFloat("Inventory_DirectionalRotationY"));
-        float positionX = -std::cos(azimuth) * std::sin(altitude);
-        float positionY = std::sin(azimuth) * std::sin(altitude) * mLightSide;
-        float positionZ = std::cos(altitude);
-        light->setPosition(osg::Vec4(positionX, positionY, positionZ, 0.0));
+        mLight = light;
+        setLightSide(mLightSide);
         light->setDiffuse(osg::Vec4(diffuseR, diffuseG, diffuseB, 1));
         osg::Vec4 ambientRGBA = osg::Vec4(ambientR, ambientG, ambientB, 1);
         lightmodel->setAmbientIntensity(ambientRGBA);
@@ -326,6 +330,19 @@ namespace MWRender
         mParent->addChild(mRTTNode);
 
         mCharacter.mCell = nullptr;
+    }
+
+    void CharacterPreview::setLightSide(float side)
+    {
+        mLightSide = side;
+        if (!mLight)
+            return;
+        const float azimuth = osg::DegreesToRadians(Fallback::Map::getFloat("Inventory_DirectionalRotationX"));
+        const float altitude = osg::DegreesToRadians(Fallback::Map::getFloat("Inventory_DirectionalRotationY"));
+        const float positionX = -std::cos(azimuth) * std::sin(altitude);
+        const float positionY = std::sin(azimuth) * std::sin(altitude) * mLightSide;
+        const float positionZ = std::cos(altitude);
+        mLight->setPosition(osg::Vec4(positionX, positionY, positionZ, 0.0));
     }
 
     CharacterPreview::~CharacterPreview()
@@ -525,11 +542,12 @@ namespace MWRender
 
     // --------------------------------------------------------------------------------------------------
 
-    JigglePreview::JigglePreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem,
-        const MWWorld::Ptr& character, bool front)
+    JigglePreview::JigglePreview(
+        osg::Group* parent, Resource::ResourceSystem* resourceSystem, const MWWorld::Ptr& character, bool front)
         : CharacterPreview(parent, resourceSystem, character, 512, 768, osg::Vec3f(0, front ? 700.f : -700.f, 71),
-            osg::Vec3f(0, 0, 71), front ? 1.f : -1.f)
+              osg::Vec3f(0, 0, 71), front ? 1.f : -1.f)
         , mFront(front)
+        , mView(front ? View::Front : View::Back)
     {
     }
 
@@ -544,13 +562,69 @@ namespace MWRender
         osg::Vec3f scale(1.f, 1.f, 1.f);
         mCharacter.getClass().adjustScale(mCharacter, scale, true);
         mNode->setScale(scale);
-        mRTTNode->setViewMatrix(osg::Matrixf::lookAt(mPosition * scale.z(), mLookAt * scale.z(), osg::Vec3f(0, 0, 1)));
+        applyView();
+    }
+
+    void JigglePreview::applyView()
+    {
+        // The character faces +y. The full-body views frame the whole body; the chest view frames the bust.
+        switch (mView)
+        {
+            case View::Front:
+                mPosition = osg::Vec3f(0, 700, 71);
+                mLookAt = osg::Vec3f(0, 0, 71);
+                break;
+            case View::Side:
+                mPosition = osg::Vec3f(700, 0, 71);
+                mLookAt = osg::Vec3f(0, 0, 71);
+                break;
+            case View::Back:
+                mPosition = osg::Vec3f(0, -700, 71);
+                mLookAt = osg::Vec3f(0, 0, 71);
+                break;
+            case View::Chest:
+                mPosition = osg::Vec3f(110, 260, 96);
+                mLookAt = osg::Vec3f(0, 0, 90);
+                break;
+            case View::Face:
+                mPosition = osg::Vec3f(0, 250, 114);
+                mLookAt = osg::Vec3f(0, 0, 114);
+                break;
+        }
+        setLightSide(mView == View::Back ? -1.f : 1.f);
+        // The camera rides along with the Bounce hop, so the body holds still in the frame and only the jiggle
+        // moves on screen.
+        const float s = mNode->getScale().z();
+        const osg::Vec3f hop = mNode->getPosition();
+        mRTTNode->setViewMatrix(osg::Matrixf::lookAt(mPosition * s + hop, mLookAt * s + hop, osg::Vec3f(0, 0, 1)));
+    }
+
+    void JigglePreview::setView(View view)
+    {
+        mView = view;
+        if (!mAnimation.get())
+            return;
+        applyView();
+        redraw();
     }
 
     void JigglePreview::setWalking(bool walking)
     {
-        mWalking = walking;
+        setMotion(walking ? Motion::Walk : Motion::Still);
+    }
+
+    void JigglePreview::setMotion(Motion motion)
+    {
+        mMotion = motion;
+        mTime = 0.f;
         applyPose();
+    }
+
+    void JigglePreview::setAlwaysLive(bool live)
+    {
+        mAlwaysLive = live;
+        if (mDrawOnceCallback)
+            mDrawOnceCallback->setLive(isLive());
     }
 
     void JigglePreview::applyPose()
@@ -561,10 +635,18 @@ namespace MWRender
         mAnimation->updateParts();
         if (!mCurrentAnimGroup.empty())
             mAnimation->disable(mCurrentAnimGroup);
+        mNode->setPosition(osg::Vec3f());
 
-        if (mWalking && mAnimation->hasAnimation("walkforward"))
+        const char* group = nullptr;
+        if (mMotion == Motion::Walk && mAnimation->hasAnimation("walkforward"))
+            group = "walkforward";
+        else if (mMotion == Motion::Run && mAnimation->hasAnimation("runforward"))
+            group = "runforward";
+        else if (mMotion != Motion::Still && mAnimation->hasAnimation("idle"))
+            group = "idle";
+        if (group)
         {
-            mCurrentAnimGroup = "walkforward";
+            mCurrentAnimGroup = group;
             mAnimation->play(mCurrentAnimGroup, 1, BlendMask::BlendMask_All, false, 1.0f, "start", "stop", 0.0f,
                 std::numeric_limits<uint32_t>::max(), true);
         }
@@ -574,17 +656,31 @@ namespace MWRender
             mAnimation->play(mCurrentAnimGroup, 1, BlendMask::BlendMask_All, false, 1.0f, "start", "stop", 0.0f, 0);
         }
         mAnimation->runAnimation(0.0f);
-        // A walking preview redraws every frame in real time so jiggle moves; a standing one draws once.
-        mDrawOnceCallback->setLive(mWalking);
+        // A moving (or always-live) preview redraws every frame in real time so jiggle moves; otherwise it draws once.
+        mDrawOnceCallback->setLive(isLive());
         setBlendMode();
         redraw();
     }
 
     void JigglePreview::tick(float dt)
     {
-        if (!mWalking || !mAnimation.get())
+        if (!isLive() || !mAnimation.get())
             return;
+        mTime += dt;
+        // Drive the preview's own clock: jiggle springs step by simulation time, which stands still while the
+        // Options window pauses the game.
+        mClock += dt;
+        mDrawOnceCallback->setClock(mClock);
         mAnimation->runAnimation(dt);
+        if (mMotion == Motion::Bounce)
+        {
+            // A hop every 1.2 s: 0.4 s in the air on a parabola 20 units high, then standing still while it settles.
+            constexpr float period = 1.2f, air = 0.4f, height = 20.f;
+            const float t = std::fmod(mTime, period);
+            const float z = t < air ? 4.f * height * t * (air - t) / (air * air) : 0.f;
+            mNode->setPosition(osg::Vec3f(0, 0, z));
+            applyView();
+        }
         setBlendMode();
         redraw();
     }

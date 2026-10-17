@@ -35,20 +35,38 @@ namespace MWLua
         mNewLocalEventBatch.clear();
     }
 
-    void LuaEvents::callEventHandlers()
+    void LuaEvents::callEventHandlers(const FailureReporter& report)
     {
+        // Handlers are already guarded one by one (ScriptsContainer::receiveEvent); this catches what fails around
+        // them (e.g. loading an unloaded script, a bad event payload) so the rest of the batch still runs.
         for (const Global& e : mGlobalEventBatch)
-            mGlobalScripts.receiveEvent(e.mEventName, e.mEventData);
+        {
+            try
+            {
+                mGlobalScripts.receiveEvent(e.mEventName, e.mEventData);
+            }
+            catch (const std::exception& ex)
+            {
+                report("global event '" + e.mEventName + "'", &ex);
+            }
+        }
         mGlobalEventBatch.clear();
         for (const Local& e : mLocalEventBatch)
         {
-            MWWorld::Ptr ptr = MWBase::Environment::get().getWorldModel()->getPtr(e.mDest);
-            LocalScripts* scripts = ptr.isEmpty() ? nullptr : ptr.getRefData().getLuaScripts();
-            if (scripts)
-                scripts->receiveEvent(e.mEventName, e.mEventData);
-            else
-                Log(Debug::Debug) << "Ignored event " << e.mEventName << " to L" << e.mDest.toString()
-                                  << ". Object not found or has no attached scripts";
+            try
+            {
+                MWWorld::Ptr ptr = MWBase::Environment::get().getWorldModel()->getPtr(e.mDest);
+                LocalScripts* scripts = ptr.isEmpty() ? nullptr : ptr.getRefData().getLuaScripts();
+                if (scripts)
+                    scripts->receiveEvent(e.mEventName, e.mEventData);
+                else
+                    Log(Debug::Debug) << "Ignored event " << e.mEventName << " to L" << e.mDest.toString()
+                                      << ". Object not found or has no attached scripts";
+            }
+            catch (const std::exception& ex)
+            {
+                report("local event '" + e.mEventName + "' to L" + e.mDest.toString(), &ex);
+            }
         }
         mLocalEventBatch.clear();
     }

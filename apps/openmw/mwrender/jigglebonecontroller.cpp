@@ -29,6 +29,8 @@ namespace MWRender
         // A one-frame jump this large is a teleport/cell transition, not normal character motion.
         // Reset instead of feeding it into the spring and carrying a huge velocity into later frames.
         constexpr float sTeleportResetDistance = 128.f;
+        // Cap on the body acceleration fed to the springs (game units/s^2).
+        constexpr float sMaxRestAccel = 6000.f;
 
         // Lever arm (game units) used to turn the Naturalis glute angle offsets into a rest-position
         // shift - roughly the auto-rigger's butt weight-cone radius.
@@ -68,8 +70,8 @@ namespace MWRender
         }
     }
 
-    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, std::string actorName)
-        : mSimWorldPos(0, 0, 0)
+    JiggleBoneController::JiggleBoneController(bool debug, bool isPlayer, std::string actorName, ESM::FormId refNum)
+        : mOffset(0, 0, 0)
         , mVelocity(0, 0, 0)
         , mPreviousRestWorldPos(0, 0, 0)
         , mInitialized(false)
@@ -77,6 +79,7 @@ namespace MWRender
         , mDebug(debug)
         , mIsPlayer(isPlayer)
         , mActorName(std::move(actorName))
+        , mRefNum(refNum)
     {
     }
 
@@ -132,6 +135,14 @@ namespace MWRender
         const osg::Vec3f gluteOffset = glute ? gluteRestOffset(node->getName(), skeletonWorld) : osg::Vec3f();
 
         const double simTime = nv->getFrameStamp() ? nv->getFrameStamp()->getSimulationTime() : 0.0;
+        // Debug: say (every few seconds) when the spring is skipped, and why.
+        auto logSkip = [&](const char* reason) {
+            if (!mDebug || simTime - mLastSkipLog < 3.0)
+                return;
+            mLastSkipLog = simTime;
+            Log(Debug::Warning) << "Jiggle bone skipped: actor=" << (mIsPlayer ? std::string("player") : mActorName)
+                                << " ref=" << mRefNum.toString() << " node=" << node->getName() << " reason=" << reason;
+        };
 
         if (!mInitialized)
         {
@@ -145,8 +156,9 @@ namespace MWRender
             osg::Vec3f restWorldPos = (mRestLocalMatrix.getTrans() + simulationOffset) * parentWorldMatrix;
             restWorldPos.z() += zOffsetFor(node->getName());
             restWorldPos += gluteOffset;
-            mSimWorldPos = restWorldPos;
+            mOffset = osg::Vec3f(0, 0, 0);
             mVelocity = osg::Vec3f(0, 0, 0);
+            mHasRestVelocity = false;
             mPreviousRestWorldPos = restWorldPos;
             mInitialized = true;
             mLastSimTime = simTime;
@@ -161,10 +173,12 @@ namespace MWRender
         restWorldPos += gluteOffset;
 
         // Actor-specific Jiggle rules are live.
-        if (!Misc::JigglePolicy::actorEnabled(mIsPlayer, mActorName))
+        if (!Misc::JigglePolicy::actorEnabled(mIsPlayer, mActorName, mRefNum))
         {
-            mSimWorldPos = restWorldPos;
+            logSkip("actor not enabled");
+            mOffset = osg::Vec3f(0, 0, 0);
             mVelocity = osg::Vec3f(0, 0, 0);
+            mHasRestVelocity = false;
             mPreviousRestWorldPos = restWorldPos;
             mLastSimTime = simTime;
             const osg::Vec3f newLocalTranslation
@@ -186,11 +200,13 @@ namespace MWRender
 
         if (restStep.length2() > sTeleportResetDistance * sTeleportResetDistance)
         {
+            logSkip("teleport");
             // Fast travel, cell transitions and scripted teleports can move an actor hundreds or
             // thousands of units in one update. Treat that as a discontinuity: snap the simulated
             // point to the new animated rest target and clear momentum so the cape cannot slingshot.
-            mSimWorldPos = restWorldPos;
+            mOffset = osg::Vec3f(0, 0, 0);
             mVelocity = osg::Vec3f(0, 0, 0);
+            mHasRestVelocity = false;
             mLastSimTime = simTime;
             const osg::Vec3f newLocalTranslation
                 = restWorldPos * osg::Matrix::inverse(parentWorldMatrix) - simulationOffset;
@@ -211,8 +227,10 @@ namespace MWRender
         // an existing .nif breast bone live even when procedural auto-rigging is disabled.
         if (!Settings::game().mJiggleAutoRig)
         {
-            mSimWorldPos = restWorldPos;
+            logSkip("auto rig off");
+            mOffset = osg::Vec3f(0, 0, 0);
             mVelocity = osg::Vec3f(0, 0, 0);
+            mHasRestVelocity = false;
             mLastSimTime = simTime;
             const osg::Vec3f newLocalTranslation
                 = restWorldPos * osg::Matrix::inverse(parentWorldMatrix) - simulationOffset;
@@ -232,9 +250,26 @@ namespace MWRender
         mLastSimTime = simTime;
         if (dt <= 0.0)
         {
+            logSkip("no time step");
             traverse(node, nv);
             return;
         }
+        // How fast the rest point (the body) moved this frame, over the real frame time, and how sharply that
+        // changed: the body's acceleration is what throws the bone about (its inertia, felt in the body's frame).
+        const osg::Vec3f restVelocity = restStep / static_cast<float>(dt);
+        osg::Vec3f restAccel;
+        if (mHasRestVelocity)
+        {
+            restAccel = (restVelocity - mRestVelocity) / static_cast<float>(dt);
+            // a single hitch (a stair step, a frame spike) must not fling the bone across the screen
+            if (restAccel.length2() > sMaxRestAccel * sMaxRestAccel)
+            {
+                restAccel.normalize();
+                restAccel *= sMaxRestAccel;
+            }
+        }
+        mRestVelocity = restVelocity;
+        mHasRestVelocity = true;
         if (dt > sMaxDeltaTime)
             dt = sMaxDeltaTime;
         const float fdt = static_cast<float>(dt);
@@ -320,9 +355,19 @@ namespace MWRender
             gravity *= Settings::game().mJiggleGluteGravity;
             maxDisplacement *= gluteParams.mMaxDisplacement;
         }
+        // Gravity never pulls the bone further down than max displacement at rest (the steady sag, gravity /
+        // stiffness, is capped there), so a soft spring hangs at the limit and swings freely around it instead of
+        // straining against it.
+        if (gravity > 0.f && gravity / std::max(stiffness, 1e-3f) > maxDisplacement)
+            gravity = maxDisplacement * stiffness;
         const osg::Vec3f gravityAccel(0.f, 0.f, -gravity);
 
-        osg::Vec3f displacement = mSimWorldPos - restWorldPos;
+        // The spring runs in the body's frame: mOffset is the bone's offset from its rest point and mVelocity its
+        // velocity relative to the body. (It used to run on world positions, stepping the bone one frame ahead
+        // and comparing it with this frame's rest point, which left it a frame's worth of movement ahead of the
+        // body - pressed against the limit in any fast motion - and damped world velocity, which dragged it back
+        // by about as much at walking pace.)
+        osg::Vec3f displacement = mOffset;
         osg::Vec3f springForce = displacement * -stiffness;
         osg::Vec3f damperForce = mVelocity * -damping;
         if (gluteResponse && depthAxis)
@@ -333,9 +378,9 @@ namespace MWRender
             springForce = (displacement - depthDisp) * -stiffness + depthDisp * -depthStiffness;
             damperForce = (mVelocity - depthVel) * -damping + depthVel * -depthDamping;
         }
-        const osg::Vec3f acceleration = (springForce + damperForce + gravityAccel) / mass;
+        const osg::Vec3f acceleration = (springForce + damperForce + gravityAccel) / mass - restAccel;
         mVelocity += acceleration * fdt;
-        mSimWorldPos += mVelocity * fdt;
+        mOffset += mVelocity * fdt;
 
         // Self/body-collision containment: don't let the bone sink toward its parent joint (into
         // the torso) past the limit, and stop its inward velocity at that wall. Bone-space analog
@@ -356,11 +401,11 @@ namespace MWRender
             if (outwardLen > 1e-3f)
             {
                 outwardWorld /= outwardLen;
-                const osg::Vec3f dispW = mSimWorldPos - restWorldPos;
+                const osg::Vec3f dispW = mOffset;
                 const float inward = -(dispW * outwardWorld); // >0 when moving toward the body
                 if (inward > selfCollisionLimit)
                 {
-                    mSimWorldPos += outwardWorld * (inward - selfCollisionLimit);
+                    mOffset += outwardWorld * (inward - selfCollisionLimit);
                     const float inwardVel = -(mVelocity * outwardWorld);
                     if (inwardVel > 0.f)
                         mVelocity += outwardWorld * inwardVel; // cancel the into-body velocity
@@ -368,14 +413,34 @@ namespace MWRender
             }
         }
 
-        displacement = mSimWorldPos - restWorldPos;
+        displacement = mOffset;
 
-        if (displacement.length2() > maxDisplacement * maxDisplacement)
+        // Max displacement limits the swing around where gravity lets the bone hang, not the hang plus the
+        // swing: the steady sag (the spring's equilibrium, gravity / stiffness, capped above) gets its own
+        // allowance. Measuring the limit from the rest pose let the sag use up most of it, so in motion (walking,
+        // running, animations) the bone sat pressed against the limit and the stiffness/softness/damping sliders
+        // made no visible difference.
+        const osg::Vec3f sag = gravityAccel / std::max(stiffness, 1e-3f);
+        osg::Vec3f swing = displacement - sag;
+        // The simulation itself may overshoot the limit (up to twice it, a safety bound) so the bounce keeps its
+        // energy; only the rendered swing is limited, softly (see below).
+        const float hardLimit = 2.f * maxDisplacement;
+        if (swing.length2() > hardLimit * hardLimit)
         {
-            displacement.normalize();
-            displacement *= maxDisplacement;
-            mSimWorldPos = restWorldPos + displacement;
+            swing.normalize();
+            swing *= hardLimit;
+            mOffset = sag + swing;
         }
+        // Soft limit: the rendered swing eases towards max displacement (max * tanh(swing / max)): close to the
+        // simulated swing for small motion, and never stopping dead against a wall, so a bigger swing always shows
+        // as a bigger one (fast animations no longer all look the same, pressed against the limit).
+        const float swingLen = swing.length();
+        const bool clamped = swingLen > 0.8f * maxDisplacement;
+        if (maxDisplacement <= 0.f)
+            swing = osg::Vec3f();
+        else if (swingLen > 1e-6f)
+            swing *= maxDisplacement * std::tanh(swingLen / maxDisplacement) / swingLen;
+        displacement = sag + swing;
 
         // Naturalis glute force physics: how strongly motion pushes the glute into the body (depth
         // in) or pulls it out (depth out). Shapes the rendered displacement along the depth axis.
@@ -398,16 +463,49 @@ namespace MWRender
         const osg::Matrix parentWorldInverse = osg::Matrix::inverse(parentWorldMatrix);
         const osg::Vec3f newLocalTranslation = visualWorldPos * parentWorldInverse - simulationOffset;
 
+        // Per-second summary: how far the bone sits from rest on average, how far it swings (travel of the
+        // rendered offset per second) and how often the simulated swing is past 80% of max displacement.
+        if (mDebug)
+        {
+            DebugStats& st = mStats;
+            if (st.mStart < 0.0)
+                st.mStart = simTime;
+            const float len = displacement.length();
+            if (st.mFrames > 0)
+                st.mTravel += (displacement - st.mLast).length();
+            st.mLast = displacement;
+            ++st.mFrames;
+            st.mSum += len;
+            st.mMax = std::max(st.mMax, len);
+            st.mClamped += clamped ? 1 : 0;
+            const float speed = restVelocity.length();
+            st.mSpeed += speed;
+            if (speed > 1.f)
+                st.mLagAlong += (displacement - sag) * (restVelocity / speed);
+            if (simTime - st.mStart >= 1.0)
+            {
+                Log(Debug::Warning) << "Jiggle bone stats: actor=" << (mIsPlayer ? std::string("player") : mActorName)
+                                    << " ref=" << mRefNum.toString() << " pos=" << restWorldPos.x() << ","
+                                    << restWorldPos.y() << "," << restWorldPos.z() << " node=" << node->getName()
+                                    << " frames=" << st.mFrames << " meanDisp=" << st.mSum / st.mFrames
+                                    << " maxDisp=" << st.mMax << " clampedPct=" << 100 * st.mClamped / st.mFrames
+                                    << " travelPerSec=" << st.mTravel / (simTime - st.mStart)
+                                    << " max=" << maxDisplacement << " lagAlong=" << st.mLagAlong / st.mFrames
+                                    << " speed=" << st.mSpeed / st.mFrames;
+                st = DebugStats();
+                st.mLast = displacement;
+            }
+        }
         // Runtime proof that the final transform which drives skinned cape vertices actually moved,
         // after displacement clamp, side shaping and visual intensity have all been applied.
         if (mDebug && (mDebugCounter++ % 60) == 0)
         {
             Log(Debug::Warning) << "Jiggle bone debug: node=" << node->getName() << " dt=" << dt
-                                 << " restWorldPos=" << restWorldPos.x() << "," << restWorldPos.y() << ","
-                                 << restWorldPos.z() << " simWorldPos=" << mSimWorldPos.x() << "," << mSimWorldPos.y()
-                                 << "," << mSimWorldPos.z() << " displacementLen=" << displacement.length()
-                                 << " newLocalTranslation=" << newLocalTranslation.x() << "," << newLocalTranslation.y()
-                                 << "," << newLocalTranslation.z();
+                                << " restWorldPos=" << restWorldPos.x() << "," << restWorldPos.y() << ","
+                                << restWorldPos.z() << " offset=" << mOffset.x() << "," << mOffset.y() << ","
+                                << mOffset.z() << " displacementLen=" << displacement.length()
+                                << " newLocalTranslation=" << newLocalTranslation.x() << "," << newLocalTranslation.y()
+                                << "," << newLocalTranslation.z();
         }
 
         if (auto* nifTransform = dynamic_cast<NifOsg::MatrixTransform*>(node))

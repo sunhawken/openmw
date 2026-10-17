@@ -1020,8 +1020,8 @@ namespace MWRender
         // Run model-specific secondary-motion compatibility for every actor after equipment
         // attachment. Female body auto-rigging is still explicitly gated by sex.
         const std::string actorDisplayName = std::string(mPtr.getClass().getName(mPtr));
-        JiggleAutoRig::run(
-            mObjectRoot.get(), mPtr == MWMechanics::getPlayer(), !mNpc->isMale(), actorDisplayName);
+        JiggleAutoRig::run(mObjectRoot.get(), mPtr == MWMechanics::getPlayer(), !mNpc->isMale(), actorDisplayName,
+            mPtr.getCellRef().getRefNum());
     }
 
     PartHolderPtr NpcAnimation::insertBoundedPart(VFS::Path::NormalizedView model, std::string_view bonename,

@@ -17,7 +17,13 @@ to the algorithm: no air drag, wind, springs or tuning sliders.
   4. Neighbouring chains (each chain is linked to its two nearest) may not be further apart than
      1.1 x their rest distance at the same level, so the whole sheet moves together.
 - The only additions the 2D library does not have: immovable body capsules (torso, thighs, calves) and
-  the actor's floor, so the cloth cannot pass through the body.
+  the actor's floor, so the cloth cannot pass through the body, and water.
+- Water: when the actor's cell has water, a particle below the water level keeps 88% of its velocity per
+  step (drag) and is pushed up with 12% of gravity instead of falling, so hair and cloth float slowly
+  upward while swimming; a submerged particle is held 0.5 units under the surface rather than leaving it, and
+  the root blend pulls it toward the animated shape with only 15% of its strength, so the whole free length floats.
+  With `jiggle bone debug` the log says when a chain group goes under water or comes out.
+  The level is read every frame from the actor's current cell.
 
 ## Authoring
 
@@ -27,4 +33,5 @@ the same parent bone are simulated together by one controller. Bones are moved b
 
 ## Setting
 
-`[Game] verlet enabled = true` switches the simulation on or off. There is no Options tab.
+`[Game] verlet enabled = true` switches the simulation on or off; `[Game] verlet water = true` switches
+the water drag and buoyancy on or off. There is no Options tab.

@@ -8,12 +8,16 @@
 #include <components/esm3/loadnpc.hpp>
 #include <components/lua/luastate.hpp>
 #include <components/lua/util.hpp>
+#include <components/misc/jigglepolicy.hpp>
+#include <components/misc/racescaleoverride.hpp>
 #include <components/misc/resourcehelpers.hpp>
 
 #include "apps/openmw/mwbase/environment.hpp"
 #include "apps/openmw/mwbase/mechanicsmanager.hpp"
 #include "apps/openmw/mwbase/world.hpp"
+#include "apps/openmw/mwmechanics/actorutil.hpp"
 #include "apps/openmw/mwmechanics/npcstats.hpp"
+#include "apps/openmw/mwrender/renderingmanager.hpp"
 #include "apps/openmw/mwworld/class.hpp"
 #include "apps/openmw/mwworld/esmstore.hpp"
 
@@ -259,6 +263,68 @@ namespace MWLua
                     MWBase::Environment::get().getMechanicsManager()->setWerewolf(obj.ptr(), werewolf);
                 },
                 "setWerewolfAction");
+        };
+
+        npc["isJiggleEnabled"] = [](const Object& o) -> bool {
+            const MWWorld::Ptr& ptr = o.ptr();
+            if (!ptr.getClass().isNpc())
+                throw std::runtime_error("NPC or Player expected");
+            return Misc::JigglePolicy::actorEnabled(
+                ptr == MWMechanics::getPlayer(), ptr.getClass().getName(ptr), ptr.getCellRef().getRefNum());
+        };
+        npc["setJiggleEnabled"] = [context](const Object& obj, sol::optional<bool> enabled) -> void {
+            if (obj.isLObject() && !obj.isSelfObject())
+                throw std::runtime_error("Local scripts can modify only self");
+            const MWWorld::Ptr& ptr = obj.ptr();
+            if (!ptr.getClass().isNpc())
+                throw std::runtime_error("NPC or Player expected");
+            context.mLuaManager->addAction(
+                [obj = Object(ptr), enabled] {
+                    const MWWorld::Ptr& actor = obj.ptr();
+                    const ESM::RefNum refNum = actor.getCellRef().getRefNum();
+                    if (!refNum.isSet())
+                        return;
+                    auto& overrides = Misc::JigglePolicy::overrides();
+                    const std::optional<bool> before = Misc::JigglePolicy::actorOverride(refNum);
+                    if (enabled)
+                        overrides[refNum] = *enabled;
+                    else
+                        overrides.erase(refNum);
+                    const std::optional<bool> after = Misc::JigglePolicy::actorOverride(refNum);
+                    // The auto-rig runs when the model is built, so rebuild an actor already in the scene.
+                    if (before == after || actor.getRefData().getBaseNode() == nullptr)
+                        return;
+                    MWBase::World* world = MWBase::Environment::get().getWorld();
+                    if (actor == MWMechanics::getPlayer())
+                        world->reattachPlayerCamera();
+                    else
+                        world->getRenderingManager()->rebuildPtr(actor);
+                },
+                "setJiggleEnabledAction");
+        };
+
+        npc["isRaceScaleIgnored"] = [](const Object& o) -> bool {
+            return Misc::RaceScaleOverride::isIgnored(o.ptr().getCellRef().getRefNum());
+        };
+        npc["setRaceScaleIgnored"] = [context](const Object& obj, bool ignored) -> void {
+            if (obj.isLObject() && !obj.isSelfObject())
+                throw std::runtime_error("Local scripts can modify only self");
+            const MWWorld::Ptr& ptr = obj.ptr();
+            if (!ptr.getClass().isNpc())
+                throw std::runtime_error("NPC or Player expected");
+            context.mLuaManager->addAction(
+                [obj = Object(ptr), ignored] {
+                    const MWWorld::Ptr& actor = obj.ptr();
+                    const ESM::RefNum refNum = actor.getCellRef().getRefNum();
+                    if (!refNum.isSet())
+                        return;
+                    auto& set = Misc::RaceScaleOverride::ignored();
+                    const bool changed = ignored ? set.insert(refNum).second : set.erase(refNum) > 0;
+                    // Re-apply the scale of an actor already in the scene.
+                    if (changed && actor.getRefData().getBaseNode() != nullptr)
+                        MWBase::Environment::get().getWorld()->scaleObject(actor, actor.getCellRef().getScale(), true);
+                },
+                "setRaceScaleIgnoredAction");
         };
 
         npc["getDisposition"] = [](const Object& o, const Object& player) -> int {

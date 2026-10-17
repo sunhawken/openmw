@@ -87,6 +87,7 @@ namespace Settings
 
         // Master switch for the physics-verlet hair/cloth chains.
         SettingValue<bool> mVerletEnabled{ mIndex, "Game", "verlet enabled" };
+        SettingValue<bool> mVerletWater{ mIndex, "Game", "verlet water" };
         // Reaction speed scales the simulation clock (slower / faster reaction); root blend pulls the first
         // free bones toward their animated position so the start of the physics is not visible.
         SettingValue<float> mVerletReactionSpeed{ mIndex, "Game", "verlet reaction speed",

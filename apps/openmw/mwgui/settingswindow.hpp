@@ -6,9 +6,19 @@
 
 #include "windowbase.hpp"
 
+#include <memory>
+
 namespace osg
 {
     class Group;
+}
+namespace MWRender
+{
+    class JigglePreview;
+}
+namespace MyGUIPlatform
+{
+    class OSGTexture;
 }
 namespace Resource
 {
@@ -17,6 +27,8 @@ namespace Resource
 
 namespace MWGui
 {
+    class AppearanceTab;
+
     class SettingsWindow : public WindowBase
     {
     public:
@@ -122,6 +134,11 @@ namespace MWGui
         size_t mCurrentPage;
 
         void onTabChanged(MyGUI::TabControl* sender, size_t index);
+
+        // Options > Appearance: only while a game is loaded (it edits the player)
+        std::unique_ptr<AppearanceTab> mAppearanceTab;
+        void syncAppearanceTab();
+        void updateAppearanceTab();
         void onOkButtonClicked(MyGUI::Widget* sender);
         void onTextureFilteringChanged(MyGUI::ComboBox* sender, size_t pos);
         void onSliderChangePosition(MyGUI::ScrollBar* scroller, size_t pos);
@@ -194,6 +211,27 @@ namespace MWGui
     private:
         void resetScrollbars();
         Files::ConfigurationManager& mCfgMgr;
+
+        // Live jiggle preview beside the Jiggle tab's sliders: the player, rendered every frame while the tab
+        // is shown, so each slider's effect can be watched as it is dragged.
+        MyGUI::Widget* mJiggleTabItem = nullptr;
+        MyGUI::ScrollView* mJiggleScrollView = nullptr;
+        MyGUI::Widget* mJigglePreviewFrame = nullptr;
+        MyGUI::ImageBox* mJigglePreviewImage = nullptr;
+        MyGUI::TextBox* mJigglePreviewStatus = nullptr;
+        MyGUI::Button* mJigglePreviewMotionButton = nullptr;
+        MyGUI::Button* mJigglePreviewViewButton = nullptr;
+        std::unique_ptr<MWRender::JigglePreview> mJigglePreview;
+        std::unique_ptr<MyGUIPlatform::OSGTexture> mJigglePreviewTexture;
+        int mJigglePreviewMotion = 3; // Bounce
+        int mJigglePreviewView = 0; // Front
+        void createJigglePreviewWidgets();
+        void layoutJigglePreview();
+        void updateJigglePreview(bool rebuild = false);
+        void destroyJigglePreview();
+        void updateJigglePreviewCaptions();
+        void onJigglePreviewMotionClicked(MyGUI::Widget* sender);
+        void onJigglePreviewViewClicked(MyGUI::Widget* sender);
     };
 }
 

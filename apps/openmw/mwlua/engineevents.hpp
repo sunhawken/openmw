@@ -1,6 +1,9 @@
 #ifndef MWLUA_ENGINEEVENTS_H
 #define MWLUA_ENGINEEVENTS_H
 
+#include <exception>
+#include <functional>
+#include <string_view>
 #include <variant>
 
 #include <components/esm3/cellref.hpp> // defines RefNum that is used as a unique id
@@ -89,7 +92,9 @@ namespace MWLua
 
         void clear() { mQueue.clear(); }
         void addToQueue(Event e) { mQueue.push_back(std::move(e)); }
-        void callEngineHandlers();
+        // Calls the handlers of the queued events; an event whose handler throws is reported and skipped.
+        using FailureReporter = std::function<void(std::string_view what, const std::exception* e)>;
+        void callEngineHandlers(const FailureReporter& report);
 
     private:
         class Visitor;

@@ -8,6 +8,7 @@
 #include <stdexcept>
 
 #include <components/misc/constants.hpp>
+#include <components/misc/racescaleoverride.hpp>
 #include <components/misc/resourcehelpers.hpp>
 #include <components/misc/rng.hpp>
 
@@ -1149,6 +1150,10 @@ namespace MWClass
                     // having the same collision extents for all races makes the environments easier to test
 
         const MWWorld::LiveCellRef<ESM::NPC>* ref = ptr.get<ESM::NPC>();
+
+        // A script asked for this actor to be drawn at height and weight 1 (paired animations).
+        if (Misc::RaceScaleOverride::isIgnored(ptr.getCellRef().getRefNum()))
+            return;
 
         const ESM::Race* race = MWBase::Environment::get().getESMStore()->get<ESM::Race>().find(ref->mBase->mRace);
 

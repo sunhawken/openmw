@@ -7,6 +7,8 @@
 #include <osg/Vec3f>
 #include <osg/ref_ptr>
 
+#include <functional>
+#include <optional>
 #include <vector>
 
 namespace osg
@@ -25,12 +27,15 @@ namespace MWRender
     /// may not be further apart than 1.1 x their rest distance (cloth.c) so a whole sheet of chains
     /// moves together. Particles are pushed apart when they overlap (world_collide). The only
     /// additions the 2D library does not have are immovable body capsules and a floor so the
-    /// cloth cannot pass through the actor.
+    /// cloth cannot pass through the actor, and water: particles below the actor's cell water level
+    /// lose most of their speed (drag) and rise slowly instead of falling (buoyancy), so hair and
+    /// cloth float while swimming.
     class VerletClothController : public SceneUtil::NodeCallback<VerletClothController, osg::MatrixTransform*>
     {
     public:
-        VerletClothController(
-            std::vector<std::vector<osg::ref_ptr<osg::MatrixTransform>>> chains, int pinCount, bool debug = false);
+        /// `waterLevel` returns the water height of the actor's cell, or nothing when it has no water.
+        VerletClothController(std::vector<std::vector<osg::ref_ptr<osg::MatrixTransform>>> chains, int pinCount,
+            bool debug = false, std::function<std::optional<float>()> waterLevel = {});
 
         void operator()(osg::MatrixTransform* node, osg::NodeVisitor* nv);
 
@@ -77,6 +82,10 @@ namespace MWRender
         float mLastReaction = 0.f;
         float mGroundZ = 0.f;
         bool mHasGround = false;
+        std::function<std::optional<float>()> mWaterLevel;
+        float mWaterZ = 0.f;
+        bool mHasWater = false;
+        bool mSubmerged = false;
         std::vector<osg::Vec3f> mCapA, mCapB;
     };
 }

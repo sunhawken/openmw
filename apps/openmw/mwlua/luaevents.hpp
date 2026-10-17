@@ -1,8 +1,11 @@
 #ifndef MWLUA_LUAEVENTS_H
 #define MWLUA_LUAEVENTS_H
 
+#include <exception>
+#include <functional>
 #include <map>
 #include <string>
+#include <string_view>
 
 #include <components/esm3/cellref.hpp> // defines RefNum that is used as a unique id
 
@@ -52,7 +55,9 @@ namespace MWLua
 
         void clear();
         void finalizeEventBatch();
-        void callEventHandlers();
+        // Calls the handlers of the finalized batch; an event that fails is reported and skipped.
+        using FailureReporter = std::function<void(std::string_view what, const std::exception* e)>;
+        void callEventHandlers(const FailureReporter& report);
         void callMenuEventHandlers();
 
         void load(lua_State* lua, ESM::ESMReader& esm, const std::map<int, int>& contentFileMapping,
