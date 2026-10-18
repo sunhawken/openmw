@@ -332,10 +332,19 @@ namespace NifJolt
             transform *= parent->mNiNode.mTransform.toMatrix();
 
         osg::Vec3f localScale = transform.getScale();
+        // Parts scaled to nothing (creature meshes hide parts that way) have no extent to collide with, and a
+        // zero scale can't be orthonormalized or wrapped in a ScaledShape
+        constexpr float minScale = 1e-4f;
+        if (std::abs(localScale.x()) < minScale || std::abs(localScale.y()) < minScale
+            || std::abs(localScale.z()) < minScale)
+            return;
         transform.orthoNormalize(transform);
 
         const osg::Vec3f& osgPos = transform.getTrans();
-        const osg::Quat& osgQuat = transform.getRotate();
+        osg::Quat osgQuat = transform.getRotate();
+        if (osgQuat.length2() < 1e-8)
+            return;
+        osgQuat /= osgQuat.length();
 
         // Try create shape, Jolt will validate and give error if it failed (it shouldnt usually)
         auto createdRef = childShape->Create();
@@ -345,10 +354,15 @@ namespace NifJolt
             childShape->ClearCachedResult();
             childShape->Sanitize();
 
+            // Every triangle was degenerate: the geometry has no area to collide with
+            if (childShape->mIndexedTriangles.empty())
+                return;
+
             createdRef = childShape->Create();
             if (createdRef.HasError())
             {
-                Log(Debug::Error) << "JoltNifLoader mesh error: " << createdRef.GetError();
+                Log(Debug::Error) << "JoltNifLoader mesh error in " << mShape->mFileName.value() << " ("
+                                  << niGeometry.mName << "): " << createdRef.GetError();
                 return;
             }
         }
@@ -360,6 +374,12 @@ namespace NifJolt
         {
             JPH::ScaledShapeSettings scaledSettings(createdRef.Get(), Misc::Convert::toJolt<JPH::Vec3>(localScale));
             createdRef = scaledSettings.Create();
+            if (createdRef.HasError())
+            {
+                Log(Debug::Error) << "JoltNifLoader scaled shape error in " << mShape->mFileName.value() << " ("
+                                  << niGeometry.mName << "): " << createdRef.GetError();
+                return;
+            }
         }
 
         // TODO: determine if has any animation in collision object at all so parent can be mutable

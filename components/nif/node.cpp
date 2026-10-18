@@ -315,6 +315,9 @@ namespace Nif
             stripsToJPHMeshShape(*mesh, *strips);
 
         std::unique_ptr<JPH::MeshShapeSettings> ptr(mesh);
+        // Vertices without triangles (placeholder or particle-emitter geometry) can't collide
+        if (ptr->mIndexedTriangles.empty())
+            return nullptr;
         return ptr;
     }
 
@@ -352,6 +355,8 @@ namespace Nif
 
         // JPH::MeshShape* meshShape = static_cast<JPH::MeshShape*>(createdRef.Get().GetPtr());
         std::unique_ptr<JPH::MeshShapeSettings> ptr(mesh);
+        if (ptr->mIndexedTriangles.empty())
+            return nullptr;
         return ptr;
     }
 
