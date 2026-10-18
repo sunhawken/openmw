@@ -38,6 +38,17 @@ I.Settings.registerGroup({
     },
 })
 
+-- 'toggle sneak' in settings.cfg (the launcher's Gameplay page) and this in-game setting are the same switch
+local controlsSection = storage.playerSection(settingsGroup)
+if controlsSection:get('toggleSneak') ~= input._isToggleSneakEnabled() then
+    controlsSection:set('toggleSneak', input._isToggleSneakEnabled())
+end
+controlsSection:subscribe(async:callback(function(_, key)
+    if key == nil or key == 'toggleSneak' then
+        input._setToggleSneakEnabled(controlsSection:get('toggleSneak') == true)
+    end
+end))
+
 local interfaceL10n = core.l10n('interface')
 
 local bindingSection = storage.playerSection('OMWInputBindings')

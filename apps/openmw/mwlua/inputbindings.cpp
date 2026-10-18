@@ -242,6 +242,8 @@ namespace MWLua
             = [](int button) -> bool { return SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON(button); };
         api["_isGamepadCursorActive"] = [input]() -> bool { return input->isGamepadGuiCursorEnabled(); };
         api["_isControllerMenusEnabled"] = []() -> bool { return Settings::gui().mControllerMenus; };
+        api["_isToggleSneakEnabled"] = []() -> bool { return Settings::input().mToggleSneak; };
+        api["_setToggleSneakEnabled"] = [](bool v) { Settings::input().mToggleSneak.set(v); };
         api["_setGamepadCursorActive"] = [input](bool v) {
             input->setGamepadGuiCursorEnabled(v);
             MWBase::Environment::get().getWindowManager()->setCursorActive(v);

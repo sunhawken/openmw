@@ -228,6 +228,7 @@ bool Launcher::SettingsPage::loadSettings()
         loadSettingBool(
             Settings::game().mBarterDispositionChangeIsPermanent, *permanentBarterDispositionChangeCheckBox);
         loadSettingBool(Settings::game().mClassicReflectedAbsorbSpellsBehavior, *classicReflectedAbsorbSpellsCheckBox);
+        loadSettingBool(Settings::input().mToggleSneak, *toggleSneakCheckBox);
         loadSettingBool(Settings::game().mClassicCalmSpellsBehavior, *classicCalmSpellsCheckBox);
         loadSettingBool(
             Settings::game().mOnlyAppropriateAmmunitionBypassesResistance, *requireAppropriateAmmunitionCheckBox);
@@ -528,6 +529,7 @@ void Launcher::SettingsPage::saveSettings()
         saveSettingBool(
             *permanentBarterDispositionChangeCheckBox, Settings::game().mBarterDispositionChangeIsPermanent);
         saveSettingBool(*classicReflectedAbsorbSpellsCheckBox, Settings::game().mClassicReflectedAbsorbSpellsBehavior);
+        saveSettingBool(*toggleSneakCheckBox, Settings::input().mToggleSneak);
         saveSettingBool(*classicCalmSpellsCheckBox, Settings::game().mClassicCalmSpellsBehavior);
         saveSettingBool(
             *requireAppropriateAmmunitionCheckBox, Settings::game().mOnlyAppropriateAmmunitionBypassesResistance);

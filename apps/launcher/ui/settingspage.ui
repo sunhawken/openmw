@@ -213,6 +213,16 @@
            </property>
           </widget>
          </item>
+         <item row="13" column="1">
+          <widget class="QCheckBox" name="toggleSneakCheckBox">
+           <property name="toolTip">
+            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The Sneak key toggles sneaking on and off instead of having to be held down.&lt;/p&gt;&lt;p&gt;Same setting as Options &amp;gt; Scripts &amp;gt; OpenMW Controls &amp;gt; Toggle Sneak in game.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+           </property>
+           <property name="text">
+            <string>Toggle Sneak</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item>

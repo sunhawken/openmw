@@ -18,7 +18,7 @@ Input Settings
    :type: boolean
    :range: true, false
    :default: false
-   :location: :bdg-info:`Lua` :bdg-info:`In Game > Options > Scripts > OpenMW Camera`
+   :location: :bdg-success:`Launcher > Settings > Gameplay` :bdg-info:`In Game > Options > Scripts > OpenMW Controls`
 
    Sneak key toggles sneaking on/off instead of needing to be held.
    Useful for extended sneaking sessions.

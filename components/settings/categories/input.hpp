@@ -19,6 +19,7 @@ namespace Settings
         using WithIndex::WithIndex;
 
         SettingValue<bool> mGrabCursor{ mIndex, "Input", "grab cursor" };
+        SettingValue<bool> mToggleSneak{ mIndex, "Input", "toggle sneak" };
         SettingValue<float> mCameraSensitivity{ mIndex, "Input", "camera sensitivity", makeMaxStrictSanitizerFloat(0) };
         SettingValue<float> mCameraYMultiplier{ mIndex, "Input", "camera y multiplier",
             makeMaxStrictSanitizerFloat(0) };
