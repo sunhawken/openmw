@@ -5,6 +5,7 @@
 
 #include <osg/Node>
 
+#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -64,7 +65,7 @@ namespace MWPhysics
         bool mTransformUpdatePending = false;
         mutable std::mutex mPositionMutex;
         PhysicsTaskScheduler* mTaskScheduler;
-        char mCollidedWith;
+        std::atomic<char> mCollidedWith;
     };
 }
 

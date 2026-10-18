@@ -89,13 +89,31 @@ namespace MWPhysics
 
     void Object::commitPositionChange()
     {
-        std::unique_lock<std::mutex> lock(mPositionMutex);
+        // Take what changed under the lock, then talk to Jolt without it: a physics worker can hold a body lock
+        // while it calls addCollision() on this object, so holding mPositionMutex while waiting for a body lock here
+        // can deadlock (seen with an object moved every frame that actors stand against).
+        bool scaleUpdate = false;
+        bool transformUpdate = false;
+        osg::Vec3f scale;
+        osg::Vec3f position;
+        osg::Quat rotation;
+        {
+            std::unique_lock<std::mutex> lock(mPositionMutex);
 
-        // Body may have been removed during cell unload - check before accessing
-        if (mPhysicsBody == nullptr)
-            return;
+            // Body may have been removed during cell unload - check before accessing
+            if (mPhysicsBody == nullptr)
+                return;
 
-        if (mScaleUpdatePending)
+            scaleUpdate = mScaleUpdatePending;
+            transformUpdate = mTransformUpdatePending;
+            scale = mScale;
+            position = mPosition;
+            rotation = mRotation;
+            mScaleUpdatePending = false;
+            mTransformUpdatePending = false;
+        }
+
+        if (scaleUpdate)
         {
             JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
             JPH::ScaledShape* newShape;
@@ -103,32 +121,29 @@ namespace MWPhysics
             shapeRef = mPhysicsBody->GetShape();
             if (!mUsesScaledShape) // Was not originally a scaled shape
             {
-                newShape = new JPH::ScaledShape(shapeRef.GetPtr(), Misc::Convert::toJolt<JPH::Vec3>(mScale));
+                newShape = new JPH::ScaledShape(shapeRef.GetPtr(), Misc::Convert::toJolt<JPH::Vec3>(scale));
             }
             else
             {
                 const JPH::ScaledShape* bodyShape = reinterpret_cast<const JPH::ScaledShape*>(shapeRef.GetPtr());
                 const JPH::Shape* innerShape = bodyShape->GetInnerShape();
-                newShape = new JPH::ScaledShape(innerShape, Misc::Convert::toJolt<JPH::Vec3>(mScale));
+                newShape = new JPH::ScaledShape(innerShape, Misc::Convert::toJolt<JPH::Vec3>(scale));
             }
 
             mUsesScaledShape = true;
 
             // NOTE: SetShape will destroy the original shape if required, no need to do it after
             bodyInterface.SetShape(getPhysicsBody(), newShape, false, JPH::EActivation::DontActivate);
-            mScaleUpdatePending = false;
         }
 
-        if (mTransformUpdatePending)
+        if (transformUpdate)
         {
             // SetPositionAndRotation is thread safe
             // NOTE: Static bodies should use DontActivate - activation is only meaningful for dynamic bodies
             // Per Jolt best practices, activating static bodies causes unnecessary broadphase updates
             JPH::BodyInterface& bodyInterface = mTaskScheduler->getBodyInterface();
-            bodyInterface.SetPositionAndRotation(getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(mPosition),
-                Misc::Convert::toJolt(mRotation), JPH::EActivation::DontActivate);
-
-            mTransformUpdatePending = false;
+            bodyInterface.SetPositionAndRotation(getPhysicsBody(), Misc::Convert::toJolt<JPH::RVec3>(position),
+                Misc::Convert::toJolt(rotation), JPH::EActivation::DontActivate);
         }
     }
 
@@ -238,8 +253,8 @@ namespace MWPhysics
 
     void Object::addCollision(ScriptedCollisionType type)
     {
-        std::unique_lock<std::mutex> lock(mPositionMutex);
-        mCollidedWith |= type;
+        // Called from physics workers that may hold Jolt body locks: never take mPositionMutex here
+        mCollidedWith.fetch_or(type);
     }
 
     void Object::resetCollisions()
