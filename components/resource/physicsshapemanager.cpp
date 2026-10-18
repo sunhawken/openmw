@@ -98,6 +98,9 @@ namespace Resource
                 meshInterface->ClearCachedResult();
                 meshInterface->Sanitize();
 
+                if (meshInterface->mIndexedTriangles.empty())
+                    return osg::ref_ptr<PhysicsShape>();
+
                 createdRef = meshInterface->Create();
                 if (createdRef.HasError())
                 {
