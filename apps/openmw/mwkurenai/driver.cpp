@@ -24,6 +24,7 @@
 #include "../mwphysics/joltlayers.hpp"
 #include "../mwphysics/raycasting.hpp"
 #include <components/sceneutil/skeleton.hpp>
+#include <components/sceneutil/visitor.hpp>
 
 #include "../mwrender/animation.hpp"
 #include "../mwrender/camera.hpp"
@@ -109,12 +110,14 @@ namespace MWKurenai
             mPs2Anim = ps2 == "all" ? Ps2Anim::All : ps2 == "locomotion" ? Ps2Anim::Locomotion : Ps2Anim::Off;
             if (mPs2Anim != Ps2Anim::Off)
             {
-                kurenai::ParseError perr;
-                mSkeletonMap = kurenai::loadSkeletonMap(k.mSkeletonMap, perr);
-                if (!mSkeletonMap)
+                std::vector<std::string> errors;
+                mSkeletonMaps = kurenai::loadSkeletonMaps(k.mSkeletonMap, errors);
+                for (const std::string& e : errors)
+                    Log(Debug::Error) << "Kurenai: skeleton map " << e;
+                if (mSkeletonMaps.empty())
                 {
-                    Log(Debug::Error) << "Kurenai: ps2 animation off: skeleton map '" << k.mSkeletonMap.get()
-                                      << "' line " << perr.line << ": " << perr.message;
+                    Log(Debug::Error) << "Kurenai: ps2 animation off: no skeleton maps in '" << k.mSkeletonMap.get()
+                                      << "'";
                     mPs2Anim = Ps2Anim::Off;
                 }
             }
@@ -415,6 +418,11 @@ namespace MWKurenai
         applyPendingRagdolls();
         if (mShowStatus)
             updateStatus(dt);
+        if (mPoseCallback && mFrames % 120 == 0)
+            Log(Debug::Info) << "Kurenai: pose override: " << mPoseCallback->frames() << " frames run, last frame "
+                             << mPoseCallback->found() << " bones found, " << mPoseCallback->turned()
+                             << " turned, last turn " << osg::RadiansToDegrees(mPoseCallback->lastAngle()) << " deg"
+                             << (mPoseCallback->missing().empty() ? "" : ", missing: ") << mPoseCallback->missing();
 
         const bool alive = mLink->peerAlive(now, mPeerTimeoutNs);
         if (alive && !mPeerAlive)
@@ -597,16 +605,41 @@ namespace MWKurenai
     void Driver::handlePose(const kurenai::proto::Pose& p)
     {
         ++mPosesReceived;
-        if (mPs2Anim == Ps2Anim::Off || !mSkeletonMap || !mLatest)
+        if (mPs2Anim == Ps2Anim::Off || !mLatest)
             return;
-        const std::vector<kurenai::proto::Vec3> dirs = kurenai::aimDirections(p.bones, mLatest->rotation, *mSkeletonMap);
+        // Each model (outfit) has its own bone layout; an unknown one is left to Morrowind's animation.
+        auto it = mSkeletonMaps.find(p.model);
+        if (it == mSkeletonMaps.end())
+            it = mSkeletonMaps.find(0);
+        if (p.model != mPoseModel)
+        {
+            mPoseModel = p.model;
+            Log(Debug::Info) << "Kurenai: model " << std::hex << p.model << std::dec << " (" << p.bones.size()
+                             << " bones): " << (it != mSkeletonMaps.end() ? "skeleton map found" : "no skeleton map, "
+                                                                                                     "Morrowind animates");
+        }
+        if (it == mSkeletonMaps.end())
+        {
+            if (mPoseTarget->active)
+            {
+                mPoseTarget = std::make_shared<PoseTarget>();
+                if (mPoseCallback)
+                    mPoseCallback->setTarget(mPoseTarget);
+            }
+            return;
+        }
+        const kurenai::SkeletonMap& map = it->second;
+        const std::vector<kurenai::AimDirection> dirs = kurenai::aimDirections(p.bones, mLatest->rotation, map);
         auto target = std::make_shared<PoseTarget>();
-        const auto& loco = mSkeletonMap->locomotion;
+        const auto& loco = map.locomotion;
         target->active = mPs2Anim == Ps2Anim::All
             || std::find(loco.begin(), loco.end(), mLatest->animId) != loco.end();
         for (std::size_t i = 0; i < dirs.size(); ++i)
-            target->aims.push_back({ mSkeletonMap->aims[i].bone, mSkeletonMap->aims[i].child,
-                osg::Vec3f(dirs[i].x, dirs[i].y, dirs[i].z) });
+        {
+            const kurenai::BoneAim& a = map.aims[i];
+            target->aims.push_back({ a.bone, a.child, osg::Vec3f(dirs[i].dir.x, dirs[i].dir.y, dirs[i].dir.z),
+                a.sideChild, osg::Vec3f(dirs[i].side.x, dirs[i].side.y, dirs[i].side.z) });
+        }
         mPoseTarget = target;
         if (mPoseCallback)
             mPoseCallback->setTarget(mPoseTarget);
@@ -692,18 +725,25 @@ namespace MWKurenai
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWRender::Animation* anim = world->getAnimation(world->getPlayerPtr());
         osg::Node* skeleton = anim ? anim->getSkeleton() : nullptr;
+        osg::Node* rootBone = nullptr;
+        if (skeleton)
+        {
+            SceneUtil::FindByNameVisitor find("Bip01");
+            skeleton->accept(find);
+            rootBone = find.mFoundNode;
+        }
         osg::ref_ptr<osg::Node> current;
-        if (mPoseSkeleton.lock(current) && current.get() == skeleton)
+        if (mPoseSkeleton.lock(current) && current.get() == rootBone)
             return;
         if (current && mPoseCallback)
             current->removeUpdateCallback(mPoseCallback);
-        mPoseSkeleton = skeleton;
-        if (!skeleton)
+        mPoseSkeleton = rootBone;
+        if (!rootBone)
             return;
-        mPoseCallback = new PoseOverride(mPoseTarget);
-        skeleton->addUpdateCallback(mPoseCallback);
+        mPoseCallback = new PoseOverride(mPoseTarget, skeleton);
+        rootBone->addUpdateCallback(mPoseCallback);
         Log(Debug::Info) << "Kurenai: PS2 animation (" << (mPs2Anim == Ps2Anim::All ? "all" : "locomotion")
-                         << ") attached to the player's skeleton, " << mSkeletonMap->aims.size() << " bones";
+                         << ") attached to the player's skeleton; " << mSkeletonMaps.size() << " skeleton maps";
     }
 
     void Driver::applyAnimation(std::uint32_t motion)

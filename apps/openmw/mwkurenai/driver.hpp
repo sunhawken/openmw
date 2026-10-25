@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -128,7 +129,8 @@ namespace MWKurenai
             Locomotion,
             All
         } mPs2Anim = Ps2Anim::Off;
-        std::optional<kurenai::SkeletonMap> mSkeletonMap;
+        std::map<std::uint32_t, kurenai::SkeletonMap> mSkeletonMaps; // by model CRC (0: maps without a model line)
+        std::uint32_t mPoseModel = 0xffffffffu; // the model of the last pose (logged when it changes)
         std::shared_ptr<PoseTarget> mPoseTarget = std::make_shared<PoseTarget>();
         osg::ref_ptr<PoseOverride> mPoseCallback;
         osg::observer_ptr<osg::Node> mPoseSkeleton; // the animation object can be rebuilt; never keep it alive
