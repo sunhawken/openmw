@@ -12,6 +12,8 @@
 #include <MyGUI_ITexture.h>
 #include <MyGUI_TextBox.h>
 
+#include <SDL_keyboard.h>
+
 #include <components/debug/debuglog.hpp>
 #include <components/settings/values.hpp>
 
@@ -23,6 +25,7 @@
 #include "../mwbase/world.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/damagesourcetype.hpp"
+#include "../mwmechanics/drawstate.hpp"
 #include "../mwinput/actions.hpp"
 #include "../mwmechanics/movement.hpp"
 #include "../mwphysics/joltlayers.hpp"
@@ -119,6 +122,13 @@ namespace MWKurenai
             mShowStatus = k.mShowStatus;
             mHideMorrowindHud = k.mHideMorrowindHud;
             mHudScale = k.mGameHudScale;
+            mMorrowindMode = k.mStartMode.get() == "morrowind";
+            if (!k.mModeToggleKey.get().empty())
+            {
+                mToggleScancode = SDL_GetScancodeFromName(k.mModeToggleKey.get().c_str());
+                if (mToggleScancode == SDL_SCANCODE_UNKNOWN)
+                    Log(Debug::Error) << "Kurenai: unknown mode toggle key '" << k.mModeToggleKey.get() << "'";
+            }
             const std::string ps2 = k.mPs2Animation;
             mPs2Anim = ps2 == "all" ? Ps2Anim::All : ps2 == "locomotion" ? Ps2Anim::Locomotion : Ps2Anim::Off;
             if (mPs2Anim != Ps2Anim::Off)
@@ -281,19 +291,24 @@ namespace MWKurenai
         mQueryNs += kurenai::monotonicNs() - start;
     }
 
-    void Driver::onConnect()
+    void Driver::takeControl()
     {
-        Log(Debug::Info) << "Kurenai: PCSX2 connected; Red Ninja's code now drives the player";
+        Log(Debug::Info) << "Kurenai: combat mode: Red Ninja's code now drives the player";
         {
             std::lock_guard<std::mutex> lock(mTransformMutex);
             mAnchored = false;
         }
+        // A fresh anchor: Red Ninja's world starts again where she stands in Morrowind (she may have walked on in
+        // Morrowind mode).
         mPrev.reset();
         mLatest.reset();
         mLastMotion = 0xffffffffu;
         // The game's own code integrates Kurenai's motion; Morrowind's gravity and collision must not fight it
         // (Phase 3 answers the game's collision queries from Morrowind instead).
         MWBase::World* world = MWBase::Environment::get().getWorld();
+        // Her weapon in combat mode is the game's (the tetsugen): put Morrowind's weapon or spell away.
+        MWWorld::Ptr player = world->getPlayerPtr();
+        player.getClass().getCreatureStats(player).setDrawState(MWMechanics::DrawState::Nothing);
         // toggleCollisionMode returns the new state.
         const bool nowOn = world->toggleCollisionMode();
         if (nowOn)
@@ -301,10 +316,13 @@ namespace MWKurenai
         mCollisionWasOn = !nowOn;
     }
 
-    void Driver::onDisconnect()
+    void Driver::releaseControl(const char* why)
     {
-        Log(Debug::Warning) << "Kurenai: PCSX2 stopped responding; Morrowind controls the player again";
+        Log(Debug::Info) << "Kurenai: " << why << "; Morrowind controls the player";
         mPendingRagdolls.clear();
+        hideHud();
+        if (mWireGeometry)
+            mWireGeometry->setNodeMask(0u);
         releaseCamera();
         osg::ref_ptr<osg::Node> skeleton;
         if (mPoseSkeleton.lock(skeleton) && mPoseCallback)
@@ -315,8 +333,28 @@ namespace MWKurenai
             world->toggleCollisionMode();
         mCollisionWasOn = false;
         MWWorld::Ptr player = world->getPlayerPtr();
-        MWBase::Environment::get().getMechanicsManager()->playAnimationGroup(player, "idle", 0, 1, false);
+        // Combat mode plays her motions as scripted, looping animation groups, which lock Morrowind's character
+        // controller (no walking, no weapon): drop them so Morrowind animates her again.
+        MWBase::Environment::get().getMechanicsManager()->clearAnimationQueue(player, true);
         mLastMotion = 0xffffffffu;
+    }
+
+    void Driver::pollModeKey()
+    {
+        if (mToggleScancode == 0)
+            return;
+        int count = 0;
+        const Uint8* keys = SDL_GetKeyboardState(&count);
+        const bool down = mToggleScancode < count && keys[mToggleScancode];
+        const bool pressed = down && !mToggleHeld;
+        mToggleHeld = down;
+        // Not while a menu, the console or a dialogue has the keyboard.
+        if (!pressed || MWBase::Environment::get().getWindowManager()->isGuiMode())
+            return;
+        mMorrowindMode = !mMorrowindMode;
+        MWBase::Environment::get().getWindowManager()->messageBox(mMorrowindMode
+                ? "Morrowind mode: Morrowind's walk, weapons and HUD"
+                : (mPeerAlive ? "Combat mode: Red Ninja" : "Combat mode: Red Ninja (waiting for PCSX2)"));
     }
 
     void Driver::sendInput()
@@ -451,13 +489,31 @@ namespace MWKurenai
                              << (mPoseCallback->missing().empty() ? "" : ", missing: ") << mPoseCallback->missing();
 
         const bool alive = mLink->peerAlive(now, mPeerTimeoutNs);
-        if (alive && !mPeerAlive)
-            onConnect();
-        else if (!alive && mPeerAlive)
-            onDisconnect();
+        if (alive != mPeerAlive)
+            Log(Debug::Info) << "Kurenai: PCSX2 " << (alive ? "connected" : "stopped responding");
         mPeerAlive = alive;
-        if (!mPeerAlive)
+        pollModeKey();
+        const bool drive = mPeerAlive && !mMorrowindMode;
+        if (drive && !mControlling)
+            takeControl();
+        else if (!drive && mControlling)
+            releaseControl(mPeerAlive ? "Morrowind mode" : "PCSX2 stopped responding");
+        mControlling = drive;
+        if (!mControlling)
+        {
+            // Morrowind mode with PCSX2 connected: a neutral pad, so she stands idle in Red Ninja's world.
+            if (mPeerAlive)
+            {
+                const kurenai::proto::Input idle;
+                if (!(idle == mLastInput) || mSinceInput > 0.25f)
+                    if (send(idle))
+                    {
+                        mLastInput = idle;
+                        mSinceInput = 0;
+                    }
+            }
             return;
+        }
 
         sendInput();
 
@@ -518,7 +574,7 @@ namespace MWKurenai
     void Driver::handleCombat(const kurenai::proto::CombatEvent& e)
     {
         ++mCombatEvents;
-        if (!mCombat || !mAnchored)
+        if (!mCombat || !mAnchored || !mControlling)
             return;
         if (e.attackId != mLastAttack)
         {
@@ -689,6 +745,8 @@ namespace MWKurenai
         s << std::fixed << "KURENAI ";
         if (!mPeerAlive)
             s << "waiting for PCSX2";
+        else if (!mControlling)
+            s << "Morrowind mode (PCSX2 connected, idle)";
         else
         {
             s << "PCSX2 frame " << mLastPeerFrame << "  latency " << mLatency.lastUs / 1000.0 << " ms (avg "
@@ -719,7 +777,7 @@ namespace MWKurenai
     void Driver::updateHud(float dt)
     {
         mSinceHudFrame += dt;
-        if (!mPeerAlive)
+        if (!mControlling)
         {
             hideHud();
             return;
@@ -949,7 +1007,7 @@ namespace MWKurenai
     void Driver::afterPhysics(float dt)
     {
         (void)dt;
-        if (!mLink || !mPeerAlive || !mLatest)
+        if (!mLink || !mControlling || !mLatest)
             return;
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWWorld::Ptr player = world->getPlayerPtr();

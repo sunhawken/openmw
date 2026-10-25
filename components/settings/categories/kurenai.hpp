@@ -33,6 +33,9 @@ namespace Settings
         SettingValue<bool> mGameHud{ mIndex, "Kurenai", "game hud" };
         SettingValue<bool> mHideMorrowindHud{ mIndex, "Kurenai", "hide morrowind hud" };
         SettingValue<float> mGameHudScale{ mIndex, "Kurenai", "game hud scale", makeClampSanitizerFloat(0.25f, 4.0f) };
+        SettingValue<std::string> mStartMode{ mIndex, "Kurenai", "start mode",
+            makeEnumSanitizerString({ "combat", "morrowind" }) };
+        SettingValue<std::string> mModeToggleKey{ mIndex, "Kurenai", "mode toggle key" };
     };
 }
 

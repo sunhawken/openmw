@@ -59,6 +59,8 @@ namespace MWKurenai
         void afterPhysics(float dt);
 
         bool connected() const { return mPeerAlive; }
+        // Combat mode: PCSX2 drives her. Morrowind mode: Morrowind does, while PCSX2 stays connected and idle.
+        bool driving() const { return mControlling; }
 
         // Held by the engine while physics and the world update run; the bridge thread answers the game's collision
         // queries (Jolt ray casts) only outside those windows.
@@ -68,8 +70,9 @@ namespace MWKurenai
         void serviceThread();
         void answer(const kurenai::proto::CollisionQuery& q);
         bool send(const kurenai::proto::Payload& p);
-        void onConnect();
-        void onDisconnect();
+        void takeControl();
+        void releaseControl(const char* why);
+        void pollModeKey();
         void sendInput();
         void applyAnimation(std::uint32_t motion);
         void handleCombat(const kurenai::proto::CombatEvent& e);
@@ -81,6 +84,10 @@ namespace MWKurenai
         kurenai::CoordTransform mTransform;
         bool mAnchored = false;
         bool mPeerAlive = false;
+        bool mMorrowindMode = false; // [Kurenai] start mode, switched with [Kurenai] mode toggle key
+        bool mControlling = false; // PCSX2 drives the player (connected and in combat mode)
+        int mToggleScancode = 0; // SDL scancode, 0 = no key
+        bool mToggleHeld = false;
         bool mCollisionWasOn = false;
         bool mFollowGround = true; // [Kurenai] height mode = ground
         bool mInterpolate = true;
