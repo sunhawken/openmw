@@ -15,6 +15,7 @@
 #include "../mwbase/world.hpp"
 #include "../mwinput/actions.hpp"
 #include "../mwmechanics/movement.hpp"
+#include "../mwphysics/joltlayers.hpp"
 #include "../mwphysics/raycasting.hpp"
 #include "../mwrender/camera.hpp"
 #include "../mwworld/class.hpp"
@@ -91,6 +92,7 @@ namespace MWKurenai
             logPath = k.mStateLog;
             mPeerTimeoutNs = static_cast<std::uint64_t>(k.mPeerTimeout * 1e9f);
             mInterpolate = k.mInterpolate;
+            mAnswerCollision = k.mAnswerCollision;
         }
         catch (const std::exception& e)
         {
@@ -107,20 +109,117 @@ namespace MWKurenai
         if (!logPath.empty() && (mLog = std::fopen(logPath.c_str(), "w")))
             std::fprintf(mLog, "frame\tmono_ns\tpeer_frame\tsent_ns\trn_x\trn_y\trn_z\tmw_x\tmw_y\tmw_z\tyaw\tmotion\n");
         Log(Debug::Info) << "Kurenai: bridge region '" << name << "' created (protocol " << kurenai::proto::kMajor
-                         << "." << kurenai::proto::kMinor << ", " << animMap().size()
-                         << " animation mappings); waiting for PCSX2";
+                         << "." << kurenai::proto::kMinor << ", " << animMap().size() << " animation mappings, "
+                         << (mAnswerCollision ? "answering" : "not answering")
+                         << " collision queries); waiting for PCSX2";
+        if (mAnswerCollision && Settings::physics().mAsyncNumThreads > 0)
+            Log(Debug::Warning) << "Kurenai: [Physics] async num threads > 0: physics may step outside the world lock "
+                                   "while collision queries are answered; set it to 0 for KURENAI sessions";
+        mThread = std::thread([this] { serviceThread(); });
     }
 
     Driver::~Driver()
     {
+        mStop = true;
+        if (mThread.joinable())
+            mThread.join();
+        if (mQueries)
+            Log(Debug::Info) << "Kurenai: answered " << mQueries << " collision queries (" << mQueryHits << " hits, "
+                             << mQueriesDeclined << " declined), average " << (mQueryNs / 1000.0 / mQueries)
+                             << " us each";
         if (mLog)
             std::fclose(mLog);
+    }
+
+    bool Driver::send(const kurenai::proto::Payload& p)
+    {
+        std::lock_guard<std::mutex> lock(mSendMutex);
+        return mLink->send(p, mFrames);
+    }
+
+    void Driver::serviceThread()
+    {
+        std::vector<kurenai::proto::Message> msgs;
+        std::uint64_t lastActivity = kurenai::monotonicNs();
+        while (!mStop)
+        {
+            msgs.clear();
+            mLink->poll(msgs);
+            for (kurenai::proto::Message& m : msgs)
+            {
+                if (const auto* q = std::get_if<kurenai::proto::CollisionQuery>(&m.payload))
+                    answer(*q);
+                else
+                {
+                    std::lock_guard<std::mutex> lock(mInboxMutex);
+                    mInbox.push_back(std::move(m));
+                }
+            }
+            const std::uint64_t now = kurenai::monotonicNs();
+            if (!msgs.empty())
+                lastActivity = now;
+            // PCSX2 waits inside the game's collision call for these answers: spin while it is busy, rest when idle.
+            if (now - lastActivity < 50'000'000)
+                std::this_thread::yield();
+            else
+                std::this_thread::sleep_for(std::chrono::microseconds(500));
+        }
+    }
+
+    void Driver::answer(const kurenai::proto::CollisionQuery& q)
+    {
+        const std::uint64_t start = kurenai::monotonicNs();
+        kurenai::proto::CollisionResult res;
+        res.queryId = q.queryId;
+        kurenai::CoordTransform t;
+        bool anchored;
+        {
+            std::lock_guard<std::mutex> lock(mTransformMutex);
+            t = mTransform;
+            anchored = mAnchored;
+        }
+        if (!mAnswerCollision || !anchored || q.kind != kurenai::proto::QueryKind::Ray)
+        {
+            res.material = kurenai::proto::kMaterialDeclined;
+            ++mQueriesDeclined;
+            send(res);
+            return;
+        }
+        const kurenai::proto::Vec3 a = t.position(q.from), b = t.position(q.to);
+        MWPhysics::RayCastingResult hit;
+        {
+            std::lock_guard<std::mutex> lock(mWorldMutex);
+            // Statics, terrain and doors: Morrowind's level geometry. Actors (Kurenai herself included) are not
+            // level geometry for the game's queries.
+            hit = MWBase::Environment::get().getWorld()->getRayCasting()->castRay(osg::Vec3f(a.x, a.y, a.z),
+                osg::Vec3f(b.x, b.y, b.z), {}, {},
+                MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR);
+        }
+        res.hit = hit.mHit;
+        if (hit.mHit)
+        {
+            const osg::Vec3f& p = hit.mHitPos;
+            res.point = t.toRedNinja({ p.x(), p.y(), p.z() });
+            osg::Vec3f n = hit.mHitNormal;
+            if (n.normalize() == 0)
+                n = osg::Vec3f(0, 0, 1);
+            res.normal = kurenai::CoordTransform::axesInverse({ n.x(), n.y(), n.z() });
+            const float len = (osg::Vec3f(b.x, b.y, b.z) - osg::Vec3f(a.x, a.y, a.z)).length();
+            res.fraction = len > 0 ? std::fmin(1.0f, (p - osg::Vec3f(a.x, a.y, a.z)).length() / len) : 0.0f;
+            ++mQueryHits;
+        }
+        send(res);
+        ++mQueries;
+        mQueryNs += kurenai::monotonicNs() - start;
     }
 
     void Driver::onConnect()
     {
         Log(Debug::Info) << "Kurenai: PCSX2 connected; Red Ninja's code now drives the player";
-        mAnchored = false;
+        {
+            std::lock_guard<std::mutex> lock(mTransformMutex);
+            mAnchored = false;
+        }
         mPrev.reset();
         mLatest.reset();
         mLastMotion = 0xffffffffu;
@@ -198,7 +297,7 @@ namespace MWKurenai
         // Send on change, and at least 4 times a second so a lost message can't leave a button stuck.
         if (!(in == mLastInput) || mSinceInput > 0.25f)
         {
-            if (mLink->send(in, mFrames))
+            if (send(in))
             {
                 mLastInput = in;
                 mSinceInput = 0;
@@ -216,8 +315,11 @@ namespace MWKurenai
         const std::uint64_t now = kurenai::monotonicNs();
         mLink->tick(now);
 
-        std::vector<kurenai::proto::Message> msgs;
-        mLink->poll(msgs);
+        std::deque<kurenai::proto::Message> msgs;
+        {
+            std::lock_guard<std::mutex> lock(mInboxMutex);
+            msgs.swap(mInbox);
+        }
         for (const kurenai::proto::Message& m : msgs)
         {
             if (const auto* ps = std::get_if<kurenai::proto::PlayerState>(&m.payload))
@@ -239,7 +341,7 @@ namespace MWKurenai
                 kurenai::proto::Hello reply;
                 reply.role = kurenai::proto::Role::Engine;
                 reply.software = "OpenMW Kurenai";
-                mLink->send(reply, mFrames);
+                send(reply);
             }
         }
 
@@ -292,11 +394,14 @@ namespace MWKurenai
         {
             // Kurenai starts where the player stands; from then on her motion is the game's.
             const osg::Vec3f p = player.getRefData().getPosition().asVec3();
-            mTransform.anchorRn = mLatest->position;
-            mTransform.originMw = { p.x(), p.y(), p.z() };
+            {
+                std::lock_guard<std::mutex> lock(mTransformMutex);
+                mTransform.anchorRn = mLatest->position;
+                mTransform.originMw = { p.x(), p.y(), p.z() };
+                mAnchored = true;
+            }
             mRnGroundY = mLatest->position.y;
             mMwZ = p.z();
-            mAnchored = true;
             Log(Debug::Info) << "Kurenai: anchored Red Ninja (" << mLatest->position.x << ", " << mLatest->position.y
                              << ", " << mLatest->position.z << ") at Morrowind (" << p.x() << ", " << p.y() << ", "
                              << p.z() << "), scale " << mTransform.scale;

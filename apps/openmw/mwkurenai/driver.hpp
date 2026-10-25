@@ -10,11 +10,15 @@
 #include <kurenai/link.hpp>
 #include <kurenai/player.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 
 namespace MWKurenai
 {
@@ -32,7 +36,14 @@ namespace MWKurenai
 
         bool connected() const { return mPeerAlive; }
 
+        // Held by the engine while physics and the world update run; the bridge thread answers the game's collision
+        // queries (Jolt ray casts) only outside those windows.
+        std::unique_lock<std::mutex> lockWorld() { return std::unique_lock<std::mutex>(mWorldMutex); }
+
     private:
+        void serviceThread();
+        void answer(const kurenai::proto::CollisionQuery& q);
+        bool send(const kurenai::proto::Payload& p);
         void onConnect();
         void onDisconnect();
         void sendInput();
@@ -60,6 +71,18 @@ namespace MWKurenai
         float mSinceInput = 0;
         std::uint32_t mLastMotion = 0xffffffffu;
         std::FILE* mLog = nullptr;
+
+        // The bridge thread owns the incoming ring: it answers CollisionQuery at once and queues the rest for the
+        // main thread. Both threads send, so sends are serialised.
+        std::thread mThread;
+        std::atomic<bool> mStop{ false };
+        std::mutex mSendMutex;
+        std::mutex mInboxMutex;
+        std::deque<kurenai::proto::Message> mInbox;
+        std::mutex mWorldMutex;
+        std::mutex mTransformMutex; // guards mTransform and mAnchored for the bridge thread
+        bool mAnswerCollision = false;
+        std::atomic<std::uint64_t> mQueries{ 0 }, mQueryHits{ 0 }, mQueriesDeclined{ 0 }, mQueryNs{ 0 };
     };
 }
 
