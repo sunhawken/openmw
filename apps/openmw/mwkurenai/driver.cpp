@@ -44,7 +44,13 @@
 #include <osg/Geometry>
 #include <osg/LineWidth>
 #include "../mwworld/class.hpp"
+#include "../mwworld/esmstore.hpp"
 #include "../mwworld/ptr.hpp"
+#include "../mwmechanics/spells.hpp"
+
+#include <components/esm/defs.hpp>
+#include <components/esm3/loadmgef.hpp>
+#include <components/esm3/loadspel.hpp>
 
 namespace MWKurenai
 {
@@ -59,11 +65,69 @@ namespace MWKurenai
             return motions;
         }
 
+        // Her motions in which Kiton hides her besides the sneak ones ("kiton<TAB>id id ..."): standing still.
+        std::set<std::uint32_t>& kitonMotions()
+        {
+            static std::set<std::uint32_t> motions;
+            return motions;
+        }
+
+        // Her smoke bomb throw ("smoke<TAB>id").
+        std::set<std::uint32_t>& smokeMotions()
+        {
+            static std::set<std::uint32_t> motions;
+            return motions;
+        }
+
+        // The game's smoke cloud (runs/sm1): it shows 50 vsyncs after the throw starts and is gone 330 vsyncs later.
+        // Actors stay blind and choking for a while after they leave it.
+        constexpr float kSmokeDelay = 50.0f / 60.0f;
+        constexpr float kSmokeLife = 330.0f / 60.0f;
+        constexpr float kSmokeAfter = 3.0f;
+
+        // A spell of hers, made once and kept in the store (the save keeps it with whoever carries it).
+        const ESM::Spell* itemSpell(std::string_view id, std::string_view name, ESM::Spell::SpellType type,
+            std::initializer_list<std::pair<ESM::RefId, int>> effects)
+        {
+            MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+            const ESM::RefId refId = ESM::RefId::stringRefId(id);
+            if (const ESM::Spell* existing = store.get<ESM::Spell>().search(refId))
+                return existing;
+            ESM::Spell spell;
+            spell.blank();
+            spell.mId = refId;
+            spell.mName = name;
+            spell.mData.mType = type;
+            for (const auto& [effect, magnitude] : effects)
+            {
+                ESM::IndexedENAMstruct e{};
+                e.mData.mEffectID = effect;
+                e.mData.mRange = ESM::RT_Self;
+                e.mData.mMagnMin = e.mData.mMagnMax = magnitude;
+                e.mIndex = static_cast<std::uint32_t>(spell.mEffects.mList.size());
+                spell.mEffects.mList.push_back(e);
+            }
+            return store.overrideRecord(spell);
+        }
+
+        const ESM::Spell* kitonSpell()
+        {
+            return itemSpell("kurenai_kiton", "Kiton", ESM::Spell::ST_Ability, { { ESM::MagicEffect::Chameleon, 100 } });
+        }
+
+        const ESM::Spell* smokeSpell()
+        {
+            return itemSpell("kurenai_smoke", "Smoke Bomb", ESM::Spell::ST_Curse,
+                { { ESM::MagicEffect::Blind, 100 }, { ESM::MagicEffect::Paralyze, 1 } });
+        }
+
         // Red Ninja motion id -> Morrowind animation group, from the profile's anim_map.tsv ("motion<TAB>group").
         std::map<std::uint32_t, std::string> loadAnimMap(const std::string& path)
         {
             std::map<std::uint32_t, std::string> map;
             sneakMotions().clear();
+            kitonMotions().clear();
+            smokeMotions().clear();
             if (path.empty())
                 return map;
             std::ifstream in(path);
@@ -78,12 +142,14 @@ namespace MWKurenai
                 if (line.empty() || line[0] == '#')
                     continue;
                 std::istringstream fields(line);
-                if (line.rfind("sneak", 0) == 0)
+                if (line.rfind("sneak", 0) == 0 || line.rfind("kiton", 0) == 0 || line.rfind("smoke", 0) == 0)
                 {
                     std::string word;
                     fields >> word;
+                    std::set<std::uint32_t>& set
+                        = word == "sneak" ? sneakMotions() : word == "kiton" ? kitonMotions() : smokeMotions();
                     for (std::uint32_t id = 0; fields >> id;)
-                        sneakMotions().insert(id);
+                        set.insert(id);
                     continue;
                 }
                 std::uint32_t motion = 0;
@@ -141,6 +207,8 @@ namespace MWKurenai
             mHudScale = k.mGameHudScale;
             mProxyEnabled = k.mProxies;
             mProxyRadius = k.mProxyRadius;
+            mSmokeModel = k.mSmokeModel;
+            mSmokeRadius = k.mSmokeRadius;
             mMorrowindMode = k.mStartMode.get() == "morrowind";
             if (!k.mModeToggleKey.get().empty())
             {
@@ -208,6 +276,8 @@ namespace MWKurenai
             mThread.join();
         if (mProxyDamage)
             Log(Debug::Info) << "Kurenai: proxies: " << mProxyDamage << " hits passed on, " << mProxyKills << " kills";
+        if (mSmokeBombs)
+            Log(Debug::Info) << "Kurenai: smoke bombs: " << mSmokeBombs << ", " << mSmokedActors << " actors caught";
         if (mCombatEvents)
             Log(Debug::Info) << "Kurenai: combat: " << mCombatEvents << " blade segments, " << mCombatHits
                              << " hits on Morrowind actors";
@@ -359,6 +429,8 @@ namespace MWKurenai
         MWBase::Environment::get().getMechanicsManager()->clearAnimationQueue(player, true);
         mLastMotion = 0xffffffffu;
         updateSneak(0xffffffffu);
+        updateKiton(0xffffffffu, 0);
+        clearSmoke();
     }
 
     void Driver::updateSneak(std::uint32_t motion)
@@ -373,6 +445,115 @@ namespace MWKurenai
         const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
         player.getClass().getCreatureStats(player).setMovementFlag(
             MWMechanics::CreatureStats::Flag_ForceSneak, sneak);
+    }
+
+    void Driver::updateKiton(std::uint32_t motion, float kiton)
+    {
+        // The game fades her out while Kiton lasts and she stands or creeps, and shows her again while she runs,
+        // jumps or attacks (runs/kt1-3).
+        const bool on = kiton > 0 && (kitonMotions().count(motion) != 0 || sneakMotions().count(motion) != 0);
+        if (on == mKitonOn)
+            return;
+        mKitonOn = on;
+        Log(Debug::Info) << "Kurenai: kiton " << (on ? "on" : "off") << " (motion " << motion << ", " << kiton
+                         << " left)";
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        MWMechanics::Spells& spells = player.getClass().getCreatureStats(player).getSpells();
+        if (on)
+            spells.add(kitonSpell());
+        else if (spells.hasSpell(kitonSpell()))
+            spells.remove(kitonSpell());
+    }
+
+    void Driver::startSmoke(const osg::Vec3f& at)
+    {
+        Smoke s;
+        s.effectId = "kurenai_smoke_" + std::to_string(++mSmokeBombs);
+        s.position = at;
+        mSmokes.push_back(s);
+        Log(Debug::Info) << "Kurenai: smoke bomb at (" << at.x() << ", " << at.y() << ", " << at.z() << ")";
+    }
+
+    void Driver::updateSmoke(float dt)
+    {
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        MWBase::MechanicsManager* mechanics = MWBase::Environment::get().getMechanicsManager();
+        const MWWorld::Ptr player = world->getPlayerPtr();
+        for (Smoke& s : mSmokes)
+        {
+            s.age += dt;
+            if (s.age < kSmokeDelay)
+                continue;
+            if (!s.drawn && !mSmokeModel.empty())
+            {
+                // The game's cloud is thick and white from the ground to above her head: one puff in the middle and
+                // two rings of them, at two heights.
+                const VFS::Path::Normalized model(mSmokeModel);
+                world->spawnEffect(model, "", s.position, 3.0f, false, true, s.effectId, true);
+                for (int ring = 1; ring <= 2; ++ring)
+                    for (int i = 0; i < 6; ++i)
+                    {
+                        const float a = (static_cast<float>(i) + 0.5f * static_cast<float>(ring)) * static_cast<float>(M_PI) / 3.0f;
+                        const float r = mSmokeRadius * 0.35f * static_cast<float>(ring);
+                        const osg::Vec3f at = s.position + osg::Vec3f(std::cos(a) * r, std::sin(a) * r, 40.0f * static_cast<float>(ring - 1));
+                        world->spawnEffect(model, "", at, 3.0f, false, true, s.effectId, true);
+                    }
+                s.drawn = true;
+            }
+            // Everyone in the cloud: blind, choking, and no longer after her.
+            std::vector<MWWorld::Ptr> actors;
+            mechanics->getActorsInRange(s.position, mSmokeRadius, actors);
+            for (const MWWorld::Ptr& a : actors)
+            {
+                if (a == player || a.getClass().getCreatureStats(a).isDead())
+                    continue;
+                auto [it, isNew] = mSmoked.try_emplace(a.getBase());
+                it->second.actor = a;
+                it->second.left = kSmokeAfter;
+                if (isNew)
+                {
+                    ++mSmokedActors;
+                    a.getClass().getCreatureStats(a).getSpells().add(smokeSpell());
+                    Log(Debug::Info) << "Kurenai: smoke catches " << a.getCellRef().getRefId();
+                }
+                mechanics->stopCombat(a);
+            }
+        }
+        for (auto it = mSmokes.begin(); it != mSmokes.end();)
+        {
+            if (it->age >= kSmokeDelay + kSmokeLife)
+            {
+                world->removeEffect(it->effectId);
+                it = mSmokes.erase(it);
+            }
+            else
+                ++it;
+        }
+        for (auto it = mSmoked.begin(); it != mSmoked.end();)
+        {
+            it->second.left -= dt;
+            if (it->second.left > 0)
+            {
+                ++it;
+                continue;
+            }
+            const MWWorld::Ptr& a = it->second.actor;
+            MWMechanics::Spells& spells = a.getClass().getCreatureStats(a).getSpells();
+            if (spells.hasSpell(smokeSpell()))
+                spells.remove(smokeSpell());
+            it = mSmoked.erase(it);
+        }
+    }
+
+    void Driver::clearSmoke()
+    {
+        for (const Smoke& s : mSmokes)
+            MWBase::Environment::get().getWorld()->removeEffect(s.effectId);
+        mSmokes.clear();
+        for (auto& entry : mSmoked)
+            entry.second.left = 0;
+        updateSmoke(0);
+        mItemMotion = 0xffffffffu;
     }
 
     void Driver::pollModeKey()
@@ -1259,7 +1440,8 @@ namespace MWKurenai
 
     void Driver::afterPhysics(float dt)
     {
-        (void)dt;
+        if (!mSmokes.empty() || !mSmoked.empty())
+            updateSmoke(dt);
         if (!mLink || !mControlling || !mLatest)
             return;
         MWBase::World* world = MWBase::Environment::get().getWorld();
@@ -1315,6 +1497,13 @@ namespace MWKurenai
             sendProxyTargets(t);
         applyAnimation(mLatest->animId);
         updateSneak(mLatest->animId);
+        updateKiton(mLatest->animId, mLatest->kiton);
+        if (mLatest->animId != mItemMotion)
+        {
+            mItemMotion = mLatest->animId;
+            if (smokeMotions().count(mItemMotion))
+                startSmoke(player.getRefData().getPosition().asVec3());
+        }
         updatePoseOverride();
         updateWire(t);
         if (mGameCameraMode)

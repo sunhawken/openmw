@@ -194,6 +194,34 @@ namespace MWKurenai
         osg::observer_ptr<osg::Node> mPoseSkeleton; // the animation object can be rebuilt; never keep it alive
         std::uint64_t mPosesReceived = 0;
 
+        // Her items. Kiton (PlayerState.kiton, the game's invisibility): while it lasts and she stands still or creeps
+        // (the anim map's "kiton" and "sneak" lines), she has Chameleon 100, so Morrowind's actors don't see her and
+        // she is drawn faint, as the game draws her. The smoke bomb (the anim map's "smoke" motion): a cloud where she
+        // threw it, as long as the game's; actors in it are blinded, choke (paralysed) and lose her.
+        bool mKitonOn = false;
+        void updateKiton(std::uint32_t motion, float kiton);
+        std::string mSmokeModel;
+        float mSmokeRadius = 300;
+        std::uint32_t mItemMotion = 0xffffffffu;
+        struct Smoke
+        {
+            std::string effectId;
+            osg::Vec3f position;
+            float age = 0; // seconds since she started the throw
+            bool drawn = false;
+        };
+        std::vector<Smoke> mSmokes;
+        struct Smoked
+        {
+            MWWorld::Ptr actor;
+            float left = 0; // seconds until the smoke's spell comes off
+        };
+        std::map<const void*, Smoked> mSmoked;
+        std::uint64_t mSmokeBombs = 0, mSmokedActors = 0;
+        void startSmoke(const osg::Vec3f& at);
+        void updateSmoke(float dt);
+        void clearSmoke();
+
         // Game camera ([Kurenai] camera mode = game): Red Ninja's camera, converted to Morrowind's world.
         bool mGameCameraMode = false;
         bool mCameraTaken = false;
