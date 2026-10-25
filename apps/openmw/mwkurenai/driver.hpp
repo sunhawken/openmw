@@ -76,6 +76,8 @@ namespace MWKurenai
         void sendInput();
         void applyAnimation(std::uint32_t motion);
         void handleCombat(const kurenai::proto::CombatEvent& e);
+        void sendProxyTargets(const kurenai::CoordTransform& t);
+        void handleProxyStatus(const kurenai::proto::ProxyStatus& s);
         void handlePose(const kurenai::proto::Pose& p);
         void updatePoseOverride();
         void applyPendingRagdolls();
@@ -137,6 +139,23 @@ namespace MWKurenai
         };
         std::vector<PendingRagdoll> mPendingRagdolls;
         std::uint64_t mCombatEvents = 0, mCombatHits = 0;
+
+        // Proxies ([Kurenai] proxies): the game's enemies standing in for the actors around her. Ids are ours; the
+        // game reports per id what it did to the proxy.
+        bool mProxyEnabled = true;
+        float mProxyRadius = 3000;
+        struct Proxy
+        {
+            MWWorld::Ptr actor;
+            std::int32_t lastHealth = 0; // the game's health of its proxy when we last applied damage
+            bool assigned = false; // the game has an enemy on it
+            bool killed = false;
+        };
+        std::map<std::uint32_t, Proxy> mProxies;
+        std::map<const void*, std::uint32_t> mProxyIds; // actor (LiveCellRefBase) -> id
+        std::uint32_t mNextProxyId = 1;
+        std::uint32_t mLockedProxy = 0; // id Kurenai is locked onto, 0 = none
+        std::uint64_t mProxyKills = 0, mProxyDamage = 0;
 
         // PS2 animation ([Kurenai] ps2 animation): the game's skeleton, retargeted onto the player's.
         enum class Ps2Anim

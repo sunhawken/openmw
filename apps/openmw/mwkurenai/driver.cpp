@@ -122,6 +122,8 @@ namespace MWKurenai
             mShowStatus = k.mShowStatus;
             mHideMorrowindHud = k.mHideMorrowindHud;
             mHudScale = k.mGameHudScale;
+            mProxyEnabled = k.mProxies;
+            mProxyRadius = k.mProxyRadius;
             mMorrowindMode = k.mStartMode.get() == "morrowind";
             if (!k.mModeToggleKey.get().empty())
             {
@@ -187,6 +189,8 @@ namespace MWKurenai
         mStop = true;
         if (mThread.joinable())
             mThread.join();
+        if (mProxyDamage)
+            Log(Debug::Info) << "Kurenai: proxies: " << mProxyDamage << " hits passed on, " << mProxyKills << " kills";
         if (mCombatEvents)
             Log(Debug::Info) << "Kurenai: combat: " << mCombatEvents << " blade segments, " << mCombatHits
                              << " hits on Morrowind actors";
@@ -464,6 +468,8 @@ namespace MWKurenai
                 handleCombat(*ce);
             else if (const auto* pose = std::get_if<kurenai::proto::Pose>(&m.payload))
                 handlePose(*pose);
+            else if (const auto* proxies = std::get_if<kurenai::proto::ProxyStatus>(&m.payload))
+                handleProxyStatus(*proxies);
             else if (const auto* hello = std::get_if<kurenai::proto::Hello>(&m.payload))
             {
                 Log(Debug::Info) << "Kurenai: Hello from " << hello->software << " running " << hello->gameSerial;
@@ -621,6 +627,10 @@ namespace MWKurenai
         {
             if (actor == player || actor.getClass().getCreatureStats(actor).isDead())
                 continue;
+            // An actor with a proxy takes the game's own hits on that proxy (handleProxyStatus), not these.
+            if (const auto id = mProxyIds.find(actor.getBase()); id != mProxyIds.end())
+                if (const auto p = mProxies.find(id->second); p != mProxies.end() && p->second.assigned)
+                    continue;
             if (std::find(mHitThisAttack.begin(), mHitThisAttack.end(), actor.getBase()) != mHitThisAttack.end())
                 continue;
             // The actor as an upright capsule: its collision half extents around its feet position.
@@ -656,6 +666,102 @@ namespace MWKurenai
                              << ") hits " << actor.getCellRef().getRefId() << " for " << e.damage
                              << " damage (health before " << actor.getClass().getCreatureStats(actor).getHealth().getCurrent()
                              << ")";
+        }
+    }
+
+    void Driver::sendProxyTargets(const kurenai::CoordTransform& t)
+    {
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const MWWorld::Ptr player = world->getPlayerPtr();
+        const osg::Vec3f here = player.getRefData().getPosition().asVec3();
+        std::vector<MWWorld::Ptr> actors;
+        MWBase::Environment::get().getMechanicsManager()->getActorsInRange(here, mProxyRadius, actors);
+        std::vector<std::pair<float, MWWorld::Ptr>> near;
+        for (const MWWorld::Ptr& a : actors)
+            if (a != player && a.getRefData().isEnabled() && !a.getClass().getCreatureStats(a).isDead())
+                near.emplace_back((a.getRefData().getPosition().asVec3() - here).length2(), a);
+        std::sort(near.begin(), near.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+        if (near.size() > kurenai::proto::kMaxProxies)
+            near.resize(kurenai::proto::kMaxProxies);
+
+        kurenai::proto::ProxyTargets msg;
+        std::map<std::uint32_t, Proxy> keep;
+        for (const auto& [d, actor] : near)
+        {
+            auto [it, isNew] = mProxyIds.emplace(actor.getBase(), mNextProxyId);
+            if (isNew)
+                ++mNextProxyId;
+            const std::uint32_t id = it->second;
+            Proxy& p = keep[id];
+            if (const auto old = mProxies.find(id); old != mProxies.end())
+                p = old->second;
+            p.actor = actor;
+            const ESM::Position& pos = actor.getRefData().getPosition();
+            kurenai::proto::ProxyTarget target;
+            target.actorId = id;
+            target.position = t.toRedNinja({ pos.pos[0], pos.pos[1], pos.pos[2] });
+            // Morrowind faces (sin a, cos a) at yaw a; that is Red Ninja (x, z) = (sin a, -cos a), heading pi - a.
+            target.heading = static_cast<float>(M_PI) - pos.rot[2];
+            msg.targets.push_back(target);
+        }
+        mProxies.swap(keep);
+        send(msg);
+    }
+
+    void Driver::handleProxyStatus(const kurenai::proto::ProxyStatus& status)
+    {
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        mLockedProxy = 0;
+        for (auto& entry : mProxies)
+            entry.second.assigned = false;
+        for (const kurenai::proto::ProxyState& s : status.proxies)
+        {
+            const auto it = mProxies.find(s.actorId);
+            if (it == mProxies.end())
+                continue;
+            Proxy& p = it->second;
+            p.assigned = true;
+            if (s.flags & kurenai::proto::ProxyLocked)
+                mLockedProxy = s.actorId;
+            const MWWorld::Ptr& actor = p.actor;
+            if (actor.isEmpty() || p.killed || actor.getClass().getCreatureStats(actor).isDead())
+                continue;
+            if (p.lastHealth == 0)
+                p.lastHealth = s.maxHealth;
+            const osg::Vec3f hitPos = actor.getRefData().getPosition().asVec3() + osg::Vec3f(0, 0, 100);
+            auto& stats = actor.getClass().getCreatureStats(actor);
+            float damage = 0;
+            const char* how = "hit";
+            if (s.flags & kurenai::proto::ProxyDead)
+            {
+                // The game killed its proxy (stealth kill, dart to the head, blade): the actor dies the same way.
+                damage = stats.getHealth().getCurrent() + 1.0f;
+                p.killed = true;
+                ++mProxyKills;
+                how = "killed";
+            }
+            else if (s.maxHealth > 0 && s.health < p.lastHealth)
+            {
+                // The same share of its health as the game's enemy lost.
+                damage = static_cast<float>(p.lastHealth - std::max(s.health, 0)) / static_cast<float>(s.maxHealth)
+                    * stats.getHealth().getModified();
+                p.lastHealth = s.health;
+            }
+            if (damage <= 0)
+                continue;
+            ++mProxyDamage;
+            MWBase::Environment::get().getLuaManager()->onHit(player, actor, MWWorld::Ptr(), MWWorld::Ptr(), 0, 1.0f,
+                damage, true, hitPos, true, MWMechanics::DamageSourceType::Melee);
+            if (p.killed)
+            {
+                // Morrowind's combat script scales hit damage (armor, difficulty); a kill in the game is a kill here.
+                MWMechanics::DynamicStat<float> health = stats.getHealth();
+                health.setCurrent(0);
+                stats.setHealth(health);
+            }
+            Log(Debug::Info) << "Kurenai: proxy " << s.actorId << " (game enemy " << s.slot << ", health " << s.health
+                             << "/" << s.maxHealth << ") " << how << ": " << actor.getCellRef().getRefId() << " takes "
+                             << damage << " damage";
         }
     }
 
@@ -757,6 +863,15 @@ namespace MWKurenai
                 s << "  collision " << mQueries.load() << " (" << (mQueryNs / 1000.0 / mQueries) << " us)";
             if (mCombatHits)
                 s << "  hits " << mCombatHits;
+            if (!mProxies.empty())
+            {
+                std::size_t assigned = 0;
+                for (const auto& entry : mProxies)
+                    assigned += entry.second.assigned;
+                s << "  proxies " << assigned << "/" << mProxies.size();
+                if (const auto it = mProxies.find(mLockedProxy); it != mProxies.end() && !it->second.actor.isEmpty())
+                    s << "  locked " << it->second.actor.getCellRef().getRefId().toDebugString();
+            }
             if (mPs2Anim != Ps2Anim::Off)
                 s << "  ps2 pose " << (mPoseTarget->active ? "on" : "off");
         }
@@ -1058,6 +1173,8 @@ namespace MWKurenai
         world->moveObject(player, osg::Vec3f(mw.x, mw.y, mw.z), true, true);
         player = world->getPlayerPtr();
         world->rotateObject(player, osg::Vec3f(0, 0, yaw), MWBase::RotationFlag_none);
+        if (mProxyEnabled)
+            sendProxyTargets(t);
         applyAnimation(mLatest->animId);
         updatePoseOverride();
         updateWire(t);
