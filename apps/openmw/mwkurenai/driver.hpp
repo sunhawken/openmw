@@ -170,6 +170,7 @@ namespace MWKurenai
             osg::ref_ptr<PoseOverride> callback;
             osg::observer_ptr<osg::Node> rootBone;
             bool final = false;
+            bool release = false; // it lives: the body goes back to Morrowind's animation
             std::uint64_t poses = 0;
         };
         std::map<std::uint32_t, Victim> mVictims; // by proxy id

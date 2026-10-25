@@ -1149,7 +1149,14 @@ namespace MWKurenai
         if (std::abs(yaw - pos.rot[2]) > 1e-3f)
             world->rotateObject(actor, osg::Vec3f(pos.rot[0], pos.rot[1], yaw));
 
-        if (p.flags & kurenai::proto::ProxyPoseFinal)
+        if ((p.flags & kurenai::proto::ProxyPoseFinal) && (p.flags & kurenai::proto::ProxyPoseRelease))
+        {
+            // The wire threw it down and it got up again: it fights on with Morrowind's own animation, from here.
+            victim.final = victim.release = true;
+            Log(Debug::Info) << "Kurenai: " << actor.getCellRef().getRefId() << " got up after " << victim.poses
+                             << " poses; its body is Morrowind's again";
+        }
+        else if (p.flags & kurenai::proto::ProxyPoseFinal)
         {
             victim.final = true;
             Log(Debug::Info) << "Kurenai: kill on " << actor.getCellRef().getRefId() << " over after " << victim.poses
@@ -1169,9 +1176,9 @@ namespace MWKurenai
             osg::Node* skeleton = anim ? anim->getSkeleton() : nullptr;
             osg::ref_ptr<osg::Node> attached;
             v.rootBone.lock(attached);
-            if (!skeleton)
+            if (!skeleton || v.release)
             {
-                // Unloaded (cell change): the body is Morrowind's again.
+                // Unloaded (cell change) or released (it lives): the body is Morrowind's again.
                 if (attached && v.callback)
                     attached->removeUpdateCallback(v.callback);
                 it = mVictims.erase(it);
