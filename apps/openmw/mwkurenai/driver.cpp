@@ -28,6 +28,13 @@
 
 #include "../mwrender/animation.hpp"
 #include "../mwrender/camera.hpp"
+#include "../mwrender/renderingmanager.hpp"
+#include "../mwrender/vismask.hpp"
+
+#include <components/sceneutil/lightmanager.hpp>
+
+#include <osg/Geometry>
+#include <osg/LineWidth>
 #include "../mwworld/class.hpp"
 #include "../mwworld/ptr.hpp"
 
@@ -605,6 +612,7 @@ namespace MWKurenai
     void Driver::handlePose(const kurenai::proto::Pose& p)
     {
         ++mPosesReceived;
+        mPoseBones = p.bones;
         if (mPs2Anim == Ps2Anim::Off || !mLatest)
             return;
         // Each model (outfit) has its own bone layout; an unknown one is left to Morrowind's animation.
@@ -676,6 +684,53 @@ namespace MWKurenai
                 s << "  ps2 pose " << (mPoseTarget->active ? "on" : "off");
         }
         mStatus->setCaption(s.str());
+    }
+
+    void Driver::updateWire(const kurenai::CoordTransform& t)
+    {
+        bool show = false;
+        osg::Vec3f hand, anchor;
+        if ((mLatest->flags & kurenai::proto::FlagWire) && mPoseModel != 0xffffffffu)
+        {
+            const auto it = mSkeletonMaps.find(mPoseModel);
+            if (it != mSkeletonMaps.end() && it->second.wireHand && *it->second.wireHand < mPoseBones.size())
+            {
+                const kurenai::proto::Vec3 h = t.position(mPoseBones[*it->second.wireHand]);
+                const kurenai::proto::Vec3 a = t.position(mLatest->wireAnchor);
+                hand.set(h.x, h.y, h.z);
+                anchor.set(a.x, a.y, a.z);
+                show = true;
+            }
+        }
+        if (!mWireGeometry)
+        {
+            if (!show)
+                return;
+            mWireGeometry = new osg::Geometry;
+            mWireVertices = new osg::Vec3Array(2);
+            mWireGeometry->setVertexArray(mWireVertices);
+            osg::ref_ptr<osg::Vec4Array> colour = new osg::Vec4Array(1);
+            (*colour)[0] = osg::Vec4f(0.15f, 0.13f, 0.12f, 1.0f); // dark steel wire
+            mWireGeometry->setColorArray(colour, osg::Array::BIND_OVERALL);
+            mWireGeometry->addPrimitiveSet(new osg::DrawArrays(GL_LINES, 0, 2));
+            mWireGeometry->setDataVariance(osg::Object::DYNAMIC);
+            mWireGeometry->setUseDisplayList(false);
+            mWireGeometry->setCullingActive(false);
+            osg::StateSet* ss = mWireGeometry->getOrCreateStateSet();
+            ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+            ss->setAttributeAndModes(new osg::LineWidth(2.5f));
+            mWireGeometry->setNodeMask(MWRender::Mask_Effect);
+            MWBase::Environment::get().getWorld()->getRenderingManager()->getLightRoot()->addChild(mWireGeometry);
+            Log(Debug::Info) << "Kurenai: drawing her wire";
+        }
+        if (show)
+        {
+            (*mWireVertices)[0] = hand;
+            (*mWireVertices)[1] = anchor;
+            mWireVertices->dirty();
+            mWireGeometry->dirtyBound();
+        }
+        mWireGeometry->setNodeMask(show ? MWRender::Mask_Effect : 0u);
     }
 
     void Driver::applyGameCamera()
@@ -784,10 +839,15 @@ namespace MWKurenai
         }
 
         // Interpolate between the game's 30 Hz states (adds up to one game frame of delay, measured in Phase 6).
-        const float t = (mPrev && mInterpolate) ? std::fmin(1.0f, mSinceLatest * kGameHz) : 1.0f;
+        kurenai::CoordTransform t;
+        {
+            std::lock_guard<std::mutex> lock(mTransformMutex);
+            t = mTransform;
+        }
+        const float blend = (mPrev && mInterpolate) ? std::fmin(1.0f, mSinceLatest * kGameHz) : 1.0f;
         const kurenai::proto::PlayerState& a = mPrev ? *mPrev : *mLatest;
-        const kurenai::proto::Vec3 rn = lerp(a.position, mLatest->position, t);
-        kurenai::proto::Vec3 mw = mTransform.position(rn);
+        const kurenai::proto::Vec3 rn = lerp(a.position, mLatest->position, blend);
+        kurenai::proto::Vec3 mw = t.position(rn);
         if (mFollowGround)
         {
             // Until the game's own collision queries are answered from Morrowind (Phase 3), Morrowind supplies the
@@ -803,14 +863,14 @@ namespace MWKurenai
             mw.z = ground + above;
             mMwZ = ground;
         }
-        const float yaw = lerpAngle(mTransform.yaw(a.rotation, { 0, 0, 1 }),
-            mTransform.yaw(mLatest->rotation, { 0, 0, 1 }), t);
+        const float yaw = lerpAngle(t.yaw(a.rotation, { 0, 0, 1 }), t.yaw(mLatest->rotation, { 0, 0, 1 }), blend);
 
         world->moveObject(player, osg::Vec3f(mw.x, mw.y, mw.z), true, true);
         player = world->getPlayerPtr();
         world->rotateObject(player, osg::Vec3f(0, 0, yaw), MWBase::RotationFlag_none);
         applyAnimation(mLatest->animId);
         updatePoseOverride();
+        updateWire(t);
         if (mGameCameraMode)
             applyGameCamera();
         if (mLog)

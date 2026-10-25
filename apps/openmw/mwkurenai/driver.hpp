@@ -10,6 +10,7 @@
 #include <kurenai/combat.hpp>
 
 #include <osg/Vec3f>
+#include <osg/Array>
 #include <osg/observer_ptr>
 
 #include "../mwworld/ptr.hpp"
@@ -29,6 +30,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+namespace osg
+{
+    class Geometry;
+}
 
 namespace MyGUI
 {
@@ -131,6 +137,12 @@ namespace MWKurenai
         } mPs2Anim = Ps2Anim::Off;
         std::map<std::uint32_t, kurenai::SkeletonMap> mSkeletonMaps; // by model CRC (0: maps without a model line)
         std::uint32_t mPoseModel = 0xffffffffu; // the model of the last pose (logged when it changes)
+        std::vector<kurenai::proto::Vec3> mPoseBones; // the last pose, Red Ninja world
+
+        // Her wire, drawn while the game has it out: from her hand (the game's) to where it is fixed.
+        osg::ref_ptr<osg::Geometry> mWireGeometry;
+        osg::ref_ptr<osg::Vec3Array> mWireVertices;
+        void updateWire(const kurenai::CoordTransform& t);
         std::shared_ptr<PoseTarget> mPoseTarget = std::make_shared<PoseTarget>();
         osg::ref_ptr<PoseOverride> mPoseCallback;
         osg::observer_ptr<osg::Node> mPoseSkeleton; // the animation object can be rebuilt; never keep it alive
