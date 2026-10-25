@@ -124,7 +124,7 @@ if (KURENAI_BRIDGE_DIR)
     set(KURENAI_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
     add_subdirectory(${KURENAI_BRIDGE_DIR} ${CMAKE_BINARY_DIR}/kurenai_bridge EXCLUDE_FROM_ALL)
     add_openmw_dir (mwkurenai
-        driver
+        driver poseoverride
         )
 endif()
 

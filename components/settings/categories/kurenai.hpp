@@ -26,6 +26,10 @@ namespace Settings
         SettingValue<bool> mInterpolate{ mIndex, "Kurenai", "interpolate" };
         SettingValue<std::string> mAnimationMap{ mIndex, "Kurenai", "animation map" };
         SettingValue<std::string> mStateLog{ mIndex, "Kurenai", "state log" };
+        SettingValue<std::string> mPs2Animation{ mIndex, "Kurenai", "ps2 animation",
+            makeEnumSanitizerString({ "off", "locomotion", "all" }) };
+        SettingValue<std::string> mSkeletonMap{ mIndex, "Kurenai", "skeleton map" };
+        SettingValue<bool> mShowStatus{ mIndex, "Kurenai", "show status" };
     };
 }
 

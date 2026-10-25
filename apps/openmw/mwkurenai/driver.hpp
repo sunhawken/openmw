@@ -7,6 +7,13 @@
 // PCSX2 as a PS2 pad state and places the player where the game put Kurenai. While PCSX2 is not connected,
 // Morrowind's own controls work as usual. Settings: [Kurenai] in settings.cfg (see settings-default.cfg).
 
+#include <kurenai/combat.hpp>
+
+#include <osg/Vec3f>
+
+#include "../mwworld/ptr.hpp"
+#include "poseoverride.hpp"
+
 #include <kurenai/link.hpp>
 #include <kurenai/player.hpp>
 
@@ -19,6 +26,12 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
+
+namespace MyGUI
+{
+    class TextBox;
+}
 
 namespace MWKurenai
 {
@@ -48,6 +61,10 @@ namespace MWKurenai
         void onDisconnect();
         void sendInput();
         void applyAnimation(std::uint32_t motion);
+        void handleCombat(const kurenai::proto::CombatEvent& e);
+        void handlePose(const kurenai::proto::Pose& p);
+        void updatePoseOverride();
+        void applyPendingRagdolls();
 
         std::unique_ptr<kurenai::Link> mLink;
         kurenai::CoordTransform mTransform;
@@ -82,6 +99,61 @@ namespace MWKurenai
         std::mutex mWorldMutex;
         std::mutex mTransformMutex; // guards mTransform and mAnchored for the bridge thread
         bool mAnswerCollision = false;
+
+        // Combat ([Kurenai] combat): who each attack has hit already, and killing blows whose ragdoll should start
+        // with the blade's impulse once Morrowind's combat code has applied the damage.
+        bool mCombat = false;
+        std::uint32_t mLastAttack = 0;
+        std::uint32_t mLoggedAttack = 0;
+        std::vector<const void*> mHitThisAttack;
+        struct PendingRagdoll
+        {
+            MWWorld::Ptr actor;
+            osg::Vec3f impulse;
+            int framesLeft;
+        };
+        std::vector<PendingRagdoll> mPendingRagdolls;
+        std::uint64_t mCombatEvents = 0, mCombatHits = 0;
+
+        // PS2 animation ([Kurenai] ps2 animation): the game's skeleton, retargeted onto the player's.
+        enum class Ps2Anim
+        {
+            Off,
+            Locomotion,
+            All
+        } mPs2Anim = Ps2Anim::Off;
+        std::optional<kurenai::SkeletonMap> mSkeletonMap;
+        std::shared_ptr<PoseTarget> mPoseTarget = std::make_shared<PoseTarget>();
+        osg::ref_ptr<PoseOverride> mPoseCallback;
+        osg::Node* mPoseSkeleton = nullptr;
+        std::uint64_t mPosesReceived = 0;
+
+        // Game camera ([Kurenai] camera mode = game): Red Ninja's camera, converted to Morrowind's world.
+        bool mGameCameraMode = false;
+        bool mCameraTaken = false;
+        int mPreviousCameraMode = 2;
+        void applyGameCamera();
+        void releaseCamera();
+
+        // Latency of PlayerState from PCSX2's publish to arrival here (same monotonic clock on both sides).
+    public:
+        struct LatencyStats
+        {
+            std::uint64_t count = 0;
+            double sumUs = 0, maxUs = 0;
+            double lastUs = 0;
+        };
+        const LatencyStats& latency() const { return mLatency; }
+
+    private:
+        LatencyStats mLatency;
+        std::uint64_t mLastPeerFrame = 0;
+
+        // [Kurenai] show status: one text line in the corner.
+        bool mShowStatus = false;
+        MyGUI::TextBox* mStatus = nullptr;
+        float mSinceStatus = 0;
+        void updateStatus(float dt);
         std::atomic<std::uint64_t> mQueries{ 0 }, mQueryHits{ 0 }, mQueriesDeclined{ 0 }, mQueryNs{ 0 };
     };
 }
