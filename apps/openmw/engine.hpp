@@ -43,6 +43,11 @@ namespace MWLua
     class Worker;
 }
 
+namespace MWKurenai
+{
+    class Driver;
+}
+
 namespace Stereo
 {
     class Manager;
@@ -141,6 +146,7 @@ namespace OMW
         std::unique_ptr<MWState::StateManager> mStateManager;
         std::unique_ptr<MWLua::LuaManager> mLuaManager;
         std::unique_ptr<MWLua::Worker> mLuaWorker;
+        std::unique_ptr<MWKurenai::Driver> mKurenai; // null unless built with KURENAI_BRIDGE_DIR
         std::unique_ptr<L10n::Manager> mL10nManager;
         MWBase::Environment mEnvironment;
         ToUTF8::FromType mEncoding;

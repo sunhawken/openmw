@@ -116,6 +116,18 @@ add_openmw_dir (mwbase
     inputmanager windowmanager statemanager luamanager
     )
 
+# KURENAI: Red Ninja (PS2, in PCSX2) drives the player through the KURENAI bridge. Off unless the bridge sources
+# are given; see claude-code-notes releases/kurenai/README.md.
+set(KURENAI_BRIDGE_DIR "" CACHE PATH "KURENAI bridge sources (releases/kurenai/bridge); empty builds without it")
+if (KURENAI_BRIDGE_DIR)
+    set(KURENAI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(KURENAI_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${KURENAI_BRIDGE_DIR} ${CMAKE_BINARY_DIR}/kurenai_bridge EXCLUDE_FROM_ALL)
+    add_openmw_dir (mwkurenai
+        driver
+        )
+endif()
+
 # Main executable
 
 add_library(openmw-lib STATIC
@@ -167,6 +179,11 @@ endif()
 include_directories(
     ${FFmpeg_INCLUDE_DIRS}
 )
+
+if (KURENAI_BRIDGE_DIR)
+    target_link_libraries(openmw-lib kurenai_bridge)
+    target_compile_definitions(openmw-lib PUBLIC OPENMW_KURENAI)
+endif()
 
 target_link_libraries(openmw-lib
     # CMake's built-in OSG finder does not use pkgconfig, so we have to

@@ -61,6 +61,10 @@
 #include "mwlua/luamanagerimp.hpp"
 #include "mwlua/worker.hpp"
 
+#ifdef OPENMW_KURENAI
+#include "mwkurenai/driver.hpp"
+#endif
+
 #include "mwscript/interpretercontext.hpp"
 #include "mwscript/scriptmanagerimp.hpp"
 
@@ -236,6 +240,12 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
             mStateManager->update(frametime);
         }
 
+#ifdef OPENMW_KURENAI
+        // KURENAI: input to PCSX2, and Morrowind's own player movement off while Red Ninja's code drives her.
+        if (mKurenai && mStateManager->getState() == MWBase::StateManager::State_Running)
+            mKurenai->beforeMechanics(frametime);
+#endif
+
         bool paused = mWorld->getTimeManager()->isPaused();
 
         {
@@ -292,6 +302,12 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
                 mWorld->updatePhysics(frametime, paused, frameStart, frameNumber, *stats);
             }
         }
+
+#ifdef OPENMW_KURENAI
+        // KURENAI: place the player where Red Ninja's code put Kurenai (after physics, so nothing moves her again).
+        if (mKurenai && mStateManager->getState() == MWBase::StateManager::State_Running && !paused)
+            mKurenai->afterPhysics(frametime);
+#endif
 
         // update world
         {
@@ -415,6 +431,7 @@ OMW::Engine::~Engine()
     mSoundManager = nullptr;
     mInputManager = nullptr;
     mStateManager = nullptr;
+    mKurenai = nullptr;
     mLuaWorker = nullptr;
     mLuaManager = nullptr;
     mL10nManager = nullptr;
@@ -927,6 +944,9 @@ void OMW::Engine::prepareEngine()
 
     // starts a separate lua thread if "lua num threads" > 0
     mLuaWorker = std::make_unique<MWLua::Worker>(*mLuaManager);
+#ifdef OPENMW_KURENAI
+    mKurenai = std::make_unique<MWKurenai::Driver>();
+#endif
 }
 
 // Initialise and enter main loop.

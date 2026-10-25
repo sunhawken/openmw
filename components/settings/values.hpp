@@ -9,6 +9,7 @@
 #include "categories/groundcover.hpp"
 #include "categories/gui.hpp"
 #include "categories/hud.hpp"
+#include "categories/kurenai.hpp"
 #include "categories/input.hpp"
 #include "categories/lua.hpp"
 #include "categories/map.hpp"
@@ -45,6 +46,7 @@ namespace Settings
         MapCategory mMap{ mIndex };
         GUICategory mGUI{ mIndex };
         HUDCategory mHUD{ mIndex };
+        KurenaiCategory mKurenai{ mIndex };
         GameCategory mGame{ mIndex };
         GeneralCategory mGeneral{ mIndex };
         ShadersCategory mShaders{ mIndex };
@@ -127,6 +129,11 @@ namespace Settings
     inline HUDCategory& hud()
     {
         return values().mHUD;
+    }
+
+    inline KurenaiCategory& kurenai()
+    {
+        return values().mKurenai;
     }
 
     inline GameCategory& game()
