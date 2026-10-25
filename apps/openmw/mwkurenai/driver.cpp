@@ -7,6 +7,9 @@
 #include <sstream>
 
 #include <MyGUI_Gui.h>
+#include <MyGUI_ImageBox.h>
+#include <MyGUI_RenderManager.h>
+#include <MyGUI_ITexture.h>
 #include <MyGUI_TextBox.h>
 
 #include <components/debug/debuglog.hpp>
@@ -16,6 +19,7 @@
 #include "../mwbase/inputmanager.hpp"
 #include "../mwbase/luamanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
+#include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/damagesourcetype.hpp"
@@ -113,6 +117,8 @@ namespace MWKurenai
             mCombat = k.mCombat;
             mGameCameraMode = k.mCameraMode.get() == "game";
             mShowStatus = k.mShowStatus;
+            mHideMorrowindHud = k.mHideMorrowindHud;
+            mHudScale = k.mGameHudScale;
             const std::string ps2 = k.mPs2Animation;
             mPs2Anim = ps2 == "all" ? Ps2Anim::All : ps2 == "locomotion" ? Ps2Anim::Locomotion : Ps2Anim::Off;
             if (mPs2Anim != Ps2Anim::Off)
@@ -141,6 +147,12 @@ namespace MWKurenai
             Log(Debug::Error) << "Kurenai: cannot create bridge region '" << name << "': " << error;
             return;
         }
+        if (Settings::kurenai().mGameHud)
+        {
+            mHud = kurenai::HudSurface::create(name, error);
+            if (!mHud)
+                Log(Debug::Error) << "Kurenai: no game HUD, cannot create '" << name << "-hud': " << error;
+        }
         if (!logPath.empty() && (mLog = std::fopen(logPath.c_str(), "w")))
             std::fprintf(mLog, "frame\tmono_ns\tpeer_frame\tsent_ns\trn_x\trn_y\trn_z\tmw_x\tmw_y\tmw_z\tyaw\tmotion\tarrival_ns\tseq\n");
         Log(Debug::Info) << "Kurenai: bridge region '" << name << "' created (protocol " << kurenai::proto::kMajor
@@ -155,6 +167,8 @@ namespace MWKurenai
 
     Driver::~Driver()
     {
+        if (mHudFrames)
+            Log(Debug::Info) << "Kurenai: game HUD: " << mHudFrames << " frames shown";
         if (mLatency.count)
             Log(Debug::Info) << "Kurenai: PlayerState latency PCSX2 -> OpenMW: transport average "
                              << mLatency.transportSumUs / mLatency.count << " us (max " << mLatency.transportMaxUs
@@ -423,6 +437,11 @@ namespace MWKurenai
         }
 
         applyPendingRagdolls();
+        if (mHud)
+        {
+            mHud->beat(now);
+            updateHud(dt);
+        }
         if (mShowStatus)
             updateStatus(dt);
         if (mPoseCallback && mFrames % 120 == 0)
@@ -684,6 +703,119 @@ namespace MWKurenai
                 s << "  ps2 pose " << (mPoseTarget->active ? "on" : "off");
         }
         mStatus->setCaption(s.str());
+    }
+
+    void Driver::hideHud()
+    {
+        for (MyGUI::ImageBox* box : mHudBoxes)
+            box->setVisible(false);
+        if (mMorrowindHudHidden)
+        {
+            MWBase::Environment::get().getWindowManager()->setHudVisibility(true);
+            mMorrowindHudHidden = false;
+        }
+    }
+
+    void Driver::updateHud(float dt)
+    {
+        mSinceHudFrame += dt;
+        if (!mPeerAlive)
+        {
+            hideHud();
+            return;
+        }
+        if (mHud->read(mHudFrame, mHudSeq))
+        {
+            mSinceHudFrame = 0;
+            ++mHudFrames;
+            const kurenai::HudFrame& f = mHudFrame;
+            // One texture per region, holding only the pixels the region owns (regions can overlap on the game's
+            // screen, but each goes to its own corner here). GL textures are a power of two: the region sits in
+            // the top-left corner.
+            if (mHudTextures.size() < f.regions.size())
+                mHudTextures.resize(f.regions.size());
+            MyGUI::RenderManager& rm = MyGUI::RenderManager::getInstance();
+            for (std::size_t i = 0; i < f.regions.size(); ++i)
+            {
+                const kurenai::HudRegion& r = f.regions[i];
+                HudTexture& t = mHudTextures[i];
+                int tw = 1, th = 1;
+                while (tw < r.w)
+                    tw *= 2;
+                while (th < r.h)
+                    th *= 2;
+                if (!t.texture || t.size[0] != tw || t.size[1] != th)
+                {
+                    if (t.texture)
+                        rm.destroyTexture(t.texture);
+                    t.name = "kurenai_game_hud_" + std::to_string(i);
+                    t.texture = rm.createTexture(t.name);
+                    t.texture->createManual(tw, th, MyGUI::TextureUsage::Write, MyGUI::PixelFormat::R8G8B8A8);
+                    t.size[0] = tw;
+                    t.size[1] = th;
+                }
+                if (auto* data = static_cast<std::uint32_t*>(t.texture->lock(MyGUI::TextureUsage::Write)))
+                {
+                    std::fill_n(data, static_cast<std::size_t>(tw) * th, 0u);
+                    const std::uint8_t own = static_cast<std::uint8_t>(i + 1);
+                    for (int y = 0; y < r.h && r.y + y < static_cast<int>(f.height); ++y)
+                        for (int x = 0; x < r.w && r.x + x < static_cast<int>(f.width); ++x)
+                        {
+                            const std::size_t at = static_cast<std::size_t>(r.y + y) * f.width + r.x + x;
+                            if (f.owner[at] == own)
+                                data[static_cast<std::size_t>(y) * tw + x] = f.pixels[at];
+                        }
+                }
+                t.texture->unlock();
+            }
+
+            // One image per HUD region, kept at the same distance from its nearest screen corner as in the game.
+            const MyGUI::IntSize view = MyGUI::RenderManager::getInstance().getViewSize();
+            const float scale = mHudScale * view.height / static_cast<float>(f.height);
+            while (mHudBoxes.size() < f.regions.size())
+            {
+                MyGUI::ImageBox* box = MyGUI::Gui::getInstance().createWidget<MyGUI::ImageBox>(
+                    "ImageBox", MyGUI::IntCoord(0, 0, 1, 1), MyGUI::Align::Default, "HUD");
+                box->setNeedMouseFocus(false);
+                mHudBoxes.push_back(box);
+            }
+            for (std::size_t i = 0; i < mHudBoxes.size(); ++i)
+            {
+                MyGUI::ImageBox* box = mHudBoxes[i];
+                if (i >= f.regions.size())
+                {
+                    box->setVisible(false);
+                    continue;
+                }
+                const kurenai::HudRegion& r = f.regions[i];
+                // Kept at the same distance from its nearest screen edge; a region across the middle stays centred.
+                auto place = [scale](int at, int size, int screen, int view) {
+                    if (at < screen / 2 && at + size > screen / 2)
+                        return static_cast<int>(std::lround(view / 2.0f + (at - screen / 2.0f) * scale));
+                    if (at + size / 2 > screen / 2)
+                        return view - static_cast<int>(std::lround((screen - at) * scale));
+                    return static_cast<int>(std::lround(at * scale));
+                };
+                const int w = static_cast<int>(std::lround(r.w * scale));
+                const int h = static_cast<int>(std::lround(r.h * scale));
+                box->setCoord(place(r.x, r.w, static_cast<int>(f.width), view.width),
+                    place(r.y, r.h, static_cast<int>(f.height), view.height), w, h);
+                box->setImageTexture(mHudTextures[i].name);
+                box->setImageCoord(MyGUI::IntCoord(0, 0, r.w, r.h));
+                box->setImageTile(MyGUI::IntSize(r.w, r.h));
+                box->setVisible(true);
+            }
+            if (mHideMorrowindHud && !mMorrowindHudHidden)
+            {
+                MWBase::Environment::get().getWindowManager()->setHudVisibility(false);
+                mMorrowindHudHidden = true;
+            }
+            if (mHudFrames == 1)
+                Log(Debug::Info) << "Kurenai: game HUD: first frame " << f.width << "x" << f.height << ", "
+                                 << f.regions.size() << " regions, drawn at " << scale << "x";
+        }
+        else if (mSinceHudFrame > 1.0f)
+            hideHud(); // PCSX2 stopped sending the HUD (no HudLayout, or a menu without one)
     }
 
     void Driver::updateWire(const kurenai::CoordTransform& t)

@@ -30,6 +30,9 @@ namespace Settings
             makeEnumSanitizerString({ "off", "locomotion", "all" }) };
         SettingValue<std::string> mSkeletonMap{ mIndex, "Kurenai", "skeleton map" };
         SettingValue<bool> mShowStatus{ mIndex, "Kurenai", "show status" };
+        SettingValue<bool> mGameHud{ mIndex, "Kurenai", "game hud" };
+        SettingValue<bool> mHideMorrowindHud{ mIndex, "Kurenai", "hide morrowind hud" };
+        SettingValue<float> mGameHudScale{ mIndex, "Kurenai", "game hud scale", makeClampSanitizerFloat(0.25f, 4.0f) };
     };
 }
 

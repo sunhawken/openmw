@@ -16,6 +16,7 @@
 #include "../mwworld/ptr.hpp"
 #include "poseoverride.hpp"
 
+#include <kurenai/hud.hpp>
 #include <kurenai/link.hpp>
 #include <kurenai/player.hpp>
 
@@ -38,6 +39,8 @@ namespace osg
 
 namespace MyGUI
 {
+    class ImageBox;
+    class ITexture;
     class TextBox;
 }
 
@@ -175,6 +178,25 @@ namespace MWKurenai
         MyGUI::TextBox* mStatus = nullptr;
         float mSinceStatus = 0;
         void updateStatus(float dt);
+
+        // [Kurenai] game hud: Red Ninja's own HUD, cut out of each PCSX2 frame (HudSurface), drawn at the same
+        // corners of the screen, scaled with the window's height.
+        std::unique_ptr<kurenai::HudSurface> mHud;
+        std::uint64_t mHudSeq = 0;
+        kurenai::HudFrame mHudFrame;
+        struct HudTexture
+        {
+            MyGUI::ITexture* texture = nullptr;
+            std::string name;
+            int size[2] = { 0, 0 };
+        };
+        std::vector<HudTexture> mHudTextures; // one per region
+        std::vector<MyGUI::ImageBox*> mHudBoxes;
+        float mHudScale = 1, mSinceHudFrame = 1e9f;
+        bool mHideMorrowindHud = true, mMorrowindHudHidden = false;
+        std::uint64_t mHudFrames = 0;
+        void updateHud(float dt);
+        void hideHud();
         std::atomic<std::uint64_t> mQueries{ 0 }, mQueryHits{ 0 }, mQueriesDeclined{ 0 }, mQueryNs{ 0 };
         std::atomic<std::uint64_t> mQueryLockNs{ 0 }, mQueryLockMaxNs{ 0 }; // time waiting for the world lock
     };
