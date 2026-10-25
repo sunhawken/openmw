@@ -1117,7 +1117,8 @@ namespace MWKurenai
         auto target = std::make_shared<PoseTarget>();
         if (map != mSkeletonMaps.end() && p.model != 0)
         {
-            const std::vector<kurenai::AimDirection> dirs = kurenai::aimDirections(p.bones, p.rotation, map->second);
+            const kurenai::proto::Quat heading = kurenai::headingOnly(p.rotation); // a thrown body keeps its tilt
+            const std::vector<kurenai::AimDirection> dirs = kurenai::aimDirections(p.bones, heading, map->second);
             target->active = true;
             for (std::size_t i = 0; i < dirs.size(); ++i)
             {
@@ -1125,7 +1126,7 @@ namespace MWKurenai
                 target->aims.push_back({ a.bone, a.child, osg::Vec3f(dirs[i].dir.x, dirs[i].dir.y, dirs[i].dir.z),
                     a.sideChild, osg::Vec3f(dirs[i].side.x, dirs[i].side.y, dirs[i].side.z) });
             }
-            if (const auto root = kurenai::rootOffset(p.bones, p.position, p.rotation, map->second))
+            if (const auto root = kurenai::rootOffset(p.bones, p.position, heading, map->second))
             {
                 target->rootBone = map->second.rootBone;
                 target->rootOffset = osg::Vec3f(root->x, root->y, root->z);
@@ -1256,7 +1257,9 @@ namespace MWKurenai
             return;
         }
         const kurenai::SkeletonMap& map = it->second;
-        const std::vector<kurenai::AimDirection> dirs = kurenai::aimDirections(p.bones, mLatest->rotation, map);
+        // Against her facing alone (the actor only turns): a tilt (her lean on a swing of the wire) stays in the bones.
+        const std::vector<kurenai::AimDirection> dirs
+            = kurenai::aimDirections(p.bones, kurenai::headingOnly(mLatest->rotation), map);
         auto target = std::make_shared<PoseTarget>();
         const auto& loco = map.locomotion;
         target->active = mPs2Anim == Ps2Anim::All
