@@ -38,6 +38,7 @@ namespace Settings
         SettingValue<std::string> mModeToggleKey{ mIndex, "Kurenai", "mode toggle key" };
         SettingValue<bool> mProxies{ mIndex, "Kurenai", "proxies" };
         SettingValue<float> mProxyRadius{ mIndex, "Kurenai", "proxy radius", makeClampSanitizerFloat(100.0f, 20000.0f) };
+        SettingValue<bool> mHookTargets{ mIndex, "Kurenai", "hook targets" };
         SettingValue<std::string> mSmokeModel{ mIndex, "Kurenai", "smoke model" };
         SettingValue<float> mSmokeRadius{ mIndex, "Kurenai", "smoke radius", makeClampSanitizerFloat(50.0f, 5000.0f) };
     };

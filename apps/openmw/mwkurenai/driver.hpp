@@ -218,6 +218,14 @@ namespace MWKurenai
         };
         std::map<const void*, Smoked> mSmoked;
         std::uint64_t mSmokeBombs = 0, mSmokedActors = 0;
+        // The Hook (HookTargets): places above and around her (roof edges, branches, ledges) that she can see, sent to
+        // PCSX2, which puts the stage's own hook points there. The place her wire hangs from is kept while it is out.
+        bool mHooks = true;
+        float mSinceHookScan = 1e9f;
+        std::vector<kurenai::proto::ProxyTarget> mHookTargets;
+        std::map<std::uint32_t, int> mHookMisses; // scans in a row a sent place was not found again (kept up to 4)
+        std::uint64_t mHookScans = 0;
+        void sendHookTargets(const kurenai::CoordTransform& t, float dt);
         void startSmoke(const osg::Vec3f& at);
         void updateSmoke(float dt);
         void clearSmoke();

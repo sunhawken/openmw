@@ -208,6 +208,7 @@ namespace MWKurenai
             mProxyEnabled = k.mProxies;
             mProxyRadius = k.mProxyRadius;
             mSmokeModel = k.mSmokeModel;
+            mHooks = k.mHookTargets;
             mSmokeRadius = k.mSmokeRadius;
             mMorrowindMode = k.mStartMode.get() == "morrowind";
             if (!k.mModeToggleKey.get().empty())
@@ -463,6 +464,117 @@ namespace MWKurenai
             spells.add(kitonSpell());
         else if (spells.hasSpell(kitonSpell()))
             spells.remove(kitonSpell());
+    }
+
+    void Driver::sendHookTargets(const kurenai::CoordTransform& t, float dt)
+    {
+        // The game's lock-on takes hook points up to 1500 of its units away (0x0021df00).
+        constexpr float kGameReach = 1400.0f;
+        constexpr float kMinAbove = 220.0f; // Morrowind units above her feet: a hook is for going up or across
+        constexpr std::size_t kMaxTargets = 8;
+        mSinceHookScan += dt;
+        if (mSinceHookScan >= 0.25f)
+        {
+            mSinceHookScan = 0;
+            ++mHookScans;
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWWorld::Ptr player = world->getPlayerPtr();
+            const osg::Vec3f feet = player.getRefData().getPosition().asVec3();
+            const osg::Vec3f head = feet + osg::Vec3f(0, 0, 120.0f);
+            const float reach = kGameReach * t.scale;
+            // Only the world itself: actors walking by must not make places come and go.
+            constexpr int kStatic = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP;
+            std::vector<std::pair<float, kurenai::proto::ProxyTarget>> found;
+            int columns = 0, tops = 0;
+            // Columns on three rings around her: the highest surface below `reach` above her, facing up (a roof, a
+            // branch, the top of a wall), that she can see.
+            for (float r : { 250.0f, 500.0f, 750.0f })
+                for (int i = 0; i < 12; ++i)
+                {
+                    const float a = static_cast<float>(i) * static_cast<float>(M_PI) / 6.0f + r * 0.001f;
+                    const osg::Vec3f column(feet.x() + std::cos(a) * r, feet.y() + std::sin(a) * r, 0);
+                    const MWPhysics::RayCastingResult top = world->getRayCasting()->castRay(
+                        osg::Vec3f(column.x(), column.y(), feet.z() + reach), osg::Vec3f(column.x(), column.y(), feet.z() + kMinAbove),
+                        { player }, {}, kStatic);
+                    ++columns;
+                    if (!top.mHit || top.mHitNormal.z() < 0.5f)
+                        continue;
+                    ++tops;
+                    const osg::Vec3f at = top.mHitPos + osg::Vec3f(0, 0, 10.0f);
+                    if ((at - feet).length() > reach)
+                        continue;
+                    // She must see it: nothing in the way but the thing it is on (from below, a roof's edge or a
+                    // branch hides its own top).
+                    const MWPhysics::RayCastingResult sight
+                        = world->getRayCasting()->castRay(head, at + osg::Vec3f(0, 0, 40.0f), { player }, {}, kStatic);
+                    if (sight.mHit && (sight.mHitPos - at).length() > 250.0f)
+                        continue;
+                    kurenai::proto::ProxyTarget target;
+                    // Stable while the place is found again: its position on a 48-unit grid.
+                    const auto cell = [](float v) { return static_cast<std::uint32_t>(static_cast<std::int32_t>(std::lround(v / 48.0f))); };
+                    target.actorId = (cell(at.x()) * 73856093u) ^ (cell(at.y()) * 19349663u) ^ (cell(at.z()) * 83492791u);
+                    target.position = t.toRedNinja({ at.x(), at.y(), at.z() });
+                    found.emplace_back((at - feet).length2(), target);
+                }
+            std::sort(found.begin(), found.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            std::vector<kurenai::proto::ProxyTarget> next;
+            // While her wire is out, the place it hangs from stays sent (same id, same place).
+            if (mLatest && (mLatest->flags & kurenai::proto::FlagWire))
+            {
+                const kurenai::proto::Vec3& w = mLatest->wireAnchor;
+                for (const kurenai::proto::ProxyTarget& old : mHookTargets)
+                {
+                    const float dx = old.position.x - w.x, dy = old.position.y - w.y, dz = old.position.z - w.z;
+                    if (dx * dx + dy * dy + dz * dz < 200.0f * 200.0f)
+                    {
+                        next.push_back(old);
+                        break;
+                    }
+                }
+            }
+            for (const auto& [d, found1] : found)
+            {
+                if (next.size() >= kMaxTargets)
+                    break;
+                // A place sent before and found again close by keeps its id and position (no hook point jumps).
+                kurenai::proto::ProxyTarget target = found1;
+                for (const kurenai::proto::ProxyTarget& old : mHookTargets)
+                {
+                    const float dx = old.position.x - target.position.x, dy = old.position.y - target.position.y,
+                                dz = old.position.z - target.position.z;
+                    if (dx * dx + dy * dy + dz * dz < 120.0f * 120.0f)
+                    {
+                        target = old;
+                        break;
+                    }
+                }
+                if (std::none_of(next.begin(), next.end(), [&](const auto& n) { return n.actorId == target.actorId; }))
+                    next.push_back(target);
+            }
+            // A place not found in this scan (an edge seen one moment, missed the next) stays for a second.
+            std::map<std::uint32_t, int> misses;
+            for (const kurenai::proto::ProxyTarget& n : next)
+                misses[n.actorId] = 0;
+            for (const kurenai::proto::ProxyTarget& old : mHookTargets)
+            {
+                if (next.size() >= kMaxTargets || misses.count(old.actorId))
+                    continue;
+                const int missed = mHookMisses[old.actorId] + 1;
+                if (missed <= 4)
+                {
+                    next.push_back(old);
+                    misses[old.actorId] = missed;
+                }
+            }
+            mHookMisses.swap(misses);
+            if (mHookScans <= 2 || (next.size() != mHookTargets.size() && (next.empty() || mHookTargets.empty())))
+                Log(Debug::Info) << "Kurenai: hook: " << next.size() << " places for her hook (" << tops << " surfaces above her in "
+                                 << columns << " columns)";
+            mHookTargets.swap(next);
+        }
+        kurenai::proto::HookTargets msg;
+        msg.targets = mHookTargets;
+        send(msg);
     }
 
     void Driver::startSmoke(const osg::Vec3f& at)
@@ -1495,6 +1607,8 @@ namespace MWKurenai
         world->rotateObject(player, osg::Vec3f(0, 0, yaw), MWBase::RotationFlag_none);
         if (mProxyEnabled)
             sendProxyTargets(t);
+        if (mHooks)
+            sendHookTargets(t, dt);
         applyAnimation(mLatest->animId);
         updateSneak(mLatest->animId);
         updateKiton(mLatest->animId, mLatest->kiton);
