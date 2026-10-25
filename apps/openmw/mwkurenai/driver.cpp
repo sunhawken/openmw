@@ -504,6 +504,8 @@ namespace MWKurenai
                 handlePose(*pose);
             else if (const auto* proxies = std::get_if<kurenai::proto::ProxyStatus>(&m.payload))
                 handleProxyStatus(*proxies);
+            else if (const auto* victim = std::get_if<kurenai::proto::ProxyPose>(&m.payload))
+                handleProxyPose(*victim);
             else if (const auto* hello = std::get_if<kurenai::proto::Hello>(&m.payload))
             {
                 Log(Debug::Info) << "Kurenai: Hello from " << hello->software << " running " << hello->gameSerial;
@@ -515,6 +517,7 @@ namespace MWKurenai
         }
 
         applyPendingRagdolls();
+        updateVictims();
         if (mHud)
         {
             mHud->beat(now);
@@ -796,6 +799,107 @@ namespace MWKurenai
             Log(Debug::Info) << "Kurenai: proxy " << s.actorId << " (game enemy " << s.slot << ", health " << s.health
                              << "/" << s.maxHealth << ") " << how << ": " << actor.getCellRef().getRefId() << " takes "
                              << damage << " damage";
+        }
+    }
+
+    void Driver::handleProxyPose(const kurenai::proto::ProxyPose& p)
+    {
+        auto v = mVictims.find(p.actorId);
+        if (v == mVictims.end())
+        {
+            const auto proxy = mProxies.find(p.actorId);
+            if (proxy == mProxies.end() || proxy->second.actor.isEmpty())
+                return;
+            v = mVictims.emplace(p.actorId, Victim{}).first;
+            v->second.actor = proxy->second.actor;
+            Log(Debug::Info) << "Kurenai: kill on " << v->second.actor.getCellRef().getRefId() << " (proxy " << p.actorId
+                             << ", model " << std::hex << p.model << std::dec << "): its body follows the game's";
+        }
+        Victim& victim = v->second;
+        if (victim.final)
+            return;
+        ++victim.poses;
+        const MWWorld::Ptr& actor = victim.actor;
+        const auto map = mSkeletonMaps.find(p.model);
+        auto target = std::make_shared<PoseTarget>();
+        if (map != mSkeletonMaps.end() && p.model != 0)
+        {
+            const std::vector<kurenai::AimDirection> dirs = kurenai::aimDirections(p.bones, p.rotation, map->second);
+            target->active = true;
+            for (std::size_t i = 0; i < dirs.size(); ++i)
+            {
+                const kurenai::BoneAim& a = map->second.aims[i];
+                target->aims.push_back({ a.bone, a.child, osg::Vec3f(dirs[i].dir.x, dirs[i].dir.y, dirs[i].dir.z),
+                    a.sideChild, osg::Vec3f(dirs[i].side.x, dirs[i].side.y, dirs[i].side.z) });
+            }
+            if (const auto root = kurenai::rootOffset(p.bones, p.position, p.rotation, map->second))
+            {
+                target->rootBone = map->second.rootBone;
+                target->rootOffset = osg::Vec3f(root->x, root->y, root->z);
+            }
+        }
+        else if (victim.poses == 1)
+            Log(Debug::Warning) << "Kurenai: no skeleton map for the victim's model " << std::hex << p.model << std::dec
+                                << "; it keeps Morrowind's animation";
+        victim.target = target;
+        if (victim.callback)
+            victim.callback->setTarget(target);
+
+        // Where the game has the enemy: the actor stands there, facing its way (its height stays Morrowind's).
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const kurenai::proto::Vec3 at = mTransform.position(p.position);
+        const osg::Vec3f here = actor.getRefData().getPosition().asVec3();
+        if (std::hypot(at.x - here.x(), at.y - here.y()) > 1.0f)
+            world->moveObject(actor, osg::Vec3f(at.x, at.y, here.z()));
+        const float yaw = mTransform.yaw(p.rotation, { 0, 0, 1 });
+        const ESM::Position& pos = actor.getRefData().getPosition();
+        if (std::abs(yaw - pos.rot[2]) > 1e-3f)
+            world->rotateObject(actor, osg::Vec3f(pos.rot[0], pos.rot[1], yaw));
+
+        if (p.flags & kurenai::proto::ProxyPoseFinal)
+        {
+            victim.final = true;
+            Log(Debug::Info) << "Kurenai: kill on " << actor.getCellRef().getRefId() << " over after " << victim.poses
+                             << " poses; the body keeps the game's last pose";
+        }
+    }
+
+    void Driver::updateVictims()
+    {
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        for (auto it = mVictims.begin(); it != mVictims.end();)
+        {
+            Victim& v = it->second;
+            MWRender::Animation* anim = v.actor.isEmpty() || !v.actor.getRefData().getBaseNode()
+                ? nullptr
+                : world->getAnimation(v.actor);
+            osg::Node* skeleton = anim ? anim->getSkeleton() : nullptr;
+            osg::ref_ptr<osg::Node> attached;
+            v.rootBone.lock(attached);
+            if (!skeleton)
+            {
+                // Unloaded (cell change): the body is Morrowind's again.
+                if (attached && v.callback)
+                    attached->removeUpdateCallback(v.callback);
+                it = mVictims.erase(it);
+                continue;
+            }
+            SceneUtil::FindByNameVisitor find("Bip01");
+            skeleton->accept(find);
+            if (find.mFoundNode && find.mFoundNode != attached.get())
+            {
+                if (attached && v.callback)
+                    attached->removeUpdateCallback(v.callback);
+                v.callback = new PoseOverride(v.target, skeleton);
+                find.mFoundNode->addUpdateCallback(v.callback);
+                v.rootBone = find.mFoundNode;
+            }
+            // While the game moves the body, Morrowind's animation stands still (as SkipAnim does for mannequins), so
+            // its death neither plays nor starts the ragdoll; once the body lies still, the death runs its course
+            // under the kept pose.
+            if (!v.final)
+                MWBase::Environment::get().getMechanicsManager()->skipAnimation(v.actor);
+            ++it;
         }
     }
 

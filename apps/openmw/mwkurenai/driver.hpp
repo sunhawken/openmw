@@ -78,6 +78,8 @@ namespace MWKurenai
         void handleCombat(const kurenai::proto::CombatEvent& e);
         void sendProxyTargets(const kurenai::CoordTransform& t);
         void handleProxyStatus(const kurenai::proto::ProxyStatus& s);
+        void handleProxyPose(const kurenai::proto::ProxyPose& p);
+        void updateVictims();
         void handlePose(const kurenai::proto::Pose& p);
         void updatePoseOverride();
         void applyPendingRagdolls();
@@ -158,6 +160,19 @@ namespace MWKurenai
         std::uint32_t mNextProxyId = 1;
         std::uint32_t mLockedProxy = 0; // id Kurenai is locked onto, 0 = none
         std::uint64_t mProxyKills = 0, mProxyDamage = 0;
+        // Kill sync: the victim of her stealth kill moves as the game's enemy does (ProxyPose): its skeleton follows
+        // the enemy's through the enemy's skeleton map, Morrowind's own animation (and the death ragdoll) held off
+        // until the body lies still, then the last pose is kept.
+        struct Victim
+        {
+            MWWorld::Ptr actor;
+            std::shared_ptr<PoseTarget> target = std::make_shared<PoseTarget>();
+            osg::ref_ptr<PoseOverride> callback;
+            osg::observer_ptr<osg::Node> rootBone;
+            bool final = false;
+            std::uint64_t poses = 0;
+        };
+        std::map<std::uint32_t, Victim> mVictims; // by proxy id
 
         // PS2 animation ([Kurenai] ps2 animation): the game's skeleton, retargeted onto the player's.
         enum class Ps2Anim

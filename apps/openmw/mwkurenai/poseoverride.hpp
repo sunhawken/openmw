@@ -34,6 +34,11 @@ namespace MWKurenai
             osg::Vec3f side;
         };
         std::vector<Aim> aims;
+        // Optional: a bone also moved (before the aims) by how far the game's root point moved since the first frame
+        // (character space, game units; scaled by the ratio of the bone's height to the point's on that frame), so the
+        // body can sink and fall. Empty = none.
+        std::string rootBone;
+        osg::Vec3f rootOffset;
     };
 
     // Re-aims bones of the player's skeleton like Red Ninja's skeleton, after Morrowind's own animation has posed
@@ -61,6 +66,9 @@ namespace MWKurenai
         unsigned long mFrames = 0;
         float mLastAngle = 0;
         std::string mMissing; // names not found in the skeleton (last frame)
+        bool mRootSet = false;
+        osg::Vec3f mRootRest, mRootFirst; // the root bone (skeleton space) and the game's point on the first frame
+        float mRootScale = 1;
     };
 }
 

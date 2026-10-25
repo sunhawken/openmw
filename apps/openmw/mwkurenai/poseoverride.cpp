@@ -52,6 +52,21 @@ namespace MWKurenai
         mMissing.clear();
         if (!mTarget || !mTarget->active)
             return;
+        if (!mTarget->rootBone.empty())
+            if (osg::MatrixTransform* bone = findBone(rootBone, mTarget->rootBone))
+            {
+                const osg::Matrixf boneS = toSkeleton(bone, skeleton.get());
+                if (!mRootSet)
+                {
+                    mRootSet = true;
+                    mRootRest = boneS.getTrans();
+                    mRootFirst = mTarget->rootOffset;
+                    mRootScale = mRootFirst.z() > 1.0f ? mRootRest.z() / mRootFirst.z() : 1.0f;
+                }
+                const osg::Vec3f want = mRootRest + (mTarget->rootOffset - mRootFirst) * mRootScale;
+                const osg::Matrixf moved = boneS * osg::Matrixf::translate(want - boneS.getTrans());
+                bone->setMatrix(moved * osg::Matrixf::inverse(boneS) * bone->getMatrix());
+            }
         for (const PoseTarget::Aim& aim : mTarget->aims)
         {
             if (aim.direction.length2() < 1e-6f)
