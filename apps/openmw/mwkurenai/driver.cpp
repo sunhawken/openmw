@@ -132,7 +132,7 @@ namespace MWKurenai
             return;
         }
         if (!logPath.empty() && (mLog = std::fopen(logPath.c_str(), "w")))
-            std::fprintf(mLog, "frame\tmono_ns\tpeer_frame\tsent_ns\trn_x\trn_y\trn_z\tmw_x\tmw_y\tmw_z\tyaw\tmotion\n");
+            std::fprintf(mLog, "frame\tmono_ns\tpeer_frame\tsent_ns\trn_x\trn_y\trn_z\tmw_x\tmw_y\tmw_z\tyaw\tmotion\tarrival_ns\tseq\n");
         Log(Debug::Info) << "Kurenai: bridge region '" << name << "' created (protocol " << kurenai::proto::kMajor
                          << "." << kurenai::proto::kMinor << ", " << animMap().size() << " animation mappings, "
                          << (mAnswerCollision ? "answering" : "not answering")
@@ -146,9 +146,10 @@ namespace MWKurenai
     Driver::~Driver()
     {
         if (mLatency.count)
-            Log(Debug::Info) << "Kurenai: PlayerState latency PCSX2 -> OpenMW: average "
-                             << mLatency.sumUs / mLatency.count << " us, max " << mLatency.maxUs << " us over "
-                             << mLatency.count << " states";
+            Log(Debug::Info) << "Kurenai: PlayerState latency PCSX2 -> OpenMW: transport average "
+                             << mLatency.transportSumUs / mLatency.count << " us (max " << mLatency.transportMaxUs
+                             << "), until applied in a frame average " << mLatency.sumUs / mLatency.count
+                             << " us (max " << mLatency.maxUs << ") over " << mLatency.count << " states";
         mStop = true;
         if (mThread.joinable())
             mThread.join();
@@ -158,7 +159,13 @@ namespace MWKurenai
         if (mQueries)
             Log(Debug::Info) << "Kurenai: answered " << mQueries << " collision queries (" << mQueryHits << " hits, "
                              << mQueriesDeclined << " declined), average " << (mQueryNs / 1000.0 / mQueries)
-                             << " us each";
+                             << " us each, of which waiting for the world lock " << (mQueryLockNs / 1000.0 / mQueries)
+                             << " us (max " << mQueryLockMaxNs / 1000.0 << " us)";
+        if (mLink)
+            Log(Debug::Info) << "Kurenai: bridge: received " << mLink->stats().received << ", sent "
+                             << mLink->stats().sent << ", send failures " << mLink->stats().sendFailed
+                             << ", malformed " << mLink->stats().decodeErrors << ", lost (sequence gaps) "
+                             << mLink->stats().seqGaps;
         if (mLog)
             std::fclose(mLog);
     }
@@ -184,7 +191,7 @@ namespace MWKurenai
                 else
                 {
                     std::lock_guard<std::mutex> lock(mInboxMutex);
-                    mInbox.push_back(std::move(m));
+                    mInbox.push_back({ std::move(m), kurenai::monotonicNs() });
                 }
             }
             const std::uint64_t now = kurenai::monotonicNs();
@@ -220,7 +227,12 @@ namespace MWKurenai
         const kurenai::proto::Vec3 a = t.position(q.from), b = t.position(q.to);
         MWPhysics::RayCastingResult hit;
         {
+            const std::uint64_t lockStart = kurenai::monotonicNs();
             std::lock_guard<std::mutex> lock(mWorldMutex);
+            const std::uint64_t waited = kurenai::monotonicNs() - lockStart;
+            mQueryLockNs += waited;
+            if (waited > mQueryLockMaxNs)
+                mQueryLockMaxNs = waited;
             // Statics, terrain and doors: Morrowind's level geometry. Actors (Kurenai herself included) are not
             // level geometry for the game's queries.
             hit = MWBase::Environment::get().getWorld()->getRayCasting()->castRay(osg::Vec3f(a.x, a.y, a.z),
@@ -270,8 +282,9 @@ namespace MWKurenai
         Log(Debug::Warning) << "Kurenai: PCSX2 stopped responding; Morrowind controls the player again";
         mPendingRagdolls.clear();
         releaseCamera();
-        if (mPoseSkeleton && mPoseCallback)
-            mPoseSkeleton->removeUpdateCallback(mPoseCallback);
+        osg::ref_ptr<osg::Node> skeleton;
+        if (mPoseSkeleton.lock(skeleton) && mPoseCallback)
+            skeleton->removeUpdateCallback(mPoseCallback);
         mPoseSkeleton = nullptr;
         MWBase::World* world = MWBase::Environment::get().getWorld();
         if (mCollisionWasOn && !world->toggleCollisionMode())
@@ -352,13 +365,14 @@ namespace MWKurenai
         const std::uint64_t now = kurenai::monotonicNs();
         mLink->tick(now);
 
-        std::deque<kurenai::proto::Message> msgs;
+        std::deque<Arrived> msgs;
         {
             std::lock_guard<std::mutex> lock(mInboxMutex);
             msgs.swap(mInbox);
         }
-        for (const kurenai::proto::Message& m : msgs)
+        for (const Arrived& a : msgs)
         {
+            const kurenai::proto::Message& m = a.message;
             if (const auto* ps = std::get_if<kurenai::proto::PlayerState>(&m.payload))
             {
                 mPrev = mLatest;
@@ -366,20 +380,23 @@ namespace MWKurenai
                 mSinceLatest = 0;
                 ++mStatesReceived;
                 mLastPeerFrame = m.header.frameId;
-                if (now >= m.header.timestampNs)
+                if (now >= m.header.timestampNs && a.arrivalNs >= m.header.timestampNs)
                 {
                     const double us = (now - m.header.timestampNs) / 1000.0;
+                    const double transportUs = (a.arrivalNs - m.header.timestampNs) / 1000.0;
                     mLatency.count++;
                     mLatency.sumUs += us;
                     mLatency.maxUs = std::max(mLatency.maxUs, us);
                     mLatency.lastUs = us;
+                    mLatency.transportSumUs += transportUs;
+                    mLatency.transportMaxUs = std::max(mLatency.transportMaxUs, transportUs);
                 }
                 if (mLog)
-                    std::fprintf(mLog, "%llu\t%llu\t%llu\t%llu\t%.3f\t%.3f\t%.3f\t\t\t\t\t%u\n",
+                    std::fprintf(mLog, "%llu\t%llu\t%llu\t%llu\t%.3f\t%.3f\t%.3f\t\t\t\t\t%u\t%llu\t%u\n",
                         static_cast<unsigned long long>(mFrames), static_cast<unsigned long long>(now),
                         static_cast<unsigned long long>(m.header.frameId),
                         static_cast<unsigned long long>(m.header.timestampNs), ps->position.x, ps->position.y,
-                        ps->position.z, ps->animId);
+                        ps->position.z, ps->animId, static_cast<unsigned long long>(a.arrivalNs), m.header.seq);
             }
             else if (const auto* ce = std::get_if<kurenai::proto::CombatEvent>(&m.payload))
                 handleCombat(*ce);
@@ -675,10 +692,11 @@ namespace MWKurenai
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWRender::Animation* anim = world->getAnimation(world->getPlayerPtr());
         osg::Node* skeleton = anim ? anim->getSkeleton() : nullptr;
-        if (skeleton == mPoseSkeleton)
+        osg::ref_ptr<osg::Node> current;
+        if (mPoseSkeleton.lock(current) && current.get() == skeleton)
             return;
-        if (mPoseSkeleton && mPoseCallback)
-            mPoseSkeleton->removeUpdateCallback(mPoseCallback);
+        if (current && mPoseCallback)
+            current->removeUpdateCallback(mPoseCallback);
         mPoseSkeleton = skeleton;
         if (!skeleton)
             return;

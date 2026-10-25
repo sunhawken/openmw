@@ -10,6 +10,7 @@
 #include <kurenai/combat.hpp>
 
 #include <osg/Vec3f>
+#include <osg/observer_ptr>
 
 #include "../mwworld/ptr.hpp"
 #include "poseoverride.hpp"
@@ -95,7 +96,12 @@ namespace MWKurenai
         std::atomic<bool> mStop{ false };
         std::mutex mSendMutex;
         std::mutex mInboxMutex;
-        std::deque<kurenai::proto::Message> mInbox;
+        struct Arrived
+        {
+            kurenai::proto::Message message;
+            std::uint64_t arrivalNs; // when the bridge thread took it off the ring
+        };
+        std::deque<Arrived> mInbox;
         std::mutex mWorldMutex;
         std::mutex mTransformMutex; // guards mTransform and mAnchored for the bridge thread
         bool mAnswerCollision = false;
@@ -125,7 +131,7 @@ namespace MWKurenai
         std::optional<kurenai::SkeletonMap> mSkeletonMap;
         std::shared_ptr<PoseTarget> mPoseTarget = std::make_shared<PoseTarget>();
         osg::ref_ptr<PoseOverride> mPoseCallback;
-        osg::Node* mPoseSkeleton = nullptr;
+        osg::observer_ptr<osg::Node> mPoseSkeleton; // the animation object can be rebuilt; never keep it alive
         std::uint64_t mPosesReceived = 0;
 
         // Game camera ([Kurenai] camera mode = game): Red Ninja's camera, converted to Morrowind's world.
@@ -142,6 +148,7 @@ namespace MWKurenai
             std::uint64_t count = 0;
             double sumUs = 0, maxUs = 0;
             double lastUs = 0;
+            double transportSumUs = 0, transportMaxUs = 0; // PCSX2 publish -> bridge thread
         };
         const LatencyStats& latency() const { return mLatency; }
 
@@ -155,6 +162,7 @@ namespace MWKurenai
         float mSinceStatus = 0;
         void updateStatus(float dt);
         std::atomic<std::uint64_t> mQueries{ 0 }, mQueryHits{ 0 }, mQueriesDeclined{ 0 }, mQueryNs{ 0 };
+        std::atomic<std::uint64_t> mQueryLockNs{ 0 }, mQueryLockMaxNs{ 0 }; // time waiting for the world lock
     };
 }
 
