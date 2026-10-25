@@ -234,6 +234,12 @@ namespace MWKurenai
         // Game camera ([Kurenai] camera mode = game): Red Ninja's camera, converted to Morrowind's world.
         bool mGameCameraMode = false;
         bool mCameraTaken = false;
+        // The game's lens ([Kurenai] game lens): Morrowind's field of view and viewing distance while its camera shows.
+        bool mGameLens = true;
+        float mMaxViewDistance = 0;
+        float mSavedFov = 0, mSavedViewDistance = 0, mAppliedFov = 0, mAppliedViewDistance = 0;
+        bool mLensTaken = false;
+        void applyGameLens();
         int mPreviousCameraMode = 2;
         void applyGameCamera();
         void releaseCamera();

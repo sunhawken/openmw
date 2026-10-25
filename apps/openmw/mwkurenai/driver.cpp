@@ -202,6 +202,8 @@ namespace MWKurenai
             mAnswerCollision = k.mAnswerCollision;
             mCombat = k.mCombat;
             mGameCameraMode = k.mCameraMode.get() == "game";
+            mGameLens = k.mGameLens;
+            mMaxViewDistance = k.mMaxViewDistance;
             mShowStatus = k.mShowStatus;
             mHideMorrowindHud = k.mHideMorrowindHud;
             mHudScale = k.mGameHudScale;
@@ -1507,10 +1509,56 @@ namespace MWKurenai
         camera->setStaticPosition(osg::Vec3d(eye.x, eye.y, eye.z));
         camera->setYaw(-std::atan2(dir.x(), dir.y()), true);
         camera->setPitch(std::asin(std::clamp(dir.z(), -1.0f, 1.0f)), true);
+        if (mGameLens)
+            applyGameLens();
+    }
+
+    void Driver::applyGameLens()
+    {
+        // The game's field of view spans a 4:3 screen across; Morrowind's is vertical (the window's width follows).
+        const float across = mLatest->cameraFov;
+        if (!(across > 0.05f && across < 3.0f))
+            return;
+        MWRender::RenderingManager* rendering = MWBase::Environment::get().getWorld()->getRenderingManager();
+        if (!mLensTaken)
+        {
+            mSavedFov = Settings::camera().mFieldOfView;
+            mSavedViewDistance = rendering->getViewDistance();
+            mAppliedFov = mAppliedViewDistance = 0;
+            mLensTaken = true;
+        }
+        const float vertical = 2.0f * std::atan(std::tan(across / 2.0f) * 3.0f / 4.0f) * 180.0f / static_cast<float>(M_PI);
+        if (std::abs(vertical - mAppliedFov) > 0.05f)
+        {
+            if (mAppliedFov == 0)
+                Log(Debug::Info) << "Kurenai: Red Ninja's lens: " << vertical << " degrees high (Morrowind's was "
+                                 << mSavedFov << ")";
+            rendering->setFieldOfView(vertical);
+            mAppliedFov = vertical;
+        }
+        if (mLatest->cameraFar > 0)
+        {
+            const float cap = mMaxViewDistance > 0 ? mMaxViewDistance : mSavedViewDistance;
+            const float far = std::min(mLatest->cameraFar * mTransform.scale, cap);
+            // Changing it reloads terrain: only for a real change.
+            if (std::abs(far - mAppliedViewDistance) > 0.02f * std::max(far, 1.0f))
+            {
+                rendering->setViewDistance(far, true);
+                mAppliedViewDistance = far;
+            }
+        }
     }
 
     void Driver::releaseCamera()
     {
+        if (mLensTaken)
+        {
+            MWRender::RenderingManager* rendering = MWBase::Environment::get().getWorld()->getRenderingManager();
+            rendering->setFieldOfView(mSavedFov);
+            if (mAppliedViewDistance > 0)
+                rendering->setViewDistance(mSavedViewDistance, true);
+            mLensTaken = false;
+        }
         if (!mCameraTaken)
             return;
         MWBase::Environment::get().getWorld()->getCamera()->setMode(
