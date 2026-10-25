@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 
 #include <MyGUI_Gui.h>
@@ -51,10 +52,18 @@ namespace MWKurenai
     {
         constexpr float kGameHz = 30.0f;
 
+        // Her motions that are Morrowind's sneak (crouch, creep, wall hug): the anim map's "sneak<TAB>id id ..." lines.
+        std::set<std::uint32_t>& sneakMotions()
+        {
+            static std::set<std::uint32_t> motions;
+            return motions;
+        }
+
         // Red Ninja motion id -> Morrowind animation group, from the profile's anim_map.tsv ("motion<TAB>group").
         std::map<std::uint32_t, std::string> loadAnimMap(const std::string& path)
         {
             std::map<std::uint32_t, std::string> map;
+            sneakMotions().clear();
             if (path.empty())
                 return map;
             std::ifstream in(path);
@@ -69,6 +78,14 @@ namespace MWKurenai
                 if (line.empty() || line[0] == '#')
                     continue;
                 std::istringstream fields(line);
+                if (line.rfind("sneak", 0) == 0)
+                {
+                    std::string word;
+                    fields >> word;
+                    for (std::uint32_t id = 0; fields >> id;)
+                        sneakMotions().insert(id);
+                    continue;
+                }
                 std::uint32_t motion = 0;
                 std::string group;
                 if (fields >> motion >> group)
@@ -341,6 +358,21 @@ namespace MWKurenai
         // controller (no walking, no weapon): drop them so Morrowind animates her again.
         MWBase::Environment::get().getMechanicsManager()->clearAnimationQueue(player, true);
         mLastMotion = 0xffffffffu;
+        updateSneak(0xffffffffu);
+    }
+
+    void Driver::updateSneak(std::uint32_t motion)
+    {
+        // Her crouch is Morrowind's sneak (detection, the sneak icon, sneak attacks). Flag_ForceSneak, as the ForceSneak
+        // script function: the sneak key's own flag is rewritten from the keyboard every frame by playercontrols.lua.
+        const bool sneak = sneakMotions().count(motion) != 0;
+        if (sneak == mForcingSneak)
+            return;
+        mForcingSneak = sneak;
+        Log(Debug::Info) << "Kurenai: sneak " << (sneak ? "on" : "off") << " (motion " << motion << ")";
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        player.getClass().getCreatureStats(player).setMovementFlag(
+            MWMechanics::CreatureStats::Flag_ForceSneak, sneak);
     }
 
     void Driver::pollModeKey()
@@ -393,7 +425,7 @@ namespace MWKurenai
         in.lx = axisByte(stickRight);
         in.ly = axisByte(-stickUp); // the pad's Y grows downwards
         // Button mapping (Morrowind action -> DualShock 2). Red Ninja: Cross jump, Square attack, Circle wire,
-        // Triangle action, R1 lock-on, L1 crouch/stealth. Needs proper testing against the game's manual.
+        // Triangle action, R1 lock-on, L2 crouch, L1 block (docs/REVERSE_ENGINEERING.md, controls).
         const auto held = [&](int action) { return input->getActionValue(action) > 0.5f; };
         if (held(MWInput::A_Jump))
             in.buttons |= kurenai::proto::BtnCross;
@@ -404,7 +436,9 @@ namespace MWKurenai
         if (held(MWInput::A_ToggleWeapon))
             in.buttons |= kurenai::proto::BtnTriangle;
         if (held(MWInput::A_Sneak))
-            in.buttons |= kurenai::proto::BtnL1;
+            in.buttons |= kurenai::proto::BtnL2; // crouch (wall hug next to a wall)
+        if (held(MWInput::A_ToggleSpell))
+            in.buttons |= kurenai::proto::BtnL1; // block
         if (held(MWInput::A_Run))
             in.buttons |= kurenai::proto::BtnR1;
         if (held(MWInput::A_GameMenu))
@@ -1176,6 +1210,7 @@ namespace MWKurenai
         if (mProxyEnabled)
             sendProxyTargets(t);
         applyAnimation(mLatest->animId);
+        updateSneak(mLatest->animId);
         updatePoseOverride();
         updateWire(t);
         if (mGameCameraMode)

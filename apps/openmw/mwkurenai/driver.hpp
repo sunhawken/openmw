@@ -107,6 +107,8 @@ namespace MWKurenai
         kurenai::proto::Input mLastInput;
         float mSinceInput = 0;
         std::uint32_t mLastMotion = 0xffffffffu;
+        bool mForcingSneak = false; // we set Flag_ForceSneak (her crouch / wall hug, the anim map's sneak line)
+        void updateSneak(std::uint32_t motion);
         std::FILE* mLog = nullptr;
 
         // The bridge thread owns the incoming ring: it answers CollisionQuery at once and queues the rest for the
