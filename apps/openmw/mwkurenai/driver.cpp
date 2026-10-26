@@ -29,6 +29,7 @@
 #include "../mwmechanics/drawstate.hpp"
 #include "../mwinput/actions.hpp"
 #include "../mwmechanics/movement.hpp"
+#include "../mwmechanics/npcstats.hpp"
 #include "../mwphysics/joltlayers.hpp"
 #include "../mwphysics/raycasting.hpp"
 #include <components/sceneutil/skeleton.hpp>
@@ -43,12 +44,15 @@
 
 #include <osg/Geometry>
 #include <osg/LineWidth>
+#include "../mwworld/cell.hpp"
+#include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/ptr.hpp"
 #include "../mwmechanics/spells.hpp"
 
 #include <components/esm/defs.hpp>
+#include <components/esm3/loadgmst.hpp>
 #include <components/esm3/loadmgef.hpp>
 #include <components/esm3/loadspel.hpp>
 
@@ -57,6 +61,12 @@ namespace MWKurenai
     namespace
     {
         constexpr float kGameHz = 30.0f;
+        constexpr float kDiveSpeed = 150.0f; // Morrowind units per second, diving with the breathing tube
+        // While she swims, the game wants a bottom within its ground probe's reach (310 below her) or it has her fall
+        // out of the water (runs/swim4: 1191 -> 1000 -> 1150 over and over in Morrowind's deep sea). Deeper water gets
+        // a bottom this far below the surface (game units): the moat's (runs/swimM). The bottom under her water is
+        // reported with the game's water-bottom surface type (proto::kMaterialWaterFloor), as the moat's is.
+        constexpr float kSwimFloor = 225.0f;
 
         // Her motions that are Morrowind's sneak (crouch, creep, wall hug): the anim map's "sneak<TAB>id id ..." lines.
         std::set<std::uint32_t>& sneakMotions()
@@ -67,6 +77,21 @@ namespace MWKurenai
 
         // Her motions in which Kiton hides her besides the sneak ones ("kiton<TAB>id id ..."): standing still.
         std::set<std::uint32_t>& kitonMotions()
+        {
+            static std::set<std::uint32_t> motions;
+            return motions;
+        }
+
+        // Her motions in the water ("swim<TAB>id id ..."): treading, swimming, the breathing tube; Morrowind's drowning
+        // is held off while one plays.
+        std::set<std::uint32_t>& swimMotions()
+        {
+            static std::set<std::uint32_t> motions;
+            return motions;
+        }
+
+        // Her breathing-tube motions (L2 held in the water, "swim_hidden<TAB>id id ..."): she can dive and rise.
+        std::set<std::uint32_t>& hiddenSwimMotions()
         {
             static std::set<std::uint32_t> motions;
             return motions;
@@ -128,6 +153,8 @@ namespace MWKurenai
             sneakMotions().clear();
             kitonMotions().clear();
             smokeMotions().clear();
+            swimMotions().clear();
+            hiddenSwimMotions().clear();
             if (path.empty())
                 return map;
             std::ifstream in(path);
@@ -142,12 +169,16 @@ namespace MWKurenai
                 if (line.empty() || line[0] == '#')
                     continue;
                 std::istringstream fields(line);
-                if (line.rfind("sneak", 0) == 0 || line.rfind("kiton", 0) == 0 || line.rfind("smoke", 0) == 0)
+                if (line.rfind("sneak", 0) == 0 || line.rfind("kiton", 0) == 0 || line.rfind("smoke", 0) == 0
+                    || line.rfind("swim", 0) == 0)
                 {
                     std::string word;
                     fields >> word;
-                    std::set<std::uint32_t>& set
-                        = word == "sneak" ? sneakMotions() : word == "kiton" ? kitonMotions() : smokeMotions();
+                    std::set<std::uint32_t>& set = word == "sneak" ? sneakMotions()
+                        : word == "kiton"                          ? kitonMotions()
+                        : word == "swim"                           ? swimMotions()
+                        : word == "swim_hidden"                    ? hiddenSwimMotions()
+                                                                   : smokeMotions();
                     for (std::uint32_t id = 0; fields >> id;)
                         set.insert(id);
                     continue;
@@ -290,6 +321,9 @@ namespace MWKurenai
                              << mQueriesDeclined << " declined), average " << (mQueryNs / 1000.0 / mQueries)
                              << " us each, of which waiting for the world lock " << (mQueryLockNs / 1000.0 / mQueries)
                              << " us (max " << mQueryLockMaxNs / 1000.0 << " us)";
+        if (mWaterHits)
+            Log(Debug::Info) << "Kurenai: water: " << mWaterHits << " water tests met Morrowind's water, "
+                             << mSwimFloorHits << " ground probes met the swimming bottom";
         if (mLink)
             Log(Debug::Info) << "Kurenai: bridge: received " << mLink->stats().received << ", sent "
                              << mLink->stats().sent << ", send failures " << mLink->stats().sendFailed
@@ -353,7 +387,21 @@ namespace MWKurenai
             send(res);
             return;
         }
-        const kurenai::proto::Vec3 a = t.position(q.from), b = t.position(q.to);
+        kurenai::proto::Vec3 a = t.position(q.from), b = t.position(q.to);
+        if (q.mask & kurenai::proto::kQueryWater)
+        {
+            answerWater(q, t, a, b);
+            return;
+        }
+        // Swimming: the bottom she may not reach in deep water (see kSwimFloor), on Red Ninja's side of the dive shift.
+        const bool swimming = mSwimming.load();
+        const float floorZ = mWaterLevel.load() - kSwimFloor * t.scale;
+        const kurenai::proto::Vec3 fromMw = a, toMw = b;
+        // Diving with the breathing tube: the game keeps her at the surface; Morrowind has her this far below it, so
+        // the walls and floor she meets are the ones down there.
+        const float depth = mSwimDepth.load();
+        a.z -= depth;
+        b.z -= depth;
         MWPhysics::RayCastingResult hit;
         {
             const std::uint64_t lockStart = kurenai::monotonicNs();
@@ -372,7 +420,7 @@ namespace MWKurenai
         if (hit.mHit)
         {
             const osg::Vec3f& p = hit.mHitPos;
-            res.point = t.toRedNinja({ p.x(), p.y(), p.z() });
+            res.point = t.toRedNinja({ p.x(), p.y(), p.z() + depth });
             osg::Vec3f n = hit.mHitNormal;
             if (n.normalize() == 0)
                 n = osg::Vec3f(0, 0, 1);
@@ -381,9 +429,104 @@ namespace MWKurenai
             res.fraction = len > 0 ? std::fmin(1.0f, (p - osg::Vec3f(a.x, a.y, a.z)).length() / len) : 0.0f;
             ++mQueryHits;
         }
+        // Only her ground probe (310 straight down) meets it: the moat's bottom is out of reach of the others.
+        const bool groundProbe = std::fabs(q.from.y - q.to.y) > 300.0f && std::fabs(q.from.x - q.to.x) < 1.0f
+            && std::fabs(q.from.z - q.to.z) < 1.0f;
+        if (swimming && groundProbe && fromMw.z > floorZ && toMw.z < floorZ
+            && (!hit.mHit || hit.mHitPos.z() + depth < floorZ))
+        {
+            const float f = (fromMw.z - floorZ) / (fromMw.z - toMw.z);
+            res.hit = true;
+            res.fraction = f;
+            res.point = t.toRedNinja({ fromMw.x + (toMw.x - fromMw.x) * f, fromMw.y + (toMw.y - fromMw.y) * f, floorZ });
+            res.normal = kurenai::CoordTransform::axesInverse({ 0, 0, 1 });
+            ++mSwimFloorHits;
+        }
+        if (swimming && res.hit && res.normal.y > 0.7f && t.position(res.point).z < mWaterLevel.load())
+            res.material = kurenai::proto::kMaterialWaterFloor;
         send(res);
         ++mQueries;
         mQueryNs += kurenai::monotonicNs() - start;
+    }
+
+    void Driver::answerWater(const kurenai::proto::CollisionQuery& q, const kurenai::CoordTransform& t,
+        const kurenai::proto::Vec3& a, const kurenai::proto::Vec3& b)
+    {
+        // The game's water test: a segment down through where its water surface would be. Morrowind's water is a level
+        // plane in each cell that has water (every exterior).
+        kurenai::proto::CollisionResult res;
+        res.queryId = q.queryId;
+        bool wet = false;
+        float level = 0;
+        {
+            std::lock_guard<std::mutex> lock(mWorldMutex);
+            const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+            const MWWorld::CellStore* cell = player.isInCell() ? player.getCell() : nullptr;
+            if (cell && cell->getCell()->hasWater())
+            {
+                wet = true;
+                level = cell->getWaterLevel();
+            }
+        }
+        if (wet && a.z != b.z && (a.z - level) * (b.z - level) <= 0)
+        {
+            const float f = (a.z - level) / (a.z - b.z);
+            res.hit = true;
+            res.fraction = f;
+            res.point = t.toRedNinja({ a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, level });
+            res.normal = kurenai::CoordTransform::axesInverse({ 0, 0, 1 });
+            res.material = kurenai::proto::kMaterialWaterSurface;
+            ++mQueryHits;
+            ++mWaterHits;
+        }
+        send(res);
+        ++mQueries;
+    }
+
+    void Driver::updateSwim(float dt, kurenai::proto::Vec3& mw)
+    {
+        const std::uint32_t motion = mLatest->animId;
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const MWWorld::Ptr player = world->getPlayerPtr();
+        const MWWorld::CellStore* cell = player.isInCell() ? player.getCell() : nullptr;
+        if (!swimMotions().count(motion) || !cell || !cell->getCell()->hasWater())
+        {
+            mSwimDepth = 0;
+            mSwimming = false;
+            return;
+        }
+        mWaterLevel = cell->getWaterLevel();
+        mSwimming = true;
+        // The game keeps her breathing at the surface, and through her breathing tube below it.
+        static const float holdBreath = MWBase::Environment::get()
+                                            .getESMStore()
+                                            ->get<ESM::GameSetting>()
+                                            .find("fHoldBreathTime")
+                                            ->mValue.getFloat();
+        player.getClass().getNpcStats(player).setTimeToStartDrowning(holdBreath);
+
+        // Dive with the breathing tube: while it is out (L2 held), Ready Magic takes her down and Jump brings her up;
+        // let go of L2 and she floats back up to the surface, where the game's own swimming goes on.
+        const MWBase::InputManager* input = MWBase::Environment::get().getInputManager();
+        const auto held = [&](int action) { return input->getActionValue(action) > 0.5f; };
+        float depth = mSwimDepth.load();
+        if (hiddenSwimMotions().count(motion) && held(MWInput::A_Sneak))
+        {
+            if (held(MWInput::A_ToggleSpell))
+                depth += kDiveSpeed * dt;
+            if (held(MWInput::A_Jump))
+                depth -= kDiveSpeed * dt;
+        }
+        else
+            depth -= 2 * kDiveSpeed * dt;
+        // Never into the bottom: stop a body's height above whatever is below the surface.
+        const MWPhysics::RayCastingResult floor = world->getRayCasting()->castRay(osg::Vec3f(mw.x, mw.y, mw.z),
+            osg::Vec3f(mw.x, mw.y, mw.z - 20000.0f), {}, {},
+            MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR);
+        const float room = floor.mHit ? std::fmax(0.0f, mw.z - floor.mHitPos.z() - 40.0f) : 20000.0f;
+        depth = std::fmax(0.0f, std::fmin(depth, room));
+        mSwimDepth = depth;
+        mw.z -= depth;
     }
 
     void Driver::takeControl()
@@ -778,6 +921,9 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnR1;
         if (held(MWInput::A_GameMenu))
             in.buttons |= kurenai::proto::BtnStart;
+        // With her breathing tube out, Jump and Ready Magic dive (updateSwim); the game doesn't see them.
+        if (mLatest && hiddenSwimMotions().count(mLatest->animId) && held(MWInput::A_Sneak))
+            in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnCross | kurenai::proto::BtnL1));
 
         // Send on change, and at least 4 times a second so a lost message can't leave a button stuck.
         if (!(in == mLastInput) || mSinceInput > 0.25f)
@@ -1661,8 +1807,12 @@ namespace MWKurenai
         if (!mAnchored || mReanchor)
         {
             mReanchor = false;
-            // Kurenai starts where the player stands; from then on her motion is the game's.
-            const osg::Vec3f p = player.getRefData().getPosition().asVec3();
+            // Kurenai starts where the player stands; from then on her motion is the game's. Under water she starts at
+            // the surface: the game swims only there (its water test looks for the surface just above her).
+            osg::Vec3f p = player.getRefData().getPosition().asVec3();
+            const MWWorld::CellStore* cell = player.isInCell() ? player.getCell() : nullptr;
+            if (cell && cell->getCell()->hasWater() && p.z() < cell->getWaterLevel())
+                p.z() = cell->getWaterLevel();
             {
                 std::lock_guard<std::mutex> lock(mTransformMutex);
                 mTransform.anchorRn = mLatest->position;
@@ -1701,6 +1851,7 @@ namespace MWKurenai
             mw.z = ground + above;
             mMwZ = ground;
         }
+        updateSwim(dt, mw);
         const float yaw = lerpAngle(t.yaw(a.rotation, { 0, 0, 1 }), t.yaw(mLatest->rotation, { 0, 0, 1 }), blend);
 
         world->moveObject(player, osg::Vec3f(mw.x, mw.y, mw.z), true, true);

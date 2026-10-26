@@ -69,6 +69,9 @@ namespace MWKurenai
     private:
         void serviceThread();
         void answer(const kurenai::proto::CollisionQuery& q);
+        void answerWater(const kurenai::proto::CollisionQuery& q, const kurenai::CoordTransform& t,
+            const kurenai::proto::Vec3& a, const kurenai::proto::Vec3& b);
+        void updateSwim(float dt, kurenai::proto::Vec3& mw);
         bool send(const kurenai::proto::Payload& p);
         void takeControl();
         void releaseControl(const char* why);
@@ -110,6 +113,12 @@ namespace MWKurenai
         float mSinceInput = 0;
         std::uint32_t mLastMotion = 0xffffffffu;
         bool mForcingSneak = false; // we set Flag_ForceSneak (her crouch / wall hug, the anim map's sneak line)
+        // Swimming: how far below the game's swimming height she is in Morrowind (diving with the breathing tube;
+        // the bridge thread shifts the game's collision queries by it).
+        std::atomic<float> mSwimDepth{ 0 };
+        std::atomic<bool> mSwimming{ false }; // a swim motion plays, in a cell with water
+        std::atomic<float> mWaterLevel{ 0 }; // that cell's water level
+        std::atomic<std::uint64_t> mWaterHits{ 0 }, mSwimFloorHits{ 0 };
         void updateSneak(std::uint32_t motion);
         std::FILE* mLog = nullptr;
 
