@@ -203,7 +203,7 @@ namespace MWKurenai
             mCombat = k.mCombat;
             mGameCameraMode = k.mCameraMode.get() == "game";
             mGameLens = k.mGameLens;
-            mGameHealth = k.mGameHealth;
+            mHealthMode = k.mHealth;
             mMaxViewDistance = k.mMaxViewDistance;
             mShowStatus = k.mShowStatus;
             mHideMorrowindHud = k.mHideMorrowindHud;
@@ -469,13 +469,30 @@ namespace MWKurenai
             spells.remove(kitonSpell());
     }
 
+    void Driver::sendMorrowindHealth()
+    {
+        // [Kurenai] health = morrowind: Morrowind's health counts. Sent every frame while PCSX2 is connected, in
+        // Morrowind mode too, since the game keeps running there: it shows the share on its bar and keeps her alive.
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        const MWMechanics::DynamicStat<float>& hp = player.getClass().getCreatureStats(player).getHealth();
+        kurenai::proto::PlayerHealth m;
+        m.fraction = hp.getModified() > 0 ? std::clamp(hp.getCurrent() / hp.getModified(), 0.0f, 1.0f) : 0.0f;
+        if (std::fabs(hp.getCurrent() - mLastGameHealth) >= 0.5f)
+        {
+            Log(Debug::Info) << "Kurenai: Morrowind health " << hp.getCurrent() << " / " << hp.getModified()
+                             << " -> the game's bar";
+            mLastGameHealth = hp.getCurrent();
+        }
+        send(m);
+    }
+
     void Driver::updateHealth(float health, float healthMax)
     {
-        // healthMax 0: the game's object or the layout's health fields are missing; leave Morrowind's alone.
-        if (!mGameHealth || healthMax <= 0)
-            return;
         const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
         MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
+        // healthMax 0: the game's object or the layout's health fields are missing; leave Morrowind's alone.
+        if (mHealthMode != "game" || healthMax <= 0)
+            return;
         if (stats.isDead()) // the game's continue refills her bar; Morrowind's death stands (load a save)
             return;
         MWMechanics::DynamicStat<float> hp = stats.getHealth();
@@ -854,6 +871,8 @@ namespace MWKurenai
         if (alive != mPeerAlive)
             Log(Debug::Info) << "Kurenai: PCSX2 " << (alive ? "connected" : "stopped responding");
         mPeerAlive = alive;
+        if (mPeerAlive && mHealthMode == "morrowind")
+            sendMorrowindHealth();
         pollModeKey();
         const bool drive = mPeerAlive && !mMorrowindMode;
         if (drive && !mControlling)
