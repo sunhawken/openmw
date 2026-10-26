@@ -205,6 +205,7 @@ namespace MWKurenai
         // player's Health follows the game's bar) or "off".
         std::string mHealthMode = "morrowind";
         float mLastGameHealth = -1;
+        bool mReanchor = false; // take a new anchor on her next state (the old one still answers until then)
         void updateHealth(float health, float healthMax);
         void sendMorrowindHealth();
         std::string mSmokeModel;

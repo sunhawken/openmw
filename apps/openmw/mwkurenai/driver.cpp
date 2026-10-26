@@ -389,10 +389,9 @@ namespace MWKurenai
     void Driver::takeControl()
     {
         Log(Debug::Info) << "Kurenai: combat mode: Red Ninja's code now drives the player";
-        {
-            std::lock_guard<std::mutex> lock(mTransformMutex);
-            mAnchored = false;
-        }
+        // Re-anchor on her next state. Until then the previous anchor keeps answering the game's collision queries
+        // (she hasn't moved in Red Ninja's world meanwhile), so no query falls back to the stage's own geometry.
+        mReanchor = true;
         // A fresh anchor: Red Ninja's world starts again where she stands in Morrowind (she may have walked on in
         // Morrowind mode).
         mPrev.reset();
@@ -1659,8 +1658,9 @@ namespace MWKurenai
             return;
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWWorld::Ptr player = world->getPlayerPtr();
-        if (!mAnchored)
+        if (!mAnchored || mReanchor)
         {
+            mReanchor = false;
             // Kurenai starts where the player stands; from then on her motion is the game's.
             const osg::Vec3f p = player.getRefData().getPosition().asVec3();
             {
