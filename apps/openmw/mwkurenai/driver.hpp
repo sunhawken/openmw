@@ -193,6 +193,7 @@ namespace MWKurenai
         } mPs2Anim = Ps2Anim::Off;
         std::map<std::uint32_t, kurenai::SkeletonMap> mSkeletonMaps; // by model CRC (0: maps without a model line)
         std::uint32_t mPoseModel = 0xffffffffu; // the model of the last pose (logged when it changes)
+        std::map<std::uint32_t, std::uint32_t> mPickedMaps; // model id no map names -> the map its limbs fit
         std::vector<kurenai::proto::Vec3> mPoseBones; // the last pose, Red Ninja world
 
         // Her wire, drawn while the game has it out: from her hand (the game's) to where it is fixed.

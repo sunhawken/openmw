@@ -1425,15 +1425,27 @@ namespace MWKurenai
         mPoseBones = p.bones;
         if (mPs2Anim == Ps2Anim::Off || !mLatest)
             return;
-        // Each model (outfit) has its own bone layout; an unknown one is left to Morrowind's animation.
+        // Each model (outfit) has its own bone layout. The model id also changes with words the game rewrites (her
+        // kimono showed a dozen ids across stages), so a model no map names gets the map that gives its pose human
+        // limbs, once; only if none fits does Morrowind animate her.
         auto it = mSkeletonMaps.find(p.model);
         if (it == mSkeletonMaps.end())
-            it = mSkeletonMaps.find(0);
+        {
+            auto picked = mPickedMaps.find(p.model);
+            if (picked == mPickedMaps.end())
+                if (const std::optional<std::uint32_t> key = kurenai::pickSkeletonMap(p.bones, mSkeletonMaps))
+                {
+                    picked = mPickedMaps.emplace(p.model, *key).first;
+                    Log(Debug::Info) << "Kurenai: model " << std::hex << p.model << " has the bones of map " << *key
+                                     << std::dec;
+                }
+            it = picked != mPickedMaps.end() ? mSkeletonMaps.find(picked->second) : mSkeletonMaps.find(0);
+        }
         if (p.model != mPoseModel)
         {
             mPoseModel = p.model;
             Log(Debug::Info) << "Kurenai: model " << std::hex << p.model << std::dec << " (" << p.bones.size()
-                             << " bones): " << (it != mSkeletonMaps.end() ? "skeleton map found" : "no skeleton map, "
+                             << " bones): " << (it != mSkeletonMaps.end() ? "skeleton map found" : "no skeleton map yet, "
                                                                                                      "Morrowind animates");
         }
         if (it == mSkeletonMaps.end())
