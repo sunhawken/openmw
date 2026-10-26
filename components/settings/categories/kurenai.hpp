@@ -42,6 +42,7 @@ namespace Settings
         SettingValue<std::string> mSmokeModel{ mIndex, "Kurenai", "smoke model" };
         SettingValue<float> mSmokeRadius{ mIndex, "Kurenai", "smoke radius", makeClampSanitizerFloat(50.0f, 5000.0f) };
         SettingValue<bool> mGameLens{ mIndex, "Kurenai", "game lens" };
+        SettingValue<bool> mGameHealth{ mIndex, "Kurenai", "game health" };
         SettingValue<float> mMaxViewDistance{ mIndex, "Kurenai", "max view distance", makeMaxStrictSanitizerFloat(0) };
     };
 }

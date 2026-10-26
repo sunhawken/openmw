@@ -203,6 +203,7 @@ namespace MWKurenai
             mCombat = k.mCombat;
             mGameCameraMode = k.mCameraMode.get() == "game";
             mGameLens = k.mGameLens;
+            mGameHealth = k.mGameHealth;
             mMaxViewDistance = k.mMaxViewDistance;
             mShowStatus = k.mShowStatus;
             mHideMorrowindHud = k.mHideMorrowindHud;
@@ -466,6 +467,29 @@ namespace MWKurenai
             spells.add(kitonSpell());
         else if (spells.hasSpell(kitonSpell()))
             spells.remove(kitonSpell());
+    }
+
+    void Driver::updateHealth(float health, float healthMax)
+    {
+        // healthMax 0: the game's object or the layout's health fields are missing; leave Morrowind's alone.
+        if (!mGameHealth || healthMax <= 0)
+            return;
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
+        if (stats.isDead()) // the game's continue refills her bar; Morrowind's death stands (load a save)
+            return;
+        MWMechanics::DynamicStat<float> hp = stats.getHealth();
+        const float target = hp.getModified() * std::clamp(health / healthMax, 0.0f, 1.0f);
+        if (std::fabs(hp.getCurrent() - target) < 0.01f)
+            return;
+        if (health != mLastGameHealth)
+        {
+            Log(Debug::Info) << "Kurenai: health " << health << " / " << healthMax << " -> " << target << " / "
+                             << hp.getModified();
+            mLastGameHealth = health;
+        }
+        hp.setCurrent(target, true);
+        stats.setHealth(hp);
     }
 
     void Driver::sendHookTargets(const kurenai::CoordTransform& t, float dt)
@@ -1670,6 +1694,7 @@ namespace MWKurenai
         applyAnimation(mLatest->animId);
         updateSneak(mLatest->animId);
         updateKiton(mLatest->animId, mLatest->kiton);
+        updateHealth(mLatest->health, mLatest->healthMax);
         if (mLatest->animId != mItemMotion)
         {
             mItemMotion = mLatest->animId;

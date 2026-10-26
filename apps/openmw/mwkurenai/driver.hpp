@@ -201,6 +201,10 @@ namespace MWKurenai
         // threw it, as long as the game's; actors in it are blinded, choke (paralysed) and lose her.
         bool mKitonOn = false;
         void updateKiton(std::uint32_t motion, float kiton);
+        // The player's Health follows the game's health bar ([Kurenai] game health).
+        bool mGameHealth = true;
+        float mLastGameHealth = -1;
+        void updateHealth(float health, float healthMax);
         std::string mSmokeModel;
         float mSmokeRadius = 300;
         std::uint32_t mItemMotion = 0xffffffffu;
