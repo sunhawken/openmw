@@ -25,10 +25,11 @@
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
+#include "../mwinput/actions.hpp"
+#include "../mwmechanics/aisequence.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/damagesourcetype.hpp"
 #include "../mwmechanics/drawstate.hpp"
-#include "../mwinput/actions.hpp"
 #include "../mwmechanics/movement.hpp"
 #include "../mwmechanics/npcstats.hpp"
 #include "../mwphysics/joltlayers.hpp"
@@ -231,6 +232,7 @@ namespace MWKurenai
             logPath = k.mStateLog;
             mPeerTimeoutNs = static_cast<std::uint64_t>(k.mPeerTimeout * 1e9f);
             mInterpolate = k.mInterpolate;
+            mPredict = k.mPredict;
             mAnswerCollision = k.mAnswerCollision;
             mCombat = k.mCombat;
             mGameCameraMode = k.mCameraMode.get() == "game";
@@ -242,6 +244,10 @@ namespace MWKurenai
             mHudScale = k.mGameHudScale;
             mProxyEnabled = k.mProxies;
             mProxyRadius = k.mProxyRadius;
+            mLockOn = k.mLockOn;
+            mLockRange = k.mLockRange;
+            mRadarRegion = k.mRadarRegion;
+            mRadarRange = k.mRadarRange;
             mSmokeModel = k.mSmokeModel;
             mHooks = k.mHookTargets;
             mSmokeRadius = k.mSmokeRadius;
@@ -314,6 +320,8 @@ namespace MWKurenai
             mThread.join();
         if (mProxyDamage)
             Log(Debug::Info) << "Kurenai: proxies: " << mProxyDamage << " hits passed on, " << mProxyKills << " kills";
+        Log(Debug::Info) << "Kurenai: lock-on: " << mLockPicks << " targets picked, " << mLockMisses
+                         << " presses with nothing to lock on";
         if (mSmokeBombs)
             Log(Debug::Info) << "Kurenai: smoke bombs: " << mSmokeBombs << ", " << mSmokedActors << " actors caught";
         if (mCombatEvents)
@@ -591,6 +599,12 @@ namespace MWKurenai
         updateSneak(0xffffffffu);
         updateKiton(0xffffffffu, 0);
         clearSmoke();
+        if (!mLockActor.isEmpty())
+            send(kurenai::proto::LockTarget{});
+        mLockActor = MWWorld::Ptr();
+        mLockHeld = false;
+        if (mLockMarker)
+            mLockMarker->setVisible(false);
     }
 
     void Driver::updateSneak(std::uint32_t motion)
@@ -678,7 +692,7 @@ namespace MWKurenai
             ++mHookScans;
             MWBase::World* world = MWBase::Environment::get().getWorld();
             const MWWorld::Ptr player = world->getPlayerPtr();
-            const osg::Vec3f feet = player.getRefData().getPosition().asVec3();
+            const osg::Vec3f feet = mGameFeet;
             const osg::Vec3f head = feet + osg::Vec3f(0, 0, 120.0f);
             const float reach = kGameReach * t.scale;
             // Only the world itself: actors walking by must not make places come and go.
@@ -1162,17 +1176,18 @@ namespace MWKurenai
         {
             if (actor == player || actor.getClass().getCreatureStats(actor).isDead())
                 continue;
-            // An actor with a proxy takes the game's own hits on that proxy (handleProxyStatus), not these.
-            if (const auto id = mProxyIds.find(actor.getBase()); id != mProxyIds.end())
-                if (const auto p = mProxies.find(id->second); p != mProxies.end() && p->second.assigned)
-                    continue;
+            // Every living actor takes her blade here, proxies too: PCSX2 puts a proxy's health back during her
+            // attacks, so the game's own blade on it passes nothing on twice.
             if (std::find(mHitThisAttack.begin(), mHitThisAttack.end(), actor.getBase()) != mHitThisAttack.end())
                 continue;
             // The actor as an upright capsule: its collision half extents around its feet position.
             const osg::Vec3f half = world->getHalfExtents(actor);
             const osg::Vec3f feet = actor.getRefData().getPosition().asVec3();
             osg::Vec3f hitPos;
-            const float d = segmentDistance(p0, p1, feet, feet + osg::Vec3f(0, 0, 2 * half.z()), hitPos);
+            // At least as tall as her blade swings over the ground: a rat or a mudcrab is struck as in Morrowind, where
+            // a swing hits whatever is in front, not only what the blade's line passes through.
+            const float top = std::max(2 * half.z(), 140.0f * t.scale);
+            const float d = segmentDistance(p0, p1, feet, feet + osg::Vec3f(0, 0, top), hitPos);
             if (d > radius + std::max(half.x(), half.y()))
                 continue;
             mHitThisAttack.push_back(actor.getBase());
@@ -1208,13 +1223,17 @@ namespace MWKurenai
     {
         MWBase::World* world = MWBase::Environment::get().getWorld();
         const MWWorld::Ptr player = world->getPlayerPtr();
-        const osg::Vec3f here = player.getRefData().getPosition().asVec3();
+        const osg::Vec3f here = mGameFeet; // where the game has her (not where she is shown ahead of it)
         std::vector<MWWorld::Ptr> actors;
         MWBase::Environment::get().getMechanicsManager()->getActorsInRange(here, mProxyRadius, actors);
         std::vector<std::pair<float, MWWorld::Ptr>> near;
         for (const MWWorld::Ptr& a : actors)
             if (a != player && a.getRefData().isEnabled() && !a.getClass().getCreatureStats(a).isDead())
                 near.emplace_back((a.getRefData().getPosition().asVec3() - here).length2(), a);
+        // The actor she is locked on first, so the game's own lock-on, stealth kill and darts have it too.
+        for (auto& n : near)
+            if (n.second == mLockActor)
+                n.first = -1;
         std::sort(near.begin(), near.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
         if (near.size() > kurenai::proto::kMaxProxies)
             near.resize(kurenai::proto::kMaxProxies);
@@ -1223,10 +1242,7 @@ namespace MWKurenai
         std::map<std::uint32_t, Proxy> keep;
         for (const auto& [d, actor] : near)
         {
-            auto [it, isNew] = mProxyIds.emplace(actor.getBase(), mNextProxyId);
-            if (isNew)
-                ++mNextProxyId;
-            const std::uint32_t id = it->second;
+            const std::uint32_t id = actorId(actor);
             Proxy& p = keep[id];
             if (const auto old = mProxies.find(id); old != mProxies.end())
                 p = old->second;
@@ -1241,6 +1257,228 @@ namespace MWKurenai
         }
         mProxies.swap(keep);
         send(msg);
+    }
+
+    std::uint32_t Driver::actorId(const MWWorld::Ptr& actor)
+    {
+        auto [it, isNew] = mProxyIds.emplace(actor.getBase(), mNextProxyId);
+        if (isNew)
+            ++mNextProxyId;
+        return it->second;
+    }
+
+    bool Driver::lockable(const MWWorld::Ptr& actor) const
+    {
+        return !actor.isEmpty() && actor.getRefData().isEnabled() && actor.getRefData().getBaseNode()
+            && !actor.getClass().getCreatureStats(actor).isDead();
+    }
+
+    MWWorld::Ptr Driver::pickLockTarget() const
+    {
+        // Any living NPC or creature in front of her (or right next to her) within lock range that she can see; the
+        // hostile ones first, then the nearest and most straight ahead. The stage's own enemies play no part.
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const MWWorld::Ptr player = world->getPlayerPtr();
+        const osg::Vec3f here = player.getRefData().getPosition().asVec3();
+        const float yaw = player.getRefData().getPosition().rot[2];
+        const osg::Vec3f facing(std::sin(yaw), std::cos(yaw), 0);
+        const osg::Vec3f eye = here + osg::Vec3f(0, 0, 2 * world->getHalfExtents(player).z() * 0.85f);
+        std::vector<MWWorld::Ptr> actors;
+        MWBase::MechanicsManager* mechanics = MWBase::Environment::get().getMechanicsManager();
+        mechanics->getActorsInRange(here, mLockRange, actors);
+        MWWorld::Ptr best;
+        float bestScore = 1e30f;
+        for (const MWWorld::Ptr& a : actors)
+        {
+            if (a == player || !lockable(a))
+                continue;
+            const osg::Vec3f feet = a.getRefData().getPosition().asVec3();
+            osg::Vec3f flat = feet - here;
+            flat.z() = 0;
+            const float dist = flat.length();
+            if (dist > mLockRange)
+                continue;
+            const float angle = dist > 1 ? std::acos(std::clamp(flat * facing / dist, -1.0f, 1.0f)) : 0.0f;
+            const bool hostile = a.getClass().getCreatureStats(a).getAiSequence().isInCombat(player)
+                || mechanics->isAggressive(a, player);
+            // Ahead of her; one close by from any side (a hostile one from farther: it is coming for her).
+            if (angle > osg::DegreesToRadians(75.0f) && dist > (hostile ? 1000.0f : 300.0f))
+            {
+                Log(Debug::Verbose) << "Kurenai: lock-on skips " << a.getCellRef().getRefId() << " at " << dist << ", "
+                                    << osg::RadiansToDegrees(angle) << " deg: behind her";
+                continue;
+            }
+            // Seen if the line from her eyes to its middle or just over its top is clear (a small creature's middle
+            // can be hidden by a bank its back shows over).
+            const float height = 2 * world->getHalfExtents(a).z();
+            bool seen = false;
+            for (const float z : { height * 0.6f, height + 10.0f })
+                seen = seen
+                    || !world->getRayCasting()
+                            ->castRay(eye, feet + osg::Vec3f(0, 0, z), { player, a }, {},
+                                MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR)
+                            .mHit;
+            if (!seen)
+            {
+                Log(Debug::Verbose) << "Kurenai: lock-on skips " << a.getCellRef().getRefId() << " at " << dist
+                                    << ": out of sight";
+                continue;
+            }
+            // Hostile ones first: a quarter of the score, so one coming for her wins over a bystander ahead.
+            const float score = dist * (1.0f + angle) * (hostile ? 0.25f : 1.0f);
+            Log(Debug::Verbose) << "Kurenai: lock-on candidate " << a.getCellRef().getRefId() << " at " << dist << ", "
+                                << osg::RadiansToDegrees(angle) << " deg" << (hostile ? ", hostile" : "") << ": "
+                                << score;
+            if (score < bestScore)
+                bestScore = score, best = a;
+        }
+        return best;
+    }
+
+    void Driver::updateLockOn(const kurenai::CoordTransform& t)
+    {
+        const bool held = (mLatest->flags & kurenai::proto::FlagLockHeld) != 0;
+        const MWWorld::Ptr before = mLockActor;
+        bool near = false;
+        if (!mLockActor.isEmpty())
+        {
+            // Still among the actors around her (a cell change can unload it: never touch a stale reference).
+            std::vector<MWWorld::Ptr> actors;
+            MWBase::Environment::get().getMechanicsManager()->getActorsInRange(
+                MWBase::Environment::get().getWorld()->getPlayerPtr().getRefData().getPosition().asVec3(),
+                mLockRange * 1.5f, actors);
+            near = std::find(actors.begin(), actors.end(), mLockActor) != actors.end();
+            if (!near)
+                mLockActor = MWWorld::Ptr();
+        }
+        if (!held)
+            mLockActor = MWWorld::Ptr();
+        else if (!mLockHeld || !near || !lockable(mLockActor))
+        {
+            // R1 pressed, or the target died or got away while it is held: the next one (none: she stays unlocked
+            // until R1 is pressed again).
+            const bool pressed = !mLockHeld;
+            mLockActor = pressed || !before.isEmpty() ? pickLockTarget() : MWWorld::Ptr();
+            if (!mLockActor.isEmpty())
+                ++mLockPicks;
+            else if (pressed)
+                ++mLockMisses;
+        }
+        mLockHeld = held;
+        if (mLockActor != before)
+            Log(Debug::Info) << "Kurenai: lock-on "
+                             << (mLockActor.isEmpty() ? std::string("off")
+                                                      : "on " + mLockActor.getCellRef().getRefId().toDebugString());
+        if (mLockActor.isEmpty())
+        {
+            if (!before.isEmpty())
+                send(kurenai::proto::LockTarget{});
+            return;
+        }
+        kurenai::proto::LockTarget msg;
+        msg.actorId = actorId(mLockActor);
+        const ESM::Position& pos = mLockActor.getRefData().getPosition();
+        msg.position = t.toRedNinja({ pos.pos[0], pos.pos[1], pos.pos[2] });
+        send(msg);
+    }
+
+    void Driver::updateLockMarker()
+    {
+        if (!mLockMarker)
+        {
+            // A red diamond with a dark outline, drawn once.
+            constexpr int n = 32;
+            MyGUI::RenderManager& rm = MyGUI::RenderManager::getInstance();
+            mLockTexture = rm.createTexture("kurenai_lock_marker");
+            mLockTexture->createManual(n, n, MyGUI::TextureUsage::Write, MyGUI::PixelFormat::R8G8B8A8);
+            if (auto* data = static_cast<std::uint32_t*>(mLockTexture->lock(MyGUI::TextureUsage::Write)))
+                for (int y = 0; y < n; ++y)
+                    for (int x = 0; x < n; ++x)
+                    {
+                        const int d = std::abs(x - n / 2) + std::abs(y - n / 2);
+                        data[y * n + x] = d >= 11 && d <= 13 ? 0xff2020e0u : d >= 10 && d <= 14 ? 0xc0000000u : 0u;
+                    }
+            mLockTexture->unlock();
+            mLockMarker = MyGUI::Gui::getInstance().createWidget<MyGUI::ImageBox>(
+                "ImageBox", MyGUI::IntCoord(0, 0, n, n), MyGUI::Align::Default, "HUD");
+            mLockMarker->setNeedMouseFocus(false);
+            mLockMarker->setImageTexture("kurenai_lock_marker");
+            mLockMarker->setVisible(false);
+        }
+        bool shown = false;
+        if (!mLockActor.isEmpty())
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const osg::Vec3f feet = mLockActor.getRefData().getPosition().asVec3();
+            const osg::Vec3f chest = feet + osg::Vec3f(0, 0, world->getHalfExtents(mLockActor).z() * 1.2f);
+            const osg::Vec2f at = world->getRenderingManager()->getScreenCoords(osg::BoundingBox(chest, chest));
+            if (at != osg::Vec2f(0.5f, 0.f)) // off screen
+            {
+                const MyGUI::IntSize view = MyGUI::RenderManager::getInstance().getViewSize();
+                const int size = std::max(24, view.height / 24);
+                mLockMarker->setCoord(static_cast<int>(at.x() * view.width) - size / 2,
+                    static_cast<int>(at.y() * view.height) - size / 2, size, size);
+                shown = true;
+            }
+        }
+        mLockMarker->setVisible(shown && !mHudMenuUp);
+    }
+
+    void Driver::drawRadar(std::uint32_t* data, int pitch, int w, int h)
+    {
+        // Seen from above with her facing up: a dark disc with a red rim, a white arrow for her, red dots for hostile
+        // actors, yellow for the others, a ring around her lock-on target. Colours are 0xAABBGGRR.
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const MWWorld::Ptr player = world->getPlayerPtr();
+        const osg::Vec3f here = player.getRefData().getPosition().asVec3();
+        const float yaw = player.getRefData().getPosition().rot[2];
+        const float cx = w / 2.0f, cy = h / 2.0f, radius = std::min(w, h) / 2.0f - 2.0f;
+        auto put = [&](int x, int y, std::uint32_t c) {
+            if (x >= 0 && y >= 0 && x < w && y < h)
+                data[static_cast<std::size_t>(y) * pitch + x] = c;
+        };
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+            {
+                const float d = std::hypot(x + 0.5f - cx, y + 0.5f - cy);
+                if (d <= radius - 2)
+                    put(x, y, 0x90100808u);
+                else if (d <= radius)
+                    put(x, y, 0xe02020a0u);
+            }
+        auto dot = [&](float x, float y, float r, std::uint32_t c, bool ring) {
+            for (int py = static_cast<int>(y - r - 1); py <= static_cast<int>(y + r + 1); ++py)
+                for (int px = static_cast<int>(x - r - 1); px <= static_cast<int>(x + r + 1); ++px)
+                {
+                    const float d = std::hypot(px + 0.5f - x, py + 0.5f - y);
+                    if (ring ? (d <= r && d >= r - 1.2f) : d <= r)
+                        put(px, py, c);
+                }
+        };
+        std::vector<MWWorld::Ptr> actors;
+        MWBase::MechanicsManager* mechanics = MWBase::Environment::get().getMechanicsManager();
+        mechanics->getActorsInRange(here, mRadarRange, actors);
+        const float k = (radius - 4) / mRadarRange;
+        for (const MWWorld::Ptr& a : actors)
+        {
+            if (a == player || !lockable(a))
+                continue;
+            const osg::Vec3f d = a.getRefData().getPosition().asVec3() - here;
+            const float ahead = d.x() * std::sin(yaw) + d.y() * std::cos(yaw);
+            const float right = d.x() * std::cos(yaw) - d.y() * std::sin(yaw);
+            if (std::hypot(ahead, right) > mRadarRange)
+                continue;
+            const bool hostile = a.getClass().getCreatureStats(a).getAiSequence().isInCombat(player)
+                || mechanics->isAggressive(a, player);
+            const float x = cx + right * k, y = cy - ahead * k;
+            dot(x, y, 2.5f, hostile ? 0xff2828ffu : 0xff30e0f0u, false);
+            if (a == mLockActor)
+                dot(x, y, 5.5f, 0xffffffffu, true);
+        }
+        // Her: a small arrow pointing up.
+        for (int i = 0; i < 6; ++i)
+            for (int j = -i / 2; j <= i / 2; ++j)
+                put(static_cast<int>(cx) + j, static_cast<int>(cy) - 3 + i, 0xffffffffu);
     }
 
     void Driver::handleProxyStatus(const kurenai::proto::ProxyStatus& status)
@@ -1275,6 +1513,8 @@ namespace MWKurenai
                 ++mProxyKills;
                 how = "killed";
             }
+            else if (s.health > p.lastHealth)
+                p.lastHealth = s.health; // PCSX2 put its health back (her blade hits through the engine's test)
             else if (s.maxHealth > 0 && s.health < p.lastHealth)
             {
                 // The same share of its health as the game's enemy lost.
@@ -1539,6 +1779,7 @@ namespace MWKurenai
 
     void Driver::hideHud()
     {
+        mHudMenuUp = false;
         for (MyGUI::ImageBox* box : mHudBoxes)
             box->setVisible(false);
         if (mMorrowindHudHidden)
@@ -1561,6 +1802,15 @@ namespace MWKurenai
             mSinceHudFrame = 0;
             ++mHudFrames;
             const kurenai::HudFrame& f = mHudFrame;
+            // A full-screen menu (the item screen, pause, Game Over) owns every pixel while it is up: it is shown
+            // whole and alone, without Morrowind's radar or the lock-on marker over it.
+            mHudMenuUp = false;
+            for (std::size_t i = 0; i < f.regions.size() && !mHudMenuUp; ++i)
+            {
+                const kurenai::HudRegion& r = f.regions[i];
+                if (r.x == 0 && r.y == 0 && r.w >= f.width && r.h >= f.height && !f.owner.empty())
+                    mHudMenuUp = f.owner[f.owner.size() / 2] == i + 1 && f.owner.front() == i + 1;
+            }
             // One texture per region, holding only the pixels the region owns (regions can overlap on the game's
             // screen, but each goes to its own corner here). GL textures are a power of two: the region sits in
             // the top-left corner.
@@ -1589,6 +1839,13 @@ namespace MWKurenai
                 if (auto* data = static_cast<std::uint32_t*>(t.texture->lock(MyGUI::TextureUsage::Write)))
                 {
                     std::fill_n(data, static_cast<std::size_t>(tw) * th, 0u);
+                    if (static_cast<int>(i) + 1 == mRadarRegion)
+                    {
+                        if (!mHudMenuUp)
+                            drawRadar(data, tw, r.w, r.h);
+                        t.texture->unlock();
+                        continue;
+                    }
                     const std::uint8_t own = static_cast<std::uint8_t>(i + 1);
                     for (int y = 0; y < r.h && r.y + y < static_cast<int>(f.height); ++y)
                         for (int x = 0; x < r.w && r.x + x < static_cast<int>(f.width); ++x)
@@ -1630,8 +1887,18 @@ namespace MWKurenai
                 };
                 const int w = static_cast<int>(std::lround(r.w * scale));
                 const int h = static_cast<int>(std::lround(r.h * scale));
-                box->setCoord(place(r.x, r.w, static_cast<int>(f.width), view.width),
-                    place(r.y, r.h, static_cast<int>(f.height), view.height), w, h);
+                if (r.x == 0 && r.y == 0 && r.w >= f.width && r.h >= f.height)
+                {
+                    // A full-screen region always fits the window whole (whatever the HUD scale), centred.
+                    const float fit = std::min(
+                        view.width / static_cast<float>(f.width), view.height / static_cast<float>(f.height));
+                    const int fw = static_cast<int>(std::lround(r.w * fit));
+                    const int fh = static_cast<int>(std::lround(r.h * fit));
+                    box->setCoord((view.width - fw) / 2, (view.height - fh) / 2, fw, fh);
+                }
+                else
+                    box->setCoord(place(r.x, r.w, static_cast<int>(f.width), view.width),
+                        place(r.y, r.h, static_cast<int>(f.height), view.height), w, h);
                 box->setImageTexture(mHudTextures[i].name);
                 box->setImageCoord(MyGUI::IntCoord(0, 0, r.w, r.h));
                 box->setImageTile(MyGUI::IntSize(r.w, r.h));
@@ -1706,8 +1973,21 @@ namespace MWKurenai
             std::lock_guard<std::mutex> lock(mTransformMutex);
             t = mTransform;
         }
-        const kurenai::proto::Vec3 eye = t.position(mLatest->cameraEye);
-        const kurenai::proto::Vec3 target = t.position(mLatest->cameraTarget);
+        // Moved on (or blended) the same way as her, so she and the camera keep together between the game's states;
+        // a camera cut (a step of more than a few metres) is taken as it is.
+        kurenai::proto::Vec3 eyeRn = mLatest->cameraEye, targetRn = mLatest->cameraTarget;
+        if (mPrev && (mPrev->flags & kurenai::proto::FlagCamera) && mBlend != 1.0f)
+        {
+            const kurenai::proto::Vec3& e0 = mPrev->cameraEye;
+            const float dx = eyeRn.x - e0.x, dy = eyeRn.y - e0.y, dz = eyeRn.z - e0.z;
+            if (dx * dx + dy * dy + dz * dz < 300.0f * 300.0f)
+            {
+                eyeRn = lerp(e0, eyeRn, mBlend);
+                targetRn = lerp(mPrev->cameraTarget, targetRn, mBlend);
+            }
+        }
+        const kurenai::proto::Vec3 eye = t.position(eyeRn);
+        const kurenai::proto::Vec3 target = t.position(targetRn);
         osg::Vec3f dir(target.x - eye.x, target.y - eye.y, target.z - eye.z);
         const float len = dir.normalize();
         if (len < 1e-3f)
@@ -1860,8 +2140,19 @@ namespace MWKurenai
             std::lock_guard<std::mutex> lock(mTransformMutex);
             t = mTransform;
         }
-        const float blend = (mPrev && mInterpolate) ? std::fmin(1.0f, mSinceLatest * kGameHz) : 1.0f;
+        // Interpolate: between her last two states (up to one game frame behind). Predict: past the newest state at
+        // her last step's speed, for at most one game frame (no delay; a jump of more than a few metres, as a warp or a
+        // new anchor, is not carried on).
         const kurenai::proto::PlayerState& a = mPrev ? *mPrev : *mLatest;
+        float blend = (mPrev && mInterpolate) ? std::fmin(1.0f, mSinceLatest * kGameHz) : 1.0f;
+        if (mPrev && mPredict)
+        {
+            const float dx = mLatest->position.x - a.position.x, dy = mLatest->position.y - a.position.y,
+                        dz = mLatest->position.z - a.position.z;
+            blend
+                = dx * dx + dy * dy + dz * dz < 200.0f * 200.0f ? 1.0f + std::fmin(1.0f, mSinceLatest * kGameHz) : 1.0f;
+        }
+        mBlend = blend;
         const kurenai::proto::Vec3 rn = lerp(a.position, mLatest->position, blend);
         kurenai::proto::Vec3 mw = t.position(rn);
         if (mFollowGround)
@@ -1882,6 +2173,12 @@ namespace MWKurenai
         updateSwim(dt, mw);
         const float yaw = lerpAngle(t.yaw(a.rotation, { 0, 0, 1 }), t.yaw(mLatest->rotation, { 0, 0, 1 }), blend);
 
+        {
+            // What goes back to the game (proxies, hook places) is measured from where the game has her, so showing
+            // her ahead of its newest state never changes what the game does.
+            const kurenai::proto::Vec3 at = t.position(mLatest->position);
+            mGameFeet = osg::Vec3f(at.x, at.y, mw.z);
+        }
         world->moveObject(player, osg::Vec3f(mw.x, mw.y, mw.z), true, true);
         player = world->getPlayerPtr();
         world->rotateObject(player, osg::Vec3f(0, 0, yaw), MWBase::RotationFlag_none);
@@ -1889,6 +2186,11 @@ namespace MWKurenai
             sendProxyTargets(t);
         if (mHooks)
             sendHookTargets(t, dt);
+        if (mLockOn)
+        {
+            updateLockOn(t);
+            updateLockMarker();
+        }
         applyAnimation(mLatest->animId);
         updateSneak(mLatest->animId);
         updateKiton(mLatest->animId, mLatest->kiton);

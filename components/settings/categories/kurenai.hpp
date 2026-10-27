@@ -24,6 +24,7 @@ namespace Settings
         SettingValue<bool> mCombat{ mIndex, "Kurenai", "combat" };
         SettingValue<float> mPeerTimeout{ mIndex, "Kurenai", "peer timeout", makeClampSanitizerFloat(0.1f, 60.0f) };
         SettingValue<bool> mInterpolate{ mIndex, "Kurenai", "interpolate" };
+        SettingValue<bool> mPredict{ mIndex, "Kurenai", "predict" };
         SettingValue<std::string> mAnimationMap{ mIndex, "Kurenai", "animation map" };
         SettingValue<std::string> mStateLog{ mIndex, "Kurenai", "state log" };
         SettingValue<std::string> mPs2Animation{ mIndex, "Kurenai", "ps2 animation",
@@ -38,6 +39,10 @@ namespace Settings
         SettingValue<std::string> mModeToggleKey{ mIndex, "Kurenai", "mode toggle key" };
         SettingValue<bool> mProxies{ mIndex, "Kurenai", "proxies" };
         SettingValue<float> mProxyRadius{ mIndex, "Kurenai", "proxy radius", makeClampSanitizerFloat(100.0f, 20000.0f) };
+        SettingValue<bool> mLockOn{ mIndex, "Kurenai", "lock on" };
+        SettingValue<float> mLockRange{ mIndex, "Kurenai", "lock range", makeClampSanitizerFloat(100.0f, 20000.0f) };
+        SettingValue<int> mRadarRegion{ mIndex, "Kurenai", "radar region", makeClampSanitizerInt(0, 64) };
+        SettingValue<float> mRadarRange{ mIndex, "Kurenai", "radar range", makeClampSanitizerFloat(100.0f, 50000.0f) };
         SettingValue<bool> mHookTargets{ mIndex, "Kurenai", "hook targets" };
         SettingValue<std::string> mSmokeModel{ mIndex, "Kurenai", "smoke model" };
         SettingValue<float> mSmokeRadius{ mIndex, "Kurenai", "smoke radius", makeClampSanitizerFloat(50.0f, 5000.0f) };

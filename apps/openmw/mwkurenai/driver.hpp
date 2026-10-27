@@ -99,6 +99,9 @@ namespace MWKurenai
         bool mCollisionWasOn = false;
         bool mFollowGround = true; // [Kurenai] height mode = ground
         bool mInterpolate = true;
+        bool mPredict = true; // carry her on past the newest state instead of interpolating behind it
+        osg::Vec3f mGameFeet; // Morrowind position of her newest game state (no prediction)
+        float mBlend = 1; // this frame's place between the last two states (above 1: predicted)
         std::uint64_t mPeerTimeoutNs = 2'000'000'000; // PCSX2 can stall while it loads a stage
         float mRnGroundY = 0; // Red Ninja height of Kurenai's last ground contact
         float mMwZ = 0; // last applied Morrowind height
@@ -171,6 +174,24 @@ namespace MWKurenai
         std::uint32_t mNextProxyId = 1;
         std::uint32_t mLockedProxy = 0; // id Kurenai is locked onto, 0 = none
         std::uint64_t mProxyKills = 0, mProxyDamage = 0;
+
+        // Lock-on (R1): Morrowind picks the target from all living actors; the game turns her toward it.
+        bool mLockOn = true;
+        float mLockRange = 3000;
+        bool mLockHeld = false;
+        MWWorld::Ptr mLockActor;
+        std::uint64_t mLockPicks = 0, mLockMisses = 0;
+        MyGUI::ImageBox* mLockMarker = nullptr;
+        MyGUI::ITexture* mLockTexture = nullptr;
+        void updateLockOn(const kurenai::CoordTransform& t);
+        MWWorld::Ptr pickLockTarget() const;
+        bool lockable(const MWWorld::Ptr& actor) const;
+        void updateLockMarker();
+        std::uint32_t actorId(const MWWorld::Ptr& actor);
+        // Morrowind's radar, drawn into the game HUD's radar region (0 = the game's own)
+        int mRadarRegion = 2;
+        float mRadarRange = 4000;
+        void drawRadar(std::uint32_t* data, int pitch, int w, int h);
         // Kill sync: the victim of her stealth kill moves as the game's enemy does (ProxyPose): its skeleton follows
         // the enemy's through the enemy's skeleton map, Morrowind's own animation (and the death ragdoll) held off
         // until the body lies still, then the last pose is kept.
@@ -304,6 +325,7 @@ namespace MWKurenai
         float mHudScale = 1, mSinceHudFrame = 1e9f;
         bool mHideMorrowindHud = true, mMorrowindHudHidden = false;
         std::uint64_t mHudFrames = 0;
+        bool mHudMenuUp = false; // a full-screen game menu (items, pause) is shown
         void updateHud(float dt);
         void hideHud();
         std::atomic<std::uint64_t> mQueries{ 0 }, mQueryHits{ 0 }, mQueriesDeclined{ 0 }, mQueryNs{ 0 };
