@@ -299,6 +299,12 @@ namespace MWKurenai
         std::map<std::uint32_t, int> mHookMisses; // scans in a row a sent place was not found again (kept up to 4)
         std::uint64_t mHookScans = 0;
         void sendHookTargets(const kurenai::CoordTransform& t, float dt);
+        // The Hook's hand aim along the engine's own ray (sendHookTargets): its heading and pitch (radians, Morrowind),
+        // and the surface point it meets.
+        bool mHookAiming = false;
+        float mAimYaw = 0, mAimPitch = 0;
+        bool mAimHit = false;
+        osg::Vec3f mAimAt;
         void startSmoke(const osg::Vec3f& at);
         void updateSmoke(float dt);
         void clearSmoke();

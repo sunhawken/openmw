@@ -704,6 +704,96 @@ namespace MWKurenai
         constexpr float kGameReach = 1400.0f;
         constexpr float kMinAbove = 220.0f; // Morrowind units above her feet: a hook is for going up or across
         constexpr std::size_t kMaxTargets = 8;
+        // Holding △ with the Hook (1264, then 1260) aims it by hand: the game picks the hook point nearest its view,
+        // turns its camera onto it and ignores the right stick. Once the right stick moves during the aim, the engine
+        // sends one place only, where a ray from her head meets any Morrowind surface (a wall, a ceiling, a branch,
+        // the ground; any height), and the stick steers that ray from the place the game had picked. The game's cyan
+        // marker and camera follow the place; on release the Hook flies to it. Untouched, the aim is the game's own.
+        constexpr std::uint32_t kStick = kurenai::proto::FlagRightUp | kurenai::proto::FlagRightDown
+            | kurenai::proto::FlagRightLeft | kurenai::proto::FlagRightRight;
+        const bool aiming = mLatest && (mLatest->animId == 1264 || mLatest->animId == 1260);
+        if (aiming && !mHookAiming && (mLatest->flags & kStick))
+        {
+            mHookAiming = true;
+            mAimHit = false;
+            const osg::Vec3f head = mGameFeet + osg::Vec3f(0, 0, 120.0f);
+            osg::Vec3f view(std::sin(mAimYaw), std::cos(mAimYaw), 0);
+            if (mLatest->flags & kurenai::proto::FlagCamera)
+            {
+                const kurenai::proto::Vec3 eye = t.position(mLatest->cameraEye);
+                const kurenai::proto::Vec3 look = t.position(mLatest->cameraTarget);
+                view = osg::Vec3f(look.x - eye.x, look.y - eye.y, look.z - eye.z);
+            }
+            view.normalize();
+            // The game's pick: the place nearest the middle of its view, now that its camera has turned onto it.
+            osg::Vec3f start(view.x(), view.y(), std::sin(0.5f));
+            float best = -2.0f;
+            for (const kurenai::proto::ProxyTarget& target : mHookTargets)
+            {
+                const kurenai::proto::Vec3 p = t.position(target.position);
+                osg::Vec3f to = osg::Vec3f(p.x, p.y, p.z) - head;
+                to.normalize();
+                if (to * view > best)
+                {
+                    best = to * view;
+                    start = to;
+                }
+            }
+            mAimYaw = std::atan2(start.x(), start.y());
+            mAimPitch = std::atan2(start.z(), std::hypot(start.x(), start.y()));
+        }
+        if (!aiming && mLatest && (mLatest->flags & kurenai::proto::FlagCamera))
+        {
+            const kurenai::proto::Vec3 eye = t.position(mLatest->cameraEye);
+            const kurenai::proto::Vec3 look = t.position(mLatest->cameraTarget);
+            if (std::abs(look.x - eye.x) + std::abs(look.y - eye.y) > 1e-3f)
+                mAimYaw = std::atan2(look.x - eye.x, look.y - eye.y);
+        }
+        if (aiming && mHookAiming)
+        {
+            constexpr float kTurn = 1.4f; // radians per second at full stick
+            const std::uint32_t f = mLatest->flags;
+            mAimYaw += ((f & kurenai::proto::FlagRightRight) ? kTurn * dt : 0)
+                - ((f & kurenai::proto::FlagRightLeft) ? kTurn * dt : 0);
+            mAimPitch += ((f & kurenai::proto::FlagRightUp) ? kTurn * dt : 0)
+                - ((f & kurenai::proto::FlagRightDown) ? kTurn * dt : 0);
+            mAimPitch = std::clamp(mAimPitch, -0.6f, 1.45f);
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const osg::Vec3f head = mGameFeet + osg::Vec3f(0, 0, 120.0f);
+            const osg::Vec3f dir(
+                std::sin(mAimYaw) * std::cos(mAimPitch), std::cos(mAimYaw) * std::cos(mAimPitch), std::sin(mAimPitch));
+            constexpr int kStatic = MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP;
+            const MWPhysics::RayCastingResult hit = world->getRayCasting()->castRay(
+                head, head + dir * (kGameReach * t.scale), { world->getPlayerPtr() }, {}, kStatic);
+            if (hit.mHit)
+            {
+                const osg::Vec3f at = hit.mHitPos + hit.mHitNormal * 10.0f;
+                if (!mAimHit || (at - mAimAt).length() > 100.0f)
+                    Log(Debug::Info) << "Kurenai: hook aim (yaw " << mAimYaw << ", pitch " << mAimPitch << ") meets "
+                                     << at.x() << "," << at.y() << "," << at.z() << ", " << (at - head).length()
+                                     << " away";
+                mAimAt = at;
+                mAimHit = true;
+            }
+            // Pointing at nothing in reach: the last surface it met stays the place.
+            mHookTargets.clear();
+            if (mAimHit)
+            {
+                kurenai::proto::ProxyTarget target;
+                target.actorId = 0x41494D00u; // the same id throughout: the game keeps the same stand-in and moves it
+                target.position = t.toRedNinja({ mAimAt.x(), mAimAt.y(), mAimAt.z() });
+                mHookTargets.push_back(target);
+            }
+            mHookMisses.clear();
+            mSinceHookScan = 0;
+            kurenai::proto::HookTargets msg;
+            msg.targets = mHookTargets;
+            send(msg);
+            return;
+        }
+        if (mHookAiming && mAimHit)
+            Log(Debug::Info) << "Kurenai: hook aim let go at " << mAimAt.x() << "," << mAimAt.y() << "," << mAimAt.z();
+        mHookAiming = false;
         mSinceHookScan += dt;
         if (mSinceHookScan >= 0.25f)
         {
