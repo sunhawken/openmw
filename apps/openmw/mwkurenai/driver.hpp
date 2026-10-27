@@ -127,6 +127,7 @@ namespace MWKurenai
         // main thread. Both threads send, so sends are serialised.
         std::thread mThread;
         std::atomic<bool> mStop{ false };
+        std::atomic<std::uint64_t> mFrameBeatNs{ 0 }; // the frame's last heartbeat (0: no game running yet)
         std::mutex mSendMutex;
         std::mutex mInboxMutex;
         struct Arrived

@@ -214,7 +214,14 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
         {
             ScopedProfile<UserStatsType::Sound> profile(frameStart, frameNumber, *timer, *stats);
 
-            if (!mWindowManager->isWindowVisible())
+            // KURENAI: not while PCSX2 plays her. Switching to PCSX2's window minimizes this one, and the game goes on:
+            // her floor, walls and place are Morrowind's, so the world keeps running until the window comes back.
+            bool pauseHidden = !mWindowManager->isWindowVisible();
+#ifdef OPENMW_KURENAI
+            if (mKurenai && mKurenai->connected())
+                pauseHidden = false;
+#endif
+            if (pauseHidden)
             {
                 mSoundManager->pausePlayback();
                 return false;
