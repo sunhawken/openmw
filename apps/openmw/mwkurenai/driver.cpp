@@ -1213,6 +1213,7 @@ namespace MWKurenai
             float damage = e.damage;
             bool stealthKill = false;
             MWMechanics::CreatureStats& stats = actor.getClass().getCreatureStats(actor);
+            const float healthBefore = stats.getHealth().getCurrent();
             if (!proxied(actor) && !stats.getAiSequence().isInCombat())
             {
                 const float yaw = actor.getRefData().getPosition().rot[2];
@@ -1257,8 +1258,7 @@ namespace MWKurenai
             send(c);
             Log(Debug::Info) << "Kurenai: attack " << e.attackId << " (motion " << (e.kind & kurenai::kCombatMotionMask)
                              << ") hits " << actor.getCellRef().getRefId() << " for " << damage
-                             << " damage (health before "
-                             << actor.getClass().getCreatureStats(actor).getHealth().getCurrent() << ")";
+                             << " damage (health before " << healthBefore << ")";
         }
     }
 
