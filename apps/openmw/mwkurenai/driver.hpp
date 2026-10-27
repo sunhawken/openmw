@@ -14,6 +14,7 @@
 #include <osg/observer_ptr>
 
 #include "../mwworld/ptr.hpp"
+#include "nativebody.hpp"
 #include "poseoverride.hpp"
 
 #include <kurenai/hud.hpp>
@@ -195,6 +196,10 @@ namespace MWKurenai
         std::uint32_t mPoseModel = 0xffffffffu; // the model of the last pose (logged when it changes)
         std::map<std::uint32_t, std::uint32_t> mPickedMaps; // model id no map names -> the map its limbs fit
         std::vector<kurenai::proto::Vec3> mPoseBones; // the last pose, Red Ninja world
+        // The native body ([Kurenai] native body): her own PS2 model, posed with the last pose's matrices unchanged.
+        std::unique_ptr<NativeBody> mNative;
+        std::optional<kurenai::proto::Pose> mLatestPose;
+        bool mNativeShown = false;
 
         // Her wire, drawn while the game has it out: from her hand (the game's) to where it is fixed.
         osg::ref_ptr<osg::Geometry> mWireGeometry;

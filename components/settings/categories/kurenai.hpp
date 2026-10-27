@@ -45,6 +45,8 @@ namespace Settings
         SettingValue<std::string> mHealth{ mIndex, "Kurenai", "health",
             makeEnumSanitizerString({ "morrowind", "game", "off" }) };
         SettingValue<float> mMaxViewDistance{ mIndex, "Kurenai", "max view distance", makeMaxStrictSanitizerFloat(0) };
+        SettingValue<bool> mNativeBody{ mIndex, "Kurenai", "native body" };
+        SettingValue<std::vector<std::string>> mNativeBodyModels{ mIndex, "Kurenai", "native body models" };
     };
 }
 

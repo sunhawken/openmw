@@ -1,4 +1,5 @@
 #include "driver.hpp"
+#include "nativebody.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -251,6 +252,8 @@ namespace MWKurenai
                 if (mToggleScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown mode toggle key '" << k.mModeToggleKey.get() << "'";
             }
+            if (k.mNativeBody && !k.mNativeBodyModels.get().empty())
+                mNative = std::make_unique<NativeBody>(k.mNativeBodyModels.get());
             const std::string ps2 = k.mPs2Animation;
             mPs2Anim = ps2 == "all" ? Ps2Anim::All : ps2 == "locomotion" ? Ps2Anim::Locomotion : Ps2Anim::Off;
             if (mPs2Anim != Ps2Anim::Off)
@@ -566,6 +569,11 @@ namespace MWKurenai
             skeleton->removeUpdateCallback(mPoseCallback);
         mPoseSkeleton = nullptr;
         MWBase::World* world = MWBase::Environment::get().getWorld();
+        if (mNative)
+        {
+            mNative->update(world->getPlayerPtr(), false, nullptr, nullptr, mTransform.scale);
+            mNativeShown = false;
+        }
         if (mCollisionWasOn && !world->toggleCollisionMode())
             world->toggleCollisionMode();
         mCollisionWasOn = false;
@@ -1423,6 +1431,7 @@ namespace MWKurenai
     {
         ++mPosesReceived;
         mPoseBones = p.bones;
+        mLatestPose = p;
         if (mPs2Anim == Ps2Anim::Off || !mLatest)
             return;
         // Each model (outfit) has its own bone layout. The model id also changes with words the game rewrites (her
@@ -1884,6 +1893,14 @@ namespace MWKurenai
                 startSmoke(player.getRefData().getPosition().asVec3());
         }
         updatePoseOverride();
+        if (mNative)
+        {
+            const bool shown = mNative->update(player, mPs2Anim == Ps2Anim::All,
+                mLatestPose ? &*mLatestPose : nullptr, &*mLatest, t.scale, mKitonOn);
+            if (shown != mNativeShown)
+                Log(Debug::Info) << "Kurenai: " << (shown ? "her own PS2 body" : "Morrowind's body") << " shows";
+            mNativeShown = shown;
+        }
         updateWire(t);
         if (mGameCameraMode)
             applyGameCamera();
