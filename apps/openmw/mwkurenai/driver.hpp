@@ -80,6 +80,8 @@ namespace MWKurenai
         void sendInput();
         void applyAnimation(std::uint32_t motion);
         void handleCombat(const kurenai::proto::CombatEvent& e);
+        bool proxied(const MWWorld::Ptr& actor) const;
+        void handleDart(const kurenai::proto::CombatEvent& e, const osg::Vec3f& from, const osg::Vec3f& to);
         void sendProxyTargets(const kurenai::CoordTransform& t);
         void handleProxyStatus(const kurenai::proto::ProxyStatus& s);
         void handleProxyPose(const kurenai::proto::ProxyPose& p);
@@ -156,7 +158,7 @@ namespace MWKurenai
             int framesLeft;
         };
         std::vector<PendingRagdoll> mPendingRagdolls;
-        std::uint64_t mCombatEvents = 0, mCombatHits = 0;
+        std::uint64_t mCombatEvents = 0, mCombatHits = 0, mStealthKills = 0;
 
         // Proxies ([Kurenai] proxies): the game's enemies standing in for the actors around her. Ids are ours; the
         // game reports per id what it did to the proxy.

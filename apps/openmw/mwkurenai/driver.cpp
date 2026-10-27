@@ -324,6 +324,8 @@ namespace MWKurenai
                          << " presses with nothing to lock on";
         if (mSmokeBombs)
             Log(Debug::Info) << "Kurenai: smoke bombs: " << mSmokeBombs << ", " << mSmokedActors << " actors caught";
+        if (mStealthKills)
+            Log(Debug::Info) << "Kurenai: combat: " << mStealthKills << " stealth kills without a stage guard";
         if (mCombatEvents)
             Log(Debug::Info) << "Kurenai: combat: " << mCombatEvents << " blade segments, " << mCombatHits
                              << " hits on Morrowind actors";
@@ -713,7 +715,7 @@ namespace MWKurenai
                     if (!top.mHit || top.mHitNormal.z() < 0.5f)
                         continue;
                     ++tops;
-                    const osg::Vec3f at = top.mHitPos + osg::Vec3f(0, 0, 10.0f);
+                    osg::Vec3f at = top.mHitPos + osg::Vec3f(0, 0, 10.0f);
                     if ((at - feet).length() > reach)
                         continue;
                     // She must see it: nothing in the way but the thing it is on (from below, a roof's edge or a
@@ -722,6 +724,14 @@ namespace MWKurenai
                         = world->getRayCasting()->castRay(head, at + osg::Vec3f(0, 0, 40.0f), { player }, {}, kStatic);
                     if (sight.mHit && (sight.mHitPos - at).length() > 250.0f)
                         continue;
+                    // Hidden by its own edge: the place is that edge, where her line meets it. A top behind the edge
+                    // is out of the game's reach, the line to it going through the wall under the edge.
+                    if (sight.mHit)
+                    {
+                        osg::Vec3f back = head - sight.mHitPos;
+                        back.normalize();
+                        at = sight.mHitPos + back * 10.0f;
+                    }
                     kurenai::proto::ProxyTarget target;
                     // Stable while the place is found again: its position on a 48-unit grid.
                     const auto cell = [](float v) { return static_cast<std::uint32_t>(static_cast<std::int32_t>(std::lround(v / 48.0f))); };
@@ -1148,6 +1158,11 @@ namespace MWKurenai
         const float radius = e.radius * t.scale;
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWWorld::Ptr player = world->getPlayerPtr();
+        if (e.kind & kurenai::kCombatDart)
+        {
+            handleDart(e, p0, p1);
+            return;
+        }
         std::vector<MWWorld::Ptr> actors;
         MWBase::Environment::get().getMechanicsManager()->getActorsInRange(
             (p0 + p1) * 0.5f, (p1 - p0).length() * 0.5f + radius + 200.0f, actors);
@@ -1192,9 +1207,37 @@ namespace MWKurenai
                 continue;
             mHitThisAttack.push_back(actor.getBase());
             ++mCombatHits;
+            // Her stealth kill on an actor the game has no guard for (a stage without enemies, or more actors than
+            // guards): struck from behind while it is not fighting, it dies at once. Proxied actors get the game's own
+            // kill through their guard. Not the game's kill cinematic: that needs a stage guard to play on.
+            float damage = e.damage;
+            bool stealthKill = false;
+            MWMechanics::CreatureStats& stats = actor.getClass().getCreatureStats(actor);
+            if (!proxied(actor) && !stats.getAiSequence().isInCombat())
+            {
+                const float yaw = actor.getRefData().getPosition().rot[2];
+                const osg::Vec3f facing(std::sin(yaw), std::cos(yaw), 0);
+                osg::Vec3f toHer = player.getRefData().getPosition().asVec3() - feet;
+                toHer.z() = 0;
+                if (toHer.normalize() > 0 && facing * toHer < -0.3f)
+                {
+                    damage = std::max(damage, stats.getHealth().getCurrent() + 1.0f);
+                    stealthKill = true;
+                    ++mStealthKills;
+                    Log(Debug::Info) << "Kurenai: stealth kill on " << actor.getCellRef().getRefId()
+                                     << " (no stage guard for it): struck from behind, unaware";
+                }
+            }
             // Morrowind's own melee pipeline (Lua combat): damage, hit reaction, AI aggression, sounds.
             MWBase::Environment::get().getLuaManager()->onHit(player, actor, MWWorld::Ptr(), MWWorld::Ptr(), 0, 1.0f,
-                e.damage, true, hitPos, true, MWMechanics::DamageSourceType::Melee);
+                damage, true, hitPos, true, MWMechanics::DamageSourceType::Melee);
+            if (stealthKill)
+            {
+                // Morrowind's combat script scales hit damage (armor, difficulty); her kill is a kill here.
+                MWMechanics::DynamicStat<float> health = stats.getHealth();
+                health.setCurrent(0);
+                stats.setHealth(health);
+            }
             osg::Vec3f dir = p1 - p0;
             dir.z() = 0;
             if (dir.normalize() == 0)
@@ -1213,10 +1256,62 @@ namespace MWKurenai
             c.flags = (e.kind & kurenai::kCombatKnockdown) ? 1 : 0;
             send(c);
             Log(Debug::Info) << "Kurenai: attack " << e.attackId << " (motion " << (e.kind & kurenai::kCombatMotionMask)
-                             << ") hits " << actor.getCellRef().getRefId() << " for " << e.damage
-                             << " damage (health before " << actor.getClass().getCreatureStats(actor).getHealth().getCurrent()
-                             << ")";
+                             << ") hits " << actor.getCellRef().getRefId() << " for " << damage
+                             << " damage (health before "
+                             << actor.getClass().getCreatureStats(actor).getHealth().getCurrent() << ")";
         }
+    }
+
+    bool Driver::proxied(const MWWorld::Ptr& actor) const
+    {
+        if (!mProxyEnabled)
+            return false;
+        for (const auto& entry : mProxies)
+            if (entry.second.actor == actor && entry.second.assigned)
+                return true;
+        return false;
+    }
+
+    void Driver::handleDart(const kurenai::proto::CombatEvent& e, const osg::Vec3f& from, const osg::Vec3f& to)
+    {
+        // Her dart flies along her aim (the game camera's line) to the first actor or wall on it. The game's darts hit
+        // at once, so this does too. An actor with a proxy took the game's own dart through it (ProxyStatus).
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const MWWorld::Ptr player = world->getPlayerPtr();
+        const MWPhysics::RayCastingResult hit = world->getRayCasting()->castRay(from, to, { player }, {},
+            MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR
+                | MWPhysics::Layers::ACTOR);
+        const MWWorld::Ptr actor = hit.mHit ? hit.mHitObject : MWWorld::Ptr();
+        if (actor.isEmpty() || !actor.getClass().isActor() || actor.getClass().getCreatureStats(actor).isDead())
+        {
+            Log(Debug::Info) << "Kurenai: dart " << (e.attackId & 0xffff) << " from (" << from.x() << ", " << from.y()
+                             << ", " << from.z() << ") toward (" << to.x() << ", " << to.y() << ", " << to.z()
+                             << ") hits no actor" << (hit.mHit ? " (a wall first)" : "");
+            if (hit.mHit)
+            {
+                const osg::Vec3f pp = player.getRefData().getPosition().asVec3();
+                Log(Debug::Info) << "Kurenai: dart wall at (" << hit.mHitPos.x() << ", " << hit.mHitPos.y() << ", "
+                                 << hit.mHitPos.z() << "), player at (" << pp.x() << ", " << pp.y() << ", " << pp.z()
+                                 << ")"
+                                 << (hit.mHitObject.isEmpty()
+                                            ? ""
+                                            : " object " + hit.mHitObject.getCellRef().getRefId().toDebugString());
+            }
+            return;
+        }
+        if (proxied(actor))
+        {
+            Log(Debug::Info) << "Kurenai: dart " << (e.attackId & 0xffff) << " on " << actor.getCellRef().getRefId()
+                             << ": its proxy takes the game's dart";
+            return;
+        }
+        MWMechanics::CreatureStats& stats = actor.getClass().getCreatureStats(actor);
+        const float damage = std::max(1.0f, e.damage * stats.getHealth().getModified());
+        ++mCombatHits;
+        MWBase::Environment::get().getLuaManager()->onHit(player, actor, MWWorld::Ptr(), MWWorld::Ptr(), 0, 1.0f,
+            damage, true, hit.mHitPos, true, MWMechanics::DamageSourceType::Ranged);
+        Log(Debug::Info) << "Kurenai: dart " << (e.attackId & 0xffff) << " hits " << actor.getCellRef().getRefId()
+                         << " for " << damage << " damage (health before " << stats.getHealth().getCurrent() << ")";
     }
 
     void Driver::sendProxyTargets(const kurenai::CoordTransform& t)
@@ -1923,7 +2018,9 @@ namespace MWKurenai
         osg::Vec3f hand, anchor;
         if ((mLatest->flags & kurenai::proto::FlagWire) && mPoseModel != 0xffffffffu)
         {
-            const auto it = mSkeletonMaps.find(mPoseModel);
+            // A model no map names (another outfit) uses the map its limbs fit, as her body does.
+            const auto picked = mPickedMaps.find(mPoseModel);
+            const auto it = mSkeletonMaps.find(picked != mPickedMaps.end() ? picked->second : mPoseModel);
             if (it != mSkeletonMaps.end() && it->second.wireHand && *it->second.wireHand < mPoseBones.size())
             {
                 const kurenai::proto::Vec3 h = t.position(mPoseBones[*it->second.wireHand]);
