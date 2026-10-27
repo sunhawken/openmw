@@ -9,8 +9,9 @@
 
 #include <kurenai/combat.hpp>
 
-#include <osg/Vec3f>
 #include <osg/Array>
+#include <osg/MatrixTransform>
+#include <osg/Vec3f>
 #include <osg/observer_ptr>
 
 #include "../mwworld/ptr.hpp"
@@ -229,6 +230,31 @@ namespace MWKurenai
         osg::ref_ptr<osg::Geometry> mWireGeometry;
         osg::ref_ptr<osg::Vec3Array> mWireVertices;
         void updateWire(const kurenai::CoordTransform& t);
+
+        // Her thrown kunai (only PCSX2 has it): PCSX2 sends its launch (start and direction, a kQueryProjectile query
+        // nothing answers); it flies straight to the first thing in Morrowind along that line and stays a while in a
+        // wall or the ground.
+        struct KunaiLaunch
+        {
+            osg::Vec3f from, to; // Morrowind
+        };
+        std::mutex mKunaiMutex;
+        std::vector<KunaiLaunch> mKunaiNew; // from the bridge thread, guarded by mKunaiMutex
+        enum class Kunai
+        {
+            Hidden,
+            Flying,
+            Stuck
+        } mKunai
+            = Kunai::Hidden;
+        osg::ref_ptr<osg::MatrixTransform> mKunaiNode;
+        osg::Matrixf mKunaiMesh; // the mesh's centre to the origin, its long axis onto +x
+        osg::Vec3f mKunaiPos, mKunaiEnd, mKunaiDir{ 1, 0, 0 };
+        bool mKunaiSticks = false;
+        float mKunaiTimer = 0;
+        std::uint64_t mKunaiThrows = 0;
+        void updateKunai(const kurenai::CoordTransform& t, float dt);
+        bool makeKunai();
         std::shared_ptr<PoseTarget> mPoseTarget = std::make_shared<PoseTarget>();
         osg::ref_ptr<PoseOverride> mPoseCallback;
         osg::observer_ptr<osg::Node> mPoseSkeleton; // the animation object can be rebuilt; never keep it alive

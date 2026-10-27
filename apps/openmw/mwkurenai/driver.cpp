@@ -44,14 +44,18 @@
 
 #include <components/sceneutil/lightmanager.hpp>
 
-#include <osg/Geometry>
-#include <osg/LineWidth>
+#include "../mwmechanics/spells.hpp"
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/ptr.hpp"
-#include "../mwmechanics/spells.hpp"
+#include <components/resource/resourcesystem.hpp>
+#include <components/resource/scenemanager.hpp>
+#include <components/vfs/manager.hpp>
+#include <osg/ComputeBoundsVisitor>
+#include <osg/Geometry>
+#include <osg/LineWidth>
 
 #include <components/esm/defs.hpp>
 #include <components/esm3/loadgmst.hpp>
@@ -63,6 +67,8 @@ namespace MWKurenai
     namespace
     {
         constexpr float kGameHz = 30.0f;
+        // Her thrown kunai's speed, game units per game frame.
+        constexpr float kKunaiSpeed = 40.0f;
         constexpr float kDiveSpeed = 150.0f; // Morrowind units per second, diving with the breathing tube
         // While she swims, the game wants a bottom within its ground probe's reach (310 below her) or it has her fall
         // out of the water (runs/swim4: 1191 -> 1000 -> 1150 over and over in Morrowind's deep sea). Deeper water gets
@@ -407,6 +413,14 @@ namespace MWKurenai
             return;
         }
         kurenai::proto::Vec3 a = t.position(q.from), b = t.position(q.to);
+        if (q.mask & kurenai::proto::kQueryProjectile)
+        {
+            // Her kunai leaving her hand: drawn by updateKunai, nothing waits for an answer.
+            std::lock_guard<std::mutex> lock(mKunaiMutex);
+            if (mKunaiNew.size() < 16)
+                mKunaiNew.push_back({ osg::Vec3f(a.x, a.y, a.z), osg::Vec3f(b.x, b.y, b.z) });
+            return;
+        }
         if (q.mask & kurenai::proto::kQueryWater)
         {
             answerWater(q, t, a, b);
@@ -579,6 +593,9 @@ namespace MWKurenai
         hideHud();
         if (mWireGeometry)
             mWireGeometry->setNodeMask(0u);
+        if (mKunaiNode)
+            mKunaiNode->setNodeMask(0u);
+        mKunai = Kunai::Hidden;
         releaseCamera();
         osg::ref_ptr<osg::Node> skeleton;
         if (mPoseSkeleton.lock(skeleton) && mPoseCallback)
@@ -2061,6 +2078,130 @@ namespace MWKurenai
         mWireGeometry->setNodeMask(show ? MWRender::Mask_Effect : 0u);
     }
 
+    bool Driver::makeKunai()
+    {
+        mKunaiNode = new osg::MatrixTransform;
+        mKunaiNode->setName("krn_thrown_kunai");
+        mKunaiNode->setDataVariance(osg::Object::DYNAMIC);
+        Resource::ResourceSystem* resources = MWBase::Environment::get().getResourceSystem();
+        const VFS::Path::Normalized p("meshes/krn_native/krn_item_1.nif"); // her held kunai (render object 1)
+        osg::ref_ptr<osg::Node> mesh;
+        if (resources->getVFS()->exists(p))
+        {
+            try
+            {
+                mesh = resources->getSceneManager()->getInstance(p);
+            }
+            catch (const std::exception& e)
+            {
+                Log(Debug::Error) << "Kurenai: thrown kunai " << p.value() << ": " << e.what();
+            }
+        }
+        if (mesh)
+        {
+            // Game units; its longest side is the blade, which flies first.
+            osg::ComputeBoundsVisitor bounds;
+            mesh->accept(bounds);
+            const osg::BoundingBox& b = bounds.getBoundingBox();
+            osg::Vec3f axis(1, 0, 0);
+            if (b.valid())
+            {
+                const osg::Vec3f size = b._max - b._min;
+                axis = size.y() > size.x() && size.y() >= size.z() ? osg::Vec3f(0, 1, 0)
+                    : size.z() > size.x()                          ? osg::Vec3f(0, 0, 1)
+                                                                   : osg::Vec3f(1, 0, 0);
+            }
+            mKunaiMesh = osg::Matrixf::translate(b.valid() ? -b.center() : osg::Vec3f())
+                * osg::Matrixf::rotate(axis, osg::Vec3f(1, 0, 0));
+            mKunaiNode->addChild(mesh);
+            Log(Debug::Info) << "Kurenai: thrown kunai drawn with " << p.value();
+        }
+        else
+        {
+            // No item meshes (the native body is off): a short dark blade, game units.
+            osg::ref_ptr<osg::Geometry> line = new osg::Geometry;
+            osg::ref_ptr<osg::Vec3Array> v = new osg::Vec3Array;
+            v->push_back(osg::Vec3f(-12, 0, 0));
+            v->push_back(osg::Vec3f(12, 0, 0));
+            line->setVertexArray(v);
+            osg::ref_ptr<osg::Vec4Array> colour = new osg::Vec4Array(1);
+            (*colour)[0] = osg::Vec4f(0.2f, 0.2f, 0.22f, 1.0f);
+            line->setColorArray(colour, osg::Array::BIND_OVERALL);
+            line->addPrimitiveSet(new osg::DrawArrays(GL_LINES, 0, 2));
+            osg::StateSet* ss = line->getOrCreateStateSet();
+            ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+            ss->setAttributeAndModes(new osg::LineWidth(3.0f));
+            mKunaiNode->addChild(line);
+            Log(Debug::Info) << "Kurenai: thrown kunai drawn as a line (no " << p.value() << ")";
+        }
+        mKunaiNode->setNodeMask(0u);
+        MWBase::Environment::get().getWorld()->getRenderingManager()->getLightRoot()->addChild(mKunaiNode);
+        return true;
+    }
+
+    void Driver::updateKunai(const kurenai::CoordTransform& t, float dt)
+    {
+        std::vector<KunaiLaunch> launches;
+        {
+            std::lock_guard<std::mutex> lock(mKunaiMutex);
+            launches.swap(mKunaiNew);
+        }
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        for (const KunaiLaunch& l : launches)
+        {
+            // Where it ends in Morrowind: the first wall, ground or actor along its line (not her own body, which
+            // it starts in). The game flies it straight.
+            MWPhysics::RayCastingResult hit;
+            {
+                std::lock_guard<std::mutex> lock(mWorldMutex);
+                hit = world->getRayCasting()->castRay(l.from, l.to, { world->getPlayerPtr() }, {},
+                    MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR
+                        | MWPhysics::Layers::ACTOR);
+            }
+            mKunaiPos = l.from;
+            mKunaiEnd = hit.mHit ? hit.mHitPos : l.to;
+            mKunaiDir = l.to - l.from;
+            mKunaiDir.normalize();
+            mKunaiSticks = hit.mHit && (hit.mHitObject.isEmpty() || !hit.mHitObject.getClass().isActor());
+            mKunai = Kunai::Flying;
+            if (++mKunaiThrows <= 5)
+                Log(Debug::Info) << "Kurenai: thrown kunai " << mKunaiThrows << " from " << l.from.x() << ","
+                                 << l.from.y() << "," << l.from.z() << ", "
+                                 << (mKunaiSticks      ? "sticks "
+                                            : hit.mHit ? "hits an actor "
+                                                       : "lands nowhere ")
+                                 << (mKunaiEnd - l.from).length() << " away";
+        }
+        if (mKunai == Kunai::Hidden)
+            return;
+        if (!mKunaiNode && !makeKunai())
+            return;
+        if (mKunai == Kunai::Flying)
+        {
+            // Needs measuring against the game; close to its kunai's look in flight.
+            const float step = kKunaiSpeed * kGameHz * t.scale * dt;
+            const osg::Vec3f left = mKunaiEnd - mKunaiPos;
+            if (left.length() <= step)
+            {
+                mKunaiPos = mKunaiEnd;
+                mKunai = mKunaiSticks ? Kunai::Stuck : Kunai::Hidden;
+                mKunaiTimer = 4.0f;
+            }
+            else
+                mKunaiPos += mKunaiDir * step;
+        }
+        else if ((mKunaiTimer -= dt) <= 0)
+            mKunai = Kunai::Hidden;
+        if (mKunai == Kunai::Hidden)
+        {
+            mKunaiNode->setNodeMask(0u);
+            return;
+        }
+        mKunaiNode->setMatrix(mKunaiMesh * osg::Matrixf::scale(osg::Vec3f(1, 1, 1) * t.scale)
+            * osg::Matrixf::rotate(osg::Vec3f(1, 0, 0), mKunaiDir) * osg::Matrixf::translate(mKunaiPos));
+        mKunaiNode->setNodeMask(MWRender::Mask_Effect);
+    }
+
     void Driver::applyGameCamera()
     {
         if (!(mLatest->flags & kurenai::proto::FlagCamera))
@@ -2308,6 +2449,7 @@ namespace MWKurenai
             mNativeShown = shown;
         }
         updateWire(t);
+        updateKunai(t, dt);
         if (mGameCameraMode)
             applyGameCamera();
         if (mLog)
