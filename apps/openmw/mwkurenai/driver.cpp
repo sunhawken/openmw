@@ -361,9 +361,9 @@ namespace MWKurenai
                 }
             }
             const std::uint64_t now = kurenai::monotonicNs();
-            // The heartbeat goes from here as well as from the frame: a long frame (a cell loading) must not look like a
-            // closed OpenMW to PCSX2, which then drops the link and her floor with it. Only once a game runs (PCSX2 must
-            // not connect before the player is there) and for at most 30 s after the frame's last one.
+            // The heartbeat goes from here as well as from the frame: a long frame (a cell loading) must not look like
+            // a closed OpenMW to PCSX2, which then drops the link and her floor with it. Only once a game runs (PCSX2
+            // must not connect before the player is there) and for at most 30 s after the frame's last one.
             const std::uint64_t frameBeat = mFrameBeatNs.load(std::memory_order_relaxed);
             if (frameBeat != 0 && now - frameBeat < 30'000'000'000ull)
                 mLink->tick(now);
