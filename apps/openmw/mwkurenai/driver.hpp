@@ -127,6 +127,7 @@ namespace MWKurenai
         // the bridge thread shifts the game's collision queries by it).
         std::atomic<float> mSwimDepth{ 0 };
         std::atomic<bool> mSwimming{ false }; // a swim motion plays, in a cell with water
+        float mSwimPitch = 0; // Morrowind's look up/down while she swims (radians, positive looks down)
         std::atomic<float> mWaterLevel{ 0 }; // that cell's water level
         std::atomic<std::uint64_t> mWaterHits{ 0 }, mSwimFloorHits{ 0 };
         void updateSneak(std::uint32_t motion);

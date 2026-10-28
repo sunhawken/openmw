@@ -70,7 +70,8 @@ namespace MWKurenai
         constexpr float kGameHz = 30.0f;
         // Her thrown kunai's speed, game units per game frame.
         constexpr float kKunaiSpeed = 40.0f;
-        constexpr float kDiveSpeed = 150.0f; // Morrowind units per second, diving with the breathing tube
+        constexpr float kDiveSpeed = 150.0f; // Morrowind units per second, swimming up or down
+        constexpr float kSurfaceDepth = 8.0f; // shallower than this (Morrowind units) she is at the surface
         // While she swims, the game wants a bottom within its ground probe's reach (310 below her) or it has her fall
         // out of the water (runs/swim4: 1191 -> 1000 -> 1150 over and over in Morrowind's deep sea). Deeper water gets
         // a bottom this far below the surface (game units): the moat's (runs/swimM). The bottom under her water is
@@ -531,28 +532,31 @@ namespace MWKurenai
         }
         mWaterLevel = cell->getWaterLevel();
         mSwimming = true;
-        // The game keeps her breathing at the surface, and through her breathing tube below it.
-        static const float holdBreath = MWBase::Environment::get()
-                                            .getESMStore()
-                                            ->get<ESM::GameSetting>()
-                                            .find("fHoldBreathTime")
-                                            ->mValue.getFloat();
-        player.getClass().getNpcStats(player).setTimeToStartDrowning(holdBreath);
-
-        // Dive with the breathing tube: while it is out (L2 held), Ready Magic takes her down and Jump brings her up;
-        // let go of L2 and she floats back up to the surface, where the game's own swimming goes on.
+        // Morrowind's swimming: forward goes where the camera looks (look down to dive, up to rise) and Jump swims up.
+        // The game's own swim motions keep playing; it only swims at the surface, so the depth is ours. Her breathing
+        // tube (L2, sendInput) only comes out at the surface and stays there.
         const MWBase::InputManager* input = MWBase::Environment::get().getInputManager();
-        const auto held = [&](int action) { return input->getActionValue(action) > 0.5f; };
         float depth = mSwimDepth.load();
-        if (hiddenSwimMotions().count(motion) && held(MWInput::A_Sneak))
+        if (hiddenSwimMotions().count(motion))
+            depth = 0;
+        else
         {
-            if (held(MWInput::A_ToggleSpell))
-                depth += kDiveSpeed * dt;
-            if (held(MWInput::A_Jump))
+            const float forward
+                = input->getActionValue(MWInput::A_MoveForward) - input->getActionValue(MWInput::A_MoveBackward);
+            depth += forward * std::sin(mSwimPitch) * kDiveSpeed * dt;
+            if (input->getActionValue(MWInput::A_Jump) > 0.5f)
                 depth -= kDiveSpeed * dt;
         }
-        else
-            depth -= 2 * kDiveSpeed * dt;
+        // At the surface (and in the tube) she breathes; below it Morrowind's breath and drowning run.
+        if (depth < kSurfaceDepth)
+        {
+            static const float holdBreath = MWBase::Environment::get()
+                                                .getESMStore()
+                                                ->get<ESM::GameSetting>()
+                                                .find("fHoldBreathTime")
+                                                ->mValue.getFloat();
+            player.getClass().getNpcStats(player).setTimeToStartDrowning(holdBreath);
+        }
         // Never into the bottom: stop a body's height above whatever is below the surface.
         const MWPhysics::RayCastingResult floor = world->getRayCasting()->castRay(osg::Vec3f(mw.x, mw.y, mw.z),
             osg::Vec3f(mw.x, mw.y, mw.z - 20000.0f), {}, {},
@@ -1077,9 +1081,9 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnR1;
         if (held(MWInput::A_GameMenu))
             in.buttons |= kurenai::proto::BtnStart;
-        // With her breathing tube out, Jump and Ready Magic dive (updateSwim); the game doesn't see them.
-        if (mLatest && hiddenSwimMotions().count(mLatest->animId) && held(MWInput::A_Sneak))
-            in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnCross | kurenai::proto::BtnL1));
+        // Below the surface Jump swims up (updateSwim) and her breathing tube stays put: the game sees neither.
+        if (mLatest && swimMotions().count(mLatest->animId) && mSwimDepth.load() >= kSurfaceDepth)
+            in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnCross | kurenai::proto::BtnL2));
 
         // Send on change, and at least 4 times a second so a lost message can't leave a button stuck.
         if (!(in == mLastInput) || mSinceInput > 0.25f)
@@ -2383,7 +2387,7 @@ namespace MWKurenai
         // actor's heading (Camera::rotateCameraToTrackingPtr), and a positive pitch looks up.
         camera->setStaticPosition(osg::Vec3d(eye.x, eye.y, eye.z));
         camera->setYaw(-std::atan2(dir.x(), dir.y()), true);
-        camera->setPitch(std::asin(std::clamp(dir.z(), -1.0f, 1.0f)), true);
+        camera->setPitch(std::clamp(std::asin(std::clamp(dir.z(), -1.0f, 1.0f)) - mSwimPitch, -1.5f, 1.5f), true);
         if (mGameLens)
             applyGameLens();
     }
@@ -2560,7 +2564,9 @@ namespace MWKurenai
         }
         world->moveObject(player, osg::Vec3f(mw.x, mw.y, mw.z), true, true);
         player = world->getPlayerPtr();
-        world->rotateObject(player, osg::Vec3f(0, 0, yaw), MWBase::RotationFlag_none);
+        // While she swims, the mouse looks up and down as in Morrowind (the dive's direction, and the camera's tilt).
+        mSwimPitch = mSwimming.load() ? std::clamp(player.getRefData().getPosition().rot[0], -1.4f, 1.4f) : 0.0f;
+        world->rotateObject(player, osg::Vec3f(mSwimPitch, 0, yaw), MWBase::RotationFlag_none);
         if (mProxyEnabled)
             sendProxyTargets(t);
         if (mHooks)
