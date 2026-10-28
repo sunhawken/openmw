@@ -3,6 +3,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 
 #include <components/debug/debuglog.hpp>
@@ -74,8 +75,30 @@ namespace MWKurenai
         }
     }
 
+    namespace
+    {
+        std::unique_ptr<EmbeddedPs2> sEarly;
+        std::string sEarlyBridge;
+        bool sEarlyTried = false;
+    }
+
+    void EmbeddedPs2::startEarly()
+    {
+        const Settings::KurenaiCategory& k = Settings::kurenai();
+        if (!k.mEnabled || k.mPs2Folder.get().empty())
+            return;
+        sEarlyBridge = k.mBridgeName;
+        sEarly = start(sEarlyBridge);
+        sEarlyTried = true;
+    }
+
     std::unique_ptr<EmbeddedPs2> EmbeddedPs2::start(const std::string& bridgeName)
     {
+        if (sEarlyTried && bridgeName == sEarlyBridge)
+        {
+            sEarlyTried = false;
+            return std::move(sEarly); // null if the early start failed (already logged)
+        }
         static std::atomic<bool> started{ false };
         const Settings::KurenaiCategory& k = Settings::kurenai();
         const std::string folderSetting = k.mPs2Folder;
@@ -175,6 +198,28 @@ namespace MWKurenai
         {
             fs::create_directories(data / "sstates", ec);
             const fs::path quick = data / "sstates" / "quickstart.p2s";
+            // A state only fits the game library, disc and BIOS it was saved with: when any of them changed (a new
+            // build), the old state is dropped and the fast first start runs again, saving a new one.
+            const auto stampOf = [&](const fs::path& p) {
+                std::error_code e;
+                const auto size = fs::file_size(p, e);
+                const auto time = fs::last_write_time(p, e).time_since_epoch().count();
+                return std::to_string(size) + " " + std::to_string(time) + "\n";
+            };
+            const std::string stamp = stampOf(folder / sLibraryName) + stampOf(iso) + stampOf(bios)
+                + value("boot_sha256") + "\n";
+            const fs::path stampPath = data / "sstates" / "quickstart.stamp";
+            std::string oldStamp;
+            {
+                std::ifstream in(stampPath, std::ios::binary);
+                oldStamp.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+            if (oldStamp != stamp)
+            {
+                if (fs::remove(quick, ec))
+                    Log(Debug::Info) << "Kurenai: the quick start state is from another build or disc; making a new one";
+                std::ofstream(stampPath, std::ios::binary | std::ios::trunc) << stamp;
+            }
             a.insert(a.end(), { "-set", "Kurenai/QuickStartState=" + u8(quick) });
             if (fs::is_regular_file(quick, ec))
             {

@@ -17,6 +17,9 @@ namespace MWKurenai
     public:
         /// Null (with the reason logged) when [Kurenai] ps2 folder is empty or the library cannot be started.
         static std::unique_ptr<EmbeddedPs2> start(const std::string& bridgeName);
+        /// Starts the game at the beginning of the engine's start-up, so it boots and reaches the stage while OpenMW
+        /// loads; the next start() with the same bridge name hands this one over.
+        static void startEarly();
         ~EmbeddedPs2(); ///< Stops the game and waits a little for it.
 
         bool running() const { return !mDone; }

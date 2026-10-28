@@ -63,6 +63,7 @@
 
 #ifdef OPENMW_KURENAI
 #include "mwkurenai/driver.hpp"
+#include "mwkurenai/embeddedps2.hpp"
 #endif
 
 #include "mwscript/interpretercontext.hpp"
@@ -757,6 +758,9 @@ void OMW::Engine::setWindowIcon()
 
 void OMW::Engine::prepareEngine()
 {
+#ifdef OPENMW_KURENAI
+    MWKurenai::EmbeddedPs2::startEarly(); // the PS2 game boots while the content below loads
+#endif
     mStateManager = std::make_unique<MWState::StateManager>(mCfgMgr.getUserDataPath() / "saves", mContentFiles);
     mEnvironment.setStateManager(*mStateManager);
 
