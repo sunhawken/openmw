@@ -654,7 +654,17 @@ namespace MWKurenai
         const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
         MWMechanics::Spells& spells = player.getClass().getCreatureStats(player).getSpells();
         if (on)
+        {
             spells.add(kitonSpell());
+            // Enemies lose her (the game's guards give up the chase): Chameleon only stops new ones noticing her,
+            // so those already fighting her stop, and must find her again past the Chameleon to resume.
+            MWBase::MechanicsManager* mechanics = MWBase::Environment::get().getMechanicsManager();
+            const std::vector<MWWorld::Ptr> fighting = mechanics->getActorsFighting(player);
+            for (const MWWorld::Ptr& actor : fighting)
+                actor.getClass().getCreatureStats(actor).getAiSequence().stopCombat({ player });
+            if (!fighting.empty())
+                Log(Debug::Info) << "Kurenai: kiton: " << fighting.size() << " enemies lost her";
+        }
         else if (spells.hasSpell(kitonSpell()))
             spells.remove(kitonSpell());
     }

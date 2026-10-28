@@ -86,17 +86,23 @@ namespace MWKurenai
             std::map<int, std::vector<osg::ref_ptr<osg::Node>>> mFound;
             void apply(osg::Node& node) override
             {
+                // Shapes are named krn_<model>_m<material>_<n>_<texture>_mat: the first "_m" followed by digits and
+                // then '_' or the end (the "_mat" suffix is not it).
                 const std::string& n = node.getName();
-                const auto at = n.rfind("_m");
-                if (n.compare(0, 4, "krn_") == 0 && at != std::string::npos && at + 2 < n.size()
-                    && std::isdigit(static_cast<unsigned char>(n[at + 2])))
+                if (n.compare(0, 4, "krn_") == 0)
                 {
-                    std::size_t i = at + 2;
-                    int index = 0;
-                    while (i < n.size() && std::isdigit(static_cast<unsigned char>(n[i])))
-                        index = index * 10 + (n[i++] - '0');
-                    if (i == n.size() || n[i] == '_')
-                        mFound[index].push_back(&node);
+                    for (auto at = n.find("_m"); at != std::string::npos; at = n.find("_m", at + 2))
+                    {
+                        std::size_t i = at + 2;
+                        int index = 0;
+                        while (i < n.size() && std::isdigit(static_cast<unsigned char>(n[i])))
+                            index = index * 10 + (n[i++] - '0');
+                        if (i > at + 2 && (i == n.size() || n[i] == '_'))
+                        {
+                            mFound[index].push_back(&node);
+                            break;
+                        }
+                    }
                 }
                 traverse(node);
             }
@@ -269,7 +275,9 @@ namespace MWKurenai
                     {
                         ss->removeAttribute(osg::StateAttribute::MATERIAL);
                         ss->removeAttribute(osg::StateAttribute::BLENDFUNC);
+                        ss->removeUniform("colorMode");
                         ss->setRenderingHint(osg::StateSet::DEFAULT_BIN);
+                        ss->setRenderBinMode(osg::StateSet::INHERIT_RENDERBIN_DETAILS);
                     }
                     continue;
                 }
@@ -279,16 +287,21 @@ namespace MWKurenai
                 m->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(c.r, c.g, c.b, c.a));
                 m->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4f(c.r, c.g, c.b, c.a));
                 ss->setAttributeAndModes(m, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+                // The shaders take diffuse/ambient from the vertex colours when the NIF has them, which would ignore
+                // this material (Kiton's fade never showed); force material colours like Animation's fade does.
+                ss->addUniform(new osg::Uniform("colorMode", 0), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
                 if (c.a < 0.999f)
                 {
                     ss->setAttributeAndModes(new osg::BlendFunc(osg::BlendFunc::SRC_ALPHA, osg::BlendFunc::ONE_MINUS_SRC_ALPHA),
                         osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
                     ss->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
+                    ss->setRenderBinMode(osg::StateSet::OVERRIDE_RENDERBIN_DETAILS);
                 }
                 else
                 {
                     ss->removeAttribute(osg::StateAttribute::BLENDFUNC);
                     ss->setRenderingHint(osg::StateSet::DEFAULT_BIN);
+                    ss->setRenderBinMode(osg::StateSet::INHERIT_RENDERBIN_DETAILS);
                 }
             }
         }
@@ -537,6 +550,12 @@ namespace MWKurenai
         {
             mColors = colors;
             applyColors(mModels[f.model].materials, mColors);
+            if (!mColors.empty() && mModels[f.model].materials.empty() && !mWarnedNoMaterials)
+            {
+                mWarnedNoMaterials = true;
+                Log(Debug::Warning) << "Kurenai: native body " << mModels[f.model].path
+                                    << " has no krn_*_m<N> shapes: kiton fade and damage flash won't show";
+            }
         }
         // Her items: each where the game draws it this frame (its own matrix, into her character space), else hidden.
         for (auto& [slot, item] : mItems)

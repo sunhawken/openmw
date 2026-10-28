@@ -99,6 +99,7 @@ namespace MWKurenai
         };
         std::map<std::uint32_t, Item> mItems;
         std::vector<kurenai::proto::Color> mColors; // last applied to the body
+        bool mWarnedNoMaterials = false;
         void applyColors(std::map<int, std::vector<osg::ref_ptr<osg::Node>>>& nodes,
             const std::vector<kurenai::proto::Color>& colors);
     };
