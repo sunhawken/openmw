@@ -28,6 +28,7 @@
 #include "../mwinput/actions.hpp"
 #include "../mwmechanics/aisequence.hpp"
 #include "../mwmechanics/creaturestats.hpp"
+#include "../mwworld/worldmodel.hpp"
 #include "../mwmechanics/damagesourcetype.hpp"
 #include "../mwmechanics/drawstate.hpp"
 #include "../mwmechanics/movement.hpp"
@@ -1165,6 +1166,14 @@ namespace MWKurenai
         if (mPeerAlive && mHealthMode == "morrowind")
             sendMorrowindHealth();
         pollModeKey();
+        // Morrowind mode: the player stays the player until the toggle key makes her Kurenai; say so once.
+        if (!mToldToggle && mPeerAlive && mMorrowindMode && mToggleScancode != 0
+            && !MWBase::Environment::get().getWindowManager()->isGuiMode())
+        {
+            mToldToggle = true;
+            MWBase::Environment::get().getWindowManager()->messageBox(
+                "Red Ninja is ready: press " + Settings::kurenai().mModeToggleKey.get() + " to become Kurenai");
+        }
         const bool drive = mPeerAlive && !mMorrowindMode;
         if (drive && !mControlling)
             takeControl();
@@ -2237,8 +2246,40 @@ namespace MWKurenai
             launches.swap(mKunaiNew);
         }
         MWBase::World* world = MWBase::Environment::get().getWorld();
-        for (const KunaiLaunch& l : launches)
+        if (lockable(mLockActor))
         {
+            mKunaiTarget = mLockActor.getCellRef().getRefNum();
+            mKunaiTargetAge = 0;
+        }
+        else
+            mKunaiTargetAge += dt;
+        for (KunaiLaunch l : launches)
+        {
+            // Locked on, the game aims the kunai up or down at its target, but its target stands where the PS2 stage
+            // has it (or, for an actor without a stage enemy, nowhere: the game throws it level). In Morrowind it flies
+            // at the locked actor's chest, wherever that is, when the throw heads its way.
+            if (mKunaiTarget.isSet() && mKunaiTargetAge < 1.5f)
+            {
+                const MWWorld::Ptr target = MWBase::Environment::get().getWorldModel()->getPtr(mKunaiTarget);
+                if (lockable(target))
+                {
+                    const osg::Vec3f chest = target.getRefData().getPosition().asVec3()
+                        + osg::Vec3f(0, 0, world->getHalfExtents(target).z() * 1.2f);
+                    osg::Vec3f thrown = l.to - l.from, toward = chest - l.from;
+                    osg::Vec2f flatThrown(thrown.x(), thrown.y()), flatToward(toward.x(), toward.y());
+                    if (flatThrown.normalize() > 1e-3f && flatToward.normalize() > 1e-3f
+                        && flatThrown * flatToward > std::cos(osg::DegreesToRadians(30.0f)))
+                    {
+                        toward.normalize();
+                        if (mKunaiThrows < 5)
+                            Log(Debug::Info) << "Kurenai: thrown kunai aimed at the locked "
+                                             << target.getCellRef().getRefId().toDebugString() << "'s chest: pitch "
+                                             << osg::RadiansToDegrees(std::asin(thrown.z() / thrown.length()))
+                                             << " -> " << osg::RadiansToDegrees(std::asin(toward.z())) << " degrees";
+                        l.to = l.from + toward * thrown.length();
+                    }
+                }
+            }
             // Where it ends in Morrowind: the first wall, ground or actor along its line (not her own body, which
             // it starts in). The game flies it straight.
             MWPhysics::RayCastingResult hit;

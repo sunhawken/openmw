@@ -14,6 +14,9 @@
 #include <osg/Vec3f>
 #include <osg/observer_ptr>
 
+#include <components/esm/refid.hpp>
+#include <components/esm3/cellref.hpp>
+
 #include "../mwworld/ptr.hpp"
 #include "nativebody.hpp"
 #include "poseoverride.hpp"
@@ -182,6 +185,7 @@ namespace MWKurenai
         bool mLockOn = true;
         float mLockRange = 3000;
         bool mLockHeld = false;
+        bool mToldToggle = false;
         MWWorld::Ptr mLockActor;
         std::uint64_t mLockPicks = 0, mLockMisses = 0;
         MyGUI::ImageBox* mLockMarker = nullptr;
@@ -253,6 +257,10 @@ namespace MWKurenai
         bool mKunaiSticks = false;
         float mKunaiTimer = 0;
         std::uint64_t mKunaiThrows = 0;
+        // The actor her lock was last on and how long ago: the game drops the lock before the
+        // kunai leaves her hand.
+        ESM::RefNum mKunaiTarget;
+        float mKunaiTargetAge = 0;
         void updateKunai(const kurenai::CoordTransform& t, float dt);
         bool makeKunai();
         std::shared_ptr<PoseTarget> mPoseTarget = std::make_shared<PoseTarget>();
