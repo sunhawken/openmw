@@ -169,6 +169,17 @@ namespace MWKurenai
             "SPU2/Output/StandardVolume=" + std::to_string(k.mPs2Volume.get()),
             "SPU2/Output/OutputMuted=" + std::string(k.mPs2Volume.get() == 0 ? "true" : "false"),
         };
+        if (k.mPs2QuickStart)
+        {
+            fs::create_directories(data / "sstates", ec);
+            const fs::path quick = data / "sstates" / "quickstart.p2s";
+            a.insert(a.end(), { "-set", "Kurenai/QuickStartState=" + u8(quick) });
+            if (fs::is_regular_file(quick, ec))
+            {
+                a.insert(a.end(), { "-state", u8(quick) });
+                Log(Debug::Info) << "Kurenai: quick start from " << u8(quick);
+            }
+        }
         for (const std::string& s : sets)
             a.insert(a.end(), { "-set", s });
         // An HD texture pack unpacked into <data>/textures/<serial>/replacements (PCSX2's own layout).
