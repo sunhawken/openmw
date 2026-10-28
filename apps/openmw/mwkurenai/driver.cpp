@@ -26,6 +26,7 @@
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
+#include "../mwgui/mode.hpp"
 #include "../mwinput/actions.hpp"
 #include "../mwmechanics/aisequence.hpp"
 #include "../mwmechanics/creaturestats.hpp"
@@ -276,6 +277,12 @@ namespace MWKurenai
                 mToggleScancode = SDL_GetScancodeFromName(k.mModeToggleKey.get().c_str());
                 if (mToggleScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown mode toggle key '" << k.mModeToggleKey.get() << "'";
+            }
+            if (!k.mControlsKey.get().empty())
+            {
+                mControlsScancode = SDL_GetScancodeFromName(k.mControlsKey.get().c_str());
+                if (mControlsScancode == SDL_SCANCODE_UNKNOWN)
+                    Log(Debug::Error) << "Kurenai: unknown controls key '" << k.mControlsKey.get() << "'";
             }
             if (k.mNativeBody && !k.mNativeBodyModels.get().empty())
                 mNative = std::make_unique<NativeBody>(k.mNativeBodyModels.get());
@@ -1222,6 +1229,51 @@ namespace MWKurenai
                 : (mPeerAlive ? "Combat mode: Red Ninja" : "Combat mode: Red Ninja (waiting for PCSX2)"));
     }
 
+    void Driver::pollControlsKey()
+    {
+        if (mControlsScancode == 0)
+            return;
+        int count = 0;
+        const Uint8* keys = SDL_GetKeyboardState(&count);
+        const bool down = mControlsScancode < count && keys[mControlsScancode];
+        const bool pressed = down && !mControlsHeld;
+        mControlsHeld = down;
+        if (!pressed || !mControlling)
+            return;
+        MWBase::WindowManager* wm = MWBase::Environment::get().getWindowManager();
+        // F1 is also Morrowind's quick keys menu, opened by this same press: in combat mode the card replaces it.
+        if (wm->containsMode(MWGui::GM_QuickKeysMenu))
+            wm->removeGuiMode(MWGui::GM_QuickKeysMenu);
+        if (!wm->isGuiMode())
+            showControls();
+    }
+
+    void Driver::showControls()
+    {
+        const MWBase::InputManager* input = MWBase::Environment::get().getInputManager();
+        const auto bound = [&](int action) {
+            std::string key = input->getActionKeyBindingName(action);
+            const std::string pad = input->getActionControllerBindingName(action);
+            if (!pad.empty() && pad != key)
+                key += key.empty() ? pad : " / " + pad;
+            return key.empty() ? std::string("(not bound)") : key;
+        };
+        std::ostringstream card;
+        card << "Kurenai's controls (change them in Options > Controls)\n\n"
+             << "Move: " << bound(MWInput::A_MoveForward) << ", " << bound(MWInput::A_MoveLeft) << ", "
+             << bound(MWInput::A_MoveBackward) << ", " << bound(MWInput::A_MoveRight) << "\n"
+             << "Jump (Cross): " << bound(MWInput::A_Jump) << "\n"
+             << "Attack (Square): " << bound(MWInput::A_Use) << "\n"
+             << "Wire / smoke bomb (Circle): " << bound(MWInput::A_Activate) << "\n"
+             << "Hook / action (Triangle, hold to aim): " << bound(MWInput::A_ToggleWeapon) << "\n"
+             << "Lock-on (R1): " << bound(MWInput::A_Run) << "\n"
+             << "Block (L1): " << bound(MWInput::A_ToggleSpell) << "\n"
+             << "Crouch, wall hug next to a wall (L2): " << bound(MWInput::A_Sneak) << "\n"
+             << "Items / pause (Start): " << bound(MWInput::A_GameMenu) << "\n\n"
+             << Settings::kurenai().mModeToggleKey.get() << ": back to your Morrowind character";
+        MWBase::Environment::get().getWindowManager()->interactiveMessageBox(card.str(), { "OK" });
+    }
+
     void Driver::sendInput()
     {
         const MWBase::InputManager* input = MWBase::Environment::get().getInputManager();
@@ -1391,6 +1443,14 @@ namespace MWKurenai
         if (mPeerAlive && mHealthMode == "morrowind")
             sendMorrowindHealth();
         pollModeKey();
+        pollControlsKey();
+        if (!mToldControls && mControlling && mControlsScancode != 0
+            && !MWBase::Environment::get().getWindowManager()->isGuiMode())
+        {
+            mToldControls = true;
+            MWBase::Environment::get().getWindowManager()->messageBox(
+                "Press " + Settings::kurenai().mControlsKey.get() + " for Kurenai's controls");
+        }
         // Morrowind mode: the player stays the player until the toggle key makes her Kurenai; say so once.
         if (!mToldToggle && mPeerAlive && mMorrowindMode && mToggleScancode != 0
             && !MWBase::Environment::get().getWindowManager()->isGuiMode())

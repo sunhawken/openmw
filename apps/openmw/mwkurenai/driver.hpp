@@ -82,6 +82,8 @@ namespace MWKurenai
         void takeControl();
         void releaseControl(const char* why);
         void pollModeKey();
+        void pollControlsKey();
+        void showControls();
         void sendInput();
         void applyAnimation(std::uint32_t motion);
         void handleCombat(const kurenai::proto::CombatEvent& e);
@@ -104,6 +106,9 @@ namespace MWKurenai
         bool mControlling = false; // PCSX2 drives the player (connected and in combat mode)
         int mToggleScancode = 0; // SDL scancode, 0 = no key
         bool mToggleHeld = false;
+        int mControlsScancode = 0; // [Kurenai] controls key, 0 = none
+        bool mControlsHeld = false;
+        bool mToldControls = false;
         bool mCollisionWasOn = false;
         bool mFollowGround = true; // [Kurenai] height mode = ground
         bool mInterpolate = true;
