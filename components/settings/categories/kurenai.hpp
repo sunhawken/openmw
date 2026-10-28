@@ -52,6 +52,12 @@ namespace Settings
         SettingValue<float> mMaxViewDistance{ mIndex, "Kurenai", "max view distance", makeMaxStrictSanitizerFloat(0) };
         SettingValue<bool> mNativeBody{ mIndex, "Kurenai", "native body" };
         SettingValue<std::vector<std::string>> mNativeBodyModels{ mIndex, "Kurenai", "native body models" };
+        SettingValue<std::string> mPs2Folder{ mIndex, "Kurenai", "ps2 folder" };
+        SettingValue<std::string> mPs2Iso{ mIndex, "Kurenai", "ps2 iso" };
+        SettingValue<std::string> mPs2Bios{ mIndex, "Kurenai", "ps2 bios" };
+        SettingValue<std::string> mPs2Data{ mIndex, "Kurenai", "ps2 data" };
+        SettingValue<std::string> mPs2Renderer{ mIndex, "Kurenai", "ps2 renderer",
+            makeEnumSanitizerString({ "auto", "OpenGL", "Vulkan", "Software" }) };
     };
 }
 

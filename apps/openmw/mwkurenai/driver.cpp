@@ -319,6 +319,7 @@ namespace MWKurenai
             Log(Debug::Warning) << "Kurenai: [Physics] async num threads > 0: physics may step outside the world lock "
                                    "while collision queries are answered; set it to 0 for KURENAI sessions";
         mThread = std::thread([this] { serviceThread(); });
+        mPs2 = EmbeddedPs2::start(name);
     }
 
     Driver::~Driver()
@@ -330,6 +331,7 @@ namespace MWKurenai
                              << mLatency.transportSumUs / mLatency.count << " us (max " << mLatency.transportMaxUs
                              << "), until applied in a frame average " << mLatency.sumUs / mLatency.count
                              << " us (max " << mLatency.maxUs << ") over " << mLatency.count << " states";
+        mPs2.reset(); // the game first: it still talks to the bridge
         mStop = true;
         if (mThread.joinable())
             mThread.join();

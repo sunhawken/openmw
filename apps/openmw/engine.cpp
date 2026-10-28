@@ -438,6 +438,8 @@ OMW::Engine::~Engine()
     }
     mScreenCaptureHandler = nullptr;
 
+    // KURENAI: the game and the bridge first; they ask the world for collision until they stop.
+    mKurenai = nullptr;
     mMechanicsManager = nullptr;
     mDialogueManager = nullptr;
     mJournal = nullptr;
@@ -448,7 +450,6 @@ OMW::Engine::~Engine()
     mSoundManager = nullptr;
     mInputManager = nullptr;
     mStateManager = nullptr;
-    mKurenai = nullptr;
     mLuaWorker = nullptr;
     mLuaManager = nullptr;
     mL10nManager = nullptr;

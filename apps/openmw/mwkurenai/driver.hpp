@@ -18,6 +18,7 @@
 #include <components/esm3/cellref.hpp>
 
 #include "../mwworld/ptr.hpp"
+#include "embeddedps2.hpp"
 #include "nativebody.hpp"
 #include "poseoverride.hpp"
 
@@ -95,6 +96,7 @@ namespace MWKurenai
         void applyPendingRagdolls();
 
         std::unique_ptr<kurenai::Link> mLink;
+        std::unique_ptr<EmbeddedPs2> mPs2; ///< The game inside OpenMW ([Kurenai] ps2 folder), else null
         kurenai::CoordTransform mTransform;
         bool mAnchored = false;
         bool mPeerAlive = false;

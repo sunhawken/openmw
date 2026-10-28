@@ -124,7 +124,7 @@ if (KURENAI_BRIDGE_DIR)
     set(KURENAI_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
     add_subdirectory(${KURENAI_BRIDGE_DIR} ${CMAKE_BINARY_DIR}/kurenai_bridge EXCLUDE_FROM_ALL)
     add_openmw_dir (mwkurenai
-        driver nativebody poseoverride
+        driver embeddedps2 nativebody poseoverride
         )
 endif()
 
@@ -181,7 +181,7 @@ include_directories(
 )
 
 if (KURENAI_BRIDGE_DIR)
-    target_link_libraries(openmw-lib kurenai_bridge)
+    target_link_libraries(openmw-lib kurenai_bridge ${CMAKE_DL_LIBS})
     target_compile_definitions(openmw-lib PUBLIC OPENMW_KURENAI)
 endif()
 
