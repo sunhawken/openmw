@@ -58,6 +58,7 @@ namespace Settings
         SettingValue<std::string> mPs2Data{ mIndex, "Kurenai", "ps2 data" };
         SettingValue<std::string> mPs2Renderer{ mIndex, "Kurenai", "ps2 renderer",
             makeEnumSanitizerString({ "auto", "OpenGL", "Vulkan", "Software" }) };
+        SettingValue<int> mPs2Volume{ mIndex, "Kurenai", "ps2 volume", makeClampSanitizerInt(0, 100) };
     };
 }
 

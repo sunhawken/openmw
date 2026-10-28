@@ -166,6 +166,8 @@ namespace MWKurenai
             "Kurenai/HookLayout=" + prof + "/hook.layout",
             "Kurenai/HudLayout=" + prof + "/hud.layout",
             "Kurenai/KunaiAimAtLock=true",
+            "SPU2/Output/StandardVolume=" + std::to_string(k.mPs2Volume.get()),
+            "SPU2/Output/OutputMuted=" + std::string(k.mPs2Volume.get() == 0 ? "true" : "false"),
         };
         for (const std::string& s : sets)
             a.insert(a.end(), { "-set", s });
