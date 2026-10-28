@@ -60,6 +60,7 @@ namespace Settings
             makeEnumSanitizerString({ "auto", "OpenGL", "Vulkan", "Software" }) };
         SettingValue<int> mPs2Volume{ mIndex, "Kurenai", "ps2 volume", makeClampSanitizerInt(0, 100) };
         SettingValue<bool> mPs2QuickStart{ mIndex, "Kurenai", "ps2 quick start" };
+        SettingValue<bool> mPs2Window{ mIndex, "Kurenai", "ps2 window" };
     };
 }
 

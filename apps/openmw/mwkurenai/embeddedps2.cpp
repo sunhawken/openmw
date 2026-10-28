@@ -137,7 +137,9 @@ namespace MWKurenai
         const std::string prof = u8(profile);
         const std::string logs = u8(data / "logs");
         std::vector<std::string>& a = ps2->mArgs;
-        a = { "pcsx2-kurenai", "-game", "-surfaceless", "-bios", u8(bios), "-logfile", logs + "/pcsx2.log" };
+        a = { "pcsx2-kurenai", "-game", "-bios", u8(bios), "-logfile", logs + "/pcsx2.log" };
+        if (!k.mPs2Window)
+            a.push_back("-surfaceless");
         if (k.mPs2Renderer.get() != "auto")
             a.insert(a.end(), { "-renderer", k.mPs2Renderer.get() });
         const std::vector<std::string> sets = {
