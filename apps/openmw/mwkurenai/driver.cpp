@@ -119,6 +119,13 @@ namespace MWKurenai
         constexpr float kSmokeDelay = 50.0f / 60.0f;
         constexpr float kSmokeLife = 330.0f / 60.0f;
         constexpr float kSmokeAfter = 3.0f;
+        // Her smoke bomb's throw in Morrowind: launch speed and gravity (Morrowind units), and the arc's step and length.
+        // Needs measuring against the game's own throw; about 14 m at the best elevation.
+        constexpr float kSmokeSpeed = 850.0f;
+        constexpr float kSmokeGravity = 700.0f;
+        constexpr float kSmokeStep = 1.0f / 30.0f;
+        constexpr float kSmokeMaxTime = 4.0f;
+        constexpr float kSmokeTapTime = 0.15f; // long enough for the game to see the button (it reads the pad at 30 Hz)
 
         // A spell of hers, made once and kept in the store (the save keeps it with whoever carries it).
         const ESM::Spell* itemSpell(std::string_view id, std::string_view name, ESM::Spell::SpellType type,
@@ -922,11 +929,13 @@ namespace MWKurenai
         send(msg);
     }
 
-    void Driver::startSmoke(const osg::Vec3f& at)
+    void Driver::startSmoke(const osg::Vec3f& at, bool landed)
     {
         Smoke s;
         s.effectId = "kurenai_smoke_" + std::to_string(++mSmokeBombs);
         s.position = at;
+        if (landed)
+            s.age = kSmokeDelay; // a thrown bomb's cloud starts as it lands
         mSmokes.push_back(s);
         Log(Debug::Info) << "Kurenai: smoke bomb at (" << at.x() << ", " << at.y() << ", " << at.z() << ")";
     }
@@ -1011,6 +1020,155 @@ namespace MWKurenai
             entry.second.left = 0;
         updateSmoke(0);
         mItemMotion = 0xffffffffu;
+        mSmokeFlight.clear();
+        mSmokeButton = 0;
+        mSmokeTap = 0;
+        if (mSmokeBombNode)
+            mSmokeBombNode->setNodeMask(0u);
+        if (mSmokeAimNode)
+            mSmokeAimNode->setNodeMask(0u);
+    }
+
+    void Driver::smokeArc(const MWWorld::Ptr& player, std::vector<osg::Vec3f>& arc)
+    {
+        // From her shoulder, along her heading at mSmokeElev, under gravity, to the first wall, ground, actor or water.
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const ESM::Position& pos = player.getRefData().getPosition();
+        const osg::Vec3f forward(std::sin(pos.rot[2]), std::cos(pos.rot[2]), 0);
+        osg::Vec3f p = pos.asVec3() + osg::Vec3f(0, 0, world->getHalfExtents(player).z() * 1.7f) + forward * 20.0f;
+        osg::Vec3f v = (forward * std::cos(mSmokeElev) + osg::Vec3f(0, 0, std::sin(mSmokeElev))) * kSmokeSpeed;
+        const MWWorld::CellStore* cell = player.isInCell() ? player.getCell() : nullptr;
+        const bool water = cell && cell->getCell()->hasWater();
+        const float waterLevel = water ? cell->getWaterLevel() : 0;
+        arc.assign(1, p);
+        for (float t = 0; t < kSmokeMaxTime; t += kSmokeStep)
+        {
+            const osg::Vec3f next = p + v * kSmokeStep + osg::Vec3f(0, 0, -0.5f * kSmokeGravity * kSmokeStep * kSmokeStep);
+            v.z() -= kSmokeGravity * kSmokeStep;
+            MWPhysics::RayCastingResult hit;
+            {
+                std::lock_guard<std::mutex> lock(mWorldMutex);
+                hit = world->getRayCasting()->castRay(p, next, { player }, {},
+                    MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR
+                        | MWPhysics::Layers::ACTOR);
+            }
+            if (hit.mHit)
+            {
+                arc.push_back(hit.mHitPos);
+                return;
+            }
+            if (water && p.z() >= waterLevel && next.z() < waterLevel)
+            {
+                const float f = (p.z() - waterLevel) / (p.z() - next.z());
+                arc.push_back(p + (next - p) * f);
+                return;
+            }
+            arc.push_back(next);
+            p = next;
+        }
+    }
+
+    void Driver::updateSmokeAim(const MWWorld::Ptr& player, float dt)
+    {
+        if (!mSmokeButton || !mLatest)
+        {
+            if (mSmokeAimNode)
+                mSmokeAimNode->setNodeMask(0u);
+            return;
+        }
+        // The mouse (down lowers the throw) or the right stick (up raises it) sets the elevation; she throws along
+        // her heading, which the left stick turns.
+        constexpr float kTurn = 1.2f; // radians per second
+        mSmokeElev -= mLookPitch;
+        if (mLatest->flags & kurenai::proto::FlagRightUp)
+            mSmokeElev += kTurn * dt;
+        if (mLatest->flags & kurenai::proto::FlagRightDown)
+            mSmokeElev -= kTurn * dt;
+        mSmokeElev = std::clamp(mSmokeElev, -0.35f, 1.25f);
+        smokeArc(player, mSmokeArc);
+
+        if (!mSmokeAimNode)
+        {
+            mSmokeAimNode = new osg::Group;
+            mSmokeAimNode->setName("krn_smoke_aim");
+            const auto line = [](const osg::Vec4f& colour) {
+                osg::ref_ptr<osg::Geometry> g = new osg::Geometry;
+                g->setDataVariance(osg::Object::DYNAMIC); // rebuilt every frame
+                g->setUseDisplayList(false);
+                g->setVertexArray(new osg::Vec3Array);
+                osg::ref_ptr<osg::Vec4Array> c = new osg::Vec4Array(1);
+                (*c)[0] = colour;
+                g->setColorArray(c, osg::Array::BIND_OVERALL);
+                return g;
+            };
+            mSmokeArcLine = line(osg::Vec4f(1.0f, 0.85f, 0.45f, 1.0f));
+            mSmokeRing = line(osg::Vec4f(1.0f, 0.25f, 0.2f, 1.0f));
+            mSmokeAimNode->addChild(mSmokeArcLine);
+            mSmokeAimNode->addChild(mSmokeRing);
+            // Seen through walls and her body, as an aiming guide.
+            osg::StateSet* ss = mSmokeAimNode->getOrCreateStateSet();
+            ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+            ss->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
+            ss->setAttributeAndModes(new osg::LineWidth(3.0f));
+            ss->setRenderBinDetails(1000, "RenderBin");
+            MWBase::Environment::get().getWorld()->getRenderingManager()->getLightRoot()->addChild(mSmokeAimNode);
+
+            // The bomb in flight: a small dark ball.
+            mSmokeBombNode = new osg::MatrixTransform;
+            mSmokeBombNode->setName("krn_smoke_bomb");
+            mSmokeBombNode->setDataVariance(osg::Object::DYNAMIC);
+            osg::ref_ptr<osg::Geometry> ball = line(osg::Vec4f(0.15f, 0.15f, 0.17f, 1.0f));
+            osg::ref_ptr<osg::Vec3Array> bv = new osg::Vec3Array;
+            for (int i = 0; i < 3; ++i) // three crossed rings
+                for (int k = 0; k < 12; ++k)
+                {
+                    const float a = osg::PI * 2 * k / 12, r = 6.0f;
+                    const osg::Vec3f q(r * std::cos(a), r * std::sin(a), 0);
+                    bv->push_back(i == 0 ? q : i == 1 ? osg::Vec3f(q.x(), 0, q.y()) : osg::Vec3f(0, q.x(), q.y()));
+                }
+            ball->setVertexArray(bv);
+            for (int i = 0; i < 3; ++i)
+                ball->addPrimitiveSet(new osg::DrawArrays(GL_LINE_LOOP, i * 12, 12));
+            ball->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+            ball->getOrCreateStateSet()->setAttributeAndModes(new osg::LineWidth(4.0f));
+            mSmokeBombNode->addChild(ball);
+            mSmokeBombNode->setNodeMask(0u);
+            MWBase::Environment::get().getWorld()->getRenderingManager()->getLightRoot()->addChild(mSmokeBombNode);
+            Log(Debug::Info) << "Kurenai: smoke bomb aim shown";
+        }
+        osg::ref_ptr<osg::Vec3Array> arc = new osg::Vec3Array(mSmokeArc.begin(), mSmokeArc.end());
+        const GLsizei arcCount = static_cast<GLsizei>(arc->size());
+        // Cross ticks every 0.1 s of flight: they shrink with distance, so the arc reads as going away from the
+        // camera even when the camera is straight behind her.
+        const float yaw = player.getRefData().getPosition().rot[2];
+        const osg::Vec3f side(std::cos(yaw) * 8.0f, -std::sin(yaw) * 8.0f, 0);
+        for (GLsizei i = 3; i < arcCount; i += 3)
+        {
+            const osg::Vec3f p = mSmokeArc[i];
+            arc->push_back(p - side);
+            arc->push_back(p + side);
+        }
+        mSmokeArcLine->setVertexArray(arc);
+        mSmokeArcLine->removePrimitiveSet(0, mSmokeArcLine->getNumPrimitiveSets());
+        mSmokeArcLine->addPrimitiveSet(new osg::DrawArrays(GL_LINE_STRIP, 0, arcCount));
+        if (arc->size() > static_cast<std::size_t>(arcCount))
+            mSmokeArcLine->addPrimitiveSet(
+                new osg::DrawArrays(GL_LINES, arcCount, static_cast<GLsizei>(arc->size()) - arcCount));
+        // Where it lands: a small ring, and the cloud's reach around it.
+        const osg::Vec3f land = mSmokeArc.back() + osg::Vec3f(0, 0, 4);
+        osg::ref_ptr<osg::Vec3Array> ring = new osg::Vec3Array;
+        constexpr int kSides = 40;
+        for (const float r : { 25.0f, mSmokeRadius })
+            for (int k = 0; k < kSides; ++k)
+            {
+                const float a = osg::PI * 2 * k / kSides;
+                ring->push_back(land + osg::Vec3f(r * std::cos(a), r * std::sin(a), 0));
+            }
+        mSmokeRing->setVertexArray(ring);
+        mSmokeRing->removePrimitiveSet(0, mSmokeRing->getNumPrimitiveSets());
+        mSmokeRing->addPrimitiveSet(new osg::DrawArrays(GL_LINE_LOOP, 0, kSides));
+        mSmokeRing->addPrimitiveSet(new osg::DrawArrays(GL_LINE_LOOP, kSides, kSides));
+        mSmokeAimNode->setNodeMask(MWRender::Mask_Effect);
     }
 
     void Driver::pollModeKey()
@@ -1081,6 +1239,25 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnR1;
         if (held(MWInput::A_GameMenu))
             in.buttons |= kurenai::proto::BtnStart;
+        // Her smoke bomb's button: held, it aims (updateSmokeAim) and the game doesn't see it; let go, it is tapped.
+        std::uint16_t smokeButton = 0;
+        if (mLatest && !mHudMenuUp)
+        {
+            if ((mLatest->flags & kurenai::proto::FlagSmokeTriangle) && held(MWInput::A_ToggleWeapon))
+                smokeButton = kurenai::proto::BtnTriangle;
+            else if ((mLatest->flags & kurenai::proto::FlagSmokeCircle) && held(MWInput::A_Activate))
+                smokeButton = kurenai::proto::BtnCircle;
+        }
+        if (smokeButton)
+            in.buttons &= static_cast<std::uint16_t>(~smokeButton);
+        else if (mSmokeButton)
+        {
+            mSmokeTapButton = mSmokeButton;
+            mSmokeTap = kSmokeTapTime;
+        }
+        mSmokeButton = smokeButton;
+        if (mSmokeTap > 0)
+            in.buttons |= mSmokeTapButton;
         // Below the surface Jump swims up (updateSwim) and her breathing tube stays put: the game sees neither.
         if (mLatest && swimMotions().count(mLatest->animId) && mSwimDepth.load() >= kSurfaceDepth)
             in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnCross | kurenai::proto::BtnL2));
@@ -1103,6 +1280,7 @@ namespace MWKurenai
         ++mFrames;
         mSinceInput += dt;
         mSinceLatest += dt;
+        mSmokeTap = std::max(0.0f, mSmokeTap - dt);
         const std::uint64_t now = kurenai::monotonicNs();
         mLink->tick(now);
         mFrameBeatNs.store(now, std::memory_order_relaxed);
@@ -2491,6 +2669,26 @@ namespace MWKurenai
     {
         if (!mSmokes.empty() || !mSmoked.empty())
             updateSmoke(dt);
+        if (!mSmokeFlight.empty())
+        {
+            // The thrown bomb along its arc; its cloud starts where it lands.
+            mSmokeFlightTime += dt;
+            const float at = mSmokeFlightTime / kSmokeStep;
+            const std::size_t i = static_cast<std::size_t>(at);
+            if (i + 1 >= mSmokeFlight.size())
+            {
+                startSmoke(mSmokeFlight.back(), true);
+                mSmokeFlight.clear();
+                if (mSmokeBombNode)
+                    mSmokeBombNode->setNodeMask(0u);
+            }
+            else if (mSmokeBombNode)
+            {
+                const float f = at - static_cast<float>(i);
+                mSmokeBombNode->setMatrix(osg::Matrixf::translate(mSmokeFlight[i] * (1 - f) + mSmokeFlight[i + 1] * f));
+                mSmokeBombNode->setNodeMask(MWRender::Mask_Effect);
+            }
+        }
         if (!mLink || !mControlling || !mLatest)
             return;
         MWBase::World* world = MWBase::Environment::get().getWorld();
@@ -2564,6 +2762,7 @@ namespace MWKurenai
         }
         world->moveObject(player, osg::Vec3f(mw.x, mw.y, mw.z), true, true);
         player = world->getPlayerPtr();
+        mLookPitch = player.getRefData().getPosition().rot[0] - mSwimPitch; // put back to mSwimPitch every frame
         // While she swims, the mouse looks up and down as in Morrowind (the dive's direction, and the camera's tilt).
         mSwimPitch = mSwimming.load() ? std::clamp(player.getRefData().getPosition().rot[0], -1.4f, 1.4f) : 0.0f;
         world->rotateObject(player, osg::Vec3f(mSwimPitch, 0, yaw), MWBase::RotationFlag_none);
@@ -2584,8 +2783,17 @@ namespace MWKurenai
         {
             mItemMotion = mLatest->animId;
             if (smokeMotions().count(mItemMotion))
-                startSmoke(player.getRefData().getPosition().asVec3());
+            {
+                // Thrown along the arc she aims (or would aim: a throw the game started by itself goes the same way).
+                smokeArc(player, mSmokeFlight);
+                mSmokeFlightTime = 0;
+                const osg::Vec3f& land = mSmokeFlight.back();
+                Log(Debug::Info) << "Kurenai: smoke bomb thrown, elevation " << osg::RadiansToDegrees(mSmokeElev)
+                                 << " degrees, lands at (" << land.x() << ", " << land.y() << ", " << land.z() << ") in "
+                                 << (mSmokeFlight.size() - 1) * kSmokeStep << " s";
+            }
         }
+        updateSmokeAim(player, dt);
         updatePoseOverride();
         if (mNative)
         {

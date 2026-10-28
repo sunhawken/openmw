@@ -314,7 +314,24 @@ namespace MWKurenai
         float mAimYaw = 0, mAimPitch = 0;
         bool mAimHit = false;
         osg::Vec3f mAimAt;
-        void startSmoke(const osg::Vec3f& at);
+        // The smoke bomb's throw (FlagSmokeTriangle, FlagSmokeCircle): while the button it is on is held, the game
+        // doesn't see the button and a grenade arc shows where the bomb will land (the mouse or the right stick raise and
+        // lower it); letting go taps the button, the game throws, and the bomb flies along the arc. Its cloud is where
+        // it lands.
+        std::uint16_t mSmokeButton = 0; // the held button carrying the bomb, 0: not aiming
+        std::uint16_t mSmokeTapButton = 0;
+        float mSmokeTap = 0; // seconds the button is still sent for the throw
+        float mSmokeElev = 0.5f; // the throw's elevation, radians above level
+        float mLookPitch = 0; // this frame's mouse look (the player's pitch before it is put back)
+        std::vector<osg::Vec3f> mSmokeArc; // points kSmokeStep seconds apart; the last is where it lands
+        osg::ref_ptr<osg::Group> mSmokeAimNode;
+        osg::ref_ptr<osg::Geometry> mSmokeArcLine, mSmokeRing;
+        osg::ref_ptr<osg::MatrixTransform> mSmokeBombNode;
+        std::vector<osg::Vec3f> mSmokeFlight; // the thrown bomb's path, empty: none in flight
+        float mSmokeFlightTime = 0;
+        void smokeArc(const MWWorld::Ptr& player, std::vector<osg::Vec3f>& arc);
+        void updateSmokeAim(const MWWorld::Ptr& player, float dt);
+        void startSmoke(const osg::Vec3f& at, bool landed = false);
         void updateSmoke(float dt);
         void clearSmoke();
 
