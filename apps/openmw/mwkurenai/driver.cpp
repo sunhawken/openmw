@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <fstream>
 #include <map>
 #include <set>
@@ -77,6 +78,9 @@ namespace MWKurenai
         // a bottom this far below the surface (game units): the moat's (runs/swimM). The bottom under her water is
         // reported with the game's water-bottom surface type (proto::kMaterialWaterFloor), as the moat's is.
         constexpr float kSwimFloor = 225.0f;
+        // How long a collision query waits for the world lock (see queryLock), and once the world has stayed locked.
+        constexpr std::chrono::milliseconds kQueryLockWait{ 20 };
+        constexpr std::chrono::milliseconds kStalledLockWait{ 1 };
 
         // Her motions that are Morrowind's sneak (crouch, creep, wall hug): the anim map's "sneak<TAB>id id ..." lines.
         std::set<std::uint32_t>& sneakMotions()
@@ -348,7 +352,7 @@ namespace MWKurenai
                              << " hits on Morrowind actors";
         if (mQueries)
             Log(Debug::Info) << "Kurenai: answered " << mQueries << " collision queries (" << mQueryHits << " hits, "
-                             << mQueriesDeclined << " declined), average " << (mQueryNs / 1000.0 / mQueries)
+                             << mQueriesDeclined << " declined, " << mQueriesStalled << " of them while the world loaded), average " << (mQueryNs / 1000.0 / mQueries)
                              << " us each, of which waiting for the world lock " << (mQueryLockNs / 1000.0 / mQueries)
                              << " us (max " << mQueryLockMaxNs / 1000.0 << " us)";
         if (mWaterHits)
@@ -449,11 +453,19 @@ namespace MWKurenai
         MWPhysics::RayCastingResult hit;
         {
             const std::uint64_t lockStart = kurenai::monotonicNs();
-            std::lock_guard<std::mutex> lock(mWorldMutex);
+            const std::unique_lock<std::timed_mutex> lock = queryLock();
             const std::uint64_t waited = kurenai::monotonicNs() - lockStart;
             mQueryLockNs += waited;
             if (waited > mQueryLockMaxNs)
                 mQueryLockMaxNs = waited;
+            if (!lock.owns_lock())
+            {
+                res.material = kurenai::proto::kMaterialDeclined;
+                ++mQueriesDeclined;
+                ++mQueriesStalled;
+                send(res);
+                return;
+            }
             // Statics, terrain and doors: Morrowind's level geometry. Actors (Kurenai herself included) are not
             // level geometry for the game's queries.
             hit = MWBase::Environment::get().getWorld()->getRayCasting()->castRay(osg::Vec3f(a.x, a.y, a.z),
@@ -493,6 +505,17 @@ namespace MWKurenai
         mQueryNs += kurenai::monotonicNs() - start;
     }
 
+    // A world update holds the world lock for a millisecond or two, a cell loading for up to seconds, and the game waits
+    // for every answer (up to its CollisionTimeoutUs, 100 ms). So a query that can't get the lock within
+    // kQueryLockWait is declined (the game replays Morrowind's last answer for that caller), and while the world stays
+    // locked the next ones give up after kStalledLockWait, so a load costs her one short wait, not one per query.
+    std::unique_lock<std::timed_mutex> Driver::queryLock()
+    {
+        std::unique_lock<std::timed_mutex> lock(mWorldMutex, std::defer_lock);
+        mWorldStalled = !lock.try_lock_for(mWorldStalled ? kStalledLockWait : kQueryLockWait);
+        return lock;
+    }
+
     void Driver::answerWater(const kurenai::proto::CollisionQuery& q, const kurenai::CoordTransform& t,
         const kurenai::proto::Vec3& a, const kurenai::proto::Vec3& b)
     {
@@ -503,7 +526,15 @@ namespace MWKurenai
         bool wet = false;
         float level = 0;
         {
-            std::lock_guard<std::mutex> lock(mWorldMutex);
+            const std::unique_lock<std::timed_mutex> lock = queryLock();
+            if (!lock.owns_lock())
+            {
+                res.material = kurenai::proto::kMaterialDeclined;
+                ++mQueriesDeclined;
+                ++mQueriesStalled;
+                send(res);
+                return;
+            }
             const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
             const MWWorld::CellStore* cell = player.isInCell() ? player.getCell() : nullptr;
             if (cell && cell->getCell()->hasWater())
@@ -1049,7 +1080,7 @@ namespace MWKurenai
             v.z() -= kSmokeGravity * kSmokeStep;
             MWPhysics::RayCastingResult hit;
             {
-                std::lock_guard<std::mutex> lock(mWorldMutex);
+                std::lock_guard<std::timed_mutex> lock(mWorldMutex);
                 hit = world->getRayCasting()->castRay(p, next, { player }, {},
                     MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR
                         | MWPhysics::Layers::ACTOR);
@@ -2478,7 +2509,7 @@ namespace MWKurenai
             // it starts in). The game flies it straight.
             MWPhysics::RayCastingResult hit;
             {
-                std::lock_guard<std::mutex> lock(mWorldMutex);
+                std::lock_guard<std::timed_mutex> lock(mWorldMutex);
                 hit = world->getRayCasting()->castRay(l.from, l.to, { world->getPlayerPtr() }, {},
                     MWPhysics::Layers::WORLD | MWPhysics::Layers::HEIGHTMAP | MWPhysics::Layers::DOOR
                         | MWPhysics::Layers::ACTOR);

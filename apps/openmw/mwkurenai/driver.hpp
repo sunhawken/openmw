@@ -70,7 +70,7 @@ namespace MWKurenai
 
         // Held by the engine while physics and the world update run; the bridge thread answers the game's collision
         // queries (Jolt ray casts) only outside those windows.
-        std::unique_lock<std::mutex> lockWorld() { return std::unique_lock<std::mutex>(mWorldMutex); }
+        std::unique_lock<std::timed_mutex> lockWorld() { return std::unique_lock<std::timed_mutex>(mWorldMutex); }
 
     private:
         void serviceThread();
@@ -148,7 +148,9 @@ namespace MWKurenai
             std::uint64_t arrivalNs; // when the bridge thread took it off the ring
         };
         std::deque<Arrived> mInbox;
-        std::mutex mWorldMutex;
+        std::timed_mutex mWorldMutex;
+        std::atomic<bool> mWorldStalled{ false }; // a query found the world lock held for long (a cell loading)
+        std::unique_lock<std::timed_mutex> queryLock();
         std::mutex mTransformMutex; // guards mTransform and mAnchored for the bridge thread
         bool mAnswerCollision = false;
 
@@ -392,6 +394,7 @@ namespace MWKurenai
         void hideHud();
         std::atomic<std::uint64_t> mQueries{ 0 }, mQueryHits{ 0 }, mQueriesDeclined{ 0 }, mQueryNs{ 0 };
         std::atomic<std::uint64_t> mQueryLockNs{ 0 }, mQueryLockMaxNs{ 0 }; // time waiting for the world lock
+        std::atomic<std::uint64_t> mQueriesStalled{ 0 }; // declined because the world stayed locked
     };
 }
 

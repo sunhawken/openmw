@@ -308,7 +308,7 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
             if (mStateManager->getState() != MWBase::StateManager::State_NoGame)
             {
 #ifdef OPENMW_KURENAI
-                std::unique_lock<std::mutex> kurenaiLock;
+                std::unique_lock<std::timed_mutex> kurenaiLock;
                 if (mKurenai)
                     kurenaiLock = mKurenai->lockWorld(); // no bridge ray casts while bodies move
 #endif
@@ -329,7 +329,7 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
             if (mStateManager->getState() != MWBase::StateManager::State_NoGame)
             {
 #ifdef OPENMW_KURENAI
-                std::unique_lock<std::mutex> kurenaiLock;
+                std::unique_lock<std::timed_mutex> kurenaiLock;
                 if (mKurenai)
                     kurenaiLock = mKurenai->lockWorld(); // cells (and their collision) load and unload here
 #endif

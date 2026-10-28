@@ -51,6 +51,12 @@
 
 namespace
 {
+    // Milliseconds since t, for the cell-change timing lines in the log.
+    long long msSince(std::chrono::steady_clock::time_point t)
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count();
+    }
+
     using MWWorld::RotationOrder;
 
     osg::Quat makeActorOsgQuat(const ESM::Position& position)
@@ -369,27 +375,27 @@ namespace MWWorld
     {
         if (mActiveCells.find(cell) == mActiveCells.end())
             return;
-        Log(Debug::Info) << "[CELL UNLOAD] Starting unload of cell " << cell->getCell()->getDescription();
+        Log(Debug::Verbose) << "[CELL UNLOAD] Starting unload of cell " << cell->getCell()->getDescription();
 
         ListAndResetObjectsVisitor visitor;
 
         cell->forEach(visitor, true); // Include objects being teleported by Lua
 
-        Log(Debug::Info) << "[CELL UNLOAD] Found " << visitor.mObjects.size() << " objects to remove";
+        Log(Debug::Verbose) << "[CELL UNLOAD] Found " << visitor.mObjects.size() << " objects to remove";
 
         // Use batch removal for physics bodies to prevent crashes during cell transitions.
         // Individual remove() calls each trigger syncSimulation(), which can access bodies
         // being destroyed in subsequent iterations. Batch removal is atomic and safe.
         // IMPORTANT: We must NOT remove the player's physics body - the player persists across cell transitions.
         const MWWorld::Ptr playerPtr = mWorld.getPlayerPtr();
-        Log(Debug::Info) << "[CELL UNLOAD] Player ptr mRef=" << (void*)playerPtr.mRef;
+        Log(Debug::Verbose) << "[CELL UNLOAD] Player ptr mRef=" << (void*)playerPtr.mRef;
         int objectCount = 0, dynamicCount = 0, actorCount = 0;
         for (const auto& ptr : visitor.mObjects)
         {
             // Skip the player - their physics body persists across cell transitions
             if (ptr == playerPtr)
             {
-                Log(Debug::Info) << "[CELL UNLOAD] Skipping player object";
+                Log(Debug::Verbose) << "[CELL UNLOAD] Skipping player object";
                 continue;
             }
 
@@ -423,19 +429,19 @@ namespace MWWorld
         // Queue heightfield removal BEFORE flush (must be part of the same batch operation)
         if (cell->getCell()->isExterior())
         {
-            Log(Debug::Info) << "[CELL UNLOAD] Queuing heightfield at (" << cellX << ", " << cellY << ") for removal";
+            Log(Debug::Verbose) << "[CELL UNLOAD] Queuing heightfield at (" << cellX << ", " << cellY << ") for removal";
             mNavigator.removeHeightfield(osg::Vec2i(cellX, cellY), navigatorUpdateGuard);
             mPhysics->queueHeightFieldRemoval(cellX, cellY);
         }
 
-        Log(Debug::Info) << "[CELL UNLOAD] Queued for removal: " << objectCount << " objects, "
+        Log(Debug::Verbose) << "[CELL UNLOAD] Queued for removal: " << objectCount << " objects, "
                          << dynamicCount << " dynamic, " << actorCount << " actors";
 
         // Flush all queued body removals in a single batch operation
         // This includes objects, dynamic objects, actors, ragdolls, and heightfields
-        Log(Debug::Info) << "[CELL UNLOAD] Flushing body removals...";
+        Log(Debug::Verbose) << "[CELL UNLOAD] Flushing body removals...";
         mPhysics->flushBodyRemovals();
-        Log(Debug::Info) << "[CELL UNLOAD] Body removals flushed";
+        Log(Debug::Verbose) << "[CELL UNLOAD] Body removals flushed";
 
         if (cell->getCell()->hasWater())
             mNavigator.removeWater(osg::Vec2i(cellX, cellY), navigatorUpdateGuard);
@@ -449,10 +455,10 @@ namespace MWWorld
                    },
             *cell->getCell());
 
-        Log(Debug::Info) << "[CELL UNLOAD] Dropping mechanics...";
+        Log(Debug::Verbose) << "[CELL UNLOAD] Dropping mechanics...";
         MWBase::Environment::get().getMechanicsManager()->drop(cell);
 
-        Log(Debug::Info) << "[CELL UNLOAD] Removing rendering...";
+        Log(Debug::Verbose) << "[CELL UNLOAD] Removing rendering...";
         mRendering.removeCell(cell);
         MWBase::Environment::get().getWindowManager()->removeCell(cell);
 
@@ -464,7 +470,7 @@ namespace MWWorld
         if (mActiveCells.empty())
             mRendering.notifyWorldSpaceChanged();
 
-        Log(Debug::Info) << "[CELL UNLOAD] Cell unload complete";
+        Log(Debug::Verbose) << "[CELL UNLOAD] Cell unload complete";
     }
 
     void Scene::loadCell(CellStore& cell, Loading::Listener* loadingListener, bool respawn, const osg::Vec3f& position,
@@ -660,6 +666,7 @@ namespace MWWorld
     {
         const int halfGridSize
             = isEsm4Ext(playerCellIndex.mWorldspace) ? Constants::ESM4CellGridRadius : Constants::CellGridRadius;
+        const auto start = std::chrono::steady_clock::now();
         auto navigatorUpdateGuard = mNavigator.makeUpdateGuard();
         const int playerCellX = playerCellIndex.mX;
         const int playerCellY = playerCellIndex.mY;
@@ -685,6 +692,8 @@ namespace MWWorld
 
         mNavigator.updateBounds(playerCellIndex.mWorldspace, cellGridBounds, pos, navigatorUpdateGuard.get());
 
+        const long long unloadMs = msSince(start);
+        const auto terrainStart = std::chrono::steady_clock::now();
         mHalfGridSize = halfGridSize;
         mCurrentGridCenter = osg::Vec2i(playerCellX, playerCellY);
         osg::Vec4i newGrid = gridCenterToBounds(mCurrentGridCenter);
@@ -698,6 +707,7 @@ namespace MWWorld
         mPagedRefs.clear();
         mRendering.getPagedRefnums(newGrid, mPagedRefs);
 
+        const long long terrainMs = msSince(terrainStart);
         addPostponedPhysicsObjects();
 
         std::size_t refsToLoad = 0;
@@ -717,6 +727,7 @@ namespace MWWorld
 
         sortCellsToLoad(playerCellX, playerCellY, cellsPositionsToLoad);
 
+        const auto loadStart = std::chrono::steady_clock::now();
         for (const auto& [x, y] : cellsPositionsToLoad)
         {
             ESM::ExteriorCellLocation indexToLoad = { x, y, playerCellIndex.mWorldspace };
@@ -730,6 +741,9 @@ namespace MWWorld
         mNavigator.update(pos, navigatorUpdateGuard.get());
 
         navigatorUpdateGuard.reset();
+        Log(Debug::Info) << "Cell change timing: exterior grid " << cellsPositionsToLoad.size() << " new cells, unload "
+                         << unloadMs << " ms, terrain " << terrainMs << " ms, load " << msSince(loadStart)
+                         << " ms, total " << msSince(start) << " ms";
 
         CellStore& current = mWorld.getWorldModel().getExterior(playerCellIndex);
         MWBase::Environment::get().getWindowManager()->changeCell(&current);
@@ -1002,6 +1016,7 @@ namespace MWWorld
         }
 
         Log(Debug::Info) << "Changing to interior";
+        const auto start = std::chrono::steady_clock::now();
 
         auto navigatorUpdateGuard = mNavigator.makeUpdateGuard();
 
@@ -1018,11 +1033,14 @@ namespace MWWorld
         mNavigator.updateBounds(
             cell.getCell()->getWorldSpace(), std::nullopt, position.asVec3(), navigatorUpdateGuard.get());
 
+        const long long unloadMs = msSince(start);
         // Load cell.
         mPagedRefs.clear();
         loadCell(cell, loadingListener, changeEvent, position.asVec3(), navigatorUpdateGuard.get());
 
         navigatorUpdateGuard.reset();
+        Log(Debug::Info) << "Cell change timing: interior " << cell.count() << " refs, unload " << unloadMs
+                         << " ms, total " << msSince(start) << " ms";
 
         changePlayerCell(cell, position, adjustPlayerPos);
 
