@@ -145,6 +145,8 @@ namespace MWKurenai
             "MemoryCards/Slot1_Enable=false",
             "MemoryCards/Slot2_Enable=false",
             "EmuCore/EnableCheats=false",
+            // VU1 on its own thread: the biggest PS2 speed-up, same output (the game database doesn't turn it off)
+            "EmuCore/Speedhacks/vuThread=true",
             "Kurenai/Enabled=true",
             "Kurenai/Serial=" + value("serial"),
             "Kurenai/ElfSha256=" + value("boot_sha256"),
