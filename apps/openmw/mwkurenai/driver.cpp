@@ -49,6 +49,7 @@
 
 #include "../mwmechanics/spells.hpp"
 #include "../mwworld/cell.hpp"
+#include "../mwworld/datetimemanager.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -682,6 +683,33 @@ namespace MWKurenai
         mLockHeld = false;
         if (mLockMarker)
             mLockMarker->setVisible(false);
+    }
+
+    void Driver::updateNinjutsu(std::uint32_t motion, float dt)
+    {
+        // L1+Square in the game: her activation motion 1450 starts bullet time. Everything but her slows down; she is
+        // driven by the PS2 so only Morrowind's simulation scale is lowered.
+        constexpr float kDuration = 12.f;
+        constexpr float kScale = 0.3f;
+        auto* tm = MWBase::Environment::get().getWorld()->getTimeManager();
+        if (motion == 1450 && mNinjutsuPrev != 1450)
+        {
+            mNinjutsuLeft = mNinjutsuLeft > 0.f ? 0.f : kDuration; // pressing it again ends it, like the game
+            Log(Debug::Info) << "Kurenai: ninjutsu " << (mNinjutsuLeft > 0.f ? "on" : "off");
+            if (mNinjutsuLeft <= 0.f)
+                tm->setSimulationTimeScale(1.f);
+        }
+        mNinjutsuPrev = motion;
+        if (mNinjutsuLeft <= 0.f)
+            return;
+        tm->setSimulationTimeScale(kScale);
+        mNinjutsuLeft -= dt; // dt is real time
+        if (mNinjutsuLeft <= 0.f)
+        {
+            mNinjutsuLeft = 0.f;
+            tm->setSimulationTimeScale(1.f);
+            Log(Debug::Info) << "Kurenai: ninjutsu off";
+        }
     }
 
     void Driver::updateSneak(std::uint32_t motion)
@@ -2991,6 +3019,7 @@ namespace MWKurenai
         }
         applyAnimation(mLatest->animId);
         updateSneak(mLatest->animId);
+        updateNinjutsu(mLatest->animId, dt);
         updateKiton(mLatest->animId, mLatest->kiton);
         updateHealth(mLatest->health, mLatest->healthMax);
         if (mLatest->animId != mItemMotion)

@@ -130,6 +130,8 @@ namespace MWKurenai
         kurenai::proto::Input mLastInput;
         float mSinceInput = 0;
         std::uint32_t mLastMotion = 0xffffffffu;
+        float mNinjutsuLeft = 0.f; // seconds of ninjutsu slow motion left (Morrowind's simulation scale is lowered)
+        std::uint32_t mNinjutsuPrev = 0;
         bool mForcingSneak = false; // we set Flag_ForceSneak (her crouch / wall hug, the anim map's sneak line)
         // Swimming: how far below the game's swimming height she is in Morrowind (diving with the breathing tube;
         // the bridge thread shifts the game's collision queries by it).
@@ -139,6 +141,7 @@ namespace MWKurenai
         std::atomic<float> mWaterLevel{ 0 }; // that cell's water level
         std::atomic<std::uint64_t> mWaterHits{ 0 }, mSwimFloorHits{ 0 };
         void updateSneak(std::uint32_t motion);
+        void updateNinjutsu(std::uint32_t motion, float dt);
         std::FILE* mLog = nullptr;
 
         // The bridge thread owns the incoming ring: it answers CollisionQuery at once and queues the rest for the
