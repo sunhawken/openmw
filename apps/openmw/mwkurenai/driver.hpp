@@ -130,6 +130,7 @@ namespace MWKurenai
         kurenai::proto::Input mLastInput;
         float mSinceInput = 0;
         std::uint32_t mLastMotion = 0xffffffffu;
+        bool mAttachPrevLeft = false, mAttachPrevRight = false; // the attachment keys' previous state (for the log)
         float mNinjutsuLeft = 0.f; // seconds of ninjutsu slow motion left (Morrowind's simulation scale is lowered)
         std::uint32_t mNinjutsuPrev = 0;
         bool mForcingSneak = false; // we set Flag_ForceSneak (her crouch / wall hug, the anim map's sneak line)

@@ -1371,6 +1371,21 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnLeft;
         if (held(MWInput::A_CycleWeaponRight))
             in.buttons |= kurenai::proto::BtnRight;
+        // Log each attachment press once with what the game draws on her, so a switch that doesn't happen can be traced.
+        {
+            const bool left = (in.buttons & kurenai::proto::BtnLeft) != 0, right = (in.buttons & kurenai::proto::BtnRight) != 0;
+            if ((left && !mAttachPrevLeft) || (right && !mAttachPrevRight))
+            {
+                std::string drawn;
+                if (mLatest)
+                    for (const auto& it : mLatest->items)
+                        drawn += " " + std::to_string(it.slot);
+                Log(Debug::Info) << "Kurenai: attachment key " << (left && !mAttachPrevLeft ? "Left (blade)" : "Right (fundo)")
+                                 << " pressed; game motion " << (mLatest ? mLatest->animId : 0) << ", item slots drawn:" << drawn;
+            }
+            mAttachPrevLeft = left;
+            mAttachPrevRight = right;
+        }
         // The right stick (camera; with R2 and the telescope worn, zoom) from the keyboard's arrow keys; a pad's own
         // right stick reaches the game through the player's PCSX2 pad.
         {
