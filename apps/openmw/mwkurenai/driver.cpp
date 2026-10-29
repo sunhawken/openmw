@@ -1480,6 +1480,7 @@ namespace MWKurenai
 
         applyPendingRagdolls();
         updateVictims();
+        updateKillFx(dt);
         if (mHud)
         {
             mHud->beat(now);
@@ -2148,6 +2149,12 @@ namespace MWKurenai
         victim.target = target;
         if (victim.callback)
             victim.callback->setTarget(target);
+        // The game's stealth kill (runs lab_sk_ps2frames): a yellow flare and a cross-shaped spark about 10 frames in, then
+        // the blood spray about 58 frames in, over the cut-away. Morrowind's effect meshes stand in for them.
+        if (victim.fxDone == 0 && victim.poses >= 10)
+            spawnKillFx(actor, victim.fxDone = 1);
+        else if (victim.fxDone == 1 && victim.poses >= 56)
+            spawnKillFx(actor, victim.fxDone = 2);
 
         // Where the game has the enemy: the actor stands there, facing its way (its height stays Morrowind's).
         MWBase::World* world = MWBase::Environment::get().getWorld();
@@ -2172,6 +2179,51 @@ namespace MWKurenai
             victim.final = true;
             Log(Debug::Info) << "Kurenai: kill on " << actor.getCellRef().getRefId() << " over after " << victim.poses
                              << " poses; the body keeps the game's last pose";
+        }
+    }
+
+    void Driver::spawnKillFx(const MWWorld::Ptr& actor, int stage)
+    {
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        const osg::Vec3f feet = actor.getRefData().getPosition().asVec3();
+        const float height = world->getHalfExtents(actor).z() * 2.0f;
+        // Stage 1: the neck. Stage 2: the chest, lower.
+        const osg::Vec3f at = feet + osg::Vec3f(0, 0, height * (stage == 1 ? 0.8f : 0.85f));
+        const auto add = [&](const char* model, float scale, float life) {
+            KillFx fx;
+            fx.id = "kurenai_kill_fx_" + std::to_string(mKillFxCount++);
+            fx.life = life;
+            world->spawnEffect(VFS::Path::Normalized(model), "", at, scale, false, true, fx.id, true);
+            mKillFx.push_back(std::move(fx));
+        };
+        Log(Debug::Info) << "Kurenai: kill effects " << stage << " on " << actor.getCellRef().getRefId() << " at " << at.x()
+                         << ", " << at.y() << ", " << at.z();
+        if (stage == 1)
+        {
+            add("meshes/vfx_defaulthit.nif", 2.5f, 0.8f);
+            add("meshes/lava_sparks.nif", 1.5f, 0.8f);
+        }
+        else
+        {
+            add("meshes/bloodsplat.nif", 3.5f, 3.0f);
+            add("meshes/bloodsplat2.nif", 2.5f, 3.0f);
+            add("meshes/bloodsplat3.nif", 2.0f, 3.0f);
+        }
+    }
+
+    void Driver::updateKillFx(float dt)
+    {
+        MWBase::World* world = MWBase::Environment::get().getWorld();
+        for (auto it = mKillFx.begin(); it != mKillFx.end();)
+        {
+            it->life -= dt;
+            if (it->life <= 0)
+            {
+                world->removeEffect(it->id);
+                it = mKillFx.erase(it);
+            }
+            else
+                ++it;
         }
     }
 

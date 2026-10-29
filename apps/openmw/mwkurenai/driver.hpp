@@ -222,8 +222,19 @@ namespace MWKurenai
             bool final = false;
             bool release = false; // it lives: the body goes back to Morrowind's animation
             std::uint64_t poses = 0;
+            int fxDone = 0; // kill effects shown so far (blood, sparks)
         };
         std::map<std::uint32_t, Victim> mVictims; // by proxy id
+        // Blood and sparks on a kill (the game draws its own; Morrowind's effect meshes stand in): removed after their life.
+        struct KillFx
+        {
+            std::string id;
+            float life = 0;
+        };
+        std::vector<KillFx> mKillFx;
+        int mKillFxCount = 0;
+        void spawnKillFx(const MWWorld::Ptr& actor, int stage);
+        void updateKillFx(float dt);
 
         // PS2 animation ([Kurenai] ps2 animation): the game's skeleton, retargeted onto the player's.
         enum class Ps2Anim
