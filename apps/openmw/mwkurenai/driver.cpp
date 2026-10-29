@@ -1269,7 +1269,10 @@ namespace MWKurenai
              << "Lock-on (R1): " << bound(MWInput::A_Run) << "\n"
              << "Block (L1): " << bound(MWInput::A_ToggleSpell) << "\n"
              << "Crouch, wall hug next to a wall (L2): " << bound(MWInput::A_Sneak) << "\n"
-             << "Items / pause (Start): " << bound(MWInput::A_GameMenu) << "\n\n"
+             << "Items / pause (Start): " << bound(MWInput::A_GameMenu) << "\n"
+             << "Tetsugen blade (D-pad Left): " << bound(MWInput::A_CycleWeaponLeft) << "\n"
+             << "Tetsugen fundo / weight (D-pad Right, unlocked later in the game): "
+             << bound(MWInput::A_CycleWeaponRight) << "\n\n"
              << Settings::kurenai().mModeToggleKey.get() << ": back to your Morrowind character";
         MWBase::Environment::get().getWindowManager()->interactiveMessageBox(card.str(), { "OK" });
     }
@@ -1324,6 +1327,20 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnR1;
         if (held(MWInput::A_GameMenu))
             in.buttons |= kurenai::proto::BtnStart;
+        // Her tetsugen's attachments: D-pad Left the blade, D-pad Right the fundo (weight). On the keyboard they are
+        // OpenMW's previous / next weapon keys ([ and ], rebindable in Options > Controls); on a pad, its D-pad.
+        if (held(MWInput::A_CycleWeaponLeft))
+            in.buttons |= kurenai::proto::BtnLeft;
+        if (held(MWInput::A_CycleWeaponRight))
+            in.buttons |= kurenai::proto::BtnRight;
+        for (int i = 0; i < 4; ++i)
+            if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+            {
+                if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_LEFT))
+                    in.buttons |= kurenai::proto::BtnLeft;
+                if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
+                    in.buttons |= kurenai::proto::BtnRight;
+            }
         // Her smoke bomb's button: held, it aims (updateSmokeAim) and the game doesn't see it; let go, it is tapped.
         std::uint16_t smokeButton = 0;
         if (mLatest && !mHudMenuUp)
