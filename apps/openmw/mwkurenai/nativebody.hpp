@@ -50,6 +50,10 @@ namespace MWKurenai
         std::size_t modelsLoaded() const { return mModels.size(); }
         const std::string& current() const;
 
+        // Her tetsugen's attachment: 0 the blade (the game's own held blade), 1 the fundo (the weight, drawn in the blade's place).
+        void setAttachment(int attachment) { mAttachment = attachment; }
+        int attachment() const { return mAttachment; }
+
     private:
         struct Bone
         {
@@ -85,6 +89,7 @@ namespace MWKurenai
         std::vector<Model> mModels;
         std::map<std::uint32_t, Fit> mFits;
         int mShown = -1; // model attached and visible
+        int mAttachment = 0; // 0 blade, 1 fundo
         osg::ref_ptr<osg::MatrixTransform> mPlace; // game character space -> the actor's space
         osg::observer_ptr<osg::Group> mParent;
         osg::observer_ptr<osg::Node> mHiddenRoot;

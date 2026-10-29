@@ -292,7 +292,10 @@ namespace MWKurenai
                     Log(Debug::Error) << "Kurenai: unknown select key '" << k.mSelectKey.get() << "'";
             }
             if (k.mNativeBody && !k.mNativeBodyModels.get().empty())
+            {
                 mNative = std::make_unique<NativeBody>(k.mNativeBodyModels.get());
+                mNative->setAttachment(mAttachment);
+            }
             const std::string ps2 = k.mPs2Animation;
             mPs2Anim = ps2 == "all" ? Ps2Anim::All : ps2 == "locomotion" ? Ps2Anim::Locomotion : Ps2Anim::Off;
             if (mPs2Anim != Ps2Anim::Off)
@@ -1371,21 +1374,6 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnLeft;
         if (held(MWInput::A_CycleWeaponRight))
             in.buttons |= kurenai::proto::BtnRight;
-        // Log each attachment press once with what the game draws on her, so a switch that doesn't happen can be traced.
-        {
-            const bool left = (in.buttons & kurenai::proto::BtnLeft) != 0, right = (in.buttons & kurenai::proto::BtnRight) != 0;
-            if ((left && !mAttachPrevLeft) || (right && !mAttachPrevRight))
-            {
-                std::string drawn;
-                if (mLatest)
-                    for (const auto& it : mLatest->items)
-                        drawn += " " + std::to_string(it.slot);
-                Log(Debug::Info) << "Kurenai: attachment key " << (left && !mAttachPrevLeft ? "Left (blade)" : "Right (fundo)")
-                                 << " pressed; game motion " << (mLatest ? mLatest->animId : 0) << ", item slots drawn:" << drawn;
-            }
-            mAttachPrevLeft = left;
-            mAttachPrevRight = right;
-        }
         // The right stick (camera; with R2 and the telescope worn, zoom) from the keyboard's arrow keys; a pad's own
         // right stick reaches the game through the player's PCSX2 pad.
         {
@@ -1424,6 +1412,35 @@ namespace MWKurenai
                 if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
                     in.buttons |= kurenai::proto::BtnRight;
             }
+        // The attachment keys switch her tetsugen between the blade and the fundo (the weight): the blade is the game's own
+        // held blade, the fundo is drawn in its place and hits harder (see the blade test). The game itself ignores D-pad
+        // Left / Right here (its fundo is locked), so the press is not passed on.
+        {
+            const bool left = (in.buttons & kurenai::proto::BtnLeft) != 0, right = (in.buttons & kurenai::proto::BtnRight) != 0;
+            const bool pressedLeft = left && !mAttachPrevLeft, pressedRight = right && !mAttachPrevRight;
+            if (pressedLeft || pressedRight)
+            {
+                const int want = pressedRight ? 1 : 0;
+                std::string drawn;
+                if (mLatest)
+                    for (const auto& it : mLatest->items)
+                        drawn += " " + std::to_string(it.slot);
+                Log(Debug::Info) << "Kurenai: attachment key " << (pressedRight ? "Right (fundo)" : "Left (blade)") << " pressed; game motion "
+                                 << (mLatest ? mLatest->animId : 0) << ", item slots drawn:" << drawn << "; attachment "
+                                 << mAttachment << " -> " << want;
+                if (want != mAttachment)
+                {
+                    mAttachment = want;
+                    if (mNative)
+                        mNative->setAttachment(mAttachment);
+                    MWBase::Environment::get().getWindowManager()->messageBox(
+                        mAttachment == 1 ? "Tetsugen: fundo (weight)" : "Tetsugen: blade");
+                }
+            }
+            mAttachPrevLeft = left;
+            mAttachPrevRight = right;
+            in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnLeft | kurenai::proto::BtnRight));
+        }
         // Her smoke bomb's button: held, it aims (updateSmokeAim) and the game doesn't see it; let go, it is tapped.
         std::uint16_t smokeButton = 0;
         if (mLatest && !mHudMenuUp)
@@ -1714,7 +1731,7 @@ namespace MWKurenai
             // Her stealth kill on an actor the game has no guard for (a stage without enemies, or more actors than
             // guards): struck from behind while it is not fighting, it dies at once. Proxied actors get the game's own
             // kill through their guard. Not the game's kill cinematic: that needs a stage guard to play on.
-            float damage = e.damage;
+            float damage = e.damage * (mAttachment == 1 ? 1.6f : 1.0f); // the fundo (weight) hits harder than the blade
             bool stealthKill = false;
             MWMechanics::CreatureStats& stats = actor.getClass().getCreatureStats(actor);
             const float healthBefore = stats.getHealth().getCurrent();

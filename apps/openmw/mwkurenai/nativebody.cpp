@@ -561,9 +561,14 @@ namespace MWKurenai
         for (auto& [slot, item] : mItems)
         {
             const kurenai::proto::HeldItem* drawn = nullptr;
+            // The fundo is drawn in the blade's place (render object 0 -> 2) while it is her attachment; the game's own
+            // weight (object 2) stays hidden in the blade's case, as the game draws it.
+            const std::uint32_t source = (mAttachment == 1 && slot == 2) ? 0u : slot;
             for (const kurenai::proto::HeldItem& it : pose->items)
-                if (it.slot == slot)
+                if (it.slot == source)
                     drawn = &it;
+            if (mAttachment == 1 && slot == 0)
+                drawn = nullptr;
             if (!drawn)
             {
                 item.place->setNodeMask(0);
