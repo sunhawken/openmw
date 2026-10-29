@@ -107,6 +107,7 @@ namespace MWKurenai
         int mToggleScancode = 0; // SDL scancode, 0 = no key
         bool mToggleHeld = false;
         int mControlsScancode = 0; // [Kurenai] controls key, 0 = none
+        int mSelectScancode = 0; // [Kurenai] select key, 0 = none
         bool mControlsHeld = false;
         bool mToldControls = false;
         bool mCollisionWasOn = false;

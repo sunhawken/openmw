@@ -284,6 +284,12 @@ namespace MWKurenai
                 if (mControlsScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown controls key '" << k.mControlsKey.get() << "'";
             }
+            if (!k.mSelectKey.get().empty())
+            {
+                mSelectScancode = SDL_GetScancodeFromName(k.mSelectKey.get().c_str());
+                if (mSelectScancode == SDL_SCANCODE_UNKNOWN)
+                    Log(Debug::Error) << "Kurenai: unknown select key '" << k.mSelectKey.get() << "'";
+            }
             if (k.mNativeBody && !k.mNativeBodyModels.get().empty())
                 mNative = std::make_unique<NativeBody>(k.mNativeBodyModels.get());
             const std::string ps2 = k.mPs2Animation;
@@ -1270,6 +1276,9 @@ namespace MWKurenai
              << "Block (L1): " << bound(MWInput::A_ToggleSpell) << "\n"
              << "Crouch, wall hug next to a wall (L2): " << bound(MWInput::A_Sneak) << "\n"
              << "Items / pause (Start): " << bound(MWInput::A_GameMenu) << "\n"
+             << "Item menu (Select): " << Settings::kurenai().mSelectKey.get() << " / pad Back\n"
+             << "First person view, R2 (hold; zoom with the right stick and the telescope): "
+             << bound(MWInput::A_TogglePOV) << "\n"
              << "Tetsugen blade (D-pad Left): " << bound(MWInput::A_CycleWeaponLeft) << "\n"
              << "Tetsugen fundo / weight (D-pad Right, unlocked later in the game): "
              << bound(MWInput::A_CycleWeaponRight) << "\n\n"
@@ -1333,9 +1342,28 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnLeft;
         if (held(MWInput::A_CycleWeaponRight))
             in.buttons |= kurenai::proto::BtnRight;
+        // Select (the item menu) and R2 (first person view; with the telescope worn, the right stick zooms): the
+        // keyboard's select key and Morrowind's first-person key, or the pad's Back button and right trigger.
+        if (mSelectScancode != 0)
+        {
+            int count = 0;
+            const Uint8* keys = SDL_GetKeyboardState(&count);
+            if (mSelectScancode < count && keys[mSelectScancode])
+                in.buttons |= kurenai::proto::BtnSelect;
+        }
+        if (held(MWInput::A_TogglePOV))
+            in.buttons |= kurenai::proto::BtnR2;
         for (int i = 0; i < 4; ++i)
             if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
             {
+                if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_BACK))
+                    in.buttons |= kurenai::proto::BtnSelect;
+                if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000)
+                    in.buttons |= kurenai::proto::BtnR2;
+                if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_UP))
+                    in.buttons |= kurenai::proto::BtnUp;
+                if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_DOWN))
+                    in.buttons |= kurenai::proto::BtnDown;
                 if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_LEFT))
                     in.buttons |= kurenai::proto::BtnLeft;
                 if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
