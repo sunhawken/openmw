@@ -279,6 +279,12 @@ namespace MWKurenai
                 if (mToggleScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown mode toggle key '" << k.mModeToggleKey.get() << "'";
             }
+            if (!k.mRecoverKey.get().empty())
+            {
+                mRecoverScancode = SDL_GetScancodeFromName(k.mRecoverKey.get().c_str());
+                if (mRecoverScancode == SDL_SCANCODE_UNKNOWN)
+                    Log(Debug::Error) << "Kurenai: unknown recover key '" << k.mRecoverKey.get() << "'";
+            }
             if (!k.mControlsKey.get().empty())
             {
                 mControlsScancode = SDL_GetScancodeFromName(k.mControlsKey.get().c_str());
@@ -1266,6 +1272,20 @@ namespace MWKurenai
                 : (mPeerAlive ? "Combat mode: Red Ninja" : "Combat mode: Red Ninja (waiting for PCSX2)"));
     }
 
+    void Driver::pollRecoverKey()
+    {
+        if (mRecoverScancode == 0)
+            return;
+        int count = 0;
+        const Uint8* keys = SDL_GetKeyboardState(&count);
+        const bool down = mRecoverScancode < count && keys[mRecoverScancode];
+        const bool pressed = down && !mRecoverHeld;
+        mRecoverHeld = down;
+        if (!pressed || !mControlling || MWBase::Environment::get().getWindowManager()->isGuiMode())
+            return;
+        mRecoverNow = true;
+    }
+
     void Driver::pollControlsKey()
     {
         if (mControlsScancode == 0)
@@ -1312,8 +1332,8 @@ namespace MWKurenai
              << "First person view, R2 (hold): "
              << bound(MWInput::A_TogglePOV) << "\n"
              << "Tetsugen blade (D-pad Left): " << bound(MWInput::A_CycleWeaponLeft) << "\n"
-             << "Tetsugen fundo / weight (D-pad Right, unlocked later in the game): "
-             << bound(MWInput::A_CycleWeaponRight) << "\n\n"
+             << "Tetsugen fundo / weight (D-pad Right): " << bound(MWInput::A_CycleWeaponRight) << "\n"
+             << "Back onto solid ground (if she ends up in the void): " << Settings::kurenai().mRecoverKey.get() << "\n\n"
              << Settings::kurenai().mModeToggleKey.get() << ": back to your Morrowind character";
         MWBase::Environment::get().getWindowManager()->interactiveMessageBox(card.str(), { "OK" });
     }
@@ -1557,6 +1577,7 @@ namespace MWKurenai
             sendMorrowindHealth();
         pollModeKey();
         pollControlsKey();
+        pollRecoverKey();
         if (!mToldControls && mControlling && mControlsScancode != 0
             && !MWBase::Environment::get().getWindowManager()->isGuiMode())
         {
@@ -2968,6 +2989,13 @@ namespace MWKurenai
             // Kurenai starts where the player stands; from then on her motion is the game's. Under water she starts at
             // the surface: the game swims only there (its water test looks for the surface just above her).
             osg::Vec3f p = player.getRefData().getPosition().asVec3();
+            if (mReanchorAtSafe)
+            {
+                // Back on the last solid ground she stood on: her place in Red Ninja's world maps to it from now on.
+                mReanchorAtSafe = false;
+                p = mSafe;
+                mPrev.reset();
+            }
             const MWWorld::CellStore* cell = player.isInCell() ? player.getCell() : nullptr;
             if (cell && cell->getCell()->hasWater() && p.z() < cell->getWaterLevel())
                 p.z() = cell->getWaterLevel();
@@ -3019,6 +3047,42 @@ namespace MWKurenai
             const float ground = hit.mHit ? hit.mHitPos.z() : mMwZ - above;
             mw.z = ground + above;
             mMwZ = ground;
+            // Remember the last solid ground she stood on, and watch for the void: nothing at all under her while the
+            // game has her in the air (her game collision is answered from Morrowind, so she then falls for good).
+            const bool airborne = (mLatest->flags & kurenai::proto::FlagAirborne) != 0;
+            if (hit.mHit && !airborne && !mSwimming.load())
+            {
+                mSafeTimer += dt;
+                if (mSafeTimer >= 0.5f)
+                {
+                    mSafe = osg::Vec3f(mw.x, mw.y, ground);
+                    mHaveSafe = true;
+                    mSafeTimer = 0.f;
+                }
+            }
+            else if (airborne)
+                mSafeTimer = 0.f;
+            mVoidTime = (!hit.mHit && airborne) ? mVoidTime + dt : 0.f;
+            if (mHaveSafe && (mVoidTime > 1.0f || mw.z < mSafe.z() - 8000.0f))
+            {
+                mRecoverNow = true;
+                Log(Debug::Info) << "Kurenai: nothing under her (void) at (" << mw.x << ", " << mw.y << ", " << mw.z
+                                 << "): back to the last solid ground";
+            }
+        }
+        if (mRecoverNow)
+        {
+            mRecoverNow = false;
+            mVoidTime = 0.f;
+            if (mHaveSafe)
+            {
+                mReanchorAtSafe = true;
+                mReanchor = true;
+                MWBase::Environment::get().getWindowManager()->messageBox("Kurenai: back on solid ground");
+                Log(Debug::Info) << "Kurenai: recover to (" << mSafe.x() << ", " << mSafe.y() << ", " << mSafe.z() << ")";
+                return;
+            }
+            MWBase::Environment::get().getWindowManager()->messageBox("Kurenai: no solid ground to go back to yet");
         }
         updateSwim(dt, mw);
         const float yaw = lerpAngle(t.yaw(a.rotation, { 0, 0, 1 }), t.yaw(mLatest->rotation, { 0, 0, 1 }), blend);

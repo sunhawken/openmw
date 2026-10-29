@@ -37,6 +37,7 @@ namespace Settings
         SettingValue<std::string> mStartMode{ mIndex, "Kurenai", "start mode",
             makeEnumSanitizerString({ "combat", "morrowind" }) };
         SettingValue<std::string> mModeToggleKey{ mIndex, "Kurenai", "mode toggle key" };
+        SettingValue<std::string> mRecoverKey{ mIndex, "Kurenai", "recover key" };
         SettingValue<std::string> mControlsKey{ mIndex, "Kurenai", "controls key" };
         SettingValue<std::string> mSelectKey{ mIndex, "Kurenai", "select key" };
         SettingValue<bool> mProxies{ mIndex, "Kurenai", "proxies" };

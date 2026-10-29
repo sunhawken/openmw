@@ -82,6 +82,7 @@ namespace MWKurenai
         void takeControl();
         void releaseControl(const char* why);
         void pollModeKey();
+        void pollRecoverKey();
         void pollControlsKey();
         void showControls();
         void sendInput();
@@ -105,6 +106,13 @@ namespace MWKurenai
         bool mMorrowindMode = false; // [Kurenai] start mode, switched with [Kurenai] mode toggle key
         bool mControlling = false; // PCSX2 drives the player (connected and in combat mode)
         int mToggleScancode = 0; // SDL scancode, 0 = no key
+        int mRecoverScancode = 0; // [Kurenai] recover key, 0 = none
+        bool mRecoverHeld = false;
+        bool mRecoverNow = false; // recover on the next update (key, or the void watch)
+        bool mHaveSafe = false; // mSafe: the last solid ground she stood on (Morrowind coordinates)
+        osg::Vec3f mSafe;
+        float mSafeTimer = 0.f, mVoidTime = 0.f;
+        bool mReanchorAtSafe = false;
         bool mToggleHeld = false;
         int mControlsScancode = 0; // [Kurenai] controls key, 0 = none
         int mSelectScancode = 0; // [Kurenai] select key, 0 = none
