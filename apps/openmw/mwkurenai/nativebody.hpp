@@ -89,7 +89,7 @@ namespace MWKurenai
         std::vector<Model> mModels;
         std::map<std::uint32_t, Fit> mFits;
         int mShown = -1; // model attached and visible
-        int mAttachment = 0; // 0 blade, 1 fundo
+        int mAttachment = 1; // 0 blade, 1 fundo (the game draws the weight in her hand from the start)
         osg::ref_ptr<osg::MatrixTransform> mPlace; // game character space -> the actor's space
         osg::observer_ptr<osg::Group> mParent;
         osg::observer_ptr<osg::Node> mHiddenRoot;

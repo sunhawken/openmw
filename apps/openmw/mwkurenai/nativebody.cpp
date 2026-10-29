@@ -561,14 +561,22 @@ namespace MWKurenai
         for (auto& [slot, item] : mItems)
         {
             const kurenai::proto::HeldItem* drawn = nullptr;
-            // The fundo is drawn in the blade's place (render object 0 -> 2) while it is her attachment; the game's own
-            // weight (object 2) stays hidden in the blade's case, as the game draws it.
-            const std::uint32_t source = (mAttachment == 1 && slot == 2) ? 0u : slot;
+            // Her tetsugen: the blade (render object 0) or the fundo (the weight, object 2), whichever is her attachment;
+            // the other one is hidden. The game draws the weight in her hand from the start, so the fundo takes its own
+            // pose, or the blade's when the game isn't drawing it.
+            if ((mAttachment == 1 && slot == 0) || (mAttachment == 0 && slot == 2))
+            {
+                item.place->setNodeMask(0);
+                continue;
+            }
             for (const kurenai::proto::HeldItem& it : pose->items)
-                if (it.slot == source)
+                if (it.slot == slot)
                     drawn = &it;
-            if (mAttachment == 1 && slot == 0)
-                drawn = nullptr;
+            // The game may draw only one of the two ends in her hand; either one's pose (the hand's) serves for the other.
+            if (!drawn && (slot == 0 || slot == 2))
+                for (const kurenai::proto::HeldItem& it : pose->items)
+                    if (it.slot == (slot == 0 ? 2u : 0u))
+                        drawn = &it;
             if (!drawn)
             {
                 item.place->setNodeMask(0);
@@ -584,6 +592,8 @@ namespace MWKurenai
             item.place->setMatrix(osg::Matrixf(a.x.x, a.x.y, a.x.z, 0, a.y.x, a.y.y, a.y.z, 0, a.z.x, a.z.y, a.z.z, 0, t.x,
                                       t.y, t.z, 1)
                 * toChar);
+            if (item.place->getNodeMask() == 0 && (slot == 0 || slot == 2))
+                Log(Debug::Info) << "Kurenai: tetsugen " << (slot == 0 ? "blade" : "fundo") << " shown (attachment " << mAttachment << ")";
             item.place->setNodeMask(~0u);
             applyColors(item.materials, { shade(drawn->color) });
         }
