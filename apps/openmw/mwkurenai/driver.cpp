@@ -1884,17 +1884,27 @@ namespace MWKurenai
     {
         if (!mLockMarker)
         {
-            // A red diamond with a dark outline, drawn once.
-            constexpr int n = 32;
+            // The game's lock-on mark: four orange chevrons (up, right, down, left) round the target, each with a dark
+            // edge, drawn once. u and v run -1..1 over the square; every chevron is the upper one turned.
+            constexpr int n = 128;
             MyGUI::RenderManager& rm = MyGUI::RenderManager::getInstance();
             mLockTexture = rm.createTexture("kurenai_lock_marker");
             mLockTexture->createManual(n, n, MyGUI::TextureUsage::Write, MyGUI::PixelFormat::R8G8B8A8);
+            const auto chevron = [](float u, float v, float grow) {
+                const float a = v + 0.96f + grow; // down from the apex
+                const float arm = a;
+                return a >= 0.f && a <= 0.26f + grow && std::abs(u) <= arm + grow && std::abs(u) >= arm - 0.11f - grow;
+            };
+            const auto any = [&](float u, float v, float grow) {
+                return chevron(u, v, grow) || chevron(-u, -v, grow) || chevron(v, -u, grow) || chevron(-v, u, grow);
+            };
             if (auto* data = static_cast<std::uint32_t*>(mLockTexture->lock(MyGUI::TextureUsage::Write)))
                 for (int y = 0; y < n; ++y)
                     for (int x = 0; x < n; ++x)
                     {
-                        const int d = std::abs(x - n / 2) + std::abs(y - n / 2);
-                        data[y * n + x] = d >= 11 && d <= 13 ? 0xff2020e0u : d >= 10 && d <= 14 ? 0xc0000000u : 0u;
+                        const float u = (x + 0.5f) / n * 2.f - 1.f;
+                        const float v = (y + 0.5f) / n * 2.f - 1.f;
+                        data[y * n + x] = any(u, v, 0.f) ? 0xff30a8ffu : any(u, v, 0.045f) ? 0xd0000000u : 0u;
                     }
             mLockTexture->unlock();
             mLockMarker = MyGUI::Gui::getInstance().createWidget<MyGUI::ImageBox>(
@@ -1913,7 +1923,7 @@ namespace MWKurenai
             if (at != osg::Vec2f(0.5f, 0.f)) // off screen
             {
                 const MyGUI::IntSize view = MyGUI::RenderManager::getInstance().getViewSize();
-                const int size = std::max(24, view.height / 24);
+                const int size = std::max(48, view.height / 7); // the game's mark spans about a seventh of the screen's height
                 mLockMarker->setCoord(static_cast<int>(at.x() * view.width) - size / 2,
                     static_cast<int>(at.y() * view.height) - size / 2, size, size);
                 shown = true;
