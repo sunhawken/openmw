@@ -3047,28 +3047,6 @@ namespace MWKurenai
             const float ground = hit.mHit ? hit.mHitPos.z() : mMwZ - above;
             mw.z = ground + above;
             mMwZ = ground;
-            // Remember the last solid ground she stood on, and watch for the void: nothing at all under her while the
-            // game has her in the air (her game collision is answered from Morrowind, so she then falls for good).
-            const bool airborne = (mLatest->flags & kurenai::proto::FlagAirborne) != 0;
-            if (hit.mHit && !airborne && !mSwimming.load())
-            {
-                mSafeTimer += dt;
-                if (mSafeTimer >= 0.5f)
-                {
-                    mSafe = osg::Vec3f(mw.x, mw.y, ground);
-                    mHaveSafe = true;
-                    mSafeTimer = 0.f;
-                }
-            }
-            else if (airborne)
-                mSafeTimer = 0.f;
-            mVoidTime = (!hit.mHit && airborne) ? mVoidTime + dt : 0.f;
-            if (mHaveSafe && (mVoidTime > 1.0f || mw.z < mSafe.z() - 8000.0f))
-            {
-                mRecoverNow = true;
-                Log(Debug::Info) << "Kurenai: nothing under her (void) at (" << mw.x << ", " << mw.y << ", " << mw.z
-                                 << "): back to the last solid ground";
-            }
         }
         if (mRecoverNow)
         {
@@ -3085,6 +3063,32 @@ namespace MWKurenai
             MWBase::Environment::get().getWindowManager()->messageBox("Kurenai: no solid ground to go back to yet");
         }
         updateSwim(dt, mw);
+        {
+            // Remember the last solid ground she stood on, and watch for the void: nothing at all under her while the
+            // game has her in the air (her game collision is answered from Morrowind, so she then falls for good).
+            const bool airborne = (mLatest->flags & kurenai::proto::FlagAirborne) != 0;
+            const MWPhysics::RayCastingResult under = world->getRayCasting()->castRay(
+                osg::Vec3f(mw.x, mw.y, mw.z + 300.0f), osg::Vec3f(mw.x, mw.y, mw.z - 4000.0f), { player }, {});
+            if (under.mHit && !airborne && !mSwimming.load() && std::fabs(mw.z - under.mHitPos.z()) < 150.0f)
+            {
+                mSafeTimer += dt;
+                if (mSafeTimer >= 0.5f)
+                {
+                    mSafe = osg::Vec3f(mw.x, mw.y, under.mHitPos.z());
+                    mHaveSafe = true;
+                    mSafeTimer = 0.f;
+                }
+            }
+            else if (airborne)
+                mSafeTimer = 0.f;
+            mVoidTime = (!under.mHit && airborne) ? mVoidTime + dt : 0.f;
+            if (mHaveSafe && (mVoidTime > 1.0f || mw.z < mSafe.z() - 8000.0f))
+            {
+                mRecoverNow = true;
+                Log(Debug::Info) << "Kurenai: nothing under her (void) at (" << mw.x << ", " << mw.y << ", " << mw.z
+                                 << "): back to the last solid ground";
+            }
+        }
         const float yaw = lerpAngle(t.yaw(a.rotation, { 0, 0, 1 }), t.yaw(mLatest->rotation, { 0, 0, 1 }), blend);
 
         {
