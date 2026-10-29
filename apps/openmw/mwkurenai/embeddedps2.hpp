@@ -24,11 +24,17 @@ namespace MWKurenai
 
         bool running() const { return !mDone; }
 
+        /// Whether Kurenai is driven right now: the player's own PCSX2 pad bindings are merged with OpenMW's only
+        /// then. Cheap; only tells the library on a change.
+        void setDriven(bool driven);
+
     private:
         EmbeddedPs2() = default;
 
         void* mLibrary = nullptr;
         void (*mStop)() = nullptr;
+        void (*mSetDriven)(int) = nullptr; ///< Null with an older library.
+        int mDriven = -1;
         std::vector<std::string> mArgs;
         std::vector<char*> mArgv;
         std::string mRoot, mData;

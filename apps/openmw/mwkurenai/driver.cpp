@@ -1465,6 +1465,8 @@ namespace MWKurenai
         else if (!drive && mControlling)
             releaseControl(mPeerAlive ? "Morrowind mode" : "PCSX2 stopped responding");
         mControlling = drive;
+        if (mPs2)
+            mPs2->setDriven(mControlling && !MWBase::Environment::get().getWindowManager()->isGuiMode());
         if (!mControlling)
         {
             // Morrowind mode with PCSX2 connected: a neutral pad, so she stands idle in Red Ninja's world.

@@ -144,6 +144,7 @@ namespace MWKurenai
         }
         const auto run = reinterpret_cast<RunFn>(symbol(ps2->mLibrary, "krn_ps2_run"));
         ps2->mStop = reinterpret_cast<StopFn>(symbol(ps2->mLibrary, "krn_ps2_stop"));
+        ps2->mSetDriven = reinterpret_cast<void (*)(int)>(symbol(ps2->mLibrary, "krn_ps2_set_driven"));
         if (!run || !ps2->mStop)
         {
             Log(Debug::Error) << "Kurenai: " << sLibraryName << " is not the KURENAI game library";
@@ -273,5 +274,13 @@ namespace MWKurenai
             Log(Debug::Error) << "Kurenai: Red Ninja did not stop in time; leaving it";
             mThread.detach();
         }
+    }
+
+    void EmbeddedPs2::setDriven(bool driven)
+    {
+        if (!mSetDriven || mDriven == static_cast<int>(driven))
+            return;
+        mDriven = driven;
+        mSetDriven(driven ? 1 : 0);
     }
 }
