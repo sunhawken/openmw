@@ -1277,7 +1277,8 @@ namespace MWKurenai
              << "Crouch, wall hug next to a wall (L2): " << bound(MWInput::A_Sneak) << "\n"
              << "Items / pause (Start): " << bound(MWInput::A_GameMenu) << "\n"
              << "Item menu (Select): " << Settings::kurenai().mSelectKey.get() << " / pad Back\n"
-             << "First person view, R2 (hold; zoom with the right stick and the telescope): "
+             << "Camera / zoom (right stick; with the telescope worn and R2 held, up and down zoom): arrow keys\n"
+             << "First person view, R2 (hold): "
              << bound(MWInput::A_TogglePOV) << "\n"
              << "Tetsugen blade (D-pad Left): " << bound(MWInput::A_CycleWeaponLeft) << "\n"
              << "Tetsugen fundo / weight (D-pad Right, unlocked later in the game): "
@@ -1342,6 +1343,17 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnLeft;
         if (held(MWInput::A_CycleWeaponRight))
             in.buttons |= kurenai::proto::BtnRight;
+        // The right stick (camera; with R2 and the telescope worn, zoom) from the keyboard's arrow keys; a pad's own
+        // right stick reaches the game through the player's PCSX2 pad.
+        {
+            int count = 0;
+            const Uint8* keys = SDL_GetKeyboardState(&count);
+            const auto down = [&](SDL_Scancode k) { return k < count && keys[k]; };
+            const float rx = (down(SDL_SCANCODE_RIGHT) ? 1.0f : 0.0f) - (down(SDL_SCANCODE_LEFT) ? 1.0f : 0.0f);
+            const float ry = (down(SDL_SCANCODE_DOWN) ? 1.0f : 0.0f) - (down(SDL_SCANCODE_UP) ? 1.0f : 0.0f);
+            in.rx = axisByte(rx);
+            in.ry = axisByte(ry); // the pad's Y grows downwards
+        }
         // Select (the item menu) and R2 (first person view; with the telescope worn, the right stick zooms): the
         // keyboard's select key and Morrowind's first-person key, or the pad's Back button and right trigger.
         if (mSelectScancode != 0)
