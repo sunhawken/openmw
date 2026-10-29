@@ -803,6 +803,33 @@ namespace MWKurenai
         stats.setHealth(hp);
     }
 
+    // A potion or elixir the game used for her (PCSX2 reports it in the top bits of the state flags): what it healed,
+    // in percent of her maximum, goes onto Morrowind's health, which is the one that counts in that mode.
+    void Driver::applyHeals(std::uint32_t flags)
+    {
+        const int count = static_cast<int>((flags >> kurenai::proto::kHealCountShift) & 0xffu);
+        const float percent = static_cast<float>(flags >> kurenai::proto::kHealPercentShift);
+        if (mHealSeen < 0)
+        {
+            mHealSeen = count;
+            return;
+        }
+        const int times = (count - mHealSeen) & 0xff;
+        mHealSeen = count;
+        if (times == 0 || percent <= 0 || mHealthMode != "morrowind")
+            return;
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
+        if (stats.isDead())
+            return;
+        MWMechanics::DynamicStat<float> hp = stats.getHealth();
+        const float before = hp.getCurrent();
+        hp.setCurrent(std::min(hp.getModified(), before + hp.getModified() * percent / 100.0f * static_cast<float>(times)), true);
+        stats.setHealth(hp);
+        Log(Debug::Info) << "Kurenai: potion healed " << percent << " % (x" << times << "): Morrowind health " << before << " -> "
+                         << hp.getCurrent() << " / " << hp.getModified();
+    }
+
     void Driver::sendHookTargets(const kurenai::CoordTransform& t, float dt)
     {
         // The game's lock-on takes hook points up to 1500 of its units away (0x0021df00).
@@ -3117,6 +3144,7 @@ namespace MWKurenai
         updateNinjutsu(mLatest->animId, dt);
         updateKiton(mLatest->animId, mLatest->kiton);
         updateHealth(mLatest->health, mLatest->healthMax);
+        applyHeals(mLatest->flags);
         if (mLatest->animId != mItemMotion)
         {
             mItemMotion = mLatest->animId;

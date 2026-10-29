@@ -313,8 +313,10 @@ namespace MWKurenai
         // player's Health follows the game's bar) or "off".
         std::string mHealthMode = "morrowind";
         float mLastGameHealth = -1;
+        int mHealSeen = -1; // the game's potion/elixir counter (PlayerState.flags top bits) as last applied
         bool mReanchor = false; // take a new anchor on her next state (the old one still answers until then)
         void updateHealth(float health, float healthMax);
+        void applyHeals(std::uint32_t flags);
         void sendMorrowindHealth();
         std::string mSmokeModel;
         float mSmokeRadius = 300;
