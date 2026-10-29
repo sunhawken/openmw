@@ -1421,13 +1421,8 @@ namespace MWKurenai
             if (pressedLeft || pressedRight)
             {
                 const int want = pressedRight ? 1 : 0;
-                std::string drawn;
-                if (mLatest)
-                    for (const auto& it : mLatest->items)
-                        drawn += " " + std::to_string(it.slot);
                 Log(Debug::Info) << "Kurenai: attachment key " << (pressedRight ? "Right (fundo)" : "Left (blade)") << " pressed; game motion "
-                                 << (mLatest ? mLatest->animId : 0) << ", item slots drawn:" << drawn << "; attachment "
-                                 << mAttachment << " -> " << want;
+                                 << (mLatest ? mLatest->animId : 0) << "; attachment " << mAttachment << " -> " << want;
                 if (want != mAttachment)
                 {
                     mAttachment = want;
