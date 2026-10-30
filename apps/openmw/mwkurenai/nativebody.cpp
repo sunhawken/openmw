@@ -433,6 +433,9 @@ namespace MWKurenai
                     if (f.matched > best.matched)
                         best = std::move(f);
                 }
+            // The first model that fits is hers (the red kimono); the others only when chosen.
+            if (best.matched >= 16)
+                break;
         }
         // Her body is about 28 rigid bones (legs, spine, arms, hands, head): most of them must match.
         if (best.matched < 16)
