@@ -27,6 +27,7 @@
 #include <kurenai/link.hpp>
 #include <kurenai/player.hpp>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -35,9 +36,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
+
+struct _SDL_Joystick;
 
 namespace osg
 {
@@ -117,6 +121,15 @@ namespace MWKurenai
         bool mToggleHeld = false;
         int mControlsScancode = 0; // [Kurenai] controls key, 0 = none
         int mSelectScancode = 0; // [Kurenai] select key, 0 = none
+        int mWeaponScancode = 0; // [Kurenai] weapon key (the weapon screen), 0 = none
+        bool mWeaponOpen = false;
+        bool mJoyWeaponNow = false; // a raw joystick's weapon-screen button is down
+        std::map<int, _SDL_Joystick*> mRawPads; // joysticks without a gamepad layout, opened by SDL index
+        std::vector<std::string> mJoyMap; // the 'joystick map' words, by button number
+        std::set<int> mJoySeen; // raw buttons already named in the log (device * 256 + button)
+        int mWeaponRow = 0;
+        std::array<std::uint8_t, 4> mWeaponLevels{};
+        bool mWeaponPrev[5] = { false, false, false, false, false }; // key, up, down, left, right
         bool mControlsHeld = false;
         bool mToldControls = false;
         bool mCollisionWasOn = false;

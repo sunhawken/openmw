@@ -8,6 +8,7 @@
 #include <osg/ref_ptr>
 
 #include <cstdint>
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -52,6 +53,11 @@ namespace MWKurenai
 
         // Her tetsugen's attachment: 0 the blade (the game's own held blade), 1 the fundo (the weight, drawn in the blade's place).
         void setAttachment(int attachment) { mAttachment = attachment; }
+        void setWeaponLevels(int blade, int fundo)
+        {
+            mBladeLevel = std::clamp(blade, 0, 2);
+            mFundoLevel = std::clamp(fundo, 0, 2);
+        }
         int attachment() const { return mAttachment; }
 
     private:
@@ -101,8 +107,10 @@ namespace MWKurenai
         {
             osg::ref_ptr<osg::MatrixTransform> place;
             std::map<int, std::vector<osg::ref_ptr<osg::Node>>> materials;
+            std::vector<osg::ref_ptr<osg::Node>> versions; // the blade's and the weight's upgrade versions (level 1..3)
         };
         std::map<std::uint32_t, Item> mItems;
+        int mBladeLevel = 0, mFundoLevel = 0; // 0..2: which version of the blade / the weight is drawn
         std::vector<kurenai::proto::Color> mColors; // last applied to the body
         bool mWarnedNoMaterials = false;
         void applyColors(std::map<int, std::vector<osg::ref_ptr<osg::Node>>>& nodes,

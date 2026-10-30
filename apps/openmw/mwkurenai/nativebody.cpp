@@ -244,8 +244,21 @@ namespace MWKurenai
                 item.place->setNodeMask(0);
                 osg::ref_ptr<osg::Node> node = resources->getSceneManager()->getInstance(p);
                 item.place->addChild(node);
+                item.versions.push_back(node);
+                if (slot == 0 || slot == 2) // the blade's and the weight's other versions (her upgrade levels)
+                    for (int v = 1; v <= 2; ++v)
+                    {
+                        const VFS::Path::Normalized pv(
+                            "meshes/krn_native/krn_item_" + std::to_string(slot) + "_" + std::to_string(v) + ".nif");
+                        if (!resources->getVFS()->exists(pv))
+                            break;
+                        osg::ref_ptr<osg::Node> extra = resources->getSceneManager()->getInstance(pv);
+                        item.place->addChild(extra);
+                        item.versions.push_back(extra);
+                    }
                 CollectMaterials materials;
-                node->accept(materials);
+                for (const osg::ref_ptr<osg::Node>& version : item.versions)
+                    version->accept(materials);
                 item.materials = std::move(materials.mFound);
                 mItems.emplace(slot, std::move(item));
             }
@@ -594,6 +607,12 @@ namespace MWKurenai
                 * toChar);
             if (item.place->getNodeMask() == 0 && (slot == 0 || slot == 2))
                 Log(Debug::Info) << "Kurenai: tetsugen " << (slot == 0 ? "blade" : "fundo") << " shown (attachment " << mAttachment << ")";
+            if (item.versions.size() > 1)
+            {
+                const std::size_t level = static_cast<std::size_t>(slot == 0 ? mBladeLevel : mFundoLevel);
+                for (std::size_t v = 0; v < item.versions.size(); ++v)
+                    item.versions[v]->setNodeMask(v == std::min(level, item.versions.size() - 1) ? ~0u : 0u);
+            }
             item.place->setNodeMask(~0u);
             applyColors(item.materials, { shade(drawn->color) });
         }

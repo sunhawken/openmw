@@ -297,6 +297,17 @@ namespace MWKurenai
                 if (mSelectScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown select key '" << k.mSelectKey.get() << "'";
             }
+            {
+                std::istringstream words(k.mJoystickMap.get());
+                for (std::string w; words >> w;)
+                    mJoyMap.push_back(w);
+            }
+            if (!k.mWeaponKey.get().empty())
+            {
+                mWeaponScancode = SDL_GetScancodeFromName(k.mWeaponKey.get().c_str());
+                if (mWeaponScancode == SDL_SCANCODE_UNKNOWN)
+                    Log(Debug::Error) << "Kurenai: unknown weapon key '" << k.mWeaponKey.get() << "'";
+            }
             if (k.mNativeBody && !k.mNativeBodyModels.get().empty())
             {
                 mNative = std::make_unique<NativeBody>(k.mNativeBodyModels.get());
@@ -1433,6 +1444,79 @@ namespace MWKurenai
             in.rx = axisByte(rx);
             in.ry = axisByte(ry); // the pad's Y grows downwards
         }
+        // Joysticks SDL has no standard layout for (a gaming mouse's side pad, an arcade stick ...): button by button, as the
+        // 'joystick map' setting says; a hat is the D-pad, axes 0 / 1 the left stick, 2 / 3 the right stick.
+        mJoyWeaponNow = false;
+        for (int j = 0; j < SDL_NumJoysticks(); ++j)
+        {
+            if (SDL_IsGameController(j))
+                continue;
+            SDL_Joystick*& js = mRawPads[j];
+            if (!js)
+            {
+                js = SDL_JoystickOpen(j);
+                if (!js)
+                    continue;
+                Log(Debug::Info) << "Kurenai: joystick " << j << " '" << SDL_JoystickName(js) << "': " << SDL_JoystickNumButtons(js)
+                                 << " buttons, " << SDL_JoystickNumAxes(js) << " axes, " << SDL_JoystickNumHats(js)
+                                 << " hats (read button by button: the 'joystick map' setting)";
+            }
+            if (!SDL_JoystickGetAttached(js))
+            {
+                SDL_JoystickClose(js);
+                js = nullptr;
+                continue;
+            }
+            const auto act = [&](const std::string& a) {
+                using namespace kurenai::proto;
+                if (a == "cross") in.buttons |= BtnCross;
+                else if (a == "circle") in.buttons |= BtnCircle;
+                else if (a == "square") in.buttons |= BtnSquare;
+                else if (a == "triangle") in.buttons |= BtnTriangle;
+                else if (a == "l1") in.buttons |= BtnL1;
+                else if (a == "l2") in.buttons |= BtnL2;
+                else if (a == "l3") in.buttons |= BtnL3;
+                else if (a == "r1") in.buttons |= BtnR1;
+                else if (a == "r2") in.buttons |= BtnR2;
+                else if (a == "r3") in.buttons |= BtnR3;
+                else if (a == "select") in.buttons |= BtnSelect;
+                else if (a == "start") in.buttons |= BtnStart;
+                else if (a == "up") in.buttons |= BtnUp;
+                else if (a == "down") in.buttons |= BtnDown;
+                else if (a == "left") in.buttons |= BtnLeft;
+                else if (a == "right") in.buttons |= BtnRight;
+                else if (a == "weapon") mJoyWeaponNow = true;
+            };
+            for (int b = 0; b < SDL_JoystickNumButtons(js) && b < 64; ++b)
+            {
+                if (!SDL_JoystickGetButton(js, b))
+                    continue;
+                const std::string action = static_cast<std::size_t>(b) < mJoyMap.size() ? mJoyMap[b] : "-";
+                if (mJoySeen.insert(j * 256 + b).second)
+                    Log(Debug::Info) << "Kurenai: joystick " << j << " button " << b << " pressed (" << (action == "-" ? "no action" : action) << ")";
+                act(action);
+            }
+            for (int h = 0; h < SDL_JoystickNumHats(js); ++h)
+            {
+                const Uint8 hat = SDL_JoystickGetHat(js, h);
+                if (hat & SDL_HAT_UP) act("up");
+                if (hat & SDL_HAT_DOWN) act("down");
+                if (hat & SDL_HAT_LEFT) act("left");
+                if (hat & SDL_HAT_RIGHT) act("right");
+            }
+            const int axes = SDL_JoystickNumAxes(js);
+            const auto axis = [&](int a) { return a < axes ? SDL_JoystickGetAxis(js, a) / 32767.0f : 0.0f; };
+            if (std::hypot(axis(0), axis(1)) > 0.25f)
+            {
+                in.lx = axisByte(axis(0));
+                in.ly = axisByte(axis(1)); // the pad's Y grows downwards, as SDL's
+            }
+            if (axes >= 4 && std::hypot(axis(2), axis(3)) > 0.25f)
+            {
+                in.rx = axisByte(axis(2));
+                in.ry = axisByte(axis(3));
+            }
+        }
         // Select (the item menu) and R2 (first person view; with the telescope worn, the right stick zooms): the
         // keyboard's select key and Morrowind's first-person key, or the pad's Back button and right trigger.
         if (mSelectScancode != 0)
@@ -1493,6 +1577,60 @@ namespace MWKurenai
         if (mLatest && swimMotions().count(mLatest->animId) && mSwimDepth.load() >= kSurfaceDepth)
             in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnCross | kurenai::proto::BtnL2));
 
+        // The weapon screen: its key opens it; Up / Down (or W / S) choose a part, Left / Right (A / D) its version. The game
+        // gets nothing while it is open.
+        {
+            int count = 0;
+            const Uint8* keys = SDL_GetKeyboardState(&count);
+            const auto down = [&](SDL_Scancode k) { return k < count && keys[k]; };
+            const bool now[5] = { (mWeaponScancode != 0 && down(static_cast<SDL_Scancode>(mWeaponScancode))) || mJoyWeaponNow,
+                down(SDL_SCANCODE_UP) || down(SDL_SCANCODE_W), down(SDL_SCANCODE_DOWN) || down(SDL_SCANCODE_S),
+                down(SDL_SCANCODE_LEFT) || down(SDL_SCANCODE_A), down(SDL_SCANCODE_RIGHT) || down(SDL_SCANCODE_D) };
+            const auto edge = [&](int i) { return now[i] && !mWeaponPrev[i]; };
+            if (edge(0) && mSinceUi < 3.0f && mHdUi)
+            {
+                mWeaponOpen = !mWeaponOpen;
+                if (mWeaponOpen)
+                {
+                    mWeaponLevels = mUi.weaponLevels;
+                    mWeaponRow = 0;
+                }
+            }
+            else if (mWeaponOpen)
+            {
+                if (edge(1))
+                    mWeaponRow = (mWeaponRow + 3) % 4;
+                if (edge(2))
+                    mWeaponRow = (mWeaponRow + 1) % 4;
+                int step = 0;
+                if (edge(3))
+                    step = -1;
+                if (edge(4))
+                    step = 1;
+                if (step != 0)
+                {
+                    const int level = std::clamp<int>(mWeaponLevels[mWeaponRow] + step, 0, 2);
+                    if (level != mWeaponLevels[mWeaponRow])
+                    {
+                        mWeaponLevels[mWeaponRow] = static_cast<std::uint8_t>(level);
+                        kurenai::proto::WeaponLevels m;
+                        m.levels = mWeaponLevels;
+                        send(m);
+                        Log(Debug::Info) << "Kurenai: weapon screen: part " << mWeaponRow << " -> version " << level + 1;
+                    }
+                }
+            }
+            for (int i = 0; i < 5; ++i)
+                mWeaponPrev[i] = now[i];
+            if (mWeaponOpen)
+            {
+                in = kurenai::proto::Input{};
+                in.lx = axisByte(0.0f);
+                in.ly = axisByte(0.0f);
+                in.rx = axisByte(0.0f);
+                in.ry = axisByte(0.0f);
+            }
+        }
         // Send on change, and at least 4 times a second so a lost message can't leave a button stuck.
         if (!(in == mLastInput) || mSinceInput > 0.25f)
         {
@@ -2550,7 +2688,18 @@ namespace MWKurenai
         }
         if (!mHdUi)
             return;
-        const bool show = mControlling && mSinceUi < 1.0f;
+        const bool show = mControlling && mSinceUi < 3.0f;
+        if (mNative && mSinceUi < 3.0f)
+            mNative->setWeaponLevels(mWeaponOpen ? mWeaponLevels[0] : mUi.weaponLevels[0],
+                mWeaponOpen ? mWeaponLevels[2] : mUi.weaponLevels[2]);
+        if (!show)
+            mWeaponOpen = false;
+        if (mWeaponOpen)
+        {
+            mHdUi->updateWeapons(mWeaponLevels, mWeaponRow, true);
+            return;
+        }
+        mHdUi->updateWeapons(mWeaponLevels, mWeaponRow, false);
         float health = 1;
         if (mLatest && mLatest->healthMax > 0)
             health = std::clamp(static_cast<float>(mLatest->health) / static_cast<float>(mLatest->healthMax), 0.0f, 1.0f);
@@ -2653,7 +2802,7 @@ namespace MWKurenai
                 }
                 const kurenai::HudRegion& r = f.regions[i];
                 // The ring, bars and item buttons are drawn natively when the hi-res HUD is up (the radar stays).
-                if (mHdUi && mSinceUi < 1.0f && static_cast<int>(i) + 1 != mRadarRegion
+                if (mHdUi && mSinceUi < 3.0f && static_cast<int>(i) + 1 != mRadarRegion
                     && (i + 1 != 2 || mHdUi->menuUp()))
                 {
                     box->setVisible(false);
