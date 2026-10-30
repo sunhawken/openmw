@@ -314,6 +314,8 @@ namespace MWKurenai
                 for (std::string w; words >> w;)
                     mJoyMap.push_back(w);
             }
+            if (!k.mMenuKey.get().empty())
+                mMenuScancode = SDL_GetScancodeFromName(k.mMenuKey.get().c_str());
             if (!k.mWeaponKey.get().empty())
             {
                 mWeaponScancode = SDL_GetScancodeFromName(k.mWeaponKey.get().c_str());
@@ -2768,16 +2770,15 @@ namespace MWKurenai
     std::vector<std::string> Driver::padInfo() const
     {
         std::vector<std::string> lines;
-        lines.push_back("Open this menu: F10, or L3 + R3 on a pad (a joystick's 'menu' button in the joystick map)");
-        lines.push_back("In the menu: D-pad up / down choose, left / right change, Cross confirms, Circle or Start closes");
+        lines.push_back("Open: F10, or L3 + R3 on a pad");
+        lines.push_back("D-pad: choose / change. Cross: toggle. Circle, Start: close");
         for (int j = 0; j < SDL_NumJoysticks(); ++j)
         {
             const char* name = SDL_IsGameController(j) ? SDL_GameControllerNameForIndex(j) : SDL_JoystickNameForIndex(j);
             lines.push_back(std::string(SDL_IsGameController(j) ? "Pad " : "Joystick ") + std::to_string(j) + ": "
                 + (name ? name : "?")
-                + (SDL_IsGameController(j) ? " (standard layout: Cross jump, Square attack, Circle wire, Triangle action,"
-                                               " R1 lock-on, L1 block, L2 crouch, Back items)"
-                                           : " (button by button: see the joystick map below)"));
+                + (SDL_IsGameController(j) ? " (standard layout)"
+                                           : " (button by button, see the map)"));
         }
         std::string map;
         for (std::size_t i = 0; i < mJoyMap.size(); ++i)
@@ -2831,20 +2832,34 @@ namespace MWKurenai
             if (paths.size() > 1)
                 add("outfit", "Outfit", mNative->outfit().empty() ? paths[0] : mNative->outfit(), paths, names);
         }
-        add("combat", "Combat: her blade, kunai and wire hurt Morrowind's actors", onOff(mCombat), kOnOff);
-        add("lockon", "Lock-on (R1) picks Morrowind's actors", onOff(mLockOn), kOnOff);
+        add("combat", "Combat (her attacks hurt Morrowind's actors)", onOff(mCombat), kOnOff);
+        add("lockon", "Lock-on (R1) on Morrowind's actors", onOff(mLockOn), kOnOff);
         add("lockrange", "Lock-on range", num(mLockRange), { "800", "1500", "2500", "4000", "8000" });
-        add("proxies", "Stage enemies stand in for nearby actors (stealth kills, darts)", onOff(mProxyEnabled), kOnOff);
+        add("proxies", "Stand-ins for nearby actors (kills, darts)", onOff(mProxyEnabled), kOnOff);
         add("proxyradius", "Stand-in radius", num(mProxyRadius), { "1500", "3000", "5000", "8000" });
-        add("hooks", "Hook (wire) aims at Morrowind's geometry", onOff(mHooks), kOnOff);
+        add("hooks", "Hook aims at Morrowind's geometry", onOff(mHooks), kOnOff);
         add("health", "Health bar and damage", mHealthMode, { "morrowind", "game", "off" },
             { "Morrowind's health", "The game's own", "Off" });
         add("gamehud", "The game's HUD", onOff(Settings::kurenai().mGameHud), kOnOff);
-        add("hidehud", "Hide Morrowind's HUD while she is Kurenai", onOff(mHideMorrowindHud), kOnOff);
+        add("hidehud", "Hide Morrowind's HUD as Kurenai", onOff(mHideMorrowindHud), kOnOff);
         add("hudscale", "HUD size", num(mHudScale), { "0.5", "0.75", "1", "1.25", "1.5", "2" });
-        add("interpolate", "Smooth her movement between game frames", onOff(mInterpolate), kOnOff);
+        add("interpolate", "Smooth her movement", onOff(mInterpolate), kOnOff);
         add("predict", "Predict her movement (less lag)", onOff(mPredict), kOnOff);
         add("status", "Status text (frame, latency)", onOff(mShowStatus), kOnOff);
+        const auto key = [&](const char* id, const char* label, int code) {
+            Option o;
+            o.id = id;
+            o.label = label;
+            o.kind = "key";
+            o.value = code ? SDL_GetScancodeName(static_cast<SDL_Scancode>(code)) : "(none)";
+            out.push_back(std::move(o));
+        };
+        key("key_menu", "Key: this menu", mMenuScancode);
+        key("key_toggle", "Key: Kurenai / Morrowind", mToggleScancode);
+        key("key_controls", "Key: controls card", mControlsScancode);
+        key("key_recover", "Key: back onto solid ground", mRecoverScancode);
+        key("key_select", "Key: item menu (Select)", mSelectScancode);
+        key("key_weapon", "Key: weapon screen", mWeaponScancode);
         return out;
     }
 
@@ -2870,6 +2885,24 @@ namespace MWKurenai
         else if (id == "interpolate") { mInterpolate = on; k.mInterpolate.set(on); }
         else if (id == "predict") { mPredict = on; k.mPredict.set(on); }
         else if (id == "status") { mShowStatus = on; k.mShowStatus.set(on); }
+        else if (id.compare(0, 4, "key_") == 0)
+        {
+            // value: an SDL scancode number (what Lua's key events carry)
+            const int code = std::atoi(value.c_str());
+            if (code <= 0 || code >= SDL_NUM_SCANCODES)
+                return false;
+            const std::string name = SDL_GetScancodeName(static_cast<SDL_Scancode>(code));
+            if (id == "key_menu") { mMenuScancode = code; k.mMenuKey.set(name); }
+            else if (id == "key_toggle") { mToggleScancode = code; k.mModeToggleKey.set(name); }
+            else if (id == "key_controls") { mControlsScancode = code; k.mControlsKey.set(name); }
+            else if (id == "key_recover") { mRecoverScancode = code; k.mRecoverKey.set(name); }
+            else if (id == "key_select") { mSelectScancode = code; k.mSelectKey.set(name); }
+            else if (id == "key_weapon") { mWeaponScancode = code; k.mWeaponKey.set(name); }
+            else
+                return false;
+            Log(Debug::Info) << "Kurenai: " << id << " = " << name;
+            return true;
+        }
         else
             return false;
         Log(Debug::Info) << "Kurenai: option " << id << " = " << value;

@@ -28,6 +28,7 @@ namespace MWLua
                     t["id"] = o.id;
                     t["label"] = o.label;
                     t["value"] = o.value;
+                    t["kind"] = o.kind;
                     sol::table choices(view, sol::create), names(view, sol::create);
                     for (std::size_t i = 0; i < o.choices.size(); ++i)
                     {
@@ -44,6 +45,11 @@ namespace MWLua
         api["setOption"] = [](const std::string& id, const std::string& value) {
             MWKurenai::Driver* d = MWKurenai::Driver::instance();
             return d && d->setOption(id, value);
+        };
+        // the SDL scancode of the menu key (F10 by default)
+        api["menuKey"] = []() {
+            MWKurenai::Driver* d = MWKurenai::Driver::instance();
+            return d ? d->menuKey() : 0;
         };
         // lines of text about the pads and their buttons
         api["padInfo"] = [view]() {

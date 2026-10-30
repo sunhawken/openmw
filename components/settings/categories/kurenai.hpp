@@ -43,6 +43,7 @@ namespace Settings
         SettingValue<std::string> mSelectKey{ mIndex, "Kurenai", "select key" };
         SettingValue<float> mTestKillSeconds{ mIndex, "Kurenai", "test kill seconds", makeClampSanitizerFloat(0.0f, 3600.0f) };
         SettingValue<std::string> mJoystickMap{ mIndex, "Kurenai", "joystick map" };
+        SettingValue<std::string> mMenuKey{ mIndex, "Kurenai", "menu key" };
         SettingValue<std::string> mWeaponKey{ mIndex, "Kurenai", "weapon key" };
         SettingValue<bool> mProxies{ mIndex, "Kurenai", "proxies" };
         SettingValue<float> mProxyRadius{ mIndex, "Kurenai", "proxy radius", makeClampSanitizerFloat(100.0f, 20000.0f) };

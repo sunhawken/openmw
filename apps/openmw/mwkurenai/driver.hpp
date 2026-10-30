@@ -80,7 +80,7 @@ namespace MWKurenai
         // menu steps through them and the driver applies the pick at once and keeps it in the user's settings.
         struct Option
         {
-            std::string id, label, value;
+            std::string id, label, value, kind = "choice"; // kind "key": value is an SDL key name, no choices
             std::vector<std::string> choices, names; // names: what each choice is called on screen
         };
         static Driver* instance();
@@ -90,6 +90,7 @@ namespace MWKurenai
         // While the menu is up the game gets neutral input; its pad events (D-pad, Cross, Circle, the open chord) queue here.
         void setMenuOpen(bool open) { mMenuOpen = open; mMenuPrevMask = 0xffff; }
         bool menuOpen() const { return mMenuOpen; }
+        int menuKey() const { return mMenuScancode; }
         std::vector<std::string> takeNav();
 
         // Held by the engine while physics and the world update run; the bridge thread answers the game's collision
@@ -144,6 +145,7 @@ namespace MWKurenai
         int mSelectScancode = 0; // [Kurenai] select key, 0 = none
         int mWeaponScancode = 0; // [Kurenai] weapon key (the weapon screen), 0 = none
         bool mWeaponOpen = false;
+        int mMenuScancode = 0; // [Kurenai] menu key
         bool mMenuOpen = false; // the Lua options menu is up
         std::uint16_t mMenuPrevMask = 0xffff; // the pad buttons seen last frame (0xffff: ignore the first frame)
         bool mMenuChordPrev = false, mJoyMenuNow = false;
