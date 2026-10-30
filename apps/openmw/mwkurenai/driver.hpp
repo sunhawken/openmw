@@ -90,7 +90,8 @@ namespace MWKurenai
         // While the menu is up the game gets neutral input; its pad events (D-pad, Cross, Circle, the open chord) queue here.
         void setMenuOpen(bool open) { mMenuOpen = open; mMenuPrevMask = 0xffff; }
         bool menuOpen() const { return mMenuOpen; }
-        int menuKey() const { return mMenuScancode; }
+        int menuKey() const { return mMenuScancode & 0xffff; }
+        int menuKeyMods() const { return mMenuScancode >> 16; } // 1 Ctrl, 2 Shift, 4 Alt
         std::vector<std::string> takeNav();
 
         // Held by the engine while physics and the world update run; the bridge thread answers the game's collision
@@ -132,7 +133,10 @@ namespace MWKurenai
         bool mPeerAlive = false;
         bool mMorrowindMode = false; // [Kurenai] start mode, switched with [Kurenai] mode toggle key
         bool mControlling = false; // PCSX2 drives the player (connected and in combat mode)
-        int mToggleScancode = 0; // SDL scancode, 0 = no key
+        int parseKey(const std::string& text) const;
+        std::string keyName(int code) const;
+        bool keyIsDown(int code) const;
+        int mToggleScancode = 0; // SDL scancode (+ modifiers in the high bits), 0 = no key
         int mRecoverScancode = 0; // [Kurenai] recover key, 0 = none
         bool mRecoverHeld = false;
         bool mRecoverNow = false; // recover on the next update (key, or the void watch)

@@ -288,25 +288,25 @@ namespace MWKurenai
             mMorrowindMode = k.mStartMode.get() == "morrowind";
             if (!k.mModeToggleKey.get().empty())
             {
-                mToggleScancode = SDL_GetScancodeFromName(k.mModeToggleKey.get().c_str());
+                mToggleScancode = parseKey(k.mModeToggleKey.get());
                 if (mToggleScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown mode toggle key '" << k.mModeToggleKey.get() << "'";
             }
             if (!k.mRecoverKey.get().empty())
             {
-                mRecoverScancode = SDL_GetScancodeFromName(k.mRecoverKey.get().c_str());
+                mRecoverScancode = parseKey(k.mRecoverKey.get());
                 if (mRecoverScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown recover key '" << k.mRecoverKey.get() << "'";
             }
             if (!k.mControlsKey.get().empty())
             {
-                mControlsScancode = SDL_GetScancodeFromName(k.mControlsKey.get().c_str());
+                mControlsScancode = parseKey(k.mControlsKey.get());
                 if (mControlsScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown controls key '" << k.mControlsKey.get() << "'";
             }
             if (!k.mSelectKey.get().empty())
             {
-                mSelectScancode = SDL_GetScancodeFromName(k.mSelectKey.get().c_str());
+                mSelectScancode = parseKey(k.mSelectKey.get());
                 if (mSelectScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown select key '" << k.mSelectKey.get() << "'";
             }
@@ -316,23 +316,23 @@ namespace MWKurenai
                     mJoyMap.push_back(w);
             }
             if (!k.mMenuKey.get().empty())
-                mMenuScancode = SDL_GetScancodeFromName(k.mMenuKey.get().c_str());
+                mMenuScancode = parseKey(k.mMenuKey.get());
             if (!k.mStartKey.get().empty())
             {
-                mStartScancode = SDL_GetScancodeFromName(k.mStartKey.get().c_str());
+                mStartScancode = parseKey(k.mStartKey.get());
                 if (mStartScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown start key '" << k.mStartKey.get() << "'";
             }
             if (!k.mActivateKey.get().empty())
             {
-                mActivateScancode = SDL_GetScancodeFromName(k.mActivateKey.get().c_str());
+                mActivateScancode = parseKey(k.mActivateKey.get());
                 if (mActivateScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown activate key '" << k.mActivateKey.get() << "'";
             }
             mHookAimManual = k.mHookAim.get() != "game";
             if (!k.mWeaponKey.get().empty())
             {
-                mWeaponScancode = SDL_GetScancodeFromName(k.mWeaponKey.get().c_str());
+                mWeaponScancode = parseKey(k.mWeaponKey.get());
                 if (mWeaponScancode == SDL_SCANCODE_UNKNOWN)
                     Log(Debug::Error) << "Kurenai: unknown weapon key '" << k.mWeaponKey.get() << "'";
             }
@@ -1349,13 +1349,66 @@ namespace MWKurenai
         mSmokeAimNode->setNodeMask(MWRender::Mask_Effect);
     }
 
+    // A key binding is an SDL scancode with modifiers in the high bits: 0x10000 Ctrl, 0x20000 Shift, 0x40000 Alt ("Ctrl+Shift+F8").
+    int Driver::parseKey(const std::string& text) const
+    {
+        int mods = 0;
+        std::string rest = text;
+        for (;;)
+        {
+            const std::size_t plus = rest.find('+');
+            if (plus == std::string::npos || plus == 0 || plus + 1 >= rest.size())
+                break;
+            std::string word = rest.substr(0, plus);
+            for (char& c : word)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (word == "ctrl" || word == "control") mods |= 1;
+            else if (word == "shift") mods |= 2;
+            else if (word == "alt") mods |= 4;
+            else
+                break;
+            rest = rest.substr(plus + 1);
+        }
+        const int sc = SDL_GetScancodeFromName(rest.c_str());
+        if (sc == SDL_SCANCODE_UNKNOWN)
+        {
+            Log(Debug::Error) << "Kurenai: unknown key '" << text << "'";
+            return 0;
+        }
+        return sc | (mods << 16);
+    }
+
+    std::string Driver::keyName(int code) const
+    {
+        std::string out;
+        const int mods = code >> 16;
+        if (mods & 1) out += "Ctrl+";
+        if (mods & 2) out += "Shift+";
+        if (mods & 4) out += "Alt+";
+        return out + SDL_GetScancodeName(static_cast<SDL_Scancode>(code & 0xffff));
+    }
+
+    bool Driver::keyIsDown(int code) const
+    {
+        const int sc = code & 0xffff, mods = code >> 16;
+        if (sc == 0)
+            return false;
+        int count = 0;
+        const Uint8* keys = SDL_GetKeyboardState(&count);
+        if (sc >= count || !keys[sc])
+            return false;
+        const SDL_Keymod now = SDL_GetModState();
+        const int have = ((now & KMOD_CTRL) ? 1 : 0) | ((now & KMOD_SHIFT) ? 2 : 0) | ((now & KMOD_ALT) ? 4 : 0);
+        return have == mods; // exactly these modifiers: F8 alone is not Ctrl+F8
+    }
+
     void Driver::pollModeKey()
     {
         if (mToggleScancode == 0)
             return;
         int count = 0;
         const Uint8* keys = SDL_GetKeyboardState(&count);
-        const bool down = mToggleScancode < count && keys[mToggleScancode];
+        const bool down = keyIsDown(mToggleScancode);
         const bool pressed = down && !mToggleHeld;
         mToggleHeld = down;
         // Not while a menu, the console or a dialogue has the keyboard.
@@ -1373,7 +1426,7 @@ namespace MWKurenai
             return;
         int count = 0;
         const Uint8* keys = SDL_GetKeyboardState(&count);
-        const bool down = mRecoverScancode < count && keys[mRecoverScancode];
+        const bool down = keyIsDown(mRecoverScancode);
         const bool pressed = down && !mRecoverHeld;
         mRecoverHeld = down;
         if (!pressed || !mControlling || MWBase::Environment::get().getWindowManager()->isGuiMode())
@@ -1387,7 +1440,7 @@ namespace MWKurenai
             return;
         int count = 0;
         const Uint8* keys = SDL_GetKeyboardState(&count);
-        const bool down = mControlsScancode < count && keys[mControlsScancode];
+        const bool down = keyIsDown(mControlsScancode);
         const bool pressed = down && !mControlsHeld;
         mControlsHeld = down;
         if (!pressed || !mControlling)
@@ -1495,7 +1548,7 @@ namespace MWKurenai
         {
             int count = 0;
             const Uint8* keys = SDL_GetKeyboardState(&count);
-            if (mStartScancode < count && keys[mStartScancode])
+            if (keyIsDown(mStartScancode))
                 in.buttons |= kurenai::proto::BtnStart;
         }
         // Her tetsugen's attachments: D-pad Left the blade, D-pad Right the fundo (weight). On the keyboard they are
@@ -1596,7 +1649,7 @@ namespace MWKurenai
         {
             int count = 0;
             const Uint8* keys = SDL_GetKeyboardState(&count);
-            if (mSelectScancode < count && keys[mSelectScancode])
+            if (keyIsDown(mSelectScancode))
                 in.buttons |= kurenai::proto::BtnSelect;
         }
         // Activate, Morrowind's way (open a door, take an item, talk): its own key, or the pad's R3 on its own; Circle
@@ -1607,7 +1660,7 @@ namespace MWKurenai
             {
                 int count = 0;
                 const Uint8* keys = SDL_GetKeyboardState(&count);
-                now = mActivateScancode < count && keys[mActivateScancode];
+                now = keyIsDown(mActivateScancode);
             }
             for (int i = 0; i < 4 && !now; ++i)
                 if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
@@ -1680,7 +1733,7 @@ namespace MWKurenai
             int count = 0;
             const Uint8* keys = SDL_GetKeyboardState(&count);
             const auto down = [&](SDL_Scancode k) { return k < count && keys[k]; };
-            const bool now[5] = { (mWeaponScancode != 0 && down(static_cast<SDL_Scancode>(mWeaponScancode))) || mJoyWeaponNow,
+            const bool now[5] = { keyIsDown(mWeaponScancode) || mJoyWeaponNow,
                 down(SDL_SCANCODE_UP) || down(SDL_SCANCODE_W), down(SDL_SCANCODE_DOWN) || down(SDL_SCANCODE_S),
                 down(SDL_SCANCODE_LEFT) || down(SDL_SCANCODE_A), down(SDL_SCANCODE_RIGHT) || down(SDL_SCANCODE_D) };
             const auto edge = [&](int i) { return now[i] && !mWeaponPrev[i]; };
@@ -3001,7 +3054,7 @@ namespace MWKurenai
             o.id = id;
             o.label = label;
             o.kind = "key";
-            o.value = code ? SDL_GetScancodeName(static_cast<SDL_Scancode>(code)) : "(none)";
+            o.value = code ? keyName(code) : "(none)";
             out.push_back(std::move(o));
         };
         key("key_menu", "Key: this menu", mMenuScancode);
@@ -3040,11 +3093,14 @@ namespace MWKurenai
         else if (id == "status") { mShowStatus = on; k.mShowStatus.set(on); }
         else if (id.compare(0, 4, "key_") == 0)
         {
-            // value: an SDL scancode number (what Lua's key events carry)
-            const int code = std::atoi(value.c_str());
-            if (code <= 0 || code >= SDL_NUM_SCANCODES)
+            // value: an SDL scancode number (what Lua's key events carry), then ",<modifiers>" (1 Ctrl, 2 Shift, 4 Alt)
+            const int sc = std::atoi(value.c_str());
+            const std::size_t comma = value.find(',');
+            const int mods = comma == std::string::npos ? 0 : std::atoi(value.c_str() + comma + 1) & 7;
+            if (sc <= 0 || sc >= SDL_NUM_SCANCODES)
                 return false;
-            const std::string name = SDL_GetScancodeName(static_cast<SDL_Scancode>(code));
+            const int code = sc | (mods << 16);
+            const std::string name = keyName(code);
             if (id == "key_menu") { mMenuScancode = code; k.mMenuKey.set(name); }
             else if (id == "key_toggle") { mToggleScancode = code; k.mModeToggleKey.set(name); }
             else if (id == "key_controls") { mControlsScancode = code; k.mControlsKey.set(name); }

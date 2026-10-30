@@ -51,6 +51,11 @@ namespace MWLua
             MWKurenai::Driver* d = MWKurenai::Driver::instance();
             return d ? d->menuKey() : 0;
         };
+        // the modifiers of the menu key: 1 Ctrl, 2 Shift, 4 Alt
+        api["menuKeyMods"] = []() {
+            MWKurenai::Driver* d = MWKurenai::Driver::instance();
+            return d ? d->menuKeyMods() : 0;
+        };
         // lines of text about the pads and their buttons
         api["padInfo"] = [view]() {
             sol::table out(view, sol::create);
