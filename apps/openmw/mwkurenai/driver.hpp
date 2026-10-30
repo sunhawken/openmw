@@ -19,6 +19,7 @@
 
 #include "../mwworld/ptr.hpp"
 #include "embeddedps2.hpp"
+#include "hdui.hpp"
 #include "nativebody.hpp"
 #include "poseoverride.hpp"
 
@@ -211,6 +212,8 @@ namespace MWKurenai
         bool mLockHeld = false;
         bool mToldToggle = false;
         MWWorld::Ptr mLockActor;
+        MWWorld::Ptr mLockLast; // the last target, kept for a moment: R1 pressed again or flickering re-locks it
+        double mLockLastTime = 0;
         std::uint64_t mLockPicks = 0, mLockMisses = 0;
         MyGUI::ImageBox* mLockMarker = nullptr;
         MyGUI::ITexture* mLockTexture = nullptr;
@@ -421,7 +424,13 @@ namespace MWKurenai
         float mHudScale = 1, mSinceHudFrame = 1e9f;
         bool mHideMorrowindHud = true, mMorrowindHudHidden = false;
         std::uint64_t mHudFrames = 0;
+        // [Kurenai] hd ui: the item menu and HUD drawn natively from the game's state (UiState)
+        std::unique_ptr<HdUi> mHdUi;
+        kurenai::proto::UiState mUi;
+        float mSinceUi = 1e9f;
+        bool mHdUiTried = false;
         bool mHudMenuUp = false; // a full-screen game menu (items, pause) is shown
+        void updateHdUi(float dt);
         void updateHud(float dt);
         void hideHud();
         std::atomic<std::uint64_t> mQueries{ 0 }, mQueryHits{ 0 }, mQueriesDeclined{ 0 }, mQueryNs{ 0 };

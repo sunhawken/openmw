@@ -689,6 +689,7 @@ namespace MWKurenai
         if (!mLockActor.isEmpty())
             send(kurenai::proto::LockTarget{});
         mLockActor = MWWorld::Ptr();
+        mLockLast = MWWorld::Ptr();
         mLockHeld = false;
         if (mLockMarker)
             mLockMarker->setVisible(false);
@@ -1562,6 +1563,11 @@ namespace MWKurenai
                         static_cast<unsigned long long>(m.header.timestampNs), ps->position.x, ps->position.y,
                         ps->position.z, ps->animId, static_cast<unsigned long long>(a.arrivalNs), m.header.seq);
             }
+            else if (const auto* ui = std::get_if<kurenai::proto::UiState>(&m.payload))
+            {
+                mUi = *ui;
+                mSinceUi = 0;
+            }
             else if (const auto* ce = std::get_if<kurenai::proto::CombatEvent>(&m.payload))
                 handleCombat(*ce);
             else if (const auto* pose = std::get_if<kurenai::proto::Pose>(&m.payload))
@@ -1588,6 +1594,7 @@ namespace MWKurenai
             mHud->beat(now);
             updateHud(dt);
         }
+        updateHdUi(dt);
         if (mShowStatus)
             updateStatus(dt);
         if (mPoseCallback && mFrames % 120 == 0)
@@ -2017,13 +2024,35 @@ namespace MWKurenai
             // R1 pressed, or the target died or got away while it is held: the next one (none: she stays unlocked
             // until R1 is pressed again).
             const bool pressed = !mLockHeld;
-            mLockActor = pressed || !before.isEmpty() ? pickLockTarget() : MWWorld::Ptr();
+            if (pressed || !before.isEmpty())
+            {
+                // The one she had a moment ago is kept while it is still around (R1 flickering or pressed again
+                // is not a new choice); only otherwise the best new one.
+                const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                bool again = false;
+                if (!mLockLast.isEmpty() && now - mLockLastTime < 1.5)
+                {
+                    std::vector<MWWorld::Ptr> around;
+                    MWBase::Environment::get().getMechanicsManager()->getActorsInRange(
+                        MWBase::Environment::get().getWorld()->getPlayerPtr().getRefData().getPosition().asVec3(),
+                        mLockRange * 1.5f, around);
+                    again = std::find(around.begin(), around.end(), mLockLast) != around.end() && lockable(mLockLast);
+                }
+                mLockActor = again ? mLockLast : pickLockTarget();
+            }
+            else
+                mLockActor = MWWorld::Ptr();
             if (!mLockActor.isEmpty())
                 ++mLockPicks;
             else if (pressed)
                 ++mLockMisses;
         }
         mLockHeld = held;
+        if (!mLockActor.isEmpty())
+        {
+            mLockLast = mLockActor;
+            mLockLastTime = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
         if (mLockActor != before)
             Log(Debug::Info) << "Kurenai: lock-on "
                              << (mLockActor.isEmpty() ? std::string("off")
@@ -2509,6 +2538,34 @@ namespace MWKurenai
         }
     }
 
+    void Driver::updateHdUi(float dt)
+    {
+        mSinceUi += dt;
+        if (!mHdUiTried)
+        {
+            mHdUiTried = true;
+            const std::string dir = Settings::kurenai().mHdUi;
+            if (!dir.empty())
+            {
+                mHdUi = std::make_unique<HdUi>();
+                if (!mHdUi->load(dir))
+                    mHdUi.reset();
+            }
+        }
+        if (!mHdUi)
+            return;
+        const bool show = mControlling && mSinceUi < 1.0f;
+        float health = 1;
+        if (mLatest && mLatest->healthMax > 0)
+            health = std::clamp(static_cast<float>(mLatest->health) / static_cast<float>(mLatest->healthMax), 0.0f, 1.0f);
+        mHdUi->update(mUi, health, show);
+        if (show && mHideMorrowindHud && !mMorrowindHudHidden)
+        {
+            MWBase::Environment::get().getWindowManager()->setHudVisibility(false);
+            mMorrowindHudHidden = true;
+        }
+    }
+
     void Driver::updateHud(float dt)
     {
         mSinceHudFrame += dt;
@@ -2531,6 +2588,8 @@ namespace MWKurenai
                 if (r.x == 0 && r.y == 0 && r.w >= f.width && r.h >= f.height && !f.owner.empty())
                     mHudMenuUp = f.owner[f.owner.size() / 2] == i + 1 && f.owner.front() == i + 1;
             }
+            if (mHdUi && mHdUi->menuUp())
+                mHudMenuUp = true;
             // One texture per region, holding only the pixels the region owns (regions can overlap on the game's
             // screen, but each goes to its own corner here). GL textures are a power of two: the region sits in
             // the top-left corner.
@@ -2597,6 +2656,13 @@ namespace MWKurenai
                     continue;
                 }
                 const kurenai::HudRegion& r = f.regions[i];
+                // The ring, bars and item buttons are drawn natively when the hi-res HUD is up (the radar stays).
+                if (mHdUi && mSinceUi < 1.0f && static_cast<int>(i) + 1 != mRadarRegion
+                    && (i + 1 != 2 || mHdUi->menuUp()))
+                {
+                    box->setVisible(false);
+                    continue;
+                }
                 // Kept at the same distance from its nearest screen edge; a region across the middle stays centred.
                 auto place = [scale](int at, int size, int screen, int view) {
                     if (at < screen / 2 && at + size > screen / 2)
@@ -2629,6 +2695,10 @@ namespace MWKurenai
                 MWBase::Environment::get().getWindowManager()->setHudVisibility(false);
                 mMorrowindHudHidden = true;
             }
+            if (mHudFrames == 1)
+                for (std::size_t i = 0; i < f.regions.size(); ++i)
+                    Log(Debug::Info) << "Kurenai: game HUD region " << i + 1 << ": " << f.regions[i].x << "," << f.regions[i].y
+                                     << " " << f.regions[i].w << "x" << f.regions[i].h;
             if (mHudFrames == 1)
                 Log(Debug::Info) << "Kurenai: game HUD: first frame " << f.width << "x" << f.height << ", "
                                  << f.regions.size() << " regions, drawn at " << scale << "x";
