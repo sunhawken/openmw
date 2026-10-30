@@ -149,12 +149,19 @@ namespace MWKurenai
         mFits.clear(); // fitted again for the chosen model on the next frame
     }
 
+    std::string NativeBody::twin(const std::string& path)
+    {
+        const std::size_t dot = path.rfind(".nif");
+        return dot == std::string::npos ? path : path.substr(0, dot) + "_game.nif";
+    }
+
     std::vector<std::string> NativeBody::outfits()
     {
         load();
         std::vector<std::string> out;
         for (const Model& m : mModels)
-            out.push_back(m.path);
+            if (m.path.size() < 9 || m.path.compare(m.path.size() - 9, 9, "_game.nif") != 0) // the twins are not outfits
+                out.push_back(m.path);
         return out;
     }
 
@@ -424,7 +431,8 @@ namespace MWKurenai
         Fit best;
         for (std::size_t mi = 0; mi < mModels.size(); ++mi)
         {
-            if (!mWanted.empty() && mModels[mi].path != mWanted)
+            // The chosen outfit (and its twin numbered in the game's own order, for a game that runs that costume itself).
+            if (!mWanted.empty() && mModels[mi].path != mWanted && mModels[mi].path != twin(mWanted))
                 continue;
             for (int h = 0; h < static_cast<int>(pose.bones.size()); ++h)
                 if (live(pose, h))

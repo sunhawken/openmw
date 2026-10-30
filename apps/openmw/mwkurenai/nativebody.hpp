@@ -53,6 +53,7 @@ namespace MWKurenai
         void setOutfit(const std::string& path);
         const std::string& outfit() const { return mWanted; }
         std::vector<std::string> outfits();
+        static std::string twin(const std::string& path);
         const std::string& current() const;
 
         // Her tetsugen's attachment: 0 the blade (the game's own held blade), 1 the fundo (the weight, drawn in the blade's place).
