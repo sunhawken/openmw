@@ -146,6 +146,10 @@ namespace MWKurenai
         int mWeaponScancode = 0; // [Kurenai] weapon key (the weapon screen), 0 = none
         bool mWeaponOpen = false;
         int mMenuScancode = 0; // [Kurenai] menu key
+        int mStartScancode = 0; // [Kurenai] start key (the pad's Start for the game), 0 = none
+        int mActivateScancode = 0; // [Kurenai] activate key (Morrowind's activate), 0 = none
+        bool mActivatePrev = false;
+        bool mHookAimManual = true; // [Kurenai] hook aim
         bool mMenuOpen = false; // the Lua options menu is up
         std::uint16_t mMenuPrevMask = 0xffff; // the pad buttons seen last frame (0xffff: ignore the first frame)
         bool mMenuChordPrev = false, mJoyMenuNow = false;
@@ -160,7 +164,11 @@ namespace MWKurenai
         std::vector<std::string> mJoyMap; // the 'joystick map' words, by button number
         std::set<int> mJoySeen; // raw buttons already named in the log (device * 256 + button)
         int mWeaponRow = 0;
-        std::array<std::uint8_t, 4> mWeaponLevels{};
+        std::array<std::uint8_t, 4> mWeaponLevels{}; // the versions the game has (what the weapon screen last equipped)
+        std::array<std::uint8_t, 4> mWeaponBrowse{}; // the versions shown while choosing
+        bool mWeaponEquipPrev = false;
+        int mAttachWant = -1; // the weapon screen asked for this tetsugen head (0 blade, 1 fundo); -1 none
+        bool mItemTriPrev = false, mItemCirPrev = false; // Triangle / Circle seen last frame in the item menu
         bool mWeaponPrev[5] = { false, false, false, false, false }; // key, up, down, left, right
         bool mControlsHeld = false;
         bool mToldControls = false;

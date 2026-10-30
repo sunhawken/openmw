@@ -26,9 +26,11 @@ namespace MWKurenai
         bool load(const std::string& dir);
         bool loaded() const { return mLoaded; }
         // Shows the menu (ui.menuOpen) or the HUD (hud), or nothing. health/ninjutsu are shares 0..1.
-        void update(const kurenai::proto::UiState& ui, float health, bool hud, bool fundo = false);
+        // hudScale sizes the HUD (bars, ring, weapon and item slots) in its corners; the menu always fits the window.
+        void update(const kurenai::proto::UiState& ui, float health, bool hud, bool fundo = false, float hudScale = 1.0f);
         // The weapon screen (the game's list of the Tetsugen's four parts): row 0..3 is chosen, levels are 0..2 (shown +1).
-        void updateWeapons(const std::array<std::uint8_t, 4>& levels, int row, bool open);
+        // `browsed` is the version shown (Left / Right), `equipped` the one the game has (Enter equips the browsed one: a flame marks it).
+        void updateWeapons(const std::array<std::uint8_t, 4>& browsed, const std::array<std::uint8_t, 4>& equipped, int row, bool open);
         void hide();
         bool menuUp() const { return mMenuUp || mWeaponsUp; }
 
@@ -53,7 +55,8 @@ namespace MWKurenai
         std::array<ItemInfo, kurenai::proto::kUiItems> mItems;
         MyGUI::ImageBox* mBackdrop = nullptr;
         MyGUI::ImageBox* mBg = nullptr;
-        std::vector<MyGUI::ImageBox*> mIcons, mGlows, mTexts, mCounts1, mCounts2;
+        std::vector<MyGUI::ImageBox*> mIcons, mGlows, mFlames, mTexts, mCounts1, mCounts2;
+        std::vector<MyGUI::ImageBox*> mWFlames;
         std::vector<MyGUI::ImageBox*> mWNames, mWLevels, mWBars, mWBarBack, mWIcons;
         MyGUI::ImageBox* mWHints = nullptr;
         MyGUI::ImageBox *mMap = nullptr, *mOptions = nullptr, *mHints = nullptr;

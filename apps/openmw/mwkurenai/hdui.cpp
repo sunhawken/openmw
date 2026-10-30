@@ -133,6 +133,10 @@ namespace MWKurenai
             ok = loadImage(dir, "lv_" + std::to_string(i) + ".png");
         for (std::size_t i = 0; ok && i < kurenai::proto::kUiItems; ++i)
             ok = loadImage(dir, itemFile("item", i)) && loadImage(dir, itemFile("glow", i)) && loadImage(dir, itemFile("text", i));
+        // the purple flames of worn and assigned items (optional: an older bake has none and the glow stands in)
+        for (std::size_t i = 0; ok && i < kurenai::proto::kUiItems; ++i)
+            loadImage(dir, itemFile("flame", i));
+        loadImage(dir, "flame_bar.png");
         for (char d = '0'; ok && d <= '9'; ++d)
             ok = loadImage(dir, std::string("digit_") + d + ".png");
         for (const char* f : { "label_map.png", "label_options.png", "hints.png", "ring.png", "weapon_a.png", "weapon_b.png", "slot_tri.png",
@@ -148,6 +152,7 @@ namespace MWKurenai
         for (std::size_t i = 0; i < mItems.size(); ++i)
         {
             mGlows.push_back(box(itemFile("glow", i)));
+            mFlames.push_back(box(mImages.count(itemFile("flame", i)) ? itemFile("flame", i) : itemFile("glow", i)));
             mIcons.push_back(box(itemFile("item", i)));
             mTexts.push_back(box(itemFile("text", i)));
             mCounts1.push_back(box(""));
@@ -171,7 +176,8 @@ namespace MWKurenai
             mWBars.push_back(box("bar_orange.png"));
             mWNames.push_back(box("wname_" + std::to_string(i) + ".png"));
             mWLevels.push_back(box("lv_1.png"));
-            mWIcons.push_back(box(i < 2 ? "weapon_a.png" : "weapon_b.png"));
+            mWIcons.push_back(box(i < 2 ? "weapon_b.png" : "weapon_a.png")); // the Blade rows, then the Fundo rows
+            mWFlames.push_back(box(mImages.count("flame_bar.png") ? "flame_bar.png" : "bar_orange.png"));
         }
         mWHints = box("whints.png");
         mLoaded = true;
@@ -179,12 +185,13 @@ namespace MWKurenai
         return true;
     }
 
-    void HdUi::updateWeapons(const std::array<std::uint8_t, 4>& levels, int row, bool open)
+    void HdUi::updateWeapons(
+        const std::array<std::uint8_t, 4>& levels, const std::array<std::uint8_t, 4>& equipped, int row, bool open)
     {
         if (!mLoaded)
             return;
         std::vector<MyGUI::ImageBox*> weapon = { mWHints };
-        for (auto* v : { &mWNames, &mWLevels, &mWBars, &mWBarBack, &mWIcons })
+        for (auto* v : { &mWNames, &mWLevels, &mWBars, &mWBarBack, &mWIcons, &mWFlames })
             weapon.insert(weapon.end(), v->begin(), v->end());
         if (!open)
         {
@@ -203,7 +210,7 @@ namespace MWKurenai
                  mSlotTriItem, mSlotCircItem })
             if (b)
                 b->setVisible(false);
-        for (auto* v : { &mIcons, &mGlows, &mTexts, &mCounts1, &mCounts2 })
+        for (auto* v : { &mIcons, &mGlows, &mFlames, &mTexts, &mCounts1, &mCounts2 })
             for (MyGUI::ImageBox* b : *v)
                 b->setVisible(false);
         mMenuUp = mHudUp = false;
@@ -235,6 +242,13 @@ namespace MWKurenai
             put(mWBarBack[i], 254, by - 2, 284, 14);
             put(mWBars[i], 256, by, 280.0f * level / 3.0f, 8);
             put(mWIcons[i], 18, 34 + 76.0f * i, 36, 16);
+            // the version in the game: a purple flame under its bar (Enter equips the one shown)
+            mWFlames[i]->setVisible(false);
+            if (levels[i] == equipped[i])
+            {
+                put(mWFlames[i], 254, by - 6, 284, 22);
+                mWFlames[i]->setAlpha(i == row ? 1.0f : 0.6f);
+            }
             for (MyGUI::ImageBox* b : { mWNames[i], mWLevels[i], mWBars[i], mWBarBack[i], mWIcons[i] })
                 b->setAlpha(alpha);
         }
@@ -247,12 +261,12 @@ namespace MWKurenai
     void HdUi::hide()
     {
         if (mWeaponsUp)
-            updateWeapons({}, 0, false);
+            updateWeapons({}, {}, 0, false);
         if (!mMenuUp && !mHudUp)
             return;
         std::vector<MyGUI::ImageBox*> all = { mBackdrop, mBg, mMap, mOptions, mHints, mRing, mWeapon, mFrame, mHp, mNinja,
             mSlotTri, mSlotCirc, mSlotTriItem, mSlotCircItem };
-        for (auto* v : { &mIcons, &mGlows, &mTexts, &mCounts1, &mCounts2 })
+        for (auto* v : { &mIcons, &mGlows, &mFlames, &mTexts, &mCounts1, &mCounts2 })
             all.insert(all.end(), v->begin(), v->end());
         for (MyGUI::ImageBox* b : all)
             if (b)
@@ -260,12 +274,12 @@ namespace MWKurenai
         mMenuUp = mHudUp = false;
     }
 
-    void HdUi::update(const kurenai::proto::UiState& ui, float health, bool hud, bool fundo)
+    void HdUi::update(const kurenai::proto::UiState& ui, float health, bool hud, bool fundo, float hudScale)
     {
         if (!mLoaded)
             return;
         if (mWeaponsUp)
-            updateWeapons({}, 0, false);
+            updateWeapons({}, {}, 0, false);
         const bool menu = ui.menuOpen && hud;
         if (!menu && !hud)
         {
@@ -276,7 +290,7 @@ namespace MWKurenai
         // The menu fits the window whole, centred; the HUD keeps its corners, as high as on the PS2's screen.
         const float fit = std::min(view.width / kGameW, view.height / kGameH);
         const float menuOx = (view.width - kGameW * fit) / 2, menuOy = (view.height - kGameH * fit) / 2;
-        const float hs = view.height / kGameH;
+        const float hs = view.height / kGameH * std::clamp(hudScale, 0.25f, 4.0f);
         auto place = [&](MyGUI::ImageBox* b, const Rect& r, bool inMenu, bool right, bool bottom) {
             if (!b)
                 return;
@@ -307,7 +321,7 @@ namespace MWKurenai
         };
 
         std::vector<MyGUI::ImageBox*> menuBoxes = { mBackdrop, mBg, mMap, mOptions, mHints };
-        for (auto* v : { &mIcons, &mGlows, &mTexts, &mCounts1, &mCounts2 })
+        for (auto* v : { &mIcons, &mGlows, &mFlames, &mTexts, &mCounts1, &mCounts2 })
             menuBoxes.insert(menuBoxes.end(), v->begin(), v->end());
         if (menu)
         {
@@ -323,6 +337,10 @@ namespace MWKurenai
                 mIcons[i]->setAlpha(owned ? 1.0f : 0.28f);
                 mGlows[i]->setVisible(false);
                 mTexts[i]->setVisible(false);
+                // purple flame: worn equipment, and what is on the Triangle / Circle buttons
+                mFlames[i]->setVisible(false);
+                if (owned && (((ui.equipMask >> i) & 1) || ui.slotTriangle == i || ui.slotCircle == i))
+                    place(mFlames[i], Rect{ it.cx - it.gw / 2, it.cy - it.gh / 2, it.gw, it.gh }, true, false, false);
                 if (i == ui.cursor)
                 {
                     place(mGlows[i], Rect{ it.cx - it.gw / 2, it.cy - it.gh / 2, it.gw, it.gh }, true, false, false);
@@ -354,13 +372,17 @@ namespace MWKurenai
             place(mHints, rect("hints.png"), true, false, false);
         }
         else if (mMenuUp)
+        {
             for (MyGUI::ImageBox* b : menuBoxes)
                 b->setVisible(false);
+            for (MyGUI::ImageBox* b : mFlames)
+                b->setVisible(false);
+        }
 
         // the HUD (also under the menu: the ring and bars are part of the menu's picture, drawn at the menu's scale)
         const bool inMenu = menu;
         place(mRing, rect("ring.png"), inMenu, false, true);
-        setImage(mWeapon, fundo ? "weapon_b.png" : "weapon_a.png");
+        setImage(mWeapon, fundo ? "weapon_a.png" : "weapon_b.png"); // the pack lists the Fundo first
         place(mWeapon, rect("weapon_a.png"), inMenu, false, true);
         const Rect frame{ 67, 441, 378, 18 };
         place(mFrame, frame, inMenu, false, true);

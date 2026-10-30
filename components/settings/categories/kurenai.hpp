@@ -45,6 +45,9 @@ namespace Settings
         SettingValue<std::string> mJoystickMap{ mIndex, "Kurenai", "joystick map" };
         SettingValue<std::string> mMenuKey{ mIndex, "Kurenai", "menu key" };
         SettingValue<std::string> mWeaponKey{ mIndex, "Kurenai", "weapon key" };
+        SettingValue<std::string> mStartKey{ mIndex, "Kurenai", "start key" };
+        SettingValue<std::string> mActivateKey{ mIndex, "Kurenai", "activate key" };
+        SettingValue<std::string> mHookAim{ mIndex, "Kurenai", "hook aim", makeEnumSanitizerString({ "manual", "game" }) };
         SettingValue<bool> mProxies{ mIndex, "Kurenai", "proxies" };
         SettingValue<float> mProxyRadius{ mIndex, "Kurenai", "proxy radius", makeClampSanitizerFloat(100.0f, 20000.0f) };
         SettingValue<bool> mLockOn{ mIndex, "Kurenai", "lock on" };

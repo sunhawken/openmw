@@ -54,6 +54,7 @@
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
+#include "../mwworld/player.hpp"
 #include "../mwworld/ptr.hpp"
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
@@ -316,6 +317,19 @@ namespace MWKurenai
             }
             if (!k.mMenuKey.get().empty())
                 mMenuScancode = SDL_GetScancodeFromName(k.mMenuKey.get().c_str());
+            if (!k.mStartKey.get().empty())
+            {
+                mStartScancode = SDL_GetScancodeFromName(k.mStartKey.get().c_str());
+                if (mStartScancode == SDL_SCANCODE_UNKNOWN)
+                    Log(Debug::Error) << "Kurenai: unknown start key '" << k.mStartKey.get() << "'";
+            }
+            if (!k.mActivateKey.get().empty())
+            {
+                mActivateScancode = SDL_GetScancodeFromName(k.mActivateKey.get().c_str());
+                if (mActivateScancode == SDL_SCANCODE_UNKNOWN)
+                    Log(Debug::Error) << "Kurenai: unknown activate key '" << k.mActivateKey.get() << "'";
+            }
+            mHookAimManual = k.mHookAim.get() != "game";
             if (!k.mWeaponKey.get().empty())
             {
                 mWeaponScancode = SDL_GetScancodeFromName(k.mWeaponKey.get().c_str());
@@ -884,7 +898,7 @@ namespace MWKurenai
         constexpr std::uint32_t kStick = kurenai::proto::FlagRightUp | kurenai::proto::FlagRightDown
             | kurenai::proto::FlagRightLeft | kurenai::proto::FlagRightRight;
         const bool aiming = mLatest && (mLatest->animId == 1264 || mLatest->animId == 1260);
-        if (aiming && !mHookAiming && (mLatest->flags & kStick))
+        if (aiming && !mHookAiming && (mHookAimManual || (mLatest->flags & kStick)))
         {
             mHookAiming = true;
             mAimHit = false;
@@ -900,8 +914,22 @@ namespace MWKurenai
             // The game's pick: the place nearest the middle of its view, now that its camera has turned onto it.
             osg::Vec3f start(view.x(), view.y(), std::sin(0.5f));
             float best = -2.0f;
+            if (mHookAimManual)
+            {
+                // By hand: the aim starts where the camera looks (a little above level), not at the game's own pick.
+                start = view;
+                if (start.z() < std::sin(0.15f))
+                {
+                    const float flat = std::hypot(start.x(), start.y());
+                    start = flat > 1e-3f ? osg::Vec3f(start.x() / flat * std::cos(0.15f), start.y() / flat * std::cos(0.15f), std::sin(0.15f))
+                                         : osg::Vec3f(0, 0, 1);
+                }
+                best = 2.0f; // no pick from the game's places below
+            }
             for (const kurenai::proto::ProxyTarget& target : mHookTargets)
             {
+                if (mHookAimManual)
+                    break;
                 const kurenai::proto::Vec3 p = t.position(target.position);
                 osg::Vec3f to = osg::Vec3f(p.x, p.y, p.z) - head;
                 to.normalize();
@@ -1393,7 +1421,8 @@ namespace MWKurenai
              << "Lock-on (R1): " << bound(MWInput::A_Run) << "\n"
              << "Block (L1): " << bound(MWInput::A_ToggleSpell) << "\n"
              << "Crouch, wall hug next to a wall (L2): " << bound(MWInput::A_Sneak) << "\n"
-             << "Items / pause (Start): " << bound(MWInput::A_GameMenu) << "\n"
+             << "Items / pause (Start): " << Settings::kurenai().mStartKey.get() << " / pad Start (Escape is Morrowind's menu)\n"
+            << "Activate in Morrowind (doors, items, people): " << Settings::kurenai().mActivateKey.get() << " / pad R3\n"
              << "Item menu (Select): " << Settings::kurenai().mSelectKey.get() << " / pad Back\n"
              << "Camera / zoom (right stick; with the telescope worn and R2 held, up and down zoom): arrow keys\n"
              << "First person view, R2 (hold): "
@@ -1460,8 +1489,15 @@ namespace MWKurenai
             in.buttons |= kurenai::proto::BtnL1; // block
         if (held(MWInput::A_Run))
             in.buttons |= kurenai::proto::BtnR1;
-        if (held(MWInput::A_GameMenu))
-            in.buttons |= kurenai::proto::BtnStart;
+        // Start is the pad's Start button (or the start key): Morrowind's menu key (Escape) opens Morrowind's own menu and
+        // must not also open her item menu.
+        if (mStartScancode != 0)
+        {
+            int count = 0;
+            const Uint8* keys = SDL_GetKeyboardState(&count);
+            if (mStartScancode < count && keys[mStartScancode])
+                in.buttons |= kurenai::proto::BtnStart;
+        }
         // Her tetsugen's attachments: D-pad Left the blade, D-pad Right the fundo (weight). On the keyboard they are
         // OpenMW's previous / next weapon keys ([ and ], rebindable in Options > Controls); on a pad, its D-pad.
         if (held(MWInput::A_CycleWeaponLeft))
@@ -1563,6 +1599,28 @@ namespace MWKurenai
             if (mSelectScancode < count && keys[mSelectScancode])
                 in.buttons |= kurenai::proto::BtnSelect;
         }
+        // Activate, Morrowind's way (open a door, take an item, talk): its own key, or the pad's R3 on its own; Circle
+        // stays her wire. It acts on what the crosshair meets, as Morrowind's Activate does.
+        {
+            bool now = false;
+            if (mActivateScancode != 0)
+            {
+                int count = 0;
+                const Uint8* keys = SDL_GetKeyboardState(&count);
+                now = mActivateScancode < count && keys[mActivateScancode];
+            }
+            for (int i = 0; i < 4 && !now; ++i)
+                if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+                    now = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_RIGHTSTICK)
+                        && !SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSTICK);
+            if (now && !mActivatePrev && !mMenuOpen && !mWeaponOpen && !mHudMenuUp
+                && !MWBase::Environment::get().getWindowManager()->isGuiMode())
+            {
+                Log(Debug::Info) << "Kurenai: activate (Morrowind)";
+                MWBase::Environment::get().getWorld()->getPlayer().activate();
+            }
+            mActivatePrev = now;
+        }
         if (held(MWInput::A_TogglePOV))
             in.buttons |= kurenai::proto::BtnR2;
         for (int i = 0; i < 4; ++i)
@@ -1570,6 +1628,8 @@ namespace MWKurenai
             {
                 if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_BACK))
                     in.buttons |= kurenai::proto::BtnSelect;
+                if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_START))
+                    in.buttons |= kurenai::proto::BtnStart;
                 if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000)
                     in.buttons |= kurenai::proto::BtnR2;
                 if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_UP))
@@ -1629,8 +1689,9 @@ namespace MWKurenai
                 mWeaponOpen = !mWeaponOpen;
                 if (mWeaponOpen)
                 {
-                    mWeaponLevels = mUi.weaponLevels;
+                    mWeaponLevels = mWeaponBrowse = mUi.weaponLevels;
                     mWeaponRow = 0;
+                    mWeaponEquipPrev = true; // the key that opened it must not also equip
                 }
             }
             else if (mWeaponOpen)
@@ -1645,17 +1706,25 @@ namespace MWKurenai
                 if (edge(4))
                     step = 1;
                 if (step != 0)
+                    mWeaponBrowse[mWeaponRow] = static_cast<std::uint8_t>(std::clamp<int>(mWeaponBrowse[mWeaponRow] + step, 0, 2));
+                // Enter (or Cross on a pad) equips the version shown: the game gets it, and a flame marks it.
+                const bool equip = down(SDL_SCANCODE_RETURN) || down(SDL_SCANCODE_KP_ENTER) || (in.buttons & kurenai::proto::BtnCross);
+                if (equip && !mWeaponEquipPrev && mWeaponLevels[mWeaponRow] != mWeaponBrowse[mWeaponRow])
                 {
-                    const int level = std::clamp<int>(mWeaponLevels[mWeaponRow] + step, 0, 2);
-                    if (level != mWeaponLevels[mWeaponRow])
-                    {
-                        mWeaponLevels[mWeaponRow] = static_cast<std::uint8_t>(level);
-                        kurenai::proto::WeaponLevels m;
-                        m.levels = mWeaponLevels;
-                        send(m);
-                        Log(Debug::Info) << "Kurenai: weapon screen: part " << mWeaponRow << " -> version " << level + 1;
-                    }
+                    mWeaponLevels[mWeaponRow] = mWeaponBrowse[mWeaponRow];
+                    kurenai::proto::WeaponLevels m;
+                    m.levels = mWeaponLevels;
+                    send(m);
+                    Log(Debug::Info) << "Kurenai: weapon screen: part " << mWeaponRow << " equipped version " << mWeaponLevels[mWeaponRow] + 1;
                 }
+                // Equipping a part also takes that weapon in hand: the Blade rows (0, 1) the Blade, the Fundo rows (2, 3) the Fundo
+                // (the game's own switch, D-pad Left / Right, is pressed for her).
+                if (equip && !mWeaponEquipPrev)
+                {
+                    mAttachWant = mWeaponRow < 2 ? 0 : 1;
+                    Log(Debug::Info) << "Kurenai: weapon screen: takes the " << (mAttachWant ? "Fundo" : "Blade") << " in hand";
+                }
+                mWeaponEquipPrev = equip;
             }
             for (int i = 0; i < 5; ++i)
                 mWeaponPrev[i] = now[i];
@@ -1666,6 +1735,18 @@ namespace MWKurenai
                 in.ly = axisByte(0.0f);
                 in.rx = axisByte(0.0f);
                 in.ry = axisByte(0.0f);
+            }
+        }
+        // The head the weapon screen asked for: until the game says she carries it, D-pad Left (Blade) or Right (Fundo) is
+        // pressed for a moment every half second (it is the game's own switch, so the right model and icon follow).
+        if (mAttachWant >= 0)
+        {
+            if (mAttachment == mAttachWant)
+                mAttachWant = -1;
+            else
+            {
+                if ((kurenai::monotonicNs() / 1000000ull) % 500ull < 120ull)
+                    in.buttons |= mAttachWant ? kurenai::proto::BtnRight : kurenai::proto::BtnLeft;
             }
         }
         // The options menu (Lua): L3 + R3 (or a raw joystick's "menu" button) open it, then the D-pad, Cross, Circle and Start
@@ -1697,6 +1778,38 @@ namespace MWKurenai
             }
             if (mNav.size() > 64)
                 mNav.erase(mNav.begin(), mNav.end() - 64);
+        }
+        // The item menu (hi-res): Triangle / Circle on the item under the cursor put it on that button (a flame marks it); the
+        // same item again takes it off. The game gets neither, since Triangle is its "back"; Select (or Start) closes the menu.
+        {
+            using namespace kurenai::proto;
+            const bool inMenu = mHdUi && mHdUi->menuUp() && !mWeaponOpen && !mMenuOpen && mUi.menuOpen && mSinceUi < 3.0f;
+            const bool tri = (in.buttons & BtnTriangle) != 0, cir = (in.buttons & BtnCircle) != 0;
+            if (inMenu)
+            {
+                if (tri && !mItemTriPrev)
+                {
+                    ItemCommand c;
+                    c.kind = 0;
+                    c.item = mUi.cursor;
+                    send(c);
+                    Log(Debug::Info) << "Kurenai: item menu: Triangle on item " << int(mUi.cursor);
+                }
+                if (cir && !mItemCirPrev)
+                {
+                    ItemCommand c;
+                    c.kind = 1;
+                    c.item = mUi.cursor;
+                    send(c);
+                    Log(Debug::Info) << "Kurenai: item menu: Circle on item " << int(mUi.cursor);
+                }
+                in.buttons &= static_cast<std::uint16_t>(~(BtnTriangle | BtnCircle));
+            }
+            if (!inMenu && mUi.menuOpen && ((tri && !mItemTriPrev) || (cir && !mItemCirPrev)))
+                Log(Debug::Info) << "Kurenai: item menu: a button press is not taken (hd ui " << (mHdUi && mHdUi->menuUp())
+                                 << ", weapon screen " << mWeaponOpen << ", options menu " << mMenuOpen << ", ui age " << mSinceUi << ")";
+            mItemTriPrev = tri && inMenu;
+            mItemCirPrev = cir && inMenu;
         }
         // Send on change, and at least 4 times a second so a lost message can't leave a button stuck.
         if (!(in == mLastInput) || mSinceInput > 0.25f)
@@ -1838,6 +1951,9 @@ namespace MWKurenai
             mPs2->setDriven(mControlling && !MWBase::Environment::get().getWindowManager()->isGuiMode());
         if (!mControlling)
         {
+            // Never leave Morrowind's camera static while Morrowind drives the player.
+            if (mCameraTaken)
+                releaseCamera();
             // Morrowind mode with PCSX2 connected: a neutral pad, so she stands idle in Red Ninja's world.
             if (mPeerAlive)
             {
@@ -2838,6 +2954,7 @@ namespace MWKurenai
         add("proxies", "Stand-ins for nearby actors (kills, darts)", onOff(mProxyEnabled), kOnOff);
         add("proxyradius", "Stand-in radius", num(mProxyRadius), { "1500", "3000", "5000", "8000" });
         add("hooks", "Hook aims at Morrowind's geometry", onOff(mHooks), kOnOff);
+        add("hookaim", "Hook aim", mHookAimManual ? "manual" : "game", { "manual", "game" });
         add("health", "Health bar and damage", mHealthMode, { "morrowind", "game", "off" },
             { "Morrowind's health", "The game's own", "Off" });
         add("gamehud", "The game's HUD", onOff(Settings::kurenai().mGameHud), kOnOff);
@@ -2860,6 +2977,8 @@ namespace MWKurenai
         key("key_recover", "Key: back onto solid ground", mRecoverScancode);
         key("key_select", "Key: item menu (Select)", mSelectScancode);
         key("key_weapon", "Key: weapon screen", mWeaponScancode);
+        key("key_start", "Key: Start (the game's pause)", mStartScancode);
+        key("key_activate", "Key: open doors / use things in Morrowind", mActivateScancode);
         return out;
     }
 
@@ -2878,6 +2997,7 @@ namespace MWKurenai
         else if (id == "proxies") { mProxyEnabled = on; k.mProxies.set(on); }
         else if (id == "proxyradius") { mProxyRadius = std::stof(value); k.mProxyRadius.set(mProxyRadius); }
         else if (id == "hooks") { mHooks = on; k.mHookTargets.set(on); }
+        else if (id == "hookaim") { mHookAimManual = value != "game"; k.mHookAim.set(value); }
         else if (id == "health") { mHealthMode = value; k.mHealth.set(value); }
         else if (id == "gamehud") k.mGameHud.set(on);
         else if (id == "hidehud") { mHideMorrowindHud = on; k.mHideMorrowindHud.set(on); }
@@ -2898,10 +3018,12 @@ namespace MWKurenai
             else if (id == "key_recover") { mRecoverScancode = code; k.mRecoverKey.set(name); }
             else if (id == "key_select") { mSelectScancode = code; k.mSelectKey.set(name); }
             else if (id == "key_weapon") { mWeaponScancode = code; k.mWeaponKey.set(name); }
+            else if (id == "key_start") { mStartScancode = code; k.mStartKey.set(name); }
+            else if (id == "key_activate") { mActivateScancode = code; k.mActivateKey.set(name); }
             else
                 return false;
             // The key just pressed to choose this one must not also do its job.
-            mWeaponPrev[0] = mToggleHeld = mControlsHeld = mRecoverHeld = true;
+            mWeaponPrev[0] = mToggleHeld = mControlsHeld = mRecoverHeld = mActivatePrev = true;
             Log(Debug::Info) << "Kurenai: " << id << " = " << name;
             return true;
         }
@@ -2968,10 +3090,10 @@ namespace MWKurenai
             mWeaponOpen = false;
         if (mWeaponOpen)
         {
-            mHdUi->updateWeapons(mWeaponLevels, mWeaponRow, true);
+            mHdUi->updateWeapons(mWeaponBrowse, mWeaponLevels, mWeaponRow, true);
             return;
         }
-        mHdUi->updateWeapons(mWeaponLevels, mWeaponRow, false);
+        mHdUi->updateWeapons(mWeaponBrowse, mWeaponLevels, mWeaponRow, false);
         float health = 1;
         if (MWBase::Environment::get().getWorld()->getPlayerPtr().getClass().getCreatureStats(MWBase::Environment::get().getWorld()->getPlayerPtr()).isDead())
             health = 0;
@@ -2980,7 +3102,7 @@ namespace MWKurenai
         // The game's pause flag is also up for its message boxes: only a full-screen menu in the captured frame is the item menu.
         kurenai::proto::UiState ui = mUi;
         ui.menuOpen = ui.menuOpen && mGameMenuFull;
-        mHdUi->update(ui, health, show, mAttachment == 1);
+        mHdUi->update(ui, health, show, mAttachment == 1, mHudScale);
         if (show && mHideMorrowindHud && !mMorrowindHudHidden)
         {
             MWBase::Environment::get().getWindowManager()->setHudVisibility(false);
@@ -3338,7 +3460,16 @@ namespace MWKurenai
     void Driver::applyGameCamera()
     {
         if (!(mLatest->flags & kurenai::proto::FlagCamera))
+        {
+            // The game has no camera of its own for the moment (a cutscene, a loading screen, a menu): give Morrowind's back,
+            // or the static one stays where it was while she runs on (a security camera).
+            if (mCameraTaken)
+            {
+                Log(Debug::Info) << "Kurenai: the game has no camera now; Morrowind's camera follows her";
+                releaseCamera();
+            }
             return;
+        }
         kurenai::CoordTransform t;
         {
             std::lock_guard<std::mutex> lock(mTransformMutex);
@@ -3366,7 +3497,12 @@ namespace MWKurenai
         MWRender::Camera* camera = MWBase::Environment::get().getWorld()->getCamera();
         if (!mCameraTaken)
         {
-            mPreviousCameraMode = static_cast<int>(camera->getMode());
+            // A camera that is already static (a leftover of an earlier take) is not a mode to go back to.
+            const MWRender::Camera::Mode was = camera->getMode();
+            mPreviousCameraMode = static_cast<int>(was == MWRender::Camera::Mode::Static || was == MWRender::Camera::Mode::Preview
+                    || was == MWRender::Camera::Mode::Vanity
+                ? MWRender::Camera::Mode::ThirdPerson
+                : was);
             camera->setMode(MWRender::Camera::Mode::Static, true);
             mCameraTaken = true;
             Log(Debug::Info) << "Kurenai: showing Red Ninja's camera";
@@ -3431,6 +3567,7 @@ namespace MWKurenai
         MWBase::Environment::get().getWorld()->getCamera()->setMode(
             static_cast<MWRender::Camera::Mode>(mPreviousCameraMode), true);
         mCameraTaken = false;
+        mPreviousCameraMode = static_cast<int>(MWRender::Camera::Mode::ThirdPerson);
     }
 
     void Driver::updatePoseOverride()
