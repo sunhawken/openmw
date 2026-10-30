@@ -1870,7 +1870,15 @@ namespace MWKurenai
         {
             using namespace kurenai::proto;
             const bool inMenu = mHdUi && mHdUi->menuUp() && !mWeaponOpen && !mMenuOpen && mUi.menuOpen && mSinceUi < 3.0f;
-            const bool tri = (in.buttons & BtnTriangle) != 0, cir = (in.buttons & BtnCircle) != 0;
+            bool tri = (in.buttons & BtnTriangle) != 0, cir = (in.buttons & BtnCircle) != 0;
+            // On a pad the face buttons also go straight to the game (Triangle is its "back"), so the pad has its own pair here:
+            // L1 puts the item on Triangle, R1 on Circle.
+            for (int i = 0; i < 4 && inMenu; ++i)
+                if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+                {
+                    tri = tri || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+                    cir = cir || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+                }
             if (inMenu)
             {
                 if (tri && !mItemTriPrev)
