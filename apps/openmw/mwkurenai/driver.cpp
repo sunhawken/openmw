@@ -2900,6 +2900,8 @@ namespace MWKurenai
             else if (id == "key_weapon") { mWeaponScancode = code; k.mWeaponKey.set(name); }
             else
                 return false;
+            // The key just pressed to choose this one must not also do its job.
+            mWeaponPrev[0] = mToggleHeld = mControlsHeld = mRecoverHeld = true;
             Log(Debug::Info) << "Kurenai: " << id << " = " << name;
             return true;
         }
