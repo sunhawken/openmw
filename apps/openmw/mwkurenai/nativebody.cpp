@@ -423,6 +423,8 @@ namespace MWKurenai
             if (f.slots[n] >= 0 && bones[n].parent >= 0 && f.slots[bones[n].parent] >= 0
                 && distance(expected(static_cast<int>(n), f.slots[bones[n].parent]), f.slots[n]) < 0.5f)
                 ++f.matched;
+            else if (f.slots[n] >= 0)
+                Log(Debug::Info) << "Kurenai: native body bone " << bones[n].name << " is slot " << f.slots[n] << " by the shift, not exactly under its parent";
         return f;
     }
 
