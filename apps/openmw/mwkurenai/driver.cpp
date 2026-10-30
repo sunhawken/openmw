@@ -64,6 +64,7 @@
 
 #include <components/esm/defs.hpp>
 #include <components/esm3/loadgmst.hpp>
+#include <components/esm3/loadskil.hpp>
 #include <components/esm3/loadmgef.hpp>
 #include <components/esm3/loadspel.hpp>
 
@@ -244,6 +245,11 @@ namespace MWKurenai
         }
     }
 
+    Driver* Driver::instance()
+    {
+        return sInstance;
+    }
+
     Driver::Driver()
     {
         std::string name, logPath;
@@ -317,6 +323,7 @@ namespace MWKurenai
             if (k.mNativeBody && !k.mNativeBodyModels.get().empty())
             {
                 mNative = std::make_unique<NativeBody>(k.mNativeBodyModels.get());
+                mNative->setOutfit(k.mOutfit.get());
                 mNative->setAttachment(mAttachment);
             }
             const std::string ps2 = k.mPs2Animation;
@@ -739,6 +746,14 @@ namespace MWKurenai
             tm->setSimulationTimeScale(1.f);
             Log(Debug::Info) << "Kurenai: ninjutsu off";
         }
+    }
+
+    void Driver::useSkill(ESM::RefId skill, int usage)
+    {
+        // What she does counts for Morrowind's skills: they level, and their level goes into hits, sneaking and jumps.
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        if (!player.isEmpty() && player.getClass().isNpc())
+            player.getClass().skillUsageSucceeded(player, skill, usage);
     }
 
     void Driver::updateSneak(std::uint32_t motion)
@@ -1420,7 +1435,14 @@ namespace MWKurenai
         // Triangle action, R1 lock-on, L2 crouch, L1 block (docs/REVERSE_ENGINEERING.md, controls).
         const auto held = [&](int action) { return input->getActionValue(action) > 0.5f; };
         if (held(MWInput::A_Jump))
+        {
             in.buttons |= kurenai::proto::BtnCross;
+            if (!mJumpHeld && mLatest && !swimMotions().count(mLatest->animId))
+                useSkill(ESM::Skill::Acrobatics, ESM::Skill::Acrobatics_Jump);
+            mJumpHeld = true;
+        }
+        else
+            mJumpHeld = false;
         if (held(MWInput::A_Use))
             in.buttons |= kurenai::proto::BtnSquare;
         if (held(MWInput::A_Activate))
@@ -1455,6 +1477,7 @@ namespace MWKurenai
         // Joysticks SDL has no standard layout for (a gaming mouse's side pad, an arcade stick ...): button by button, as the
         // 'joystick map' setting says; a hat is the D-pad, axes 0 / 1 the left stick, 2 / 3 the right stick.
         mJoyWeaponNow = false;
+        mJoyMenuNow = false;
         for (int j = 0; j < SDL_NumJoysticks(); ++j)
         {
             if (SDL_IsGameController(j))
@@ -1494,6 +1517,7 @@ namespace MWKurenai
                 else if (a == "left") in.buttons |= BtnLeft;
                 else if (a == "right") in.buttons |= BtnRight;
                 else if (a == "weapon") mJoyWeaponNow = true;
+                else if (a == "menu") mJoyMenuNow = true;
             };
             for (int b = 0; b < SDL_JoystickNumButtons(js) && b < 64; ++b)
             {
@@ -1638,6 +1662,36 @@ namespace MWKurenai
                 in.rx = axisByte(0.0f);
                 in.ry = axisByte(0.0f);
             }
+        }
+        // The options menu (Lua): L3 + R3 (or a raw joystick's "menu" button) open it, then the D-pad, Cross, Circle and Start
+        // drive it; the game gets nothing while it is up.
+        {
+            using namespace kurenai::proto;
+            const std::uint16_t b = in.buttons;
+            const bool chord = ((b & BtnL3) && (b & BtnR3)) || mJoyMenuNow;
+            if (chord && !mMenuChordPrev)
+                mNav.push_back("menu");
+            mMenuChordPrev = chord;
+            if (mMenuOpen)
+            {
+                if (mMenuPrevMask != 0xffff)
+                {
+                    static const struct { std::uint16_t bit; const char* name; } pads[]
+                        = { { BtnUp, "up" }, { BtnDown, "down" }, { BtnLeft, "left" }, { BtnRight, "right" },
+                              { BtnCross, "accept" }, { BtnCircle, "back" }, { BtnStart, "close" } };
+                    for (const auto& p : pads)
+                        if ((b & p.bit) && !(mMenuPrevMask & p.bit))
+                            mNav.push_back(p.name);
+                }
+                mMenuPrevMask = b;
+                in = kurenai::proto::Input{};
+                in.lx = axisByte(0.0f);
+                in.ly = axisByte(0.0f);
+                in.rx = axisByte(0.0f);
+                in.ry = axisByte(0.0f);
+            }
+            if (mNav.size() > 64)
+                mNav.erase(mNav.begin(), mNav.end() - 64);
         }
         // Send on change, and at least 4 times a second so a lost message can't leave a button stuck.
         if (!(in == mLastInput) || mSinceInput > 0.25f)
@@ -1920,6 +1974,7 @@ namespace MWKurenai
                 continue;
             mHitThisAttack.push_back(actor.getBase());
             ++mCombatHits;
+            useSkill(ESM::Skill::LongBlade, ESM::Skill::Weapon_SuccessfulHit); // her blade, kunai and wire strikes
             // Her stealth kill on an actor the game has no guard for (a stage without enemies, or more actors than
             // guards): struck from behind while it is not fighting, it dies at once. Proxied actors get the game's own
             // kill through their guard. Not the game's kill cinematic: that needs a stage guard to play on.
@@ -2021,6 +2076,7 @@ namespace MWKurenai
         MWMechanics::CreatureStats& stats = actor.getClass().getCreatureStats(actor);
         const float damage = std::max(1.0f, e.damage * stats.getHealth().getModified());
         ++mCombatHits;
+        useSkill(ESM::Skill::Marksman, ESM::Skill::Weapon_SuccessfulHit); // her darts
         MWBase::Environment::get().getLuaManager()->onHit(player, actor, MWWorld::Ptr(), MWWorld::Ptr(), 0, 1.0f,
             damage, true, hit.mHitPos, true, MWMechanics::DamageSourceType::Ranged);
         Log(Debug::Info) << "Kurenai: dart " << (e.attackId & 0xffff) << " hits " << actor.getCellRef().getRefId()
@@ -2697,6 +2753,124 @@ namespace MWKurenai
             Log(Debug::Info) << "Kurenai: her death: the game's death sequence plays first";
         }
         return d.mDeathState == 1;
+    }
+
+    std::vector<std::string> Driver::takeNav()
+    {
+        std::vector<std::string> out;
+        out.swap(mNav);
+        return out;
+    }
+
+    std::vector<std::string> Driver::padInfo() const
+    {
+        std::vector<std::string> lines;
+        lines.push_back("Open this menu: F10, or L3 + R3 on a pad (a joystick's 'menu' button in the joystick map)");
+        lines.push_back("In the menu: D-pad up / down choose, left / right change, Cross confirms, Circle or Start closes");
+        for (int j = 0; j < SDL_NumJoysticks(); ++j)
+        {
+            const char* name = SDL_IsGameController(j) ? SDL_GameControllerNameForIndex(j) : SDL_JoystickNameForIndex(j);
+            lines.push_back(std::string(SDL_IsGameController(j) ? "Pad " : "Joystick ") + std::to_string(j) + ": "
+                + (name ? name : "?")
+                + (SDL_IsGameController(j) ? " (standard layout: Cross jump, Square attack, Circle wire, Triangle action,"
+                                               " R1 lock-on, L1 block, L2 crouch, Back items)"
+                                           : " (button by button: see the joystick map below)"));
+        }
+        std::string map;
+        for (std::size_t i = 0; i < mJoyMap.size(); ++i)
+            map += std::to_string(i) + "=" + mJoyMap[i] + " ";
+        if (!map.empty())
+            lines.push_back("Joystick map (button=action): " + map);
+        return lines;
+    }
+
+    namespace
+    {
+        const std::vector<std::string> kOnOff = { "on", "off" };
+
+        std::string num(float v)
+        {
+            std::ostringstream s;
+            s << v;
+            return s.str();
+        }
+    }
+
+    std::vector<Driver::Option> Driver::options()
+    {
+        std::vector<Option> out;
+        const auto add = [&](const char* id, const char* label, std::string value, std::vector<std::string> choices,
+                             std::vector<std::string> names = {}) {
+            Option o;
+            o.id = id;
+            o.label = label;
+            o.value = std::move(value);
+            o.choices = std::move(choices);
+            o.names = names.empty() ? o.choices : std::move(names);
+            out.push_back(std::move(o));
+        };
+        const auto onOff = [](bool v) { return std::string(v ? "on" : "off"); };
+        if (mNative)
+        {
+            std::vector<std::string> paths = mNative->outfits(), names;
+            for (const std::string& p : paths)
+            {
+                const std::size_t k = p.rfind("krn_");
+                std::string n = p.substr(k == std::string::npos ? 0 : k + 4);
+                if (n.size() > 4 && n.compare(n.size() - 4, 4, ".nif") == 0)
+                    n.resize(n.size() - 4);
+                if (n == "kurenai_ver01")
+                    n = "Red kimono";
+                else if (n == "kurenai_ver03")
+                    n = "Grey ninja suit";
+                names.push_back(n);
+            }
+            if (paths.size() > 1)
+                add("outfit", "Outfit", mNative->outfit().empty() ? paths[0] : mNative->outfit(), paths, names);
+        }
+        add("combat", "Combat: her blade, kunai and wire hurt Morrowind's actors", onOff(mCombat), kOnOff);
+        add("lockon", "Lock-on (R1) picks Morrowind's actors", onOff(mLockOn), kOnOff);
+        add("lockrange", "Lock-on range", num(mLockRange), { "800", "1500", "2500", "4000", "8000" });
+        add("proxies", "Stage enemies stand in for nearby actors (stealth kills, darts)", onOff(mProxyEnabled), kOnOff);
+        add("proxyradius", "Stand-in radius", num(mProxyRadius), { "1500", "3000", "5000", "8000" });
+        add("hooks", "Hook (wire) aims at Morrowind's geometry", onOff(mHooks), kOnOff);
+        add("health", "Health bar and damage", mHealthMode, { "morrowind", "game", "off" },
+            { "Morrowind's health", "The game's own", "Off" });
+        add("gamehud", "The game's HUD", onOff(Settings::kurenai().mGameHud), kOnOff);
+        add("hidehud", "Hide Morrowind's HUD while she is Kurenai", onOff(mHideMorrowindHud), kOnOff);
+        add("hudscale", "HUD size", num(mHudScale), { "0.5", "0.75", "1", "1.25", "1.5", "2" });
+        add("interpolate", "Smooth her movement between game frames", onOff(mInterpolate), kOnOff);
+        add("predict", "Predict her movement (less lag)", onOff(mPredict), kOnOff);
+        add("status", "Status text (frame, latency)", onOff(mShowStatus), kOnOff);
+        return out;
+    }
+
+    bool Driver::setOption(const std::string& id, const std::string& value)
+    {
+        Settings::KurenaiCategory& k = Settings::kurenai();
+        const bool on = value == "on";
+        if (id == "outfit" && mNative)
+        {
+            mNative->setOutfit(value);
+            k.mOutfit.set(value);
+        }
+        else if (id == "combat") { mCombat = on; k.mCombat.set(on); }
+        else if (id == "lockon") { mLockOn = on; k.mLockOn.set(on); }
+        else if (id == "lockrange") { mLockRange = std::stof(value); k.mLockRange.set(mLockRange); }
+        else if (id == "proxies") { mProxyEnabled = on; k.mProxies.set(on); }
+        else if (id == "proxyradius") { mProxyRadius = std::stof(value); k.mProxyRadius.set(mProxyRadius); }
+        else if (id == "hooks") { mHooks = on; k.mHookTargets.set(on); }
+        else if (id == "health") { mHealthMode = value; k.mHealth.set(value); }
+        else if (id == "gamehud") k.mGameHud.set(on);
+        else if (id == "hidehud") { mHideMorrowindHud = on; k.mHideMorrowindHud.set(on); }
+        else if (id == "hudscale") { mHudScale = std::stof(value); k.mGameHudScale.set(mHudScale); }
+        else if (id == "interpolate") { mInterpolate = on; k.mInterpolate.set(on); }
+        else if (id == "predict") { mPredict = on; k.mPredict.set(on); }
+        else if (id == "status") { mShowStatus = on; k.mShowStatus.set(on); }
+        else
+            return false;
+        Log(Debug::Info) << "Kurenai: option " << id << " = " << value;
+        return true;
     }
 
     void Driver::updateHdUi(float dt)

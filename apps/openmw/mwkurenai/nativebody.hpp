@@ -49,6 +49,10 @@ namespace MWKurenai
 
         // Diagnostics for the status line and the log.
         std::size_t modelsLoaded() const { return mModels.size(); }
+        // The outfit to show: the path of one of the loaded models (empty: the first that fits).
+        void setOutfit(const std::string& path);
+        const std::string& outfit() const { return mWanted; }
+        std::vector<std::string> outfits();
         const std::string& current() const;
 
         // Her tetsugen's attachment: 0 the blade (the game's own held blade), 1 the fundo (the weight, drawn in the blade's place).
@@ -91,6 +95,7 @@ namespace MWKurenai
         void hide(bool hidden);
 
         std::vector<std::string> mPaths;
+        std::string mWanted;
         bool mLoaded = false;
         std::vector<Model> mModels;
         std::map<std::uint32_t, Fit> mFits;

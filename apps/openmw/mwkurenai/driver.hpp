@@ -76,6 +76,22 @@ namespace MWKurenai
         // death screen (load a save) waits for the game's death sequence to end (or 6 s). True = the caller must not open it.
         static bool deathDeferred();
 
+        // The options menu (Lua: scripts/kurenai/menu.lua through openmw.kurenai). Every option is a list of choices; the
+        // menu steps through them and the driver applies the pick at once and keeps it in the user's settings.
+        struct Option
+        {
+            std::string id, label, value;
+            std::vector<std::string> choices, names; // names: what each choice is called on screen
+        };
+        static Driver* instance();
+        std::vector<Option> options();
+        bool setOption(const std::string& id, const std::string& value);
+        std::vector<std::string> padInfo() const;
+        // While the menu is up the game gets neutral input; its pad events (D-pad, Cross, Circle, the open chord) queue here.
+        void setMenuOpen(bool open) { mMenuOpen = open; mMenuPrevMask = 0xffff; }
+        bool menuOpen() const { return mMenuOpen; }
+        std::vector<std::string> takeNav();
+
         // Held by the engine while physics and the world update run; the bridge thread answers the game's collision
         // queries (Jolt ray casts) only outside those windows.
         std::unique_lock<std::timed_mutex> lockWorld() { return std::unique_lock<std::timed_mutex>(mWorldMutex); }
@@ -85,6 +101,8 @@ namespace MWKurenai
         void answer(const kurenai::proto::CollisionQuery& q);
         void answerWater(const kurenai::proto::CollisionQuery& q, const kurenai::CoordTransform& t,
             const kurenai::proto::Vec3& a, const kurenai::proto::Vec3& b);
+        void useSkill(ESM::RefId skill, int usage);
+        bool mJumpHeld = false;
         void updateSwim(float dt, kurenai::proto::Vec3& mw);
         bool send(const kurenai::proto::Payload& p);
         void takeControl();
@@ -126,6 +144,11 @@ namespace MWKurenai
         int mSelectScancode = 0; // [Kurenai] select key, 0 = none
         int mWeaponScancode = 0; // [Kurenai] weapon key (the weapon screen), 0 = none
         bool mWeaponOpen = false;
+        bool mMenuOpen = false; // the Lua options menu is up
+        std::uint16_t mMenuPrevMask = 0xffff; // the pad buttons seen last frame (0xffff: ignore the first frame)
+        bool mMenuChordPrev = false, mJoyMenuNow = false;
+        float mNavRepeat = 0;
+        std::vector<std::string> mNav;
         float mDeathWait = 0;
         int mDeathState = 0; // 0 alive, 1 her death sequence plays, 2 it is over
         float mTestKillClock = 0;

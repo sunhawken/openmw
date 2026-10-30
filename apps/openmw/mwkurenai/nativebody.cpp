@@ -141,6 +141,23 @@ namespace MWKurenai
         return mShown >= 0 ? mModels[mShown].path : none;
     }
 
+    void NativeBody::setOutfit(const std::string& path)
+    {
+        if (path == mWanted)
+            return;
+        mWanted = path;
+        mFits.clear(); // fitted again for the chosen model on the next frame
+    }
+
+    std::vector<std::string> NativeBody::outfits()
+    {
+        load();
+        std::vector<std::string> out;
+        for (const Model& m : mModels)
+            out.push_back(m.path);
+        return out;
+    }
+
     void NativeBody::load()
     {
         if (mLoaded)
@@ -406,6 +423,9 @@ namespace MWKurenai
     {
         Fit best;
         for (std::size_t mi = 0; mi < mModels.size(); ++mi)
+        {
+            if (!mWanted.empty() && mModels[mi].path != mWanted)
+                continue;
             for (int h = 0; h < static_cast<int>(pose.bones.size()); ++h)
                 if (live(pose, h))
                 {
@@ -413,6 +433,7 @@ namespace MWKurenai
                     if (f.matched > best.matched)
                         best = std::move(f);
                 }
+        }
         // Her body is about 28 rigid bones (legs, spine, arms, hands, head): most of them must match.
         if (best.matched < 16)
             return {};

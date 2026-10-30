@@ -13,6 +13,9 @@
 #include "contentbindings.hpp"
 #include "corebindings.hpp"
 #include "debugbindings.hpp"
+#ifdef OPENMW_KURENAI
+#include "kurenaibindings.hpp"
+#endif
 #include "inputbindings.hpp"
 #include "localscripts.hpp"
 #include "markupbindings.hpp"
@@ -68,7 +71,7 @@ namespace MWLua
 
     std::map<std::string, sol::object> initPlayerPackages(const Context& context)
     {
-        return {
+        std::map<std::string, sol::object> packages = {
             { "openmw.ambient", initAmbientPackage(context) },
             { "openmw.camera", initCameraPackage(context.sol()) },
             { "openmw.debug", initDebugPackage(context) },
@@ -76,6 +79,10 @@ namespace MWLua
             { "openmw.postprocessing", initPostprocessingPackage(context) },
             { "openmw.ui", initUserInterfacePackage(context) },
         };
+#ifdef OPENMW_KURENAI
+        packages.emplace("openmw.kurenai", initKurenaiPackage(context));
+#endif
+        return packages;
     }
 
     std::map<std::string, sol::object> initMenuPackages(const Context& context)

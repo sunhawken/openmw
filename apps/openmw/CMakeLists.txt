@@ -126,6 +126,7 @@ if (KURENAI_BRIDGE_DIR)
     add_openmw_dir (mwkurenai
         driver embeddedps2 nativebody poseoverride hdui
         )
+    add_openmw_dir (mwlua kurenaibindings)
 endif()
 
 # Main executable

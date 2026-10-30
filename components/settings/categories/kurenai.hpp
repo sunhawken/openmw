@@ -57,6 +57,7 @@ namespace Settings
         SettingValue<std::string> mHealth{ mIndex, "Kurenai", "health",
             makeEnumSanitizerString({ "morrowind", "game", "off" }) };
         SettingValue<float> mMaxViewDistance{ mIndex, "Kurenai", "max view distance", makeMaxStrictSanitizerFloat(0) };
+        SettingValue<std::string> mOutfit{ mIndex, "Kurenai", "outfit" };
         SettingValue<bool> mNativeBody{ mIndex, "Kurenai", "native body" };
         SettingValue<std::vector<std::string>> mNativeBodyModels{ mIndex, "Kurenai", "native body models" };
         SettingValue<std::string> mPs2Folder{ mIndex, "Kurenai", "ps2 folder" };
