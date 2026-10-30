@@ -166,7 +166,9 @@ namespace MWKurenai
         int mWeaponRow = 0;
         std::array<std::uint8_t, 4> mWeaponLevels{}; // the versions the game has (what the weapon screen last equipped)
         std::array<std::uint8_t, 4> mWeaponBrowse{}; // the versions shown while choosing
-        bool mWeaponEquipPrev = false;
+        bool mWeaponEquipPrev = false, mWeaponBackPrev = false;
+        bool mWeaponWant = false; // the weapon key was pressed with the item menu closed: open it, then focus the weapons
+        std::uint64_t mWeaponWantNs = 0;
         int mAttachWant = -1; // the weapon screen asked for this tetsugen head (0 blade, 1 fundo); -1 none
         bool mItemTriPrev = false, mItemCirPrev = false; // Triangle / Circle seen last frame in the item menu
         bool mWeaponPrev[5] = { false, false, false, false, false }; // key, up, down, left, right

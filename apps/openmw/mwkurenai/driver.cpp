@@ -1684,16 +1684,45 @@ namespace MWKurenai
                 down(SDL_SCANCODE_UP) || down(SDL_SCANCODE_W), down(SDL_SCANCODE_DOWN) || down(SDL_SCANCODE_S),
                 down(SDL_SCANCODE_LEFT) || down(SDL_SCANCODE_A), down(SDL_SCANCODE_RIGHT) || down(SDL_SCANCODE_D) };
             const auto edge = [&](int i) { return now[i] && !mWeaponPrev[i]; };
-            if (edge(0) && mSinceUi < 3.0f && mHdUi)
+            // The weapon list is a panel of the item menu: the weapon key moves the focus between the item grid (the game's cursor)
+            // and the four parts; with the menu closed it opens the menu first (the game's Select), then takes the focus.
+            const bool menuOn = mHdUi && mUi.menuOpen && mSinceUi < 3.0f && mHdUi->menuUp();
+            const auto startFocus = [&] {
+                mWeaponOpen = true;
+                mWeaponLevels = mWeaponBrowse = mUi.weaponLevels;
+                mWeaponRow = 0;
+                mWeaponEquipPrev = true; // the key that opened it must not also equip
+            };
+            if (edge(0) && mHdUi && !mMenuOpen)
             {
-                mWeaponOpen = !mWeaponOpen;
-                if (mWeaponOpen)
+                if (menuOn)
                 {
-                    mWeaponLevels = mWeaponBrowse = mUi.weaponLevels;
-                    mWeaponRow = 0;
-                    mWeaponEquipPrev = true; // the key that opened it must not also equip
+                    if (mWeaponOpen)
+                        mWeaponOpen = false;
+                    else
+                        startFocus();
+                }
+                else
+                {
+                    mWeaponWant = true;
+                    mWeaponWantNs = kurenai::monotonicNs();
                 }
             }
+            if (mWeaponWant)
+            {
+                const std::uint64_t age = (kurenai::monotonicNs() - mWeaponWantNs) / 1000000ull;
+                if (menuOn)
+                {
+                    startFocus();
+                    mWeaponWant = false;
+                }
+                else if (age < 150)
+                    in.buttons |= kurenai::proto::BtnSelect;
+                else if (age > 3000)
+                    mWeaponWant = false;
+            }
+            if (!menuOn && !mWeaponWant)
+                mWeaponOpen = false;
             else if (mWeaponOpen)
             {
                 if (edge(1))
@@ -1708,6 +1737,10 @@ namespace MWKurenai
                 if (step != 0)
                     mWeaponBrowse[mWeaponRow] = static_cast<std::uint8_t>(std::clamp<int>(mWeaponBrowse[mWeaponRow] + step, 0, 2));
                 // Enter (or Cross on a pad) equips the version shown: the game gets it, and a flame marks it.
+                const bool back = down(SDL_SCANCODE_BACKSPACE) || (in.buttons & kurenai::proto::BtnCircle);
+                if (back && !mWeaponBackPrev)
+                    mWeaponOpen = false;
+                mWeaponBackPrev = back;
                 const bool equip = down(SDL_SCANCODE_RETURN) || down(SDL_SCANCODE_KP_ENTER) || (in.buttons & kurenai::proto::BtnCross);
                 if (equip && !mWeaponEquipPrev && mWeaponLevels[mWeaponRow] != mWeaponBrowse[mWeaponRow])
                 {
@@ -3088,12 +3121,6 @@ namespace MWKurenai
                 mWeaponOpen ? mWeaponLevels[2] : mUi.weaponLevels[2]);
         if (!show)
             mWeaponOpen = false;
-        if (mWeaponOpen)
-        {
-            mHdUi->updateWeapons(mWeaponBrowse, mWeaponLevels, mWeaponRow, true);
-            return;
-        }
-        mHdUi->updateWeapons(mWeaponBrowse, mWeaponLevels, mWeaponRow, false);
         float health = 1;
         if (MWBase::Environment::get().getWorld()->getPlayerPtr().getClass().getCreatureStats(MWBase::Environment::get().getWorld()->getPlayerPtr()).isDead())
             health = 0;
@@ -3103,6 +3130,8 @@ namespace MWKurenai
         kurenai::proto::UiState ui = mUi;
         ui.menuOpen = ui.menuOpen && mGameMenuFull;
         mHdUi->update(ui, health, show, mAttachment == 1, mHudScale);
+        mHdUi->updateWeapons(mWeaponOpen ? mWeaponBrowse : mUi.weaponLevels, mWeaponOpen ? mWeaponLevels : mUi.weaponLevels,
+            mWeaponRow, mWeaponOpen, mHdUi->menuUp());
         if (show && mHideMorrowindHud && !mMorrowindHudHidden)
         {
             MWBase::Environment::get().getWindowManager()->setHudVisibility(false);

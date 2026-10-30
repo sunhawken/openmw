@@ -30,9 +30,10 @@ namespace MWKurenai
         void update(const kurenai::proto::UiState& ui, float health, bool hud, bool fundo = false, float hudScale = 1.0f);
         // The weapon screen (the game's list of the Tetsugen's four parts): row 0..3 is chosen, levels are 0..2 (shown +1).
         // `browsed` is the version shown (Left / Right), `equipped` the one the game has (Enter equips the browsed one: a flame marks it).
-        void updateWeapons(const std::array<std::uint8_t, 4>& browsed, const std::array<std::uint8_t, 4>& equipped, int row, bool open);
+        void updateWeapons(const std::array<std::uint8_t, 4>& browsed, const std::array<std::uint8_t, 4>& equipped, int row, bool focused,
+            bool show);
         void hide();
-        bool menuUp() const { return mMenuUp || mWeaponsUp; }
+        bool menuUp() const { return mMenuUp; }
 
     private:
         struct Image
