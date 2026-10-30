@@ -41,6 +41,7 @@ namespace Settings
         SettingValue<std::string> mRecoverKey{ mIndex, "Kurenai", "recover key" };
         SettingValue<std::string> mControlsKey{ mIndex, "Kurenai", "controls key" };
         SettingValue<std::string> mSelectKey{ mIndex, "Kurenai", "select key" };
+        SettingValue<float> mTestKillSeconds{ mIndex, "Kurenai", "test kill seconds", makeClampSanitizerFloat(0.0f, 3600.0f) };
         SettingValue<std::string> mJoystickMap{ mIndex, "Kurenai", "joystick map" };
         SettingValue<std::string> mWeaponKey{ mIndex, "Kurenai", "weapon key" };
         SettingValue<bool> mProxies{ mIndex, "Kurenai", "proxies" };

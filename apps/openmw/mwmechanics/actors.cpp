@@ -1,5 +1,7 @@
 #include "actors.hpp"
 
+#include "../mwkurenai/driver.hpp"
+
 #include <array>
 #include <optional>
 
@@ -1872,8 +1874,9 @@ namespace MWMechanics
 
                 if (isPlayer)
                 {
-                    // player's death animation is over
-                    MWBase::Environment::get().getStateManager()->askLoadRecent();
+                    // player's death animation is over (KURENAI: not before the game's own death sequence is)
+                    if (!MWKurenai::Driver::deathDeferred())
+                        MWBase::Environment::get().getStateManager()->askLoadRecent();
                 }
                 else
                 {

@@ -72,6 +72,9 @@ namespace MWKurenai
         bool connected() const { return mPeerAlive; }
         // Combat mode: PCSX2 drives her. Morrowind mode: Morrowind does, while PCSX2 stays connected and idle.
         bool driving() const { return mControlling; }
+        // The player's Morrowind death: while Red Ninja's code drives her, her own death motion plays first, and Morrowind's
+        // death screen (load a save) waits for the game's death sequence to end (or 6 s). True = the caller must not open it.
+        static bool deathDeferred();
 
         // Held by the engine while physics and the world update run; the bridge thread answers the game's collision
         // queries (Jolt ray casts) only outside those windows.
@@ -123,6 +126,10 @@ namespace MWKurenai
         int mSelectScancode = 0; // [Kurenai] select key, 0 = none
         int mWeaponScancode = 0; // [Kurenai] weapon key (the weapon screen), 0 = none
         bool mWeaponOpen = false;
+        float mDeathWait = 0;
+        int mDeathState = 0; // 0 alive, 1 her death sequence plays, 2 it is over
+        float mTestKillClock = 0;
+        bool mTestKillDone = false;
         bool mJoyWeaponNow = false; // a raw joystick's weapon-screen button is down
         std::map<int, _SDL_Joystick*> mRawPads; // joysticks without a gamepad layout, opened by SDL index
         std::vector<std::string> mJoyMap; // the 'joystick map' words, by button number
@@ -442,6 +449,7 @@ namespace MWKurenai
         kurenai::proto::UiState mUi;
         float mSinceUi = 1e9f;
         bool mHdUiTried = false;
+        bool mGameMenuFull = false; // the captured game frame is a full-screen menu (the item menu), whatever the hi-res UI does
         bool mHudMenuUp = false; // a full-screen game menu (items, pause) is shown
         void updateHdUi(float dt);
         void updateHud(float dt);

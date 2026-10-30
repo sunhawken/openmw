@@ -21,6 +21,7 @@
 #include <components/settings/values.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/statemanager.hpp"
 #include "../mwbase/inputmanager.hpp"
 #include "../mwbase/luamanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
@@ -68,6 +69,11 @@
 
 namespace MWKurenai
 {
+    namespace
+    {
+        Driver* sInstance = nullptr; // the one driver, for the engine's death handling (deferDeath)
+    }
+
     namespace
     {
         constexpr float kGameHz = 30.0f;
@@ -362,6 +368,8 @@ namespace MWKurenai
 
     Driver::~Driver()
     {
+        if (sInstance == this)
+            sInstance = nullptr;
         if (mHudFrames)
             Log(Debug::Info) << "Kurenai: game HUD: " << mHudFrames << " frames shown";
         if (mLatency.count)
@@ -2663,6 +2671,7 @@ namespace MWKurenai
     void Driver::hideHud()
     {
         mHudMenuUp = false;
+        mGameMenuFull = false;
         for (MyGUI::ImageBox* box : mHudBoxes)
             box->setVisible(false);
         if (mMorrowindHudHidden)
@@ -2672,8 +2681,45 @@ namespace MWKurenai
         }
     }
 
+    // Asked by the engine while the player is dead (every frame, and when Morrowind's own death animation ends): true while
+    // Red Ninja's code drives her and her death sequence (the game's death motion, then its game over) is still going.
+    bool Driver::deathDeferred()
+    {
+        if (!sInstance)
+            return false;
+        Driver& d = *sInstance;
+        if (d.mDeathState == 0)
+        {
+            if (!d.mControlling || d.mSinceLatest > 1.0f)
+                return false;
+            d.mDeathState = 1;
+            d.mDeathWait = 0;
+            Log(Debug::Info) << "Kurenai: her death: the game's death sequence plays first";
+        }
+        return d.mDeathState == 1;
+    }
+
     void Driver::updateHdUi(float dt)
     {
+        sInstance = this;
+        if (mDeathState == 2 || mDeathState == 1)
+        {
+            const MWWorld::Ptr p = MWBase::Environment::get().getWorld()->getPlayerPtr();
+            if (!p.getClass().getCreatureStats(p).isDead())
+                mDeathState = 0; // loaded a save, or revived
+        }
+        if (mDeathState == 1)
+        {
+            mDeathWait += dt;
+            // The game stops updating her once its death sequence hands over to its game over: then (or after 8 s) Morrowind's
+            // death screen follows.
+            if (mSinceLatest > 1.5f || mDeathWait > 6.0f)
+            {
+                mDeathState = 2;
+                Log(Debug::Info) << "Kurenai: her death sequence is over (" << mDeathWait << " s): Morrowind's death screen";
+                MWBase::Environment::get().getStateManager()->askLoadRecent();
+            }
+        }
         mSinceUi += dt;
         if (!mHdUiTried)
         {
@@ -2689,6 +2735,20 @@ namespace MWKurenai
         if (!mHdUi)
             return;
         const bool show = mControlling && mSinceUi < 3.0f;
+        if (show && !mTestKillDone && Settings::kurenai().mTestKillSeconds > 0)
+        {
+            mTestKillClock += dt;
+            if (mTestKillClock > Settings::kurenai().mTestKillSeconds)
+            {
+                mTestKillDone = true;
+                const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+                MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
+                MWMechanics::DynamicStat<float> hp = stats.getHealth();
+                hp.setCurrent(0, true);
+                stats.setHealth(hp);
+                Log(Debug::Info) << "Kurenai: test kill: her Morrowind health is 0";
+            }
+        }
         if (mNative && mSinceUi < 3.0f)
             mNative->setWeaponLevels(mWeaponOpen ? mWeaponLevels[0] : mUi.weaponLevels[0],
                 mWeaponOpen ? mWeaponLevels[2] : mUi.weaponLevels[2]);
@@ -2701,9 +2761,14 @@ namespace MWKurenai
         }
         mHdUi->updateWeapons(mWeaponLevels, mWeaponRow, false);
         float health = 1;
-        if (mLatest && mLatest->healthMax > 0)
+        if (MWBase::Environment::get().getWorld()->getPlayerPtr().getClass().getCreatureStats(MWBase::Environment::get().getWorld()->getPlayerPtr()).isDead())
+            health = 0;
+        else if (mLatest && mLatest->healthMax > 0)
             health = std::clamp(static_cast<float>(mLatest->health) / static_cast<float>(mLatest->healthMax), 0.0f, 1.0f);
-        mHdUi->update(mUi, health, show, mAttachment == 1);
+        // The game's pause flag is also up for its message boxes: only a full-screen menu in the captured frame is the item menu.
+        kurenai::proto::UiState ui = mUi;
+        ui.menuOpen = ui.menuOpen && mGameMenuFull;
+        mHdUi->update(ui, health, show, mAttachment == 1);
         if (show && mHideMorrowindHud && !mMorrowindHudHidden)
         {
             MWBase::Environment::get().getWindowManager()->setHudVisibility(false);
@@ -2733,6 +2798,7 @@ namespace MWKurenai
                 if (r.x == 0 && r.y == 0 && r.w >= f.width && r.h >= f.height && !f.owner.empty())
                     mHudMenuUp = f.owner[f.owner.size() / 2] == i + 1 && f.owner.front() == i + 1;
             }
+            mGameMenuFull = mHudMenuUp;
             if (mHdUi && mHdUi->menuUp())
                 mHudMenuUp = true;
             // One texture per region, holding only the pixels the region owns (regions can overlap on the game's

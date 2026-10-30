@@ -296,7 +296,11 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
             if (mStateManager->getState() == MWBase::StateManager::State_Running)
             {
                 MWWorld::Ptr player = mWorld->getPlayerPtr();
-                if (!paused && player.getClass().getCreatureStats(player).isDead())
+                if (!paused && player.getClass().getCreatureStats(player).isDead()
+#ifdef OPENMW_KURENAI
+                    && !MWKurenai::Driver::deathDeferred() // her own death sequence plays first
+#endif
+                )
                     mStateManager->endGame();
             }
         }
