@@ -1460,29 +1460,15 @@ namespace MWKurenai
                 if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
                     in.buttons |= kurenai::proto::BtnRight;
             }
-        // The attachment keys switch her tetsugen between the blade and the fundo (the weight): the blade is the game's own
-        // held blade, the fundo is drawn in its place and hits harder (see the blade test). The game itself ignores D-pad
-        // Left / Right here (its fundo is locked), so the press is not passed on.
+        // D-pad Left / Right (the keyboard's [ and ]) go to the game: it switches her tetsugen between the Blade and the
+        // Fundo itself (PCSX2 keeps both unlocked), plays its own Fundo moves, and says which head she carries
+        // (FlagFundo). The engine only follows that, below.
         {
             const bool left = (in.buttons & kurenai::proto::BtnLeft) != 0, right = (in.buttons & kurenai::proto::BtnRight) != 0;
-            const bool pressedLeft = left && !mAttachPrevLeft, pressedRight = right && !mAttachPrevRight;
-            if (pressedLeft || pressedRight)
-            {
-                const int want = pressedRight ? 1 : 0;
-                Log(Debug::Info) << "Kurenai: attachment key " << (pressedRight ? "Right (fundo)" : "Left (blade)") << " pressed; game motion "
-                                 << (mLatest ? mLatest->animId : 0) << "; attachment " << mAttachment << " -> " << want;
-                if (want != mAttachment)
-                {
-                    mAttachment = want;
-                    if (mNative)
-                        mNative->setAttachment(mAttachment);
-                    MWBase::Environment::get().getWindowManager()->messageBox(
-                        mAttachment == 1 ? "Tetsugen: fundo (weight)" : "Tetsugen: blade");
-                }
-            }
+            if (left != mAttachPrevLeft || right != mAttachPrevRight)
+                Log(Debug::Info) << "Kurenai: D-pad left " << left << " right " << right << " sent to the game";
             mAttachPrevLeft = left;
             mAttachPrevRight = right;
-            in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnLeft | kurenai::proto::BtnRight));
         }
         // Her smoke bomb's button: held, it aims (updateSmokeAim) and the game doesn't see it; let go, it is tapped.
         std::uint16_t smokeButton = 0;
@@ -1543,6 +1529,16 @@ namespace MWKurenai
                 mPrev = mLatest;
                 mLatest = *ps;
                 mSinceLatest = 0;
+                const int attachment = (ps->flags & kurenai::proto::FlagFundo) ? 1 : 0;
+                if (attachment != mAttachment)
+                {
+                    Log(Debug::Info) << "Kurenai: tetsugen " << (attachment ? "fundo" : "blade") << " (the game's choice)";
+                    mAttachment = attachment;
+                    if (mNative)
+                        mNative->setAttachment(mAttachment);
+                    MWBase::Environment::get().getWindowManager()->messageBox(
+                        mAttachment == 1 ? "Tetsugen: fundo (weight)" : "Tetsugen: blade");
+                }
                 ++mStatesReceived;
                 mLastPeerFrame = m.header.frameId;
                 if (now >= m.header.timestampNs && a.arrivalNs >= m.header.timestampNs)
@@ -2558,7 +2554,7 @@ namespace MWKurenai
         float health = 1;
         if (mLatest && mLatest->healthMax > 0)
             health = std::clamp(static_cast<float>(mLatest->health) / static_cast<float>(mLatest->healthMax), 0.0f, 1.0f);
-        mHdUi->update(mUi, health, show);
+        mHdUi->update(mUi, health, show, mAttachment == 1);
         if (show && mHideMorrowindHud && !mMorrowindHudHidden)
         {
             MWBase::Environment::get().getWindowManager()->setHudVisibility(false);

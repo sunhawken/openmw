@@ -131,7 +131,7 @@ namespace MWKurenai
             ok = loadImage(dir, itemFile("item", i)) && loadImage(dir, itemFile("glow", i)) && loadImage(dir, itemFile("text", i));
         for (char d = '0'; ok && d <= '9'; ++d)
             ok = loadImage(dir, std::string("digit_") + d + ".png");
-        for (const char* f : { "label_map.png", "label_options.png", "hints.png", "ring.png", "weapon_a.png", "slot_tri.png",
+        for (const char* f : { "label_map.png", "label_options.png", "hints.png", "ring.png", "weapon_a.png", "weapon_b.png", "slot_tri.png",
                  "slot_circ.png", "backdrop.png", "bar_orange.png", "bar_navy.png", "bar_frame.png" })
             ok = ok && loadImage(dir, f);
         if (!ok)
@@ -180,7 +180,7 @@ namespace MWKurenai
         mMenuUp = mHudUp = false;
     }
 
-    void HdUi::update(const kurenai::proto::UiState& ui, float health, bool hud)
+    void HdUi::update(const kurenai::proto::UiState& ui, float health, bool hud, bool fundo)
     {
         if (!mLoaded)
             return;
@@ -278,6 +278,7 @@ namespace MWKurenai
         // the HUD (also under the menu: the ring and bars are part of the menu's picture, drawn at the menu's scale)
         const bool inMenu = menu;
         place(mRing, rect("ring.png"), inMenu, false, true);
+        setImage(mWeapon, fundo ? "weapon_b.png" : "weapon_a.png");
         place(mWeapon, rect("weapon_a.png"), inMenu, false, true);
         const Rect frame{ 67, 441, 378, 18 };
         place(mFrame, frame, inMenu, false, true);

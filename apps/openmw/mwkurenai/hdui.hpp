@@ -25,7 +25,7 @@ namespace MWKurenai
         bool load(const std::string& dir);
         bool loaded() const { return mLoaded; }
         // Shows the menu (ui.menuOpen) or the HUD (hud), or nothing. health/ninjutsu are shares 0..1.
-        void update(const kurenai::proto::UiState& ui, float health, bool hud);
+        void update(const kurenai::proto::UiState& ui, float health, bool hud, bool fundo = false);
         void hide();
         bool menuUp() const { return mMenuUp; }
 
