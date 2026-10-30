@@ -753,7 +753,10 @@ namespace MWKurenai
         // What she does counts for Morrowind's skills: they level, and their level goes into hits, sneaking and jumps.
         const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
         if (!player.isEmpty() && player.getClass().isNpc())
+        {
             player.getClass().skillUsageSucceeded(player, skill, usage);
+            Log(Debug::Info) << "Kurenai: skill use " << skill.getRefIdString() << " " << usage;
+        }
     }
 
     void Driver::updateSneak(std::uint32_t motion)
