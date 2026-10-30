@@ -428,11 +428,21 @@ namespace MWKurenai
 
     NativeBody::Fit NativeBody::fit(const kurenai::proto::Pose& pose) const
     {
+        // The game's own costume: the grey ninja suit's model (the game's id of it, measured on a save in the volcano) is
+        // drawn with its twin numbered in the game's order. The kimono is the game's default, and what the outfit
+        // option may replace.
+        constexpr std::uint32_t kGreySuitModel = 0xe26050da;
         Fit best;
         for (std::size_t mi = 0; mi < mModels.size(); ++mi)
         {
-            // The chosen outfit (and its twin numbered in the game's own order, for a game that runs that costume itself).
-            if (!mWanted.empty() && mModels[mi].path != mWanted && mModels[mi].path != twin(mWanted))
+            const std::string& path = mModels[mi].path;
+            const bool twin = path.size() > 9 && path.compare(path.size() - 9, 9, "_game.nif") == 0;
+            if (pose.model == kGreySuitModel)
+            {
+                if (path.find("ver03_game") == std::string::npos)
+                    continue;
+            }
+            else if (!mWanted.empty() ? (path != mWanted) : twin)
                 continue;
             for (int h = 0; h < static_cast<int>(pose.bones.size()); ++h)
                 if (live(pose, h))
@@ -441,9 +451,6 @@ namespace MWKurenai
                     if (f.matched > best.matched)
                         best = std::move(f);
                 }
-            // The first model that fits is hers (the red kimono); the others only when chosen.
-            if (best.matched >= 16)
-                break;
         }
         // Her body is about 28 rigid bones (legs, spine, arms, hands, head): most of them must match.
         if (best.matched < 16)
