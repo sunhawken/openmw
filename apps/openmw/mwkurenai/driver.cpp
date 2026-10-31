@@ -3374,7 +3374,10 @@ namespace MWKurenai
                 }
                 const kurenai::HudRegion& r = f.regions[i];
                 // The ring, bars and item buttons are drawn natively when the hi-res HUD is up (the radar stays).
+                // The PS2's own full-screen item menu is the exception: with 'native menu' off it is that picture, so it stays.
+                const bool fullScreen = r.x == 0 && r.y == 0 && r.w >= f.width && r.h >= f.height;
                 if (mHdUi && mSinceUi < 3.0f && static_cast<int>(i) + 1 != mRadarRegion
+                    && !(fullScreen && mGameMenuFull && !nativeMenu())
                     && (i + 1 != 2 || mHdUi->menuUp()))
                 {
                     box->setVisible(false);
