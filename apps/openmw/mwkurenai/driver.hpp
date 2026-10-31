@@ -109,6 +109,7 @@ namespace MWKurenai
         bool send(const kurenai::proto::Payload& p);
         void takeControl();
         void releaseControl(const char* why);
+        bool nativeMenu() const; // [Kurenai] OpenMW's own item menu / weapon screen (the setting 'native menu' and a loaded hd ui)
         void pollModeKey();
         void setMode(bool morrowind, const char* how);
         void pollRecoverKey();

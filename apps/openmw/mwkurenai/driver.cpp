@@ -1773,14 +1773,14 @@ namespace MWKurenai
             const auto edge = [&](int i) { return now[i] && !mWeaponPrev[i]; };
             // The weapon list is a panel of the item menu: the weapon key moves the focus between the item grid (the game's cursor)
             // and the four parts; with the menu closed it opens the menu first (the game's Select), then takes the focus.
-            const bool menuOn = mHdUi && mUi.menuOpen && mSinceUi < 3.0f && mHdUi->menuUp();
+            const bool menuOn = nativeMenu() && mUi.menuOpen && mSinceUi < 3.0f && mHdUi->menuUp();
             const auto startFocus = [&] {
                 mWeaponOpen = true;
                 mWeaponLevels = mWeaponBrowse = mUi.weaponLevels;
                 mWeaponRow = 0;
                 mWeaponEquipPrev = true; // the key that opened it must not also equip
             };
-            if (edge(0) && mHdUi && !mMenuOpen)
+            if (edge(0) && nativeMenu() && !mMenuOpen)
             {
                 if (menuOn)
                 {
@@ -1903,7 +1903,7 @@ namespace MWKurenai
         // same item again takes it off. The game gets neither, since Triangle is its "back"; Select (or Start) closes the menu.
         {
             using namespace kurenai::proto;
-            const bool inMenu = mHdUi && mHdUi->menuUp() && !mWeaponOpen && !mMenuOpen && mUi.menuOpen && mSinceUi < 3.0f;
+            const bool inMenu = nativeMenu() && mHdUi->menuUp() && !mWeaponOpen && !mMenuOpen && mUi.menuOpen && mSinceUi < 3.0f;
             bool tri = (in.buttons & BtnTriangle) != 0, cir = (in.buttons & BtnCircle) != 0;
             // On a pad the face buttons also go straight to the game (Triangle is its "back"), so the pad has its own pair here:
             // L1 puts the item on Triangle, R1 on Circle.
@@ -3191,7 +3191,7 @@ namespace MWKurenai
         {
             mHdUiTried = true;
             const std::string dir = Settings::kurenai().mHdUi;
-            if (!dir.empty() && Settings::kurenai().mNativeMenu)
+            if (!dir.empty())
             {
                 mHdUi = std::make_unique<HdUi>();
                 if (!mHdUi->load(dir))
@@ -3200,7 +3200,8 @@ namespace MWKurenai
         }
         if (!mHdUi)
             return;
-        const bool show = mControlling && mSinceUi < 3.0f;
+        // The native HUD is drawn over play only; the item menu is the PS2's own picture unless 'native menu' is on.
+        const bool show = mControlling && mSinceUi < 3.0f && (nativeMenu() || !mGameMenuFull);
         if (show && !mTestKillDone && Settings::kurenai().mTestKillSeconds > 0)
         {
             mTestKillClock += dt;
@@ -3227,15 +3228,21 @@ namespace MWKurenai
             health = std::clamp(static_cast<float>(mLatest->health) / static_cast<float>(mLatest->healthMax), 0.0f, 1.0f);
         // The game's pause flag is also up for its message boxes: only a full-screen menu in the captured frame is the item menu.
         kurenai::proto::UiState ui = mUi;
-        ui.menuOpen = ui.menuOpen && mGameMenuFull;
+        ui.menuOpen = ui.menuOpen && mGameMenuFull && nativeMenu();
         mHdUi->update(ui, health, show, mAttachment == 1, mHudScale);
-        mHdUi->updateWeapons(mWeaponOpen ? mWeaponBrowse : mUi.weaponLevels, mWeaponOpen ? mWeaponLevels : mUi.weaponLevels,
-            mWeaponRow, mWeaponOpen, mHdUi->menuUp());
+        if (nativeMenu())
+            mHdUi->updateWeapons(mWeaponOpen ? mWeaponBrowse : mUi.weaponLevels, mWeaponOpen ? mWeaponLevels : mUi.weaponLevels,
+                mWeaponRow, mWeaponOpen, mHdUi->menuUp());
         if (show && mHideMorrowindHud && !mMorrowindHudHidden)
         {
             MWBase::Environment::get().getWindowManager()->setHudVisibility(false);
             mMorrowindHudHidden = true;
         }
+    }
+
+    bool Driver::nativeMenu() const
+    {
+        return mHdUi && Settings::kurenai().mNativeMenu;
     }
 
     void Driver::updateHud(float dt)
