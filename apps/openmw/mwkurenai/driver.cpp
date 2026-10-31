@@ -1248,6 +1248,32 @@ namespace MWKurenai
 
     void Driver::updateSmokeAim(const MWWorld::Ptr& player, float dt)
     {
+        // How to use it: said once when it first sits on a button, and written on the screen while aiming.
+        if (mLatest && !mSmokeTold && (mLatest->flags & (kurenai::proto::FlagSmokeTriangle | kurenai::proto::FlagSmokeCircle)))
+        {
+            mSmokeTold = true;
+            const bool tri = (mLatest->flags & kurenai::proto::FlagSmokeTriangle) != 0;
+            MWBase::Environment::get().getWindowManager()->messageBox(
+                std::string("Smoke bomb on ") + (tri ? "Triangle" : "Circle")
+                + ": HOLD the button to aim (a yellow arc and a red ring show where it lands), let go to throw. "
+                  "Left stick turns, right stick or mouse raises / lowers the throw. Enemies in the cloud lose sight of you.");
+        }
+        if (!mSmokeHint)
+        {
+            mSmokeHint = MyGUI::Gui::getInstance().createWidget<MyGUI::TextBox>(
+                "SandText", MyGUI::IntCoord(0, 0, 100, 24), MyGUI::Align::Default, "Debug");
+            mSmokeHint->setNeedMouseFocus(false);
+            mSmokeHint->setTextAlign(MyGUI::Align::Center);
+            mSmokeHint->setVisible(false);
+        }
+        mSmokeHint->setVisible(mSmokeButton != 0 && mLatest);
+        if (mSmokeHint->getVisible())
+        {
+            const MyGUI::IntSize view = MyGUI::RenderManager::getInstance().getViewSize();
+            mSmokeHint->setCoord(0, view.height - 70, view.width, 48);
+            mSmokeHint->setCaption("SMOKE BOMB: aiming. Left stick turns, right stick / mouse raises or lowers the throw.\n"
+                                   "Red ring = the cloud's reach. Let go of the button to throw.");
+        }
         if (!mSmokeButton || !mLatest)
         {
             if (mSmokeAimNode)

@@ -427,6 +427,8 @@ namespace MWKurenai
         float mSmokeElev = 0.5f; // the throw's elevation, radians above level
         float mLookPitch = 0; // this frame's mouse look (the player's pitch before it is put back)
         std::vector<osg::Vec3f> mSmokeArc; // points kSmokeStep seconds apart; the last is where it lands
+        MyGUI::TextBox* mSmokeHint = nullptr; // how to throw it, shown while aiming
+        bool mSmokeTold = false; // the one-time message when the bomb first sits on a button
         osg::ref_ptr<osg::Group> mSmokeAimNode;
         osg::ref_ptr<osg::Geometry> mSmokeArcLine, mSmokeRing;
         osg::ref_ptr<osg::MatrixTransform> mSmokeBombNode;
