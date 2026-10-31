@@ -131,6 +131,12 @@ namespace
                 {
                     std::istringstream s(line);
                     VirtualPadEvent e{};
+                    if (!line.empty() && (line[0] == 'o' || line[0] == 'p')) // 'o ...' is OpenMW's only, 'p ...' PCSX2's only
+                    {
+                        if (line[0] == 'p')
+                            continue;
+                        s.get();
+                    }
                     if ((s >> e.time >> e.action >> e.name) && e.name[0] != '#')
                     {
                         if (!(s >> e.value))
@@ -187,7 +193,7 @@ namespace
                 else if (b >= 0 && e.action == "tap")
                 {
                     SDL_JoystickSetVirtualButton(joy, b, 1);
-                    releases.emplace_back(e.time + 0.2, b);
+                    releases.emplace_back(e.time + (e.value > 0 ? e.value : 0.2), b);
                 }
                 Log(Debug::Info) << "Kurenai: virtual pad t=" << e.time << " " << e.action << " " << e.name << " " << e.value;
             }
