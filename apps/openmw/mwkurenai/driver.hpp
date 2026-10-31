@@ -470,6 +470,7 @@ namespace MWKurenai
     private:
         LatencyStats mLatency;
         std::uint64_t mLastPeerFrame = 0;
+        std::uint64_t mAnyPeerFrame = 0; // the newest frame number of any message from PCSX2 (the virtual pad's clock)
 
         // [Kurenai] show status: one text line in the corner.
         bool mShowStatus = false;

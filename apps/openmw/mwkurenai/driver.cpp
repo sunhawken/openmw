@@ -98,6 +98,7 @@ namespace
         double clock = 0;
         bool tried = false, started = false;
         Uint32 startTicks = 0;
+        std::uint64_t startFrame = 0;
 
         static int buttonIndex(const std::string& n)
         {
@@ -117,7 +118,7 @@ namespace
             return -1;
         }
 
-        void update(float dt)
+        void update(float dt, std::uint64_t peerFrame)
         {
             if (!tried)
             {
@@ -171,13 +172,30 @@ namespace
             }
             if (!joy)
                 return;
-            const Uint32 now = SDL_GetTicks();
-            if (!started)
+            // KRN_VPAD_CLOCK=frames: the script's seconds are PCSX2's game frames / 60 (since its first update), so a slow
+            // run keeps the script's pace; otherwise wall-clock seconds from the first frame.
+            static const bool byFrames = std::getenv("KRN_VPAD_CLOCK") && std::string(std::getenv("KRN_VPAD_CLOCK")) == "frames";
+            if (byFrames)
             {
-                started = true;
-                startTicks = now;
+                if (peerFrame == 0)
+                    return; // not connected yet
+                if (!started)
+                {
+                    started = true;
+                    startFrame = peerFrame;
+                }
+                clock = static_cast<double>(peerFrame - startFrame) / 60.0;
             }
-            clock = (now - startTicks) / 1000.0;
+            else
+            {
+                const Uint32 now = SDL_GetTicks();
+                if (!started)
+                {
+                    started = true;
+                    startTicks = now;
+                }
+                clock = (now - startTicks) / 1000.0;
+            }
             (void)dt;
             while (next < events.size() && events[next].time <= clock)
             {
@@ -1688,7 +1706,7 @@ namespace
 
     void Driver::sendInput()
     {
-        sVirtualPad.update(1.0f / 60.0f);
+        sVirtualPad.update(1.0f / 60.0f, mAnyPeerFrame);
         const MWBase::InputManager* input = MWBase::Environment::get().getInputManager();
         const float forward
             = input->getActionValue(MWInput::A_MoveForward) - input->getActionValue(MWInput::A_MoveBackward);
@@ -2148,6 +2166,7 @@ namespace
         for (const Arrived& a : msgs)
         {
             const kurenai::proto::Message& m = a.message;
+            mAnyPeerFrame = std::max(mAnyPeerFrame, m.header.frameId); // every message, also the menu's (the game is paused then)
             if (const auto* ps = std::get_if<kurenai::proto::PlayerState>(&m.payload))
             {
                 mPrev = mLatest;
