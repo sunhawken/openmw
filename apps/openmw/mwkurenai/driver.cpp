@@ -1742,9 +1742,20 @@ namespace MWKurenai
         std::uint16_t smokeButton = 0;
         if (mLatest && !mHudMenuUp)
         {
-            if ((mLatest->flags & kurenai::proto::FlagSmokeTriangle) && held(MWInput::A_ToggleWeapon))
+            // The keyboard's keys, a joystick map's buttons, or a pad's face buttons (△ is SDL's Y, ○ its B; PCSX2 hides
+            // the pad's own press from the game while the bomb is on that button, and the tap below throws it).
+            bool padTriangle = false, padCircle = false;
+            for (int i = 0; i < 4; ++i)
+                if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+                {
+                    padTriangle = padTriangle || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_Y);
+                    padCircle = padCircle || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_B);
+                }
+            if ((mLatest->flags & kurenai::proto::FlagSmokeTriangle)
+                && (held(MWInput::A_ToggleWeapon) || padTriangle || (in.buttons & kurenai::proto::BtnTriangle)))
                 smokeButton = kurenai::proto::BtnTriangle;
-            else if ((mLatest->flags & kurenai::proto::FlagSmokeCircle) && held(MWInput::A_Activate))
+            else if ((mLatest->flags & kurenai::proto::FlagSmokeCircle)
+                && (held(MWInput::A_Activate) || padCircle || (in.buttons & kurenai::proto::BtnCircle)))
                 smokeButton = kurenai::proto::BtnCircle;
         }
         if (smokeButton)
