@@ -285,6 +285,9 @@ namespace MWKurenai
         MWWorld::Ptr pickLockTarget() const;
         bool lockable(const MWWorld::Ptr& actor) const;
         void updateLockMarker();
+        MyGUI::ImageBox* mAimMarker = nullptr; // the hook's aim symbol, where the hand-aimed hook will land
+        MyGUI::ITexture* mAimTexture = nullptr;
+        void updateAimMarker();
         std::uint32_t actorId(const MWWorld::Ptr& actor);
         // Morrowind's radar, drawn into the game HUD's radar region (0 = the game's own)
         int mRadarRegion = 2;

@@ -2607,6 +2607,56 @@ namespace MWKurenai
         mLockMarker->setVisible(shown && !mHudMenuUp);
     }
 
+    void Driver::updateAimMarker()
+    {
+        // The hook's aim symbol: a cyan ring with a cross and a dot, with a dark edge, over the place the hand-aimed hook
+        // will fly to (the game's own cyan marker is hidden behind Morrowind's picture). Needs proper testing in game.
+        if (!mAimMarker)
+        {
+            constexpr int n = 128;
+            MyGUI::RenderManager& rm = MyGUI::RenderManager::getInstance();
+            mAimTexture = rm.createTexture("kurenai_aim_marker");
+            mAimTexture->createManual(n, n, MyGUI::TextureUsage::Write, MyGUI::PixelFormat::R8G8B8A8);
+            const auto shape = [](float u, float v, float grow) {
+                const float r = std::hypot(u, v);
+                const bool ring = std::abs(r - 0.62f) <= 0.07f + grow;
+                const bool tick = (std::abs(u) <= 0.06f + grow || std::abs(v) <= 0.06f + grow) && r >= 0.30f - grow && r <= 0.95f + grow
+                    && !(r > 0.45f && r < 0.60f);
+                const bool dot = r <= 0.09f + grow;
+                return ring || tick || dot;
+            };
+            if (auto* data = static_cast<std::uint32_t*>(mAimTexture->lock(MyGUI::TextureUsage::Write)))
+                for (int y = 0; y < n; ++y)
+                    for (int x = 0; x < n; ++x)
+                    {
+                        const float u = (x + 0.5f) / n * 2.f - 1.f;
+                        const float v = (y + 0.5f) / n * 2.f - 1.f;
+                        data[y * n + x] = shape(u, v, 0.f) ? 0xfff0e020u : shape(u, v, 0.04f) ? 0xd0000000u : 0u;
+                    }
+            mAimTexture->unlock();
+            mAimMarker = MyGUI::Gui::getInstance().createWidget<MyGUI::ImageBox>(
+                "ImageBox", MyGUI::IntCoord(0, 0, n, n), MyGUI::Align::Default, "HUD");
+            mAimMarker->setNeedMouseFocus(false);
+            mAimMarker->setImageTexture("kurenai_aim_marker");
+            mAimMarker->setVisible(false);
+        }
+        bool shown = false;
+        if (mHookAiming && mAimHit)
+        {
+            const osg::Vec2f at = MWBase::Environment::get().getWorld()->getRenderingManager()->getScreenCoords(
+                osg::BoundingBox(mAimAt, mAimAt));
+            if (at != osg::Vec2f(0.5f, 0.f)) // off screen
+            {
+                const MyGUI::IntSize view = MyGUI::RenderManager::getInstance().getViewSize();
+                const int size = std::max(40, view.height / 12);
+                mAimMarker->setCoord(static_cast<int>(at.x() * view.width) - size / 2,
+                    static_cast<int>(at.y() * view.height) - size / 2, size, size);
+                shown = true;
+            }
+        }
+        mAimMarker->setVisible(shown && !mHudMenuUp);
+    }
+
     void Driver::drawRadar(std::uint32_t* data, int pitch, int w, int h)
     {
         // Seen from above with her facing up: a dark disc with a red rim, a white arrow for her, red dots for hostile
@@ -3939,6 +3989,7 @@ namespace MWKurenai
             sendProxyTargets(t);
         if (mHooks)
             sendHookTargets(t, dt);
+        updateAimMarker();
         if (mLockOn)
         {
             updateLockOn(t);
