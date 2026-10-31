@@ -16,6 +16,10 @@
 #include <MyGUI_TextBox.h>
 
 #include <SDL_keyboard.h>
+#include <SDL_timer.h>
+#include <SDL_gamecontroller.h>
+#include <SDL_joystick.h>
+#include <cstdlib>
 
 #include <components/debug/debuglog.hpp>
 #include <components/settings/values.hpp>
@@ -71,6 +75,135 @@
 
 namespace MWKurenai
 {
+
+namespace
+{
+    // A scripted virtual pad for testing without a real controller (env KRN_VPAD=<script file>): an SDL virtual joystick laid
+    // out as a DualShock 2 (SDL's standard mapping: cross A, circle B, square X, triangle Y, L1/R1 shoulders, L2/R2 triggers,
+    // Back = Select, Start, D-pad, two sticks and their clicks), pressed by a timed script. One line per event, seconds from
+    // the first frame: "<t> down|up|tap <button>" or "<t> axis <lx|ly|rx|ry|l2|r2> <-1..1>". Needs proper testing.
+    struct VirtualPadEvent
+    {
+        double time;
+        std::string action, name;
+        float value;
+    };
+
+    struct VirtualPad
+    {
+        SDL_Joystick* joy = nullptr;
+        std::vector<VirtualPadEvent> events;
+        std::size_t next = 0;
+        std::vector<std::pair<double, int>> releases; // tap releases: time, button
+        double clock = 0;
+        bool tried = false, started = false;
+        Uint32 startTicks = 0;
+
+        static int buttonIndex(const std::string& n)
+        {
+            static const char* names[] = { "cross", "circle", "square", "triangle", "select", "guide", "start", "l3", "r3", "l1",
+                "r1", "up", "down", "left", "right" };
+            for (int i = 0; i < 15; ++i)
+                if (n == names[i])
+                    return i;
+            return -1;
+        }
+        static int axisIndex(const std::string& n)
+        {
+            static const char* names[] = { "lx", "ly", "rx", "ry", "l2", "r2" };
+            for (int i = 0; i < 6; ++i)
+                if (n == names[i])
+                    return i;
+            return -1;
+        }
+
+        void update(float dt)
+        {
+            if (!tried)
+            {
+                tried = true;
+                const char* path = std::getenv("KRN_VPAD");
+                if (!path || !*path)
+                    return;
+                std::ifstream in(path);
+                std::string line;
+                while (std::getline(in, line))
+                {
+                    std::istringstream s(line);
+                    VirtualPadEvent e{};
+                    if ((s >> e.time >> e.action >> e.name) && e.name[0] != '#')
+                    {
+                        if (!(s >> e.value))
+                            e.value = 0;
+                        events.push_back(e);
+                    }
+                }
+                std::stable_sort(events.begin(), events.end(),
+                    [](const VirtualPadEvent& a, const VirtualPadEvent& b) { return a.time < b.time; });
+                const int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 6, 15, 0);
+                if (index < 0)
+                {
+                    Log(Debug::Warning) << "Kurenai: virtual pad: " << SDL_GetError();
+                    return;
+                }
+                char guid[64] = {};
+                SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(index), guid, sizeof guid);
+                const std::string mapping = std::string(guid)
+                    + ",Kurenai virtual DualShock 2,a:b0,b:b1,x:b2,y:b3,back:b4,guide:b5,start:b6,leftstick:b7,rightstick:b8,"
+                      "leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,"
+                      "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,";
+                SDL_GameControllerAddMapping(mapping.c_str());
+                joy = SDL_JoystickOpen(index);
+                if (joy)
+                {
+                    SDL_JoystickSetPlayerIndex(joy, 0);
+                    SDL_JoystickSetVirtualAxis(joy, 4, -32768);
+                    SDL_JoystickSetVirtualAxis(joy, 5, -32768);
+                }
+                Log(Debug::Info) << "Kurenai: virtual pad " << (joy ? "attached" : "failed") << ", " << events.size()
+                                 << " scripted events from " << path;
+            }
+            if (!joy)
+                return;
+            const Uint32 now = SDL_GetTicks();
+            if (!started)
+            {
+                started = true;
+                startTicks = now;
+            }
+            clock = (now - startTicks) / 1000.0;
+            (void)dt;
+            while (next < events.size() && events[next].time <= clock)
+            {
+                const VirtualPadEvent& e = events[next++];
+                const int b = buttonIndex(e.name), a = axisIndex(e.name);
+                if (e.action == "axis" && a >= 0)
+                    SDL_JoystickSetVirtualAxis(joy, a,
+                        static_cast<Sint16>(a >= 4 ? (e.value * 2.0f - 1.0f) * 32767.0f : e.value * 32767.0f));
+                else if (b >= 0 && e.action == "down")
+                    SDL_JoystickSetVirtualButton(joy, b, 1);
+                else if (b >= 0 && e.action == "up")
+                    SDL_JoystickSetVirtualButton(joy, b, 0);
+                else if (b >= 0 && e.action == "tap")
+                {
+                    SDL_JoystickSetVirtualButton(joy, b, 1);
+                    releases.emplace_back(e.time + 0.2, b);
+                }
+                Log(Debug::Info) << "Kurenai: virtual pad t=" << e.time << " " << e.action << " " << e.name << " " << e.value;
+            }
+            for (auto it = releases.begin(); it != releases.end();)
+                if (it->first <= clock)
+                {
+                    SDL_JoystickSetVirtualButton(joy, it->second, 0);
+                    it = releases.erase(it);
+                }
+                else
+                    ++it;
+        }
+    };
+    VirtualPad sVirtualPad;
+}
+
     namespace
     {
         Driver* sInstance = nullptr; // the one driver, for the engine's death handling (deferDeath)
@@ -1549,6 +1682,7 @@ namespace MWKurenai
 
     void Driver::sendInput()
     {
+        sVirtualPad.update(1.0f / 60.0f);
         const MWBase::InputManager* input = MWBase::Environment::get().getInputManager();
         const float forward
             = input->getActionValue(MWInput::A_MoveForward) - input->getActionValue(MWInput::A_MoveBackward);

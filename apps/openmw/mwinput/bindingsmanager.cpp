@@ -19,6 +19,10 @@
 
 #include "actions.hpp"
 
+#ifdef OPENMW_KURENAI
+#include <components/settings/values.hpp>
+#endif
+
 namespace MWInput
 {
     static const int sFakeDeviceId = 1; // As we only support one controller at a time, use a fake deviceID so we don't
@@ -183,7 +187,16 @@ namespace MWInput
         mInputBinder->setDetectingBindingListener(mListener.get());
 
         loadKeyDefaults();
+#ifdef OPENMW_KURENAI
+        // The pad is a DualShock 2 here: the PS2 layout goes in once (a layout number below 2), then the player's own
+        // changes are kept (needs proper testing).
+        const int padLayout = Settings::kurenai().mPadLayout.get();
+        loadControllerDefaults(padLayout < 2);
+        if (padLayout < 2)
+            Settings::kurenai().mPadLayout.set(2);
+#else
         loadControllerDefaults();
+#endif
 
         for (int i = 0; i < A_Last; ++i)
         {
@@ -366,6 +379,26 @@ namespace MWInput
         // across different versions of OpenMW (in the case where another input action is added)
         std::map<int, int> defaultButtonBindings;
 
+#ifdef OPENMW_KURENAI
+        // The DualShock 2 layout Red Ninja is played with: Cross jump, Square attack, Circle wire, Triangle action, L1 block,
+        // R1 lock-on, L2 crouch, R2 first person. Select / Start / D-pad / the sticks' clicks are read by Kurenai itself,
+        // and Morrowind's own menus (inventory, journal, game menu) stay on the keyboard.
+        defaultButtonBindings[A_Jump] = SDL_CONTROLLER_BUTTON_A;
+        defaultButtonBindings[A_Use] = SDL_CONTROLLER_BUTTON_X;
+        defaultButtonBindings[A_Activate] = SDL_CONTROLLER_BUTTON_B;
+        defaultButtonBindings[A_ToggleWeapon] = SDL_CONTROLLER_BUTTON_Y;
+        defaultButtonBindings[A_ToggleSpell] = SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
+        defaultButtonBindings[A_Run] = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
+        defaultButtonBindings[A_QuickSave] = SDL_CONTROLLER_BUTTON_GUIDE;
+
+        std::map<int, int> defaultAxisBindings;
+        defaultAxisBindings[A_MoveForwardBackward] = SDL_CONTROLLER_AXIS_LEFTY;
+        defaultAxisBindings[A_MoveLeftRight] = SDL_CONTROLLER_AXIS_LEFTX;
+        defaultAxisBindings[A_LookUpDown] = SDL_CONTROLLER_AXIS_RIGHTY;
+        defaultAxisBindings[A_LookLeftRight] = SDL_CONTROLLER_AXIS_RIGHTX;
+        defaultAxisBindings[A_Sneak] = SDL_CONTROLLER_AXIS_TRIGGERLEFT;
+        defaultAxisBindings[A_TogglePOV] = SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
+#else
         defaultButtonBindings[A_Activate] = SDL_CONTROLLER_BUTTON_A;
         defaultButtonBindings[A_ToggleWeapon] = SDL_CONTROLLER_BUTTON_X;
         defaultButtonBindings[A_ToggleSpell] = SDL_CONTROLLER_BUTTON_Y;
@@ -386,6 +419,8 @@ namespace MWInput
         defaultAxisBindings[A_LookLeftRight] = SDL_CONTROLLER_AXIS_RIGHTX;
         defaultAxisBindings[A_Use] = SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
         defaultAxisBindings[A_Jump] = SDL_CONTROLLER_AXIS_TRIGGERLEFT;
+
+#endif
 
         for (int i = 0; i < A_Last; i++)
         {
