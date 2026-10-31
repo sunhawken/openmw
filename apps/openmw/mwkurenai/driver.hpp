@@ -110,6 +110,7 @@ namespace MWKurenai
         void takeControl();
         void releaseControl(const char* why);
         void pollModeKey();
+        void setMode(bool morrowind, const char* how);
         void pollRecoverKey();
         void pollControlsKey();
         void showControls();
@@ -145,6 +146,9 @@ namespace MWKurenai
         float mSafeTimer = 0.f, mVoidTime = 0.f;
         bool mReanchorAtSafe = false;
         bool mToggleHeld = false;
+        bool mTogglePadHeld = false;
+        float mSinceTake = 0.f;
+        int mResyncs = 0;
         int mControlsScancode = 0; // [Kurenai] controls key, 0 = none
         int mSelectScancode = 0; // [Kurenai] select key, 0 = none
         int mWeaponScancode = 0; // [Kurenai] weapon key (the weapon screen), 0 = none

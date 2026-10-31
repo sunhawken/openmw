@@ -1402,22 +1402,56 @@ namespace MWKurenai
         return have == mods; // exactly these modifiers: F8 alone is not Ctrl+F8
     }
 
+    void Driver::setMode(bool morrowind, const char* how)
+    {
+        MWBase::WindowManager* wm = MWBase::Environment::get().getWindowManager();
+        mMorrowindMode = morrowind;
+        mSinceTake = 0.f;
+        mResyncs = 0;
+        Log(Debug::Info) << "Kurenai: mode -> " << (morrowind ? "Morrowind" : "combat") << " (" << how << ")";
+        wm->messageBox(morrowind ? "Morrowind mode: Morrowind's walk, weapons and HUD"
+                                 : (mPeerAlive ? "Combat mode: Red Ninja" : "Combat mode: Red Ninja (waiting for PCSX2)"));
+    }
+
     void Driver::pollModeKey()
     {
-        if (mToggleScancode == 0)
-            return;
-        int count = 0;
-        const Uint8* keys = SDL_GetKeyboardState(&count);
-        const bool down = keyIsDown(mToggleScancode);
-        const bool pressed = down && !mToggleHeld;
-        mToggleHeld = down;
-        // Not while a menu, the console or a dialogue has the keyboard.
-        if (!pressed || MWBase::Environment::get().getWindowManager()->isGuiMode())
-            return;
-        mMorrowindMode = !mMorrowindMode;
-        MWBase::Environment::get().getWindowManager()->messageBox(mMorrowindMode
-                ? "Morrowind mode: Morrowind's walk, weapons and HUD"
-                : (mPeerAlive ? "Combat mode: Red Ninja" : "Combat mode: Red Ninja (waiting for PCSX2)"));
+        MWBase::WindowManager* wm = MWBase::Environment::get().getWindowManager();
+        // The switch works from the keyboard or from the pad (hold Back + Start + L1 + R1), and in every menu but
+        // the ones that take typed text: a switch that waits for a free keyboard is a switch that seems broken.
+        bool padCombo = false;
+        for (int i = 0; i < 4 && !padCombo; ++i)
+            if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+                padCombo = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_BACK)
+                    && SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_START)
+                    && SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
+                    && SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+        const bool padPressed = padCombo && !mTogglePadHeld;
+        mTogglePadHeld = padCombo;
+        bool keyPressed = false;
+        if (mToggleScancode != 0)
+        {
+            const bool down = keyIsDown(mToggleScancode);
+            keyPressed = down && !mToggleHeld;
+            mToggleHeld = down;
+        }
+        const bool typing = wm->containsMode(MWGui::GM_Console) || wm->containsMode(MWGui::GM_MainMenu)
+            || wm->containsMode(MWGui::GM_Loading) || wm->containsMode(MWGui::GM_LoadingWallpaper);
+        if ((keyPressed || padPressed) && !typing)
+            setMode(!mMorrowindMode, padPressed ? "pad" : "key");
+        // Self-repair: in combat mode with PCSX2 up, her state must arrive; when it doesn't, start her over (re-anchor
+        // and a fresh neutral input) instead of leaving a camera and a body stuck half-switched.
+        if (mControlling && mPeerAlive && !mLatest && mSinceTake > 3.0f && mResyncs < 5)
+        {
+            ++mResyncs;
+            mSinceTake = 0.f;
+            Log(Debug::Warning) << "Kurenai: combat mode got no state from PCSX2, resyncing (" << mResyncs << ")";
+            mReanchor = true;
+            mPrev.reset();
+            mLatest.reset();
+            mLastMotion = 0xffffffffu;
+            mLastInput = kurenai::proto::Input{};
+            mLastInput.buttons = 0xffff; // differs from any real input, so the next one is sent at once
+        }
     }
 
     void Driver::pollRecoverKey()
@@ -1923,6 +1957,7 @@ namespace MWKurenai
         ++mFrames;
         mSinceInput += dt;
         mSinceLatest += dt;
+        mSinceTake += dt;
         mSmokeTap = std::max(0.0f, mSmokeTap - dt);
         const std::uint64_t now = kurenai::monotonicNs();
         mLink->tick(now);
