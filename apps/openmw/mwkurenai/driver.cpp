@@ -3191,7 +3191,7 @@ namespace MWKurenai
         {
             mHdUiTried = true;
             const std::string dir = Settings::kurenai().mHdUi;
-            if (!dir.empty())
+            if (!dir.empty() && Settings::kurenai().mNativeMenu)
             {
                 mHdUi = std::make_unique<HdUi>();
                 if (!mHdUi->load(dir))

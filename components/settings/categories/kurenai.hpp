@@ -33,6 +33,7 @@ namespace Settings
         SettingValue<bool> mShowStatus{ mIndex, "Kurenai", "show status" };
         SettingValue<bool> mGameHud{ mIndex, "Kurenai", "game hud" };
         SettingValue<bool> mHideMorrowindHud{ mIndex, "Kurenai", "hide morrowind hud" };
+        SettingValue<bool> mNativeMenu{ mIndex, "Kurenai", "native menu" };
         SettingValue<std::string> mHdUi{ mIndex, "Kurenai", "hd ui" };
         SettingValue<float> mGameHudScale{ mIndex, "Kurenai", "game hud scale", makeClampSanitizerFloat(0.25f, 4.0f) };
         SettingValue<std::string> mStartMode{ mIndex, "Kurenai", "start mode",
