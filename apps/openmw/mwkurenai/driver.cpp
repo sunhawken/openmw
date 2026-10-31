@@ -1434,7 +1434,7 @@ namespace MWKurenai
             keyPressed = down && !mToggleHeld;
             mToggleHeld = down;
         }
-        const bool typing = wm->containsMode(MWGui::GM_Console) || wm->containsMode(MWGui::GM_MainMenu)
+        const bool typing = wm->isConsoleMode() || wm->containsMode(MWGui::GM_MainMenu)
             || wm->containsMode(MWGui::GM_Loading) || wm->containsMode(MWGui::GM_LoadingWallpaper);
         if ((keyPressed || padPressed) && !typing)
             setMode(!mMorrowindMode, padPressed ? "pad" : "key");
