@@ -163,7 +163,6 @@ namespace
                 joy = SDL_JoystickOpen(index);
                 if (joy)
                 {
-                    SDL_JoystickSetPlayerIndex(joy, 0);
                     SDL_JoystickSetVirtualAxis(joy, 4, -32768);
                     SDL_JoystickSetVirtualAxis(joy, 5, -32768);
                 }
@@ -226,6 +225,21 @@ namespace
         }
     };
     VirtualPad sVirtualPad;
+
+    // The i-th attached game controller that OpenMW has open. SDL gives a pad a player index only for some kinds of pad
+    // (XInput, a few HID ones); the player index lookup finds nothing for the rest, so every pad is found by listing the
+    // devices instead.
+    SDL_GameController* attachedPad(int n)
+    {
+        int seen = 0;
+        for (int j = 0; j < SDL_NumJoysticks(); ++j)
+            if (SDL_IsGameController(j))
+            {
+                if (seen++ == n)
+                    return SDL_GameControllerFromInstanceID(SDL_JoystickGetDeviceInstanceID(j));
+            }
+        return nullptr;
+    }
 }
 
     namespace
@@ -1603,7 +1617,7 @@ namespace
         // the ones that take typed text: a switch that waits for a free keyboard is a switch that seems broken.
         bool padCombo = false;
         for (int i = 0; i < 4 && !padCombo; ++i)
-            if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+            if (SDL_GameController* pad = attachedPad(i))
                 padCombo = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_BACK)
                     && SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_START)
                     && SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER)
@@ -1881,7 +1895,7 @@ namespace
                 now = keyIsDown(mActivateScancode);
             }
             for (int i = 0; i < 4 && !now; ++i)
-                if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+                if (SDL_GameController* pad = attachedPad(i))
                     now = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_RIGHTSTICK)
                         && !SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSTICK);
             if (now && !mActivatePrev && !mMenuOpen && !mWeaponOpen && !mHudMenuUp
@@ -1895,7 +1909,7 @@ namespace
         if (held(MWInput::A_TogglePOV))
             in.buttons |= kurenai::proto::BtnR2;
         for (int i = 0; i < 4; ++i)
-            if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+            if (SDL_GameController* pad = attachedPad(i))
             {
                 if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_BACK))
                     in.buttons |= kurenai::proto::BtnSelect;
@@ -1930,7 +1944,7 @@ namespace
             // the pad's own press from the game while the bomb is on that button, and the tap below throws it).
             bool padTriangle = false, padCircle = false;
             for (int i = 0; i < 4; ++i)
-                if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+                if (SDL_GameController* pad = attachedPad(i))
                 {
                     padTriangle = padTriangle || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_Y);
                     padCircle = padCircle || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_B);
@@ -2103,7 +2117,7 @@ namespace
             // On a pad the face buttons also go straight to the game (Triangle is its "back"), so the pad has its own pair here:
             // L1 puts the item on Triangle, R1 on Circle.
             for (int i = 0; i < 4 && inMenu; ++i)
-                if (SDL_GameController* pad = SDL_GameControllerFromPlayerIndex(i))
+                if (SDL_GameController* pad = attachedPad(i))
                 {
                     tri = tri || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
                     cir = cir || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
