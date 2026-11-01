@@ -1,5 +1,7 @@
 #include "worldimp.hpp"
 
+#include <chrono>
+
 #include <charconv>
 #include <vector>
 
@@ -1593,8 +1595,14 @@ namespace MWWorld
 
         if (mWorldScene->hasCellLoaded())
         {
+            const auto navStart = std::chrono::steady_clock::now();
             mNavigator->wait(DetourNavigator::WaitConditionType::requiredTilesPresent,
                 MWBase::Environment::get().getWindowManager()->getLoadingScreen());
+            Log(Debug::Info) << "Cell change timing: navmesh wait "
+                             << std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - navStart)
+                                    .count()
+                             << " ms";
             mWorldScene->resetCellLoaded();
         }
 
