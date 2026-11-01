@@ -2019,6 +2019,16 @@ namespace
         mSmokeButton = smokeButton;
         if (mSmokeTap > 0)
             in.buttons |= mSmokeTapButton;
+        {
+            // One line for every change of what is sent to the game's pad (buttons), for the logs players send back.
+            static std::uint16_t sLoggedButtons = 0xffff;
+            if (in.buttons != sLoggedButtons)
+            {
+                sLoggedButtons = in.buttons;
+                Log(Debug::Info) << "Kurenai: pad buttons sent to the game: 0x" << std::hex << in.buttons << std::dec
+                                 << " (stick " << int(in.lx) << "," << int(in.ly) << " / " << int(in.rx) << "," << int(in.ry) << ")";
+            }
+        }
         // Below the surface Jump swims up (updateSwim) and her breathing tube stays put: the game sees neither.
         if (mLatest && swimMotions().count(mLatest->animId) && mSwimDepth.load() >= kSurfaceDepth)
             in.buttons &= static_cast<std::uint16_t>(~(kurenai::proto::BtnCross | kurenai::proto::BtnL2));
