@@ -9,6 +9,7 @@
 #include "ptr.hpp"
 
 #include <memory>
+#include <deque>
 #include <optional>
 #include <set>
 #include <vector>
@@ -117,12 +118,18 @@ namespace MWWorld
         std::optional<ChangeCellGridRequest> mChangeCellGridRequest;
 
         void insertCell(CellStore& cell, Loading::Listener* loadingListener,
-            const DetourNavigator::UpdateGuard* navigatorUpdateGuard);
+            const DetourNavigator::UpdateGuard* navigatorUpdateGuard, bool paceActors = false);
+
+        // Actors of cells loaded by walking across a border, not yet put into the world (see "paced actor creation")
+        std::deque<Ptr> mDeferredActors;
+        bool mPacedActorCreation;
+        void insertDeferredActors(bool all);
 
         osg::Vec2i mCurrentGridCenter;
 
         // Load and unload cells as necessary to create a cell grid with "X" and "Y" in the center
-        void changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent = true);
+        void changeCellGrid(
+            const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent = true, bool paced = false);
 
         void requestChangeCellGrid(const osg::Vec3f& position, const osg::Vec2i& cell, bool changeEvent = true);
 
@@ -140,7 +147,7 @@ namespace MWWorld
 
         void unloadCell(CellStore* cell, const DetourNavigator::UpdateGuard* navigatorUpdateGuard);
         void loadCell(CellStore& cell, Loading::Listener* loadingListener, bool respawn, const osg::Vec3f& position,
-            const DetourNavigator::UpdateGuard* navigatorUpdateGuard);
+            const DetourNavigator::UpdateGuard* navigatorUpdateGuard, bool paceActors = false);
 
     public:
         Scene(MWWorld::World& world, MWRender::RenderingManager& rendering, MWPhysics::PhysicsSystem* physics,

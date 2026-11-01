@@ -32,6 +32,7 @@ namespace Settings
         SettingValue<float> mPredictionTime{ mIndex, "Cells", "prediction time", makeMaxSanitizerFloat(0) };
         SettingValue<float> mCacheExpiryDelay{ mIndex, "Cells", "cache expiry delay", makeMaxSanitizerFloat(0) };
         SettingValue<float> mTargetFramerate{ mIndex, "Cells", "target framerate", makeMaxStrictSanitizerFloat(0) };
+        SettingValue<bool> mPacedActorCreation{ mIndex, "Cells", "paced actor creation" };
         SettingValue<int> mPointersCacheSize{ mIndex, "Cells", "pointers cache size", makeClampSanitizerInt(40, 1000) };
     };
 }

@@ -363,9 +363,11 @@ namespace MWWorld
             mPhysics->clearQueuedMovement();
 
             changeCellGrid(mChangeCellGridRequest->mPosition, mChangeCellGridRequest->mCellIndex,
-                mChangeCellGridRequest->mChangeEvent);
+                mChangeCellGridRequest->mChangeEvent, mPacedActorCreation);
             mChangeCellGridRequest.reset();
         }
+
+        insertDeferredActors(false);
 
         mPreloader->updateCache(mRendering.getReferenceTime());
         preloadCells(duration);
@@ -376,6 +378,7 @@ namespace MWWorld
         if (mActiveCells.find(cell) == mActiveCells.end())
             return;
         Log(Debug::Verbose) << "[CELL UNLOAD] Starting unload of cell " << cell->getCell()->getDescription();
+        std::erase_if(mDeferredActors, [&](const Ptr& ptr) { return ptr.getCell() == cell; });
 
         ListAndResetObjectsVisitor visitor;
 
@@ -474,7 +477,7 @@ namespace MWWorld
     }
 
     void Scene::loadCell(CellStore& cell, Loading::Listener* loadingListener, bool respawn, const osg::Vec3f& position,
-        const DetourNavigator::UpdateGuard* navigatorUpdateGuard)
+        const DetourNavigator::UpdateGuard* navigatorUpdateGuard, bool paceActors)
     {
         using DetourNavigator::HeightfieldShape;
 
@@ -545,7 +548,7 @@ namespace MWWorld
         if (respawn)
             cell.respawn();
 
-        insertCell(cell, loadingListener, navigatorUpdateGuard);
+        insertCell(cell, loadingListener, navigatorUpdateGuard, paceActors);
 
         mRendering.addCell(&cell);
 
@@ -662,7 +665,8 @@ namespace MWWorld
             ESM::ExteriorCellLocation(cell.x(), cell.y(), mCurrentCell->getCell()->getWorldSpace()), changeEvent };
     }
 
-    void Scene::changeCellGrid(const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent)
+    void Scene::changeCellGrid(
+        const osg::Vec3f& pos, ESM::ExteriorCellLocation playerCellIndex, bool changeEvent, bool paced)
     {
         const int halfGridSize
             = isEsm4Ext(playerCellIndex.mWorldspace) ? Constants::ESM4CellGridRadius : Constants::CellGridRadius;
@@ -734,7 +738,9 @@ namespace MWWorld
             if (!isCellInCollection(indexToLoad, mActiveCells))
             {
                 CellStore& cell = mWorld.getWorldModel().getExterior(indexToLoad);
-                loadCell(cell, loadingListener, changeEvent, pos, navigatorUpdateGuard.get());
+                // The cell the player stands in is put together at once; the neighbours' actors can follow.
+                const bool paceActors = paced && !(x == playerCellX && y == playerCellY);
+                loadCell(cell, loadingListener, changeEvent, pos, navigatorUpdateGuard.get(), paceActors);
             }
         }
 
@@ -752,6 +758,9 @@ namespace MWWorld
             mCellChanged = true;
 
         mCellLoaded = true;
+
+        if (!paced)
+            insertDeferredActors(true);
     }
 
     void Scene::addPostponedPhysicsObjects()
@@ -963,6 +972,7 @@ namespace MWWorld
         , mPreloadFastTravel(Settings::cells().mPreloadFastTravel)
         , mPredictionTime(Settings::cells().mPredictionTime)
         , mLowestPoint(std::numeric_limits<float>::max())
+        , mPacedActorCreation(Settings::cells().mPacedActorCreation)
     {
         mPreloader = std::make_unique<CellPreloader>(rendering.getResourceSystem(), physics->getShapeManager(),
             rendering.getTerrain(), rendering.getLandManager());
@@ -1096,12 +1106,28 @@ namespace MWWorld
         mCellChanged = false;
     }
 
-    void Scene::insertCell(
-        CellStore& cell, Loading::Listener* loadingListener, const DetourNavigator::UpdateGuard* navigatorUpdateGuard)
+    void Scene::insertCell(CellStore& cell, Loading::Listener* loadingListener,
+        const DetourNavigator::UpdateGuard* navigatorUpdateGuard, bool paceActors)
     {
         const bool isInterior = !cell.isExterior();
         InsertVisitor insertVisitor(cell, loadingListener);
         cell.forEach(insertVisitor);
+
+        if (paceActors)
+        {
+            // Everything but the actors goes in now. An actor (model, skeleton, animations, physics body, mechanics) costs
+            // far more than a static, and the actors of a cell the player has only walked up to are not needed this frame.
+            auto& all = insertVisitor.mToInsert;
+            const auto firstActor = std::stable_partition(
+                all.begin(), all.end(), [](const Ptr& ptr) { return !ptr.getClass().isActor(); });
+            for (auto it = firstActor; it != all.end(); ++it)
+                if (!it->mRef->isDeleted() && it->getRefData().isEnabled())
+                    mDeferredActors.push_back(*it);
+            if (firstActor != all.end())
+                Log(Debug::Verbose) << "Paced actor creation: " << (all.end() - firstActor) << " actors of "
+                                    << cell.getCell()->getDescription() << " follow over the next frames";
+            all.erase(firstActor, all.end());
+        }
 
         // Use batch addition for efficient broadphase construction (per Jolt best practices)
         mPhysics->beginBatchAdd();
@@ -1112,6 +1138,42 @@ namespace MWWorld
         insertVisitor.insert([&](const MWWorld::Ptr& ptr) {
             addObject(ptr, mWorld, *mPhysics, mLowestPoint, isInterior, mNavigator, navigatorUpdateGuard);
         });
+    }
+
+    void Scene::insertDeferredActors(bool all)
+    {
+        // The actors of the cell the player is in come first and all at once; of the others, one per frame.
+        int others = 0;
+        const bool isInterior = mCurrentCell != nullptr && !mCurrentCell->isExterior();
+        for (auto it = mDeferredActors.begin(); it != mDeferredActors.end();)
+        {
+            const Ptr ptr = *it;
+            const bool stillWanted = mActiveCells.count(ptr.getCell()) != 0 && !ptr.mRef->isDeleted()
+                && ptr.getRefData().isEnabled() && ptr.getRefData().getBaseNode() == nullptr;
+            const bool playersCell = ptr.getCell() == mCurrentCell;
+            if (stillWanted && !all && !playersCell && others >= 1)
+            {
+                ++it;
+                continue;
+            }
+            it = mDeferredActors.erase(it);
+            if (!stillWanted)
+                continue;
+            if (!playersCell)
+                ++others;
+            try
+            {
+                const auto start = std::chrono::steady_clock::now();
+                addObject(ptr, mWorld, mPagedRefs, *mPhysics, mRendering);
+                addObject(ptr, mWorld, *mPhysics, mLowestPoint, isInterior, mNavigator);
+                Log(Debug::Verbose) << "Paced actor creation: " << ptr.getCellRef().getRefId() << " in " << msSince(start)
+                                    << " ms, " << mDeferredActors.size() << " left";
+            }
+            catch (const std::exception& e)
+            {
+                Log(Debug::Error) << "failed to render '" << ptr.getCellRef().getRefId() << "': " << e.what();
+            }
+        }
     }
 
     void Scene::addObjectToScene(const Ptr& ptr)
