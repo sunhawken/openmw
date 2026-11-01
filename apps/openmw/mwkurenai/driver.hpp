@@ -146,6 +146,11 @@ namespace MWKurenai
         osg::Vec3f mSafe;
         float mSafeTimer = 0.f, mVoidTime = 0.f;
         bool mReanchorAtSafe = false;
+        // Where the driver last put the player and in which cell: a move by anything else (a door, a script, a teleport spell)
+        // makes her start over at the player's new place.
+        osg::Vec3f mLastSetPos;
+        const MWWorld::CellStore* mLastSetCell = nullptr;
+        bool mHaveLastSet = false;
         bool mToggleHeld = false;
         bool mTogglePadHeld = false;
         float mSinceTake = 0.f;

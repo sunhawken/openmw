@@ -854,6 +854,18 @@ namespace
         mPrev.reset();
         mLatest.reset();
         mLastMotion = 0xffffffffu;
+        // Everything that belonged to the last stretch as Kurenai starts over at the player's place now (possibly in another
+        // cell, in the air or in the water): the last solid ground, the void watch, a recover, the hook's and smoke bomb's aim.
+        mHaveSafe = false;
+        mSafeTimer = 0.f;
+        mVoidTime = 0.f;
+        mRecoverNow = false;
+        mReanchorAtSafe = false;
+        mHaveLastSet = false;
+        mHookAiming = false;
+        mAimHit = false;
+        mSmokeButton = 0;
+        mSmokeTap = 0;
         // The game's own code integrates Kurenai's motion; Morrowind's gravity and collision must not fight it
         // (Phase 3 answers the game's collision queries from Morrowind instead).
         MWBase::World* world = MWBase::Environment::get().getWorld();
@@ -1602,6 +1614,16 @@ namespace
     void Driver::setMode(bool morrowind, const char* how)
     {
         MWBase::WindowManager* wm = MWBase::Environment::get().getWindowManager();
+        if (!morrowind)
+        {
+            // Not as a corpse: Morrowind's death has to play out (or a reload) first.
+            const MWWorld::Ptr p = MWBase::Environment::get().getWorld()->getPlayerPtr();
+            if (!p.isEmpty() && p.getClass().getCreatureStats(p).isDead())
+            {
+                wm->messageBox("Kurenai: not while your Morrowind character is dead");
+                return;
+            }
+        }
         mMorrowindMode = morrowind;
         mSinceTake = 0.f;
         mResyncs = 0;
@@ -1722,10 +1744,40 @@ namespace
     {
         sVirtualPad.update(1.0f / 60.0f, mAnyPeerFrame);
         const MWBase::InputManager* input = MWBase::Environment::get().getInputManager();
-        const float forward
-            = input->getActionValue(MWInput::A_MoveForward) - input->getActionValue(MWInput::A_MoveBackward);
-        const float right = input->getActionValue(MWInput::A_MoveRight) - input->getActionValue(MWInput::A_MoveLeft);
+        float forward = input->getActionValue(MWInput::A_MoveForward) - input->getActionValue(MWInput::A_MoveBackward);
+        float right = input->getActionValue(MWInput::A_MoveRight) - input->getActionValue(MWInput::A_MoveLeft);
 
+        // The pad's own sticks and buttons, read from SDL here whatever OpenMW's control bindings say (a binding that does
+        // not reach the game left the left stick dead and the D-pad as the only way to walk). The left stick walks when
+        // the keyboard / bindings give nothing; the right stick, triggers, shoulders and face buttons are added below.
+        float padRightX = 0, padRightY = 0;
+        std::uint16_t padButtons = 0;
+        for (int i = 0; i < 4; ++i)
+            if (SDL_GameController* pad = attachedPad(i))
+            {
+                const auto axis = [&](SDL_GameControllerAxis a) {
+                    const float v = SDL_GameControllerGetAxis(pad, a) / 32767.0f;
+                    return std::abs(v) > 0.18f ? v : 0.0f; // a dead zone
+                };
+                const float lx = axis(SDL_CONTROLLER_AXIS_LEFTX), ly = axis(SDL_CONTROLLER_AXIS_LEFTY);
+                if (std::abs(forward) + std::abs(right) < 0.05f && (lx != 0.0f || ly != 0.0f))
+                {
+                    right = lx;
+                    forward = -ly;
+                }
+                padRightX = axis(SDL_CONTROLLER_AXIS_RIGHTX);
+                padRightY = axis(SDL_CONTROLLER_AXIS_RIGHTY);
+                const auto b = [&](SDL_GameControllerButton k) { return SDL_GameControllerGetButton(pad, k) != 0; };
+                using namespace kurenai::proto;
+                if (b(SDL_CONTROLLER_BUTTON_A)) padButtons |= BtnCross;
+                if (b(SDL_CONTROLLER_BUTTON_X)) padButtons |= BtnSquare;
+                if (b(SDL_CONTROLLER_BUTTON_Y)) padButtons |= BtnTriangle;
+                if (b(SDL_CONTROLLER_BUTTON_B)) padButtons |= BtnCircle;
+                if (b(SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) padButtons |= BtnL1;
+                if (b(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) padButtons |= BtnR1;
+                if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000) padButtons |= BtnL2;
+                if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSTICK)) padButtons |= BtnL3;
+            }
         // Turn "forward/right on screen" into Red Ninja's stick, which is relative to the game's camera. The
         // screen's heading in Morrowind is minus the camera's yaw (facing = (sin, cos) of the heading).
         float stickUp = forward, stickRight = right;
@@ -1774,6 +1826,7 @@ namespace
             in.buttons |= kurenai::proto::BtnL1; // block
         if (held(MWInput::A_Run))
             in.buttons |= kurenai::proto::BtnR1;
+        in.buttons |= padButtons;
         // Start is the pad's Start button (or the start key): Morrowind's menu key (Escape) opens Morrowind's own menu and
         // must not also open her item menu.
         if (mStartScancode != 0)
@@ -1797,8 +1850,8 @@ namespace
             const auto down = [&](SDL_Scancode k) { return k < count && keys[k]; };
             const float rx = (down(SDL_SCANCODE_RIGHT) ? 1.0f : 0.0f) - (down(SDL_SCANCODE_LEFT) ? 1.0f : 0.0f);
             const float ry = (down(SDL_SCANCODE_DOWN) ? 1.0f : 0.0f) - (down(SDL_SCANCODE_UP) ? 1.0f : 0.0f);
-            in.rx = axisByte(rx);
-            in.ry = axisByte(ry); // the pad's Y grows downwards
+            in.rx = axisByte(rx != 0.0f ? rx : padRightX);
+            in.ry = axisByte(ry != 0.0f ? ry : padRightY); // the pad's Y grows downwards
         }
         // Joysticks SDL has no standard layout for (a gaming mouse's side pad, an arcade stick ...): button by button, as the
         // 'joystick map' setting says; a hat is the D-pad, axes 0 / 1 the left stick, 2 / 3 the right stick.
@@ -4038,6 +4091,22 @@ namespace
             return;
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWWorld::Ptr player = world->getPlayerPtr();
+        {
+            // The player was moved by something other than this driver since the last frame (a door to another cell, a
+            // script, a teleport spell, a load): Kurenai goes to where the player is now instead of pulling the player back.
+            const MWWorld::CellStore* cellNow = player.isInCell() ? player.getCell() : nullptr;
+            const osg::Vec3f nowPos = player.getRefData().getPosition().asVec3();
+            if (mAnchored && mHaveLastSet && !mReanchor && !mReanchorAtSafe
+                && (cellNow != mLastSetCell || (nowPos - mLastSetPos).length() > 400.0f))
+            {
+                Log(Debug::Info) << "Kurenai: the player was moved to (" << nowPos.x() << ", " << nowPos.y() << ", " << nowPos.z()
+                                 << (cellNow != mLastSetCell ? ") in another cell" : ")") << ": Kurenai goes there";
+                mReanchor = true;
+                mPrev.reset();
+                mHaveSafe = false;
+                mVoidTime = 0.f;
+            }
+        }
         if (!mAnchored || mReanchor)
         {
             mReanchor = false;
@@ -4154,6 +4223,9 @@ namespace
         }
         world->moveObject(player, osg::Vec3f(mw.x, mw.y, mw.z), true, true);
         player = world->getPlayerPtr();
+        mLastSetPos = player.getRefData().getPosition().asVec3();
+        mLastSetCell = player.isInCell() ? player.getCell() : nullptr;
+        mHaveLastSet = true;
         mLookPitch = player.getRefData().getPosition().rot[0] - mSwimPitch; // put back to mSwimPitch every frame
         // While she swims, the mouse looks up and down as in Morrowind (the dive's direction, and the camera's tilt).
         mSwimPitch = mSwimming.load() ? std::clamp(player.getRefData().getPosition().rot[0], -1.4f, 1.4f) : 0.0f;
