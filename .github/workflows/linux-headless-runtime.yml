@@ -1,0 +1,57 @@
+name: Linux headless OpenMW runtime
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/kurenai-no-pcsx2
+    paths:
+      - '.github/workflows/linux-headless-runtime.yml'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:openmw/openmw
+          sudo add-apt-repository -y ppa:openmw/openmw-daily
+          sudo add-apt-repository -y ppa:openmw/staging
+          sudo CI/install_debian_deps.sh gcc openmw-deps openmw-deps-dynamic
+          sudo apt-get install -y xvfb libgl1 libegl1
+      - name: Configure
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOPENMW_USE_SYSTEM_RECASTNAVIGATION=ON -DUSE_SYSTEM_TINYXML=ON -DBUILD_OPENCS=OFF -DBUILD_OPENCS_TESTS=OFF -DBUILD_LAUNCHER=OFF -DBUILD_WIZARD=OFF -DBUILD_UNITTESTS=OFF -DBUILD_BENCHMARKS=OFF
+      - name: Build OpenMW
+        run: cmake --build build --target openmw -j 2
+      - name: Smoke-test engine
+        run: |
+          set -euxo pipefail
+          build/openmw --version
+          build/openmw --help >/tmp/openmw-help.txt
+      - name: Bundle runtime and shared libraries
+        run: |
+          set -euxo pipefail
+          mkdir -p runtime/bin runtime/lib
+          cp build/openmw runtime/bin/
+          cp -a resources runtime/
+          ldd build/openmw | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' | sort -u > /tmp/openmw-libs.txt
+          while IFS= read -r lib; do cp -L -n "$lib" runtime/lib/ || true; done < /tmp/openmw-libs.txt
+          cat > runtime/run.sh <<'EOS'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export LD_LIBRARY_PATH="$ROOT/lib:${LD_LIBRARY_PATH:-}"
+          export OSG_LIBRARY_PATH="${OSG_LIBRARY_PATH:-/usr/lib/x86_64-linux-gnu/osgPlugins-3.6.5}"
+          exec "$ROOT/bin/openmw" --resources "$ROOT/resources" "$@"
+          EOS
+          chmod +x runtime/run.sh
+          tar -czf openmw-linux-headless-runtime.tar.gz runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openmw-linux-headless-runtime
+          path: openmw-linux-headless-runtime.tar.gz
+          retention-days: 7
