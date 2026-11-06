@@ -359,13 +359,39 @@ namespace SceneUtil
         osg::Vec3Array* normalDst = static_cast<osg::Vec3Array*>(geom.getNormalArray());
         osg::Vec4Array* tangentDst = static_cast<osg::Vec4Array*>(geom.getTexCoordArray(7));
 
+        // Shadowglass v8 opt-in animation-pivot compensation. ONLY marker-tagged meshes.
+        // Each offset is based on artist-supplied joint targets, in bind-pose TES3 units.
+        // The standard skinning path is preserved for every other mesh.
+        const bool shadowglassJointRetarget = getName().find("SGRETARGETV8") != std::string::npos;
+        const auto shadowglassPivotOffset = [](const std::string& name) -> osg::Vec3f
+        {
+            if (name == "Bip01 L Thigh" || name == "Bip01 R Thigh")
+                return osg::Vec3f(0.4522f, -0.5829f, 8.2710f);
+            if (name == "Bip01 L Calf" || name == "Bip01 L Foot" || name == "Bip01 L Toe0")
+                return osg::Vec3f(2.2732f, 1.6904f, 12.2443f);
+            if (name == "Bip01 R Calf" || name == "Bip01 R Foot" || name == "Bip01 R Toe0")
+                return osg::Vec3f(-2.4751f, 1.5880f, 12.0401f);
+            return osg::Vec3f(0.f, 0.f, 0.f);
+        };
         std::vector<osg::Matrixf> boneMatrices(mNodes.size());
         std::vector<Bone*>::const_iterator bone = mNodes.begin();
         std::vector<BoneInfo>::const_iterator boneInfo = mData->mBones.begin();
         for (osg::Matrixf& boneMat : boneMatrices)
         {
             if (*bone != nullptr)
+            {
                 boneMat = boneInfo->mInvBindMatrix * (*bone)->mMatrixInSkeletonSpace;
+                if (shadowglassJointRetarget)
+                {
+                    const osg::Vec3f offset = shadowglassPivotOffset(boneInfo->mName);
+                    if (offset.length2() > 0.f)
+                    {
+                        // OSG uses row-vector preMult matrices. Conjugation shifts the
+                        // effective bend center while leaving the T-pose unchanged.
+                        boneMat = osg::Matrixf::translate(-offset) * boneMat * osg::Matrixf::translate(offset);
+                    }
+                }
+            }
             ++bone;
             ++boneInfo;
         }
