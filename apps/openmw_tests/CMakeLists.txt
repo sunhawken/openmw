@@ -17,6 +17,9 @@ file(GLOB UNITTEST_SRC_FILES
     mwgui/tooltips.cpp
     mwgui/weightedsearch.cpp
 
+    mwphysics/testragdollpose.cpp
+    mwphysics/testragdolljolt.cpp
+
     mwrender/testjigglebonecontroller.cpp
 
     mwscript/testscripts.cpp

@@ -1,10 +1,13 @@
 #ifndef GAME_MWMECHANICS_CREATURESTATS_H
 #define GAME_MWMECHANICS_CREATURESTATS_H
 
+#include <cstdint>
 #include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
+
+#include <osg/Vec3f>
 
 #include "activespells.hpp"
 #include "aisequence.hpp"
@@ -13,6 +16,7 @@
 #include "magiceffects.hpp"
 #include "spells.hpp"
 #include "stat.hpp"
+#include "../mwworld/ptr.hpp"
 
 #include <components/esm/attr.hpp>
 #include <components/esm/refid.hpp>
@@ -100,6 +104,66 @@ namespace MWMechanics
 
     public:
         CreatureStats();
+
+        struct PowerStrike
+        {
+            std::string token;
+            MWWorld::Ptr weapon;
+            float multiplier = 1.f;
+            float minimumStrength = 0.8f;
+        };
+        PowerStrike mPowerStrike;
+        std::string mLastConsumedPowerStrikeToken;
+        // Transient Lua presentation state: defer automatic arrest while adrenaline is visible.
+        bool mBrutalAdrenalineEffectActive = false;
+        bool mBrutalBlockRequested = false; // Player is holding the block control (Lua).
+        bool mBrutalBlockRaised = false; // Controller-owned: the shield is up this frame.
+        bool mBrutalBlockImpact = false; // A blow landed on the raised shield; consumed by the controller.
+        bool mBrutalParry = false; // Controller-owned: the raised guard is a weapon parry (no shield).
+        double mBrutalBlockRaisedAt = -1.0; // Simulation time the current guard started rising.
+        double mBrutalBlockLoweredAt = -1e9; // Simulation time the previous guard ended.
+        int mBrutalParryResult = 0; // BrutalParry; set by blockMeleeAttack, consumed by the controller.
+        bool mBrutalOffhandStrike = false; // The current native melee hit is the left dagger's.
+        bool mBrutalFastStrike = false; // The current native melee hit is a chain click: no finisher, less adrenaline.
+        float mBrutalComboMultiplier = 1.f; // Damage ratio of the combo strike being delivered.
+        bool mBrutalShieldRush = false; // Snapshot onHit before leaving the rush hit key.
+        bool mBrutalSlashRight = false; // Latched source _R direction of the ordinary player slash.
+        bool mBrutalSlideAttack = false; // This hand slash began during a slide; retained through its hit/end.
+        bool mBrutalSlideRequested = false;
+        bool mBrutalSliding = false; // IN/LOOP: physics keeps momentum without wish acceleration.
+        bool mBrutalSlideLow = false; // Keep the low hull through the exit animation.
+        bool mBrutalSlideBlocked = false; // Physics cannot safely restore the standing hull.
+        bool mBrutalSlideDownhill = false; // Last accepted physics step: supported downhill travel.
+        osg::Vec3f mBrutalSlideGroundNormal;
+        osg::Vec3f mBrutalSlideGroundPoint; // Contact plane for the separate visual body; not a movement target.
+        int mBrutalSlidePhase = 0; // 0 idle, 1 entering, 2 sliding, 3 rising.
+        float mBrutalSlideBlend = 0.f;
+        // Transient paired combat state; neither configuration nor locks enter a save.
+        bool mBrutalClinchEnabled = false;
+        int mBrutalClinchRequiredClicks = 3;
+        float mBrutalClinchDuration = 1.4333333f;
+        float mBrutalClinchDistance = 81.07684f;
+        bool mBrutalClinchActive = false;
+        bool mBrutalClinchInterrupted = false;
+        bool mBrutalClinchApplyingLossDamage = false; // Scoped native hit; never exposed to Lua.
+        std::string mBrutalClinchInterruptReason;
+        bool mBrutalClinchReleaseUse = false;
+        float mBrutalClinchBlendOut = 0.f;
+        MWWorld::Ptr mBrutalClinchOpponent;
+        uint64_t mBrutalClinchId = 0;
+        int mBrutalClinchPhase = 0; // 0 idle, 1 aligning, 2 contest, 3 win, 4 lose.
+        int mBrutalClinchClicks = 0;
+        int mBrutalClinchTarget = 0;
+        float mBrutalClinchRemaining = 0.f;
+        float mBrutalClinchElapsed = 0.f;
+        uint64_t mBrutalClinchLastResultId = 0;
+        std::string mBrutalClinchLastResult;
+        std::string mBrutalClinchLastReason;
+        osg::Vec3f mBrutalClinchVelocity; // World-space collision-resolved alignment only.
+        bool mBrutalParried = false; // NPC: the player timed a parry of this actor's blow; recoil next update.
+        // Kinetic player gait chosen by Lua (0 = Morrowind run stance, 1 walk, 2 run, 3 sprint).
+        int mBrutalGait = 0;
+
 
         DrawState getDrawState() const;
         void setDrawState(DrawState state);
@@ -281,7 +345,7 @@ namespace MWMechanics
         void setSideMovementAngle(float angle) { mSideMovementAngle = angle; }
 
         bool wasTeleported() const { return mTeleported; }
-        void setTeleported(bool v) { mTeleported = v; }
+        void setTeleported(bool v) { mTeleported = v; if (v) mPowerStrike = {}; }
 
         const std::map<ESM::RefId, AttributeValue>& getAttributes() const { return mAttributes; }
 

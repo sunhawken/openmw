@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <mutex>
+#include <utility>
 
 #include "ptrholder.hpp"
 
@@ -52,6 +53,10 @@ namespace MWPhysics
         void updateScale();
         void setRotation(osg::Quat quat);
 
+        // Main-thread prepare only, after joining the previous physics batch.
+        // Returns true if standing clearance keeps the player hull shortened.
+        bool updateSlideCollision(bool low, JPH::PhysicsSystem* world);
+
         /**
          * Return true if the collision shape looks the same no matter how its Z rotated.
          */
@@ -60,8 +65,9 @@ namespace MWPhysics
         /**
          * Used by the physics simulation to store the simulation result. Used in conjunction with mWorldPosition
          * to account for e.g. scripted movements
+         * Returns false when a scripted relocation discards this simulation snapshot.
          */
-        void setSimulationPosition(const osg::Vec3f& position);
+        bool setSimulationPosition(const osg::Vec3f& position);
 
         osg::Vec3f getSimulationPosition() const override { return mSimulationPosition; }
 
@@ -112,6 +118,34 @@ namespace MWPhysics
          */
         void setInertialForce(const osg::Vec3f& force);
 
+        // Main-thread state. Workers only use the ActorFrameData snapshot. Pending
+        // changes are consumed after previous simulation results have been synced.
+        void addExternalVelocity(const osg::Vec3f& delta);
+        void clearExternalVelocity();
+        osg::Vec3f consumeExternalVelocity(bool& clear);
+        bool isExternalVelocityResetPending() const { return mClearExternalVelocity; }
+        const osg::Vec3f& getExternalVelocity() const { return mExternalVelocity; }
+        const osg::Vec3f& getSimulationVelocity() const { return mSimulationVelocity; }
+        void setSimulationVelocity(const osg::Vec3f& value) { mSimulationVelocity=value; }
+        const osg::Vec3f& getLocomotionVelocity() const { return mLocomotionVelocity; }
+        void setLocomotionVelocity(const osg::Vec3f& value) { mLocomotionVelocity = value; }
+        // Main-thread metadata, written only after joining the previous batch.
+        // Workers may inspect another actor's eligibility, never its mutable state.
+        bool canReceiveSlideKnockdown() const { return mCanReceiveSlideKnockdown; }
+        void setCanReceiveSlideKnockdown(bool value) { mCanReceiveSlideKnockdown = value; }
+        float getSlideActorContactTime() const { return mSlideActorContactTime; }
+        void setSlideActorContactTime(float value) { mSlideActorContactTime = value; }
+        // Main thread, after Sync, only when a physics step will publish results.
+        bool updateSlidingState(bool sliding)
+        {
+            const bool started = sliding && !mWasSliding;
+            mWasSliding = sliding;
+            if (started || !sliding)
+                mSlideActorContactTime = 0.f;
+            return started;
+        }
+        void setExternalVelocity(const osg::Vec3f& value) { mExternalVelocity = value; }
+
         /**
          * Gets the current amount of inertial force (incl. gravity) affecting this physic actor
          */
@@ -146,8 +180,15 @@ namespace MWPhysics
         bool isScaleIdentity() const { return mScale == osg::Vec3f(1.0f, 1.0f, 1.0f); }
 
         bool isActive() const { return mActive; }
+        bool isRagdoll() const { return mRagdoll; }
+        void setRagdoll(bool value);
 
-        void setActive(bool value) { mActive = value; }
+        void setActive(bool value)
+        {
+            mActive = value;
+            if (!value)
+                clearExternalVelocity();
+        }
 
         JPH::ObjectLayer getCollisionMask() const;
 
@@ -180,6 +221,10 @@ namespace MWPhysics
         osg::Quat mRotation;
 
         osg::Vec3f mScale;
+        bool mSlideCollisionLow = false;
+        bool mWasSliding = false;
+        bool mCanReceiveSlideKnockdown = false;
+        float mSlideActorContactTime = 0.f;
         osg::Vec3f mPositionOffset;
         bool mSkipSimulation = true;
         bool mScaleUpdated = false;
@@ -189,10 +234,16 @@ namespace MWPhysics
         osg::Vec3f mLastStuckPosition;
 
         osg::Vec3f mForce;
+        osg::Vec3f mExternalVelocity{ 0.f, 0.f, 0.f };
+        osg::Vec3f mLocomotionVelocity{ 0.f, 0.f, 0.f };
+        osg::Vec3f mPendingExternalVelocity{ 0.f, 0.f, 0.f };
+        bool mClearExternalVelocity = false;
         bool mOnGround;
         bool mOnSlope;
         bool mInternalCollisionMode;
         bool mExternalCollisionMode;
+        osg::Vec3f mSimulationVelocity;
+        bool mRagdoll = false;
         bool mActive;
 
         PhysicsTaskScheduler* mTaskScheduler;

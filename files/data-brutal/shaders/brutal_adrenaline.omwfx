@@ -1,0 +1,43 @@
+sampler_2d brutalAdrenalineAtlas {
+    source = "textures/brutal_dm/adrenaline_ready_atlas.png";
+    min_filter = linear;
+    mag_filter = linear;
+    wrap_s = clamp_to_edge;
+    wrap_t = clamp_to_edge;
+}
+
+uniform_int brutalFrame {
+    default = 0;
+    min = 0;
+    max = 24;
+    static = false;
+}
+
+uniform_float brutalAlpha {
+    default = 0.0;
+    min = 0.0;
+    max = 1.0;
+    static = false;
+}
+
+fragment main {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        vec4 scene = omw_GetLastShader(omw_TexCoord);
+        vec2 tile = vec2(float(brutalFrame % 5), float(brutalFrame / 5));
+        // Sample within each tile, so bilinear filtering cannot bleed neighbours.
+        // OpenMW's ImageManager normalizes PNGs to TOP_LEFT; this fullscreen
+        // quad has bottom-left UVs. Keep each source frame upright.
+        vec2 pixel = clamp(vec2(omw_TexCoord.x, 1.0 - omw_TexCoord.y),
+            vec2(0.5 / 256.0), vec2(255.5 / 256.0));
+        vec3 rays = omw_Texture2D(brutalAdrenalineAtlas, (tile + pixel) / 5.0).rgb;
+        omw_FragColor = vec4(scene.rgb + rays * brutalAlpha, scene.a);
+    }
+}
+
+technique {
+    description = "Dark Messiah adrenaline readiness from locally imported assets";
+    version = "1.0";
+    author = "Brutal Morrowind";
+    passes = main;
+}

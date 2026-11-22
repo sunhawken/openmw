@@ -87,6 +87,7 @@ namespace SceneUtil
                         .mToKey = toNames.second,
                         .mDuration = it["duration"].as<float>(),
                         .mEasing = it["easing"].as<std::string>(),
+                        .mAnimationTime = it["clock"] && it["clock"].as<std::string>() == "animation",
                     };
 
                     rules.emplace_back(ruleObj);

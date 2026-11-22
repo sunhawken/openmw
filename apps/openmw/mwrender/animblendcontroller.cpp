@@ -21,6 +21,11 @@ namespace MWRender
                 return x;
             }
 
+            float smoothstep(float x)
+            {
+                return x * x * (3.f - 2.f * x);
+            }
+
             float sineOut(float x)
             {
                 return std::sin((x * osg::PIf) / 2.f);
@@ -114,6 +119,7 @@ namespace MWRender
 
             const std::unordered_map<std::string, EasingFn> easingsMap = {
                 { "linear", Easings::linear },
+                { "smoothstep", Easings::smoothstep },
                 { "sineOut", Easings::sineOut },
                 { "sineIn", Easings::sineIn },
                 { "sineInOut", Easings::sineInOut },
@@ -169,6 +175,7 @@ namespace MWRender
         {
             // Default blend settings
             mBlendDuration = 0;
+            mBlendAnimationTime = false;
             mEasingFn = &Easings::sineOut;
 
             if (blendRules)
@@ -183,6 +190,7 @@ namespace MWRender
                     {
                         mEasingFn = it->second;
                         mBlendDuration = blendRule->mDuration;
+                        mBlendAnimationTime = blendRule->mAnimationTime;
                     }
                     else
                     {
@@ -285,10 +293,10 @@ namespace MWRender
         if (mBlendTrigger)
         {
             mBlendTrigger = false;
-            mBlendStartTime = time;
+            mBlendStartTime = mBlendAnimationTime ? mAnimState.mStartTime : time;
         }
 
-        calculateInterpFactor(time);
+        calculateInterpFactor(mBlendAnimationTime ? *mKeyframeTrack->mTime : time);
 
         if (mInterpActive)
             applyBoneBlend(node);
@@ -313,7 +321,7 @@ namespace MWRender
         if (mBlendTrigger)
         {
             mBlendTrigger = false;
-            mBlendStartTime = time;
+            mBlendStartTime = mBlendAnimationTime ? mAnimState.mStartTime : time;
 
             // Nif mRotationScale is used here because it's unaffected by the side-effects of RotationController
             mBlendStartRot = node->mRotationScale.toOsgMatrix().getRotate();
@@ -350,7 +358,7 @@ namespace MWRender
             }
         }
 
-        calculateInterpFactor(time);
+        calculateInterpFactor(mBlendAnimationTime ? *mKeyframeTrack->mTime : time);
 
         if (mInterpActive)
         {

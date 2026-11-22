@@ -18,6 +18,8 @@ namespace LuaUi
 
         void attach(const std::shared_ptr<Element>& element);
         void detach();
+        // Fit opt-in settings pages to their visible scroll pane.
+        void setViewportWidth(int width);
 
     private:
         std::shared_ptr<Element> mElement;

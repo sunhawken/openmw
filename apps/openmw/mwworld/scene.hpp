@@ -182,10 +182,10 @@ namespace MWWorld
 
         void update(float duration);
 
-        void addObjectToScene(const Ptr& ptr);
+        void addObjectToScene(const Ptr& ptr, bool notifyLua = true);
         ///< Add an object that already exists in the world model to the scene.
 
-        void removeObjectFromScene(const Ptr& ptr, bool keepActive = false);
+        void removeObjectFromScene(const Ptr& ptr, bool keepActive = false, bool notifyLua = true);
         ///< Remove an object from the scene, but not from the world model.
 
         void addPostponedPhysicsObjects();

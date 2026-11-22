@@ -28,9 +28,9 @@ namespace Files
     namespace
     {
 #if defined(_WIN32) || defined(__WINDOWS__)
-        constexpr auto sApplicationName = "OpenMW";
+        constexpr auto sApplicationName = "Brutal Morrowind";
 #else
-        constexpr auto sApplicationName = "openmw";
+        constexpr auto sApplicationName = "brutalmorrowind";
 #endif
 
         using GetPath = const std::filesystem::path& (Files::FixedPath<>::*)() const;

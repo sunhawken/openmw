@@ -1,3 +1,4 @@
+#include <components/sdlutil/windowcoordinates.hpp>
 #include "sdlgraphicswindow.hpp"
 
 #include <SDL_video.h>
@@ -62,7 +63,7 @@ namespace SDLUtil
         SDL_GL_GetDrawableSize(mWindow, &dw, &dh);
 
         SDL_SetWindowPosition(mWindow, x, y);
-        SDL_SetWindowSize(mWindow, width / (dw / w), height / (dh / h));
+        SDL_SetWindowSize(mWindow, SDLUtil::drawableToWindowSize(width, w, dw), SDLUtil::drawableToWindowSize(height, h, dh));
         return true;
     }
 

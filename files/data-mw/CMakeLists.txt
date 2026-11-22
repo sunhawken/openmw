@@ -49,4 +49,11 @@ if (NOT CMAKE_GENERATOR MATCHES "Ninja")
 endif()
 
 file(READ "${builtinBase}" BUILTIN_SCRIPTS)
+
+# Brutal Morrowind scripts load after the game scripts above.
+set(brutalScripts "${CMAKE_CURRENT_SOURCE_DIR}/../data-brutal/brutal-morrowind.omwscripts")
+if (NOT CMAKE_GENERATOR MATCHES "Ninja")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${brutalScripts}")
+endif()
+file(READ "${brutalScripts}" BRUTAL_SCRIPTS)
 configure_resource_file("${CMAKE_CURRENT_SOURCE_DIR}/builtin.omwscripts.in" "${OPENMW_RESOURCES_ROOT}" "resources/vfs-mw/builtin.omwscripts")

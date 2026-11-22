@@ -1,0 +1,113 @@
+PageName: Brutal Morrowind
+Blank: ''
+"On": 'On'
+"Off": 'Off'
+PageDescription: "Choose which components to use."
+PageDescriptionNoDarkMessiah: "Choose which components to use.\n\nDark Messiah data is not imported: Morrowind animations are used and the components that need Dark Messiah animations, sounds or textures are off. Import it on the Dark Messiah page of the launcher."
+GroupName: Options
+darkMessiah: Dark Messiah
+morrowind: Morrowind
+enabled: Enable Brutal Morrowind
+enabledDescription: "Master switch. Individual component choices are preserved."
+allowThirdPerson: Allow third person view
+allowThirdPersonDescription: "Click the mouse wheel to switch views. Temporarily disables first-person components."
+firstPersonBody: Visible first-person body (FPV)
+firstPersonBodyDescription: "Show your own body when looking down."
+firstPersonAnimations: First-person animations
+firstPersonAnimationsDescription: "Choose the arm and weapon animation set."
+npcAnimations: NPC animations
+npcAnimationsDescription: "Choose the NPC animation set."
+guaranteedHits: 100% melee hit chance
+guaranteedHitsDescription: "Turn off to restore skill- and fatigue-based hit rolls."
+meleeGeometry: Weapon contact and wide swings
+meleeGeometryDescription: "Use visible weapon contact and the swing area."
+equipmentPhysics: Physical dropped equipment
+equipmentPhysicsDescription: "Physics for weapons and shields dropped by ragdolls."
+ragdollEnabled: Ragdoll
+ragdollEnabledDescription: "Physical falls for NPCs and creatures."
+ragdollEnhancements: Ragdoll enhancements
+ragdollEnhancementsDescription: "Buoyancy and improved collision response. Requires ragdoll."
+dynamicProps: Movable world items
+dynamicPropsDescription: "Impacts move loose items."
+movementEnabled: Walking, running and sprinting
+movementEnabledDescription: "Dark Messiah speeds. Alt walks; sprint uses the assigned button."
+staminaEnabled: Dark Messiah stamina
+staminaEnabledDescription: "Dark Messiah stamina costs and recovery."
+kickEnabled: Kick
+kickEnabledDescription: "Kick using the assigned button."
+kickAlwaysRagdoll: Kick always triggers ragdoll
+kickAlwaysRagdollDescription: "Ordinary non-adrenaline kicks always knock NPCs and supported creatures into ragdoll with normal kick damage, stamina cost, and pushback."
+slideEnabled: Slide
+slideEnabledDescription: "Crouch while sprinting or running to slide."
+activeBlockEnabled: Manual blocking
+activeBlockEnabledDescription: "Hold RMB to guard with a shield."
+shieldBashEnabled: Shield bash
+shieldBashEnabledDescription: "Click attack while blocking with a shield to bash."
+parryEnabled: Sword parry
+parryEnabledDescription: "Hold RMB to guard with a melee weapon."
+clinchEnabled: Blade clinch
+clinchEnabledDescription: "Attack after a parry. Requires Dark Messiah animations."
+attackCombosEnabled: Rush and falling attacks
+attackCombosEnabledDescription: "Special strikes while rushing or falling."
+fastAttacksEnabled: Fast attack chains
+fastAttacksEnabledDescription: "Chain attacks with short clicks. Requires Dark Messiah arm animations."
+wallBounceEnabled: Weapon recoil from walls
+wallBounceEnabledDescription: "Weapons recoil after striking scenery."
+npcAiTweaks: NPC AI tweaks
+npcAiTweaksDescription: "Dark Messiah combat pacing, windups and dodges."
+npcStagger: NPC hit reactions
+npcStaggerDescription: "Enemies flinch and stagger when hit."
+hitRecovery: Suppress player hit recoil
+hitRecoveryDescription: "Damage does not interrupt player actions."
+adrenalineEnabled: Adrenaline and finishers
+adrenalineEnabledDescription: "Damaging hits charge a finisher or super kick."
+slowMotionEnabled: Finisher slow motion
+slowMotionEnabledDescription: "Brief slow motion after a lethal adrenaline strike."
+dismemberment: Dismemberment
+dismembermentDescription: "Finishers sever body parts. Requires ragdoll."
+bloodEffects: Blood effects
+bloodEffectsDescription: "The mod’s blood sprays."
+sparkEffects: Impact sparks
+sparkEffectsDescription: "Sparks on metal and scenery impacts."
+bloodDecals: Blood marks
+bloodDecalsDescription: "Blood marks on bodies and surfaces."
+combatSounds: Dark Messiah sounds
+combatSoundsDescription: "Weapon, impact, kick, adrenaline, footstep, jump and landing sounds from Dark Messiah. Off: Morrowind sounds."
+adrenalineHudEnabled: Adrenaline gauge
+adrenalineHudEnabledDescription: "A charge indicator beside the native status bars."
+adrenalineFxEnabled: Adrenaline screen effect
+adrenalineFxEnabledDescription: "A screen effect at full charge."
+slideFxEnabled: Slide speed effect
+slideFxEnabledDescription: "Speed streaks at the edges of the screen."
+clinchFxEnabled: Clinch blur
+clinchFxEnabledDescription: "Brief blur after losing a clinch."
+superKickSpeed: Adrenaline kick impulse
+superKickSpeedDescription: "Super kick launch speed. Ordinary kicks use 460 units/s."
+adrenalineHits: Hits to fill adrenaline
+adrenalineHitsDescription: "Charged hits needed to fill the gauge. Fast hits give less."
+adrenalineDecay: Adrenaline decay
+adrenalineDecayDescription: "Charge slowly drains between fights."
+npcStandupEnabled: NPC stand-up animations
+npcStandupEnabledDescription: "Living NPC recovery. Requires ragdoll and Dark Messiah animations."
+ragdollSoftStops: Soft ragdoll joint limits
+ragdollSoftStopsDescription: "Soft joint limits. Requires ragdoll enhancements."
+ragdollNeutralPose: Ragdoll neutral pose
+ragdollNeutralPoseDescription: "Natural joint rest poses. Requires ragdoll enhancements."
+ragdollLimbResponse: Ragdoll limb response
+ragdollLimbResponseDescription: "Limb impulse response. Requires ragdoll enhancements."
+ragdollSelfCollision: Ragdoll self-collision
+ragdollSelfCollisionDescription: "Collisions between body parts. Requires ragdoll enhancements."
+finisherEnabled: Adrenaline weapon finishers
+finisherEnabledDescription: "Spend a full charge on a lethal charged weapon strike."
+superKickEnabled: Adrenaline super kick
+superKickEnabledDescription: "A stronger kick at full charge. Requires kick, adrenaline and ragdoll."
+dualWieldEnabled: Dual short blades
+dualWieldEnabledDescription: "Paired animations and strikes with two equipped short blades."
+
+kickBinding: "Kick button"
+
+kickBindingDescription: "Click, then press a button; Esc clears."
+
+sprintBinding: "Sprint button"
+
+sprintBindingDescription: "Click, then press a button; Esc clears."

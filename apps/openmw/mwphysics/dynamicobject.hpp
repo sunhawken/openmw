@@ -25,7 +25,7 @@ namespace MWPhysics
     public:
         DynamicObject(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance,
             osg::Quat rotation, float mass, PhysicsTaskScheduler* scheduler, PhysicsSystem* physicsSystem,
-            DynamicShapeType shapeType = DynamicShapeType::Box);
+            DynamicShapeType shapeType = DynamicShapeType::Box, bool preserveShape = false);
         ~DynamicObject() override;
 
         const Resource::PhysicsShapeInstance* getShapeInstance() const;
@@ -55,6 +55,9 @@ namespace MWPhysics
 
         // Check if the object is currently active (moving)
         bool isActive() const;
+        void ignoreOverlappingBodies(std::vector<JPH::BodyID> bodies);
+        void updateCollisionExclusions();
+        std::size_t ignoredBodyCount() const { return mIgnoredBodies.size(); }
 
         // Wake up the object (make it active for simulation)
         void activate();
@@ -80,6 +83,7 @@ namespace MWPhysics
         osg::ref_ptr<Resource::PhysicsShapeInstance> mShapeInstance;
         JPH::Ref<JPH::Shape> mBasePhysicsShape;
         float mMass;
+        std::vector<JPH::BodyID> mIgnoredBodies;
         osg::Vec3f mScale;
         bool mUsesScaledShape = false;
         mutable std::mutex mMutex;

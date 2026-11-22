@@ -24,6 +24,7 @@
 #include "../mwgui/tooltips.hpp"
 
 #include "../mwmechanics/npcstats.hpp"
+#include "../mwphysics/physicssystem.hpp"
 
 namespace MWWorld
 {
@@ -41,11 +42,15 @@ namespace MWWorld
     void Class::insertObject(
         const Ptr& ptr, const std::string& mesh, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const
     {
+        if (ptr.getRefData().getReleasedEquipment())
+            physics.addReleasedEquipment(ptr);
     }
 
     void Class::insertObjectPhysics(
         const Ptr& ptr, const std::string& mesh, const osg::Quat& rotation, MWPhysics::PhysicsSystem& physics) const
     {
+        if (ptr.getRefData().getReleasedEquipment())
+            physics.addReleasedEquipment(ptr);
     }
 
     bool Class::consume(const MWWorld::Ptr& consumable, const MWWorld::Ptr& actor) const
@@ -108,13 +113,13 @@ namespace MWWorld
         throw std::runtime_error("class does not have item health");
     }
 
-    bool Class::evaluateHit(const Ptr& ptr, Ptr& victim, osg::Vec3f& hitPosition) const
+    bool Class::evaluateHit(const Ptr& ptr, Ptr& victim, osg::Vec3f& hitPosition, int* contactPart, std::string_view swing) const
     {
         throw std::runtime_error("class cannot hit");
     }
 
     void Class::hit(const Ptr& ptr, float attackStrength, int type, const Ptr& victim, const osg::Vec3f& hitPosition,
-        bool success) const
+        bool success, int contactPart) const
     {
         throw std::runtime_error("class cannot hit");
     }

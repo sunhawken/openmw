@@ -1,5 +1,6 @@
 #ifndef GAME_MWBASE_WORLD_H
 #define GAME_MWBASE_WORLD_H
+#include <map>
 
 #include "rotationflags.hpp"
 
@@ -15,6 +16,7 @@
 #include "../mwworld/doorstate.hpp"
 #include "../mwworld/globalvariablename.hpp"
 #include "../mwworld/ptr.hpp"
+#include "../mwworld/ragdolldroppeditem.hpp"
 #include "../mwworld/spellcaststate.hpp"
 
 #include "../mwrender/rendermode.hpp"
@@ -304,15 +306,54 @@ namespace MWBase
         /// relative to \a referenceObject (but the object may be placed somewhere else if the wanted location is
         /// obstructed).
 
+        virtual bool canStartNpcRagdoll(const MWWorld::Ptr& ptr) = 0;
+        virtual bool startNpcRagdoll(const MWWorld::Ptr& ptr, const osg::Vec3f& kick) = 0;
+        virtual bool startNpcDecapitation(const MWWorld::Ptr& ptr, const osg::Vec3f& kick,
+            const osg::Vec3f& cutDirection) = 0;
+        virtual bool startNpcBisection(const MWWorld::Ptr& ptr, const osg::Vec3f& kick,
+            const osg::Vec3f& cutDirection, const std::string& savedPose = {}) = 0;
+        virtual std::string getNpcBisectionPoseData(const MWWorld::Ptr& ptr) const = 0;
+        virtual bool startNpcLimbSevering(const MWWorld::Ptr& ptr, unsigned mask, const osg::Vec3f& kick,
+            const osg::Vec3f& cutDirection, const std::string& savedPose = {}) = 0;
+        virtual std::string getNpcLimbSeveringPoseData(const MWWorld::Ptr& ptr) const = 0;
+        virtual unsigned getNpcSeveredLimbsMask(const MWWorld::Ptr& ptr) const = 0;
+        // knockDown: a living ragdoll fall on open ground (Dark Messiah's chancetofall).
+        // slideTrip: the sliding boot enters at the shins; other knockdowns use the chest.
+        virtual bool applyNpcKick(
+            const MWWorld::Ptr& ptr, const osg::Vec3f& kick, const MWWorld::Ptr& attacker,
+            bool knockDown = false, bool slideTrip = false)
+            = 0;
+        virtual bool applyNpcSuperKick(const MWWorld::Ptr& ptr, const osg::Vec3f& kick,
+            const MWWorld::Ptr& attacker, std::uint64_t kickId) = 0;
+        virtual std::map<std::string, double> getNpcSuperKickState(const MWWorld::Ptr& ptr) const = 0;
+        virtual std::vector<osg::Vec3f> getNpcRagdollDynamics(const MWWorld::Ptr& ptr) const = 0;
+        virtual std::vector<osg::Vec3f> getNpcRagdollState(const MWWorld::Ptr& ptr) const = 0;
+        virtual std::map<std::string, double> getNpcRagdollEnhancementState(const MWWorld::Ptr& ptr) const = 0;
+        virtual void releaseNpcRagdollEquipment(const MWWorld::Ptr& ptr) = 0;
+        virtual std::vector<MWWorld::RagdollDroppedItem> getNpcRagdollDroppedItems(const MWWorld::Ptr& ptr) const = 0;
+        virtual std::vector<osg::Vec3f> getReleasedEquipmentState(const MWWorld::Ptr& ptr) const = 0;
+        virtual bool applyNpcRagdollImpact(const MWWorld::Ptr& ptr, std::size_t part, const osg::Vec3f& point,
+            const osg::Vec3f& impulse, std::uint64_t id) = 0;
+        virtual MWWorld::Ptr kickNpcRagdoll(const osg::Vec3f& origin, const osg::Vec3f& forward, float reach,
+            float minimumDot, const osg::Vec3f& velocity, bool& headHit, osg::Vec3f& hitPoint, std::size_t& hitPart) = 0;
+        virtual void applyObjectImpulse(const MWWorld::Ptr& ptr, const osg::Vec3f& impulse, float mass) = 0;
+        virtual void syncDynamicObject(const MWWorld::Ptr& ptr, const osg::Vec3f& position, const osg::Quat& rotation,
+            const osg::Vec3f& renderedPosition, const osg::Quat& renderedRotation, bool authoritativeChanged) = 0;
         virtual void queueMovement(const MWWorld::Ptr& ptr, const osg::Vec3f& velocity) = 0;
+        virtual void addActorExternalVelocity(const MWWorld::Ptr& ptr, const osg::Vec3f& delta) = 0;
+        virtual void clearActorExternalVelocity(const MWWorld::Ptr& ptr) = 0;
         ///< Queues movement for \a ptr (in local space), to be applied in the next call to
         /// doPhysics.
 
         virtual const MWPhysics::RayCastingInterface* getRayCasting() const = 0;
 
         virtual bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
-            bool ignorePlayer, bool ignoreActors, std::span<const MWWorld::Ptr> ignoreList = {})
+            bool ignorePlayer, bool ignoreActors, std::span<const MWWorld::Ptr> ignoreList = {}, bool melee = false)
             = 0;
+
+        virtual std::vector<float> findRenderingSegmentCandidates(
+            std::span<const std::pair<osg::Vec3f, osg::Vec3f>> segments,
+            std::span<const unsigned> buckets) = 0;
 
         virtual void setActorCollisionMode(const MWWorld::Ptr& ptr, bool internal, bool external) = 0;
         virtual bool isActorCollisionEnabled(const MWWorld::Ptr& ptr) = 0;
@@ -556,6 +597,10 @@ namespace MWBase
             = 0;
 
         virtual void removeEffect(std::string_view effectId) = 0;
+        virtual void spawnBrutalImpact(std::string_view kind, const osg::Vec3f& position,
+            const osg::Vec3f& direction, float intensity, bool power) = 0;
+        virtual std::map<std::string, double> getBrutalImpactStats() const = 0;
+
 
         /// @see MWWorld::WeatherManager::isInStorm
         virtual bool isInStorm() const = 0;

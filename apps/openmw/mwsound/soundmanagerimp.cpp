@@ -22,6 +22,7 @@
 
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/esmstore.hpp"
+#include "../mwworld/class.hpp"
 
 #include "../mwmechanics/actorutil.hpp"
 
@@ -516,10 +517,12 @@ namespace MWSound
     }
 
     Sound* SoundManager::playSound3D(const MWWorld::ConstPtr& ptr, SoundBuffer* sfx, float volume, float pitch,
-        Type type, PlayMode mode, float offset)
+        Type type, PlayMode mode, float offset, SoundBuffer* parameters)
     {
         if (!mOutput->isInitialized())
             return nullptr;
+
+        if (!parameters) parameters = sfx;
 
         // Only one copy of given sound can be played at time on ptr, so stop previous copy
         stopSound(sfx, ptr);
@@ -533,7 +536,7 @@ namespace MWSound
         {
             sound->init([&] {
                 SoundParams params;
-                params.mVolume = volume * sfx->getVolume();
+                params.mVolume = volume * parameters->getVolume();
                 params.mBaseVolume = volumeFromType(type);
                 params.mPitch = pitch;
                 params.mFlags = mode | type | Play_2D;
@@ -546,12 +549,12 @@ namespace MWSound
             sound->init([&] {
                 SoundParams params;
                 params.mPos = objpos;
-                params.mVolume = volume * sfx->getVolume();
+                params.mVolume = volume * parameters->getVolume();
                 params.mBaseVolume = volumeFromType(type);
-                params.mFadeVolume = initialFadeVolume(squaredDist, sfx, type, mode);
+                params.mFadeVolume = initialFadeVolume(squaredDist, parameters, type, mode);
                 params.mPitch = pitch;
-                params.mMinDistance = sfx->getMinDist();
-                params.mMaxDistance = sfx->getMaxDist();
+                params.mMinDistance = parameters->getMinDist();
+                params.mMaxDistance = parameters->getMaxDist();
                 params.mFlags = mode | type | Play_3D;
                 return params;
             }());
@@ -569,17 +572,87 @@ namespace MWSound
         return result;
     }
 
+    SoundBuffer* SoundManager::loadBrutalSound(const ESM::RefId& soundId, bool allowOrdinaryReplacements,
+        float& volume, float& pitch, SoundBuffer*& parameters)
+    {
+        if (!Settings::game().mBrutalEnabled || !Settings::game().mBrutalCombatSounds)
+            return nullptr;
+        // Both attached and positional sounds use these virtual IDs. They have no ESM
+        // record: load the sample directly and borrow the named record's audible range.
+        // Ordinary Morrowind replacements remain NPC-only at attached call sites.
+        struct Replacement
+        {
+            const char* mSoundId;
+            const char* mCategory;
+            unsigned mVariants;
+            float mVolume[2];
+            float mPitch[2];
+            const char* mRangeFrom;
+        };
+        static constexpr Replacement replacements[] = {
+            { "Weapon Swish", "sword_swing", 4, { .35f, .45f }, { .95f, 1.05f }, nullptr },
+            { "Swish", "kick_swing", 2, { .15f, .25f }, { .95f, 1.05f }, nullptr },
+            { "Critical Damage", "flesh_heavy", 3, { .5f, .6f }, { 1.f, 1.f }, nullptr },
+            { "Health Damage", "flesh_hit", 5, { .5f, .6f }, { 1.f, 1.f }, nullptr },
+            { "Light Armor Hit", "armor_light", 5, { .4f, .5f }, { 1.f, 1.f }, nullptr },
+            { "Medium Armor Hit", "armor_medium", 4, { .3f, .4f }, { 1.f, 1.f }, nullptr },
+            { "Heavy Armor Hit", "armor_heavy", 2, { .3f, .4f }, { 1.f, 1.f }, nullptr },
+            { "Brutal Kick Hit", "kick_hit", 4, { .15f, .25f }, { 1.f, 1.f }, "Health Damage" },
+            { "Brutal Shield Metal", "block_metal", 4, { .25f, .35f }, { .95f, 1.05f }, "Heavy Armor Hit" },
+            { "Brutal Shield Wood", "block_wood", 3, { .3f, .4f }, { .95f, 1.05f }, "Light Armor Hit" },
+            // Sword parry: Sword_on_Sword for a parried blow, Sword_Versus_Sword for a timed parry.
+            { "Brutal Sword Contact", "blade_contact", 5, { .4f, .5f }, { .95f, 1.05f }, "Heavy Armor Hit" },
+            { "Brutal Sword Parry", "parry", 3, { .5f, .7f }, { .95f, 1.05f }, "Heavy Armor Hit" },
+            // Bounce: a charged swing stopped by a wall (Dark Messiah sword_on_stone).
+            { "Brutal Sword Stone", "stone_hit", 4, { .85f, .95f }, { .95f, 1.05f }, "Heavy Armor Hit" },
+        };
+        const Replacement* replacement = nullptr;
+        for (const Replacement& candidate : replacements)
+            if (soundId == ESM::RefId::stringRefId(candidate.mSoundId))
+                replacement = &candidate;
+        if (!replacement || (!allowOrdinaryReplacements && !replacement->mRangeFrom))
+            return nullptr;
+
+        // Cosmetic randomness keeps its own generator and the established variant/pitch order.
+        static uint32_t state = 0x9e3779b9u;
+        const auto random = [] {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            return float(state & 0x00ffffff) / float(0x01000000);
+        };
+        const auto range = [&](const float (&bounds)[2]) { return bounds[0] + (bounds[1] - bounds[0]) * random(); };
+        const std::string path = std::string("sound/brutal_dm/") + replacement->mCategory + "_0"
+            + std::to_string(1 + unsigned(random() * replacement->mVariants) % replacement->mVariants) + ".wav";
+        const float replacementVolume = range(replacement->mVolume);
+        const float replacementPitch = range(replacement->mPitch);
+        const auto normalized = VFS::Path::toNormalized(path);
+        if (!mVFS->exists(normalized))
+            return nullptr;
+        SoundBuffer* buffer = mSoundBuffers.load(normalized);
+        // load, not lookup: first use must load the range record too.
+        parameters = mSoundBuffers.load(replacement->mRangeFrom
+            ? ESM::RefId::stringRefId(replacement->mRangeFrom) : soundId);
+        if (!buffer || !parameters)
+            return nullptr;
+        volume *= replacementVolume;
+        pitch = replacementPitch;
+        return buffer;
+    }
+
     Sound* SoundManager::playSound3D(const MWWorld::ConstPtr& ptr, const ESM::RefId& soundId, float volume, float pitch,
         Type type, PlayMode mode, float offset)
     {
         if (remove3DSoundAtDistance(mode, ptr))
             return nullptr;
+        SoundBuffer* parameters = nullptr;
+        if (!ptr.isEmpty())
+            if (SoundBuffer* replacement = loadBrutalSound(soundId, ptr.getClass().isNpc(), volume, pitch, parameters))
+                return playSound3D(ptr, replacement, volume, pitch, type, mode, offset, parameters);
 
-        // Look up the sound in the ESM data
         SoundBuffer* sfx = mSoundBuffers.load(soundId);
         if (!sfx)
             return nullptr;
-
         return playSound3D(ptr, sfx, volume, pitch, type, mode, offset);
     }
 
@@ -606,8 +679,15 @@ namespace MWSound
         if (!mOutput->isInitialized())
             return nullptr;
 
-        // Look up the sound in the ESM data
-        SoundBuffer* sfx = mSoundBuffers.load(soundId);
+        // Positional virtual IDs must pass through the same resolver as attached
+        // impacts. Ordinary Morrowind IDs retain their original records here.
+        SoundBuffer* parameters = nullptr;
+        SoundBuffer* sfx = loadBrutalSound(soundId, false, volume, pitch, parameters);
+        if (!sfx)
+        {
+            sfx = mSoundBuffers.load(soundId);
+            parameters = sfx;
+        }
         if (!sfx)
             return nullptr;
 
@@ -617,12 +697,12 @@ namespace MWSound
         sound->init([&] {
             SoundParams params;
             params.mPos = initialPos;
-            params.mVolume = volume * sfx->getVolume();
+            params.mVolume = volume * parameters->getVolume();
             params.mBaseVolume = volumeFromType(type);
-            params.mFadeVolume = initialFadeVolume(squaredDist, sfx, type, mode);
+            params.mFadeVolume = initialFadeVolume(squaredDist, parameters, type, mode);
             params.mPitch = pitch;
-            params.mMinDistance = sfx->getMinDist();
-            params.mMaxDistance = sfx->getMaxDist();
+            params.mMinDistance = parameters->getMinDist();
+            params.mMaxDistance = parameters->getMaxDist();
             params.mFlags = mode | type | Play_3D;
             return params;
         }());

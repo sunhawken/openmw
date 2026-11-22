@@ -87,8 +87,18 @@ namespace MWBase
         virtual void skillUse(const MWWorld::Ptr& actor, ESM::RefId skillId, int useType, float scale) = 0;
         virtual void onHit(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, const MWWorld::Ptr& weapon,
             const MWWorld::Ptr& ammo, int attackType, float attackStrength, float damage, bool isHealth,
-            const osg::Vec3f& hitPos, bool successful, MWMechanics::DamageSourceType)
+            const osg::Vec3f& hitPos, bool successful, MWMechanics::DamageSourceType,
+            uint64_t brutalAttackId = 0, bool brutalPowered = false, bool brutalBlocked = false, int contactPart = -1)
             = 0;
+        virtual void meleeResolved(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, const MWWorld::Ptr& weapon,
+            uint64_t attackId, const std::string& token, bool powered, bool successful, bool blocked,
+            float damage, float strength, const osg::Vec3f& hitPos) = 0;
+        virtual void swordClinchResolved(const MWWorld::Ptr& player, const MWWorld::Ptr& opponent,
+            uint64_t id, std::string_view result, std::string_view reason, int clicks, int requiredClicks) = 0;
+        virtual void actorExternalImpact(const MWWorld::Ptr& actor, const MWWorld::Ptr& hitObject,
+            const osg::Vec3f& position, const osg::Vec3f& normal, float speed) = 0;
+        // A kick sent a living NPC over a ledge into a ragdoll; the kicker receives BrutalKickRagdoll.
+        virtual void npcKickRagdoll(const MWWorld::Ptr& attacker, const MWWorld::Ptr& target) = 0;
         virtual void exteriorCreated(MWWorld::CellStore& cell) = 0;
         virtual void actorDied(const MWWorld::Ptr& actor) = 0;
         virtual void onDialogueResponse(

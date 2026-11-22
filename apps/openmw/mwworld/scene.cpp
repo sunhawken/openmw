@@ -111,7 +111,7 @@ namespace
     static osg::ref_ptr<SceneUtil::PositionAttitudeTransform> pagedNode = new SceneUtil::PositionAttitudeTransform;
 
     void addObject(const MWWorld::Ptr& ptr, const MWWorld::World& world, const std::vector<ESM::RefNum>& pagedRefs,
-        MWPhysics::PhysicsSystem& physics, MWRender::RenderingManager& rendering)
+        MWPhysics::PhysicsSystem& physics, MWRender::RenderingManager& rendering, bool notifyLua = true)
     {
         if (ptr.getRefData().getBaseNode() || physics.getActor(ptr))
         {
@@ -141,7 +141,8 @@ namespace
         if (!model.empty())
             ptr.getClass().insertObject(ptr, model, rotation, physics);
 
-        MWBase::Environment::get().getLuaManager()->objectAddedToScene(ptr);
+        if (notifyLua)
+            MWBase::Environment::get().getLuaManager()->objectAddedToScene(ptr);
     }
 
     void addObject(const MWWorld::Ptr& ptr, const MWWorld::World& world, const MWPhysics::PhysicsSystem& physics,
@@ -1114,12 +1115,12 @@ namespace MWWorld
         });
     }
 
-    void Scene::addObjectToScene(const Ptr& ptr)
+    void Scene::addObjectToScene(const Ptr& ptr, bool notifyLua)
     {
         const bool isInterior = mCurrentCell && !mCurrentCell->isExterior();
         try
         {
-            addObject(ptr, mWorld, mPagedRefs, *mPhysics, mRendering);
+            addObject(ptr, mWorld, mPagedRefs, *mPhysics, mRendering, notifyLua);
             addObject(ptr, mWorld, *mPhysics, mLowestPoint, isInterior, mNavigator);
             mWorld.scaleObject(ptr, ptr.getCellRef().getScale());
         }
@@ -1129,7 +1130,7 @@ namespace MWWorld
         }
     }
 
-    void Scene::removeObjectFromScene(const Ptr& ptr, bool keepActive)
+    void Scene::removeObjectFromScene(const Ptr& ptr, bool keepActive, bool notifyLua)
     {
         MWBase::Environment::get().getMechanicsManager()->remove(ptr, keepActive);
         // You'd expect the sounds attached to the object to be stopped here
@@ -1137,7 +1138,8 @@ namespace MWWorld
         // They're still stopped when the cell is unloaded
         // or if the player moves away far from the object's position.
         // Todd Howard, Who art in Bethesda, hallowed be Thy name.
-        MWBase::Environment::get().getLuaManager()->objectRemovedFromScene(ptr);
+        if (notifyLua)
+            MWBase::Environment::get().getLuaManager()->objectRemovedFromScene(ptr);
         if (const auto object = mPhysics->getObject(ptr))
         {
             if (object->getShapeInstance()->mVisualCollisionType == Resource::VisualCollisionType::None)

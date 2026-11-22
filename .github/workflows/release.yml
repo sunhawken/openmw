@@ -1,27 +1,50 @@
 name: Release
 
+# For a version tag: builds both packages and creates a draft GitHub release
+# for review, with CI/brutal/release-notes.md as its description.
+
 on:
   push:
-      tags:
-        - openmw-**
+    tags:
+      - v*
 
 jobs:
+  Linux:
+    uses: ./.github/workflows/linux.yml
+
   Windows:
     uses: ./.github/workflows/windows.yml
     with:
       image: "2022"
       build-type: Release
       package: true
-      release: true
-    secrets: inherit
-  MacOS:
-    strategy:
-      fail-fast: true
-      matrix:
-        args:
-          - image: macos-15
-          - image: macos-15-intel
-    uses: ./.github/workflows/macos.yml
-    with:
-      image: ${{ matrix.args.image }}
-      build-type: Release
+
+  Draft:
+    needs: [Linux, Windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: actions/download-artifact@v5
+      with:
+        name: brutalmorrowind-linux-${{ github.sha }}
+        path: dist
+
+    - uses: actions/download-artifact@v5
+      with:
+        name: openmw-windows-2022-${{ github.sha }}
+        path: dist
+
+    - name: Create the draft release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: >
+        gh release create "${{ github.ref_name }}"
+        dist/*.tar.gz dist/*.exe
+        --title "Brutal Morrowind ${GITHUB_REF_NAME#v}"
+        --notes-file CI/brutal/release-notes.md
+        --draft
+        --verify-tag

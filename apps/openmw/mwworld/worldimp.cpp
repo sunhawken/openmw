@@ -3,6 +3,8 @@
 #include <chrono>
 
 #include <charconv>
+#include <array>
+#include <cstdlib>
 #include <vector>
 
 #include <osg/ComputeBoundsVisitor>
@@ -82,6 +84,7 @@
 #include "../mwmechanics/spellcasting.hpp"
 #include "../mwmechanics/spellutil.hpp"
 #include "../mwmechanics/summoning.hpp"
+#include "../mwmechanics/weapontype.hpp"
 
 #include "../mwrender/animation.hpp"
 #include "../mwrender/camera.hpp"
@@ -98,6 +101,8 @@
 #include "../mwphysics/joltlayers.hpp"
 #include "../mwphysics/object.hpp"
 #include "../mwphysics/physicssystem.hpp"
+#include "../mwphysics/creaturerig.hpp"
+#include "../mwphysics/ragdoll.hpp"
 
 #include "../mwsound/constants.hpp"
 
@@ -361,6 +366,7 @@ namespace MWWorld
 
     void World::clear()
     {
+        mRagdollDroppedItems.clear();
         mWeatherManager->clear();
         mRendering->clear();
         mProjectileManager->clear();
@@ -1372,6 +1378,587 @@ namespace MWWorld
         return placed;
     }
 
+    void World::addActorExternalVelocity(const Ptr& ptr, const osg::Vec3f& delta)
+    {
+        if (ptr.getClass().isActor())
+        {
+            const auto& stats = ptr.getClass().getCreatureStats(ptr);
+            if (!stats.mBrutalClinchOpponent.isEmpty() && !stats.mBrutalClinchApplyingLossDamage)
+                return;
+        }
+        if (auto* actor = mPhysics->getActor(ptr); actor && actor->isActive() && actor->getCollisionMode())
+            actor->addExternalVelocity(delta);
+    }
+
+    void World::clearActorExternalVelocity(const Ptr& ptr)
+    {
+        if (auto* actor = mPhysics->getActor(ptr))
+            actor->clearExternalVelocity();
+    }
+
+    bool World::canStartNpcRagdoll(const Ptr& ptr)
+    {
+        if (!Settings::game().mBrutalRagdoll) return false;
+        const auto* rig = MWPhysics::findCreatureRig(ptr);
+        if ((ptr.getType() != ESM::REC_NPC_ && !rig) || ptr == getPlayerPtr() || !ptr.isInCell()
+            || !ptr.getRefData().isEnabled() || !ptr.getRefData().getBaseNode())
+            return false;
+        const auto& stats = ptr.getClass().getCreatureStats(ptr);
+        // Capture the current lethal-hit pose; do not wait for a canned death animation.
+        if (!stats.isDead())
+            return false;
+        auto* animation = getAnimation(ptr);
+        if (!animation || animation->isRagdollPose())
+            return false;
+        if (rig)
+        {
+            for (const auto& part : rig->mParts)
+                if (!animation->getBoneWorldMatrix(part.mBone))
+                    return false;
+            return true;
+        }
+        for (const auto& name : MWPhysics::Ragdoll::getRequiredBones())
+        {
+            const auto bone = animation->getBoneWorldMatrix(name);
+            if (!bone)
+                return false;
+        }
+        return true;
+    }
+
+    bool World::startNpcRagdoll(const Ptr& ptr, const osg::Vec3f& kick)
+    {
+        if (!canStartNpcRagdoll(ptr))
+            return false;
+        auto* animation = getAnimation(ptr);
+        std::map<std::string, osg::Matrixf, std::less<>> bones;
+        if (const auto* rig = MWPhysics::findCreatureRig(ptr))
+            for (const auto& part : rig->mParts)
+                bones.emplace(part.mBone, *animation->getBoneWorldMatrix(part.mBone));
+        else
+            for (const auto& name : MWPhysics::Ragdoll::getRequiredBones())
+                bones.emplace(name, *animation->getBoneWorldMatrix(name));
+        animation->beginRagdollPose();
+        try { mPhysics->createNpcRagdoll(ptr, bones, kick); }
+        catch (...) { animation->endRagdollPose(); throw; }
+        return true;
+    }
+
+    bool World::startNpcDecapitation(const Ptr& ptr, const osg::Vec3f& kick, const osg::Vec3f& cutDirection)
+    {
+        if (!Settings::game().mBrutalRagdoll || !Settings::game().mBrutalDismemberment) return false;
+        if (ptr.getType() != ESM::REC_NPC_ || ptr == getPlayerPtr() || !ptr.isInCell()
+            || !ptr.getRefData().isEnabled() || !ptr.getRefData().getBaseNode()
+            || !ptr.getClass().getCreatureStats(ptr).isDead())
+            return false;
+        auto* animation = dynamic_cast<MWRender::NpcAnimation*>(getAnimation(ptr));
+        if (!animation)
+            return false;
+        // Prepare and publish per-instance geometry within the same update action.
+        // The next cull sees either a complete intact NPC or both closed cut surfaces.
+        if (!animation->setHeadSevered(true))
+        {
+            // Unsupported cut geometry must not postpone the normal death handoff.
+            if (mPhysics->getNpcRagdollState(ptr).empty())
+                startNpcRagdoll(ptr, kick);
+            return false;
+        }
+        osg::Vec3f cutVelocity;
+        try
+        {
+            const auto existing = mPhysics->getNpcRagdollDynamics(ptr);
+            if (existing.size() > 11 && existing[11].x() != 0.f)
+                return true; // No second launch, spin, or random draw on scene retries.
+            if (mPhysics->getNpcRagdollState(ptr).empty() && !startNpcRagdoll(ptr, kick))
+            {
+                animation->setHeadSevered(false);
+                return false;
+            }
+            osg::Vec3f headAngularImpulse;
+            if (cutDirection.length2() > 1e-6f)
+            {
+                // DM Cut sets every remaining/fragment body's velocity to
+                // 250 Source units/s along damage force, replacing old linear motion.
+                // Use the guard-to-native NPC root-height scale from our importer.
+                constexpr float lengthScale = 1.84265547703229f;
+                constexpr float torqueScale = (lengthScale / .0254f) * (lengthScale / .0254f)
+                    * .017453292519943295f;
+                cutVelocity = cutDirection;
+                cutVelocity.normalize();
+                cutVelocity *= 250.f * lengthScale;
+                for (int axis = 0; axis < 3; ++axis)
+                    headAngularImpulse[axis] = Misc::Rng::deviate(0.f, 100000.f, mPrng) * torqueScale;
+            }
+            // A zero direction restores a saved cut without launching the corpse again.
+            if (!mPhysics->detachNpcRagdollHead(ptr, cutVelocity, headAngularImpulse))
+            {
+                animation->setHeadSevered(false);
+                return false;
+            }
+        }
+        catch (...)
+        {
+            animation->setHeadSevered(false);
+            throw;
+        }
+        if (cutDirection.length2() > 1e-6f)
+        {
+            // Emit only after a fresh successful geometry/physics transaction.
+            // Zero-direction save restores and already-detached retries bypass
+            // this path; neither can produce another wound burst.
+            try
+            {
+                const auto surfaces = animation->getDecapitationSurfacesForAudit();
+                if (surfaces.count("lowerCenter") && surfaces.count("lowerNormal")
+                    && surfaces.count("upperCenter") && surfaces.count("upperNormal"))
+                    mRendering->spawnBrutalDecapitation(surfaces.at("lowerCenter"), surfaces.at("lowerNormal"),
+                        surfaces.at("upperCenter"), surfaces.at("upperNormal"), cutVelocity);
+                animation->startCutBloodFlow();
+            }
+            catch (const std::exception& error)
+            {
+                // A cosmetic resource failure must never roll back an already
+                // detached physical head or restore the intact render model.
+                Log(Debug::Warning) << "Could not emit decapitation blood: " << error.what();
+            }
+        }
+        return true;
+    }
+
+    std::string World::getNpcBisectionPoseData(const Ptr& ptr) const
+    { return mPhysics->getNpcBisectionPoseData(ptr); }
+
+    bool World::startNpcBisection(const Ptr& ptr, const osg::Vec3f& kick, const osg::Vec3f& cutDirection,
+        const std::string& savedPose)
+    {
+        if (!Settings::game().mBrutalRagdoll || !Settings::game().mBrutalDismemberment) return false;
+        const bool freshCut = savedPose.empty() && cutDirection.length2() > 1e-6f;
+        const osg::Vec3f initialKick = savedPose.empty() ? kick : osg::Vec3f();
+        if (ptr.getType() != ESM::REC_NPC_ || ptr == getPlayerPtr() || !ptr.isInCell()
+            || !ptr.getRefData().isEnabled() || !ptr.getRefData().getBaseNode()
+            || !ptr.getClass().getCreatureStats(ptr).isDead()) return false;
+        auto* animation = dynamic_cast<MWRender::NpcAnimation*>(getAnimation(ptr));
+        if (!animation) return false;
+        if (!animation->setTorsoSevered(true))
+        {
+            if (mPhysics->getNpcRagdollState(ptr).empty()) startNpcRagdoll(ptr, initialKick);
+            return false;
+        }
+        osg::Vec3f velocity;
+        std::map<std::string, osg::Vec3f> surfaces;
+        try
+        {
+            surfaces = animation->getBisectionSurfacesForAudit();
+            const auto existing = mPhysics->getNpcRagdollEnhancementState(ptr);
+            if (!existing.empty() && existing.at("torsoDetached") != 0) return true;
+            if (mPhysics->getNpcRagdollState(ptr).empty() && !startNpcRagdoll(ptr, initialKick))
+            { animation->setTorsoSevered(false); return false; }
+            osg::Vec3f separation;
+            if (freshCut)
+            {
+                velocity = cutDirection;
+                velocity.normalize();
+                velocity *= 250.f * 1.84265547703229f;
+                if (surfaces.count("lowerNormal")) separation = surfaces.at("lowerNormal") * 90.f;
+            }
+            if (!mPhysics->detachNpcRagdollTorso(ptr, velocity, separation, savedPose))
+            { animation->setTorsoSevered(false); return false; }
+        }
+        catch (...)
+        {
+            const auto physical = mPhysics->getNpcRagdollEnhancementState(ptr);
+            if (physical.empty() || physical.at("torsoDetached") == 0) animation->setTorsoSevered(false);
+            throw;
+        }
+        if (freshCut)
+            try
+            {
+                if (surfaces.count("lowerCenter") && surfaces.count("lowerNormal")
+                    && surfaces.count("upperCenter") && surfaces.count("upperNormal"))
+                    mRendering->spawnBrutalDecapitation(surfaces.at("lowerCenter"), surfaces.at("lowerNormal"),
+                        surfaces.at("upperCenter"), surfaces.at("upperNormal"), velocity);
+                animation->startBisectionBloodFlow();
+            }
+            catch (const std::exception& error)
+            { Log(Debug::Warning) << "Could not emit bisection blood: " << error.what(); }
+        return true;
+    }
+
+    std::string World::getNpcLimbSeveringPoseData(const Ptr& ptr) const
+    { return mPhysics->getNpcLimbSeveringPoseData(ptr); }
+
+    unsigned World::getNpcSeveredLimbsMask(const Ptr& ptr) const
+    { return mPhysics->getNpcSeveredLimbsMask(ptr); }
+
+    bool World::startNpcLimbSevering(const Ptr& ptr, unsigned mask, const osg::Vec3f& kick,
+        const osg::Vec3f& cutDirection, const std::string& savedPose)
+    {
+        if (!Settings::game().mBrutalRagdoll || !Settings::game().mBrutalDismemberment) return false;
+        if (!mask || (mask & ~15u) || ptr.getType() != ESM::REC_NPC_ || ptr == getPlayerPtr()
+            || !ptr.isInCell() || !ptr.getRefData().isEnabled() || !ptr.getRefData().getBaseNode()
+            || !ptr.getClass().getCreatureStats(ptr).isDead()) return false;
+        auto* animation = dynamic_cast<MWRender::NpcAnimation*>(getAnimation(ptr));
+        if (!animation) return false;
+        const unsigned physicalMask = mPhysics->getNpcSeveredLimbsMask(ptr);
+        if (physicalMask == mask) return animation->setLimbsSevered(mask);
+        if (physicalMask != 0) return false;
+        const unsigned previousMask = animation->getSeveredLimbsMask();
+        const bool fresh = savedPose.empty() && cutDirection.length2() > 1e-6f;
+        const osg::Vec3f initialKick = savedPose.empty() ? kick : osg::Vec3f();
+        if (!animation->setLimbsSevered(mask))
+        {
+            if (mPhysics->getNpcRagdollState(ptr).empty()) startNpcRagdoll(ptr, initialKick);
+            return false;
+        }
+        osg::Vec3f velocity;
+        try
+        {
+            if (mPhysics->getNpcRagdollState(ptr).empty() && !startNpcRagdoll(ptr, initialKick))
+            { animation->setLimbsSevered(previousMask); return false; }
+            if (fresh)
+            {
+                velocity = cutDirection;
+                velocity.normalize();
+                velocity *= 40.f;
+            }
+            if (!mPhysics->detachNpcRagdollLimbs(ptr, mask, velocity, savedPose))
+            { animation->setLimbsSevered(previousMask); return false; }
+        }
+        catch (...)
+        {
+            if (mPhysics->getNpcSeveredLimbsMask(ptr) != mask) animation->setLimbsSevered(previousMask);
+            throw;
+        }
+        if (fresh)
+            try
+            {
+                const auto surfaces = animation->getLimbSeveringSurfacesForAudit();
+                for (const auto& [bit, prefix] : std::array<std::pair<unsigned, std::string>, 4>{{
+                    {1u,"leftLeg"}, {2u,"rightLeg"}, {4u,"leftArm"}, {8u,"rightArm"}}})
+                {
+                    if (!(mask & bit)) continue;
+                    if (surfaces.count(prefix+"StumpCenter") && surfaces.count(prefix+"StumpNormal")
+                        && surfaces.count(prefix+"FragmentCenter") && surfaces.count(prefix+"FragmentNormal"))
+                        mRendering->spawnBrutalDecapitation(surfaces.at(prefix+"StumpCenter"),
+                            surfaces.at(prefix+"StumpNormal"), surfaces.at(prefix+"FragmentCenter"),
+                            surfaces.at(prefix+"FragmentNormal"), velocity);
+                }
+                animation->startLimbSeveringBloodFlow();
+            }
+            catch (const std::exception& error)
+            { Log(Debug::Warning) << "Could not emit severed-limb blood: " << error.what(); }
+        return true;
+    }
+
+    bool World::applyNpcKick(const Ptr& ptr, const osg::Vec3f& kick, const Ptr& attacker, bool knockDown, bool slideTrip)
+    {
+        if (!ptr.isEmpty() && ptr.getClass().isActor()
+            && !ptr.getClass().getCreatureStats(ptr).mBrutalClinchOpponent.isEmpty())
+            return false;
+        return mPhysics->applyNpcKick(ptr,kick,attacker,false,knockDown,slideTrip);
+    }
+    bool World::applyNpcSuperKick(const Ptr& ptr, const osg::Vec3f& kick, const Ptr& attacker, std::uint64_t kickId)
+    {
+        if (!ptr.isEmpty() && ptr.getClass().isActor()
+            && !ptr.getClass().getCreatureStats(ptr).mBrutalClinchOpponent.isEmpty())
+            return false;
+        return mPhysics->applyNpcSuperKick(ptr,kick,attacker,kickId);
+    }
+    std::map<std::string, double> World::getNpcSuperKickState(const Ptr& ptr) const
+    { return mPhysics->getNpcSuperKickState(ptr); }
+    std::vector<osg::Vec3f> World::getNpcRagdollDynamics(const Ptr& ptr) const
+    { return mPhysics->getNpcRagdollDynamics(ptr); }
+
+    std::vector<osg::Vec3f> World::getNpcRagdollState(const Ptr& ptr) const
+    {
+        return mPhysics->getNpcRagdollState(ptr);
+    }
+
+    std::map<std::string, double> World::getNpcRagdollEnhancementState(const Ptr& ptr) const
+    { return mPhysics->getNpcRagdollEnhancementState(ptr); }
+
+    void World::releaseNpcRagdollEquipment(const Ptr& ptr)
+    {
+        if (!Settings::game().mBrutalEquipmentPhysics) return;
+        if (ptr == getPlayerPtr() || !ptr.getClass().isNpc())
+            return;
+        const auto* animation = dynamic_cast<const MWRender::NpcAnimation*>(getAnimation(ptr));
+        if (!animation || !animation->isRagdollPose())
+            return;
+        auto& inventory = ptr.getClass().getInventoryStore(ptr);
+        struct Candidate
+        {
+            Ptr item;
+            int slot;
+            int releaseCount;
+            ESM::Position position;
+            osg::Vec3f linear, angular;
+            float error = 0.f;
+            bool bound = false;
+            ESM::RefNum sourceObjectId;
+            std::shared_ptr<const ESM::ReleasedEquipmentState> snapshot;
+        };
+        std::vector<Candidate> candidates;
+        // Snapshot both attachments before either inventory notification rebuilds
+        // the actor's equipment nodes. One actual staff never becomes two items.
+        for (const int slot : { InventoryStore::Slot_CarriedRight, InventoryStore::Slot_CarriedLeft,
+                 InventoryStore::Slot_Ammunition })
+        {
+            const auto equipped = inventory.getSlot(slot);
+            if (equipped == inventory.end())
+                continue;
+            const Ptr item = *equipped;
+            if (std::any_of(candidates.begin(), candidates.end(), [&](const auto& candidate) { return candidate.item == item; }))
+                continue;
+            if (item.getType() == ESM::Weapon::sRecordId)
+            {
+                const auto* type = MWMechanics::getWeaponType(item.get<ESM::Weapon>()->mBase->mData.mType);
+                if (type->mWeaponClass == ESM::WeaponType::Ammo && slot != InventoryStore::Slot_Ammunition)
+                    continue; // Quiver/loaded ammunition is not part of the released weapon's permanent model.
+            }
+            else if (item.getType() != ESM::Armor::sRecordId
+                || item.get<ESM::Armor>()->mBase->mData.mType != ESM::Armor::Shield)
+                continue;
+            try
+            {
+                Candidate candidate;
+                candidate.item = item;
+                candidate.slot = slot;
+                // The equipped throwing-weapon stack is one real held item
+                // reference. Loaded ammunition releases only its visible unit.
+                candidate.releaseCount = slot == InventoryStore::Slot_Ammunition
+                    ? 1 : item.getCellRef().getCount();
+                candidate.sourceObjectId = item.getCellRef().getRefNum();
+                osg::Matrixf frame;
+                if (!mPhysics->getRagdollEquipmentFrame(ptr, animation->getReleasedEquipmentOwnerIsLeft(slot),
+                        frame, candidate.linear, candidate.angular))
+                    continue;
+                const auto angles = Misc::toEulerAnglesZYX(frame);
+                const auto origin = frame.getTrans();
+                for (int axis = 0; axis < 3; ++axis)
+                {
+                    candidate.position.pos[axis] = origin[axis];
+                    candidate.position.rot[axis] = angles[axis];
+                }
+                // Use the exact representable engine root from the outset. Race
+                // scale, attachment offsets, mirror and skinning stay in arrays.
+                const float scale = item.getCellRef().getScale();
+                const auto itemRoot = osg::Matrixf::scale(scale, scale, scale)
+                    * osg::Matrixf::rotate(Misc::Convert::makeOsgQuat(candidate.position))
+                    * osg::Matrixf::translate(origin);
+                // Inventory weight is a gameplay encumbrance value, not the
+                // anatomical body's native mass. Use a local modest proxy mass.
+                const float mass = std::clamp(item.getClass().getWeight(item) * .1f, .05f, 20.f);
+                candidate.snapshot = animation->captureReleasedEquipment(slot, itemRoot, mass, candidate.error);
+                if (!candidate.snapshot)
+                    continue; // Only currently visible carried attachments are released.
+                candidate.bound = MWBase::Environment::get().getMechanicsManager()->isBoundItem(item);
+                candidates.push_back(std::move(candidate));
+            }
+            catch (const std::exception& error)
+            {
+                Log(Debug::Warning) << "Ragdoll equipment release rejected for " << item.getCellRef().getRefId()
+                    << ": " << error.what();
+            }
+        }
+        for (const auto& candidate : candidates)
+        {
+            Ptr dropped;
+            bool committed = false;
+            bool published = false;
+            std::optional<RefData> sourceBackup;
+            const bool moveIdentity = !candidate.bound
+                && candidate.releaseCount == candidate.item.getCellRef().getCount();
+            const auto publish = [&] {
+                if (dropped.isEmpty() || published)
+                    return;
+                // No active/inactive event or script auto-start is emitted
+                // while the original inventory/equipment still owns this ID.
+                published = true;
+                if (moveIdentity)
+                    mLocalScripts.remove(candidate.item);
+                MWBase::Environment::get().getLuaManager()->objectAddedToScene(dropped);
+                const auto& script = dropped.getClass().getScript(dropped);
+                if (!script.empty())
+                    mLocalScripts.add(script, dropped);
+                addContainerScripts(dropped, dropped.getCell());
+            };
+            try
+            {
+                if (!candidate.bound)
+                {
+                    CellStore* cell = ptr.getCell();
+                    if (cell->isExterior())
+                        cell = &mWorldModel.getExterior(ESM::positionToExteriorCellLocation(candidate.position.pos[0],
+                            candidate.position.pos[1], cell->getCell()->getWorldSpace()));
+                    // Match native full-stack GUI drops: a complete held stack
+                    // keeps its RefNum and LocalScripts. Loaded ammunition may
+                    // copy one unit. Defer script scene publication until commit.
+                    if (moveIdentity)
+                    {
+                        // RefData's copy constructor clears activation flags;
+                        // assignment preserves the complete rollback state.
+                        sourceBackup.emplace();
+                        *sourceBackup = candidate.item.getRefData();
+                        dropped = candidate.item.getClass().moveToCell(candidate.item, *cell, candidate.position);
+                    }
+                    else
+                        dropped = candidate.item.getClass().copyToCell(
+                            candidate.item, *cell, candidate.position, candidate.releaseCount);
+                    if (dropped.getCellRef().getCharge() != candidate.item.getCellRef().getCharge()
+                        || dropped.getCellRef().getEnchantmentCharge() != candidate.item.getCellRef().getEnchantmentCharge()
+                        || dropped.getCellRef().getOwner() != candidate.item.getCellRef().getOwner()
+                        || dropped.getCellRef().getSoul() != candidate.item.getCellRef().getSoul())
+                        throw std::runtime_error("Released equipment instance data changed during copy");
+                    dropped.getRefData().setReleasedEquipment(candidate.snapshot);
+                    initObjectInCell(dropped, *cell, false, false);
+                    if (!dropped.getRefData().getBaseNode() || !getAnimation(dropped)
+                        || mPhysics->getReleasedEquipmentState(dropped).size() < 4)
+                        throw std::runtime_error("Released equipment scene/physics preparation failed");
+                    mPhysics->initializeReleasedEquipment(dropped, ptr, candidate.linear, candidate.angular);
+                    // Test hook: exercise rollback only
+                    // after rendering, body creation and grip motion all exist.
+                    if (const char* failure = std::getenv("OPENMW_RAGDOLL_RELEASE_TEST_FAIL");
+                        failure && std::string_view(failure) == "prepared")
+                        throw std::runtime_error("Injected released equipment preparation failure");
+                }
+                // Bound objects dissipate instead of becoming permanent loot:
+                // native bound expiry only searches the original inventory.
+                const int before = candidate.item.getCellRef().getCount();
+                try
+                {
+                    inventory.remove(candidate.item, candidate.releaseCount, false);
+                }
+                catch (...)
+                {
+                    // Listener failures can occur after ContainerStore changed
+                    // the count. Keep the successfully transferred real item.
+                    committed = candidate.item.getCellRef().getCount() < before;
+                    throw;
+                }
+                committed = true;
+                publish();
+                if (!dropped.isEmpty())
+                {
+                    const auto dynamics = mPhysics->getReleasedEquipmentState(dropped);
+                    auto& entries = mRagdollDroppedItems[ptr.getCellRef().getRefNum()];
+                    entries.push_back({ SafePtr(dropped), candidate.item.getCellRef().getRefId(), candidate.slot,
+                        dynamics[1], dynamics[2], candidate.error,
+                        float(candidate.item.getCellRef().getCharge()), float(dropped.getCellRef().getCharge()),
+                        candidate.item.getCellRef().getEnchantmentCharge(), dropped.getCellRef().getEnchantmentCharge(), true,
+                        candidate.sourceObjectId });
+                    if (entries.size() > 12)
+                        entries.erase(entries.begin(), entries.begin() + (entries.size() - 12));
+                    // Diagnostics do not retain an unbounded history of actors.
+                    if (mRagdollDroppedItems.size() > 1024)
+                        mRagdollDroppedItems.erase(mRagdollDroppedItems.begin());
+                }
+            }
+            catch (const std::exception& error)
+            {
+                if (committed)
+                {
+                    // A post-removal listener failure must still publish the
+                    // transferred real item with its original script identity.
+                    try { publish(); }
+                    catch (const std::exception& publicationError)
+                    {
+                        Log(Debug::Warning) << "Released equipment script publication failed: " << publicationError.what();
+                    }
+                }
+                else
+                {
+                    if (!dropped.isEmpty())
+                    {
+                        const osg::ref_ptr<SceneUtil::PositionAttitudeTransform> preparedRoot = dropped.getRefData().getBaseNode();
+                        // Never call ordinary deleteObject here: this object
+                        // was not published to Lua and must emit no OnInactive.
+                        if (preparedRoot || mPhysics->getObject(dropped))
+                            mWorldScene->removeObjectFromScene(dropped, false, false);
+                        // A renderer constructor may fail before registering
+                        // its animation, leaving only the temporary root node.
+                        if (preparedRoot)
+                            while (preparedRoot->getNumParents())
+                                preparedRoot->getParent(0)->removeChild(preparedRoot);
+                        dropped.getCellRef().setCount(0);
+                        dropped.getRefData().setLuaScripts(nullptr);
+                        // Replace the existing same-ID registry entry before
+                        // removing the failed reference; rollback need not
+                        // allocate a new registry node after scene failure.
+                        if (sourceBackup)
+                        {
+                            candidate.item.getRefData() = std::move(*sourceBackup);
+                            mWorldModel.registerPtr(candidate.item);
+                            sourceBackup.reset();
+                        }
+                        mWorldModel.deregisterLiveCellRef(*dropped.mRef);
+                        dropped.getCellRef().unsetRefNum();
+                    }
+                    if (sourceBackup)
+                    {
+                        candidate.item.getRefData() = std::move(*sourceBackup);
+                        mWorldModel.registerPtr(candidate.item);
+                    }
+                }
+                Log(Debug::Warning) << "Ragdoll equipment release failed for " << candidate.item.getCellRef().getRefId()
+                    << ": " << error.what();
+            }
+        }
+    }
+
+    std::vector<RagdollDroppedItem> World::getNpcRagdollDroppedItems(const Ptr& ptr) const
+    {
+        const auto found = mRagdollDroppedItems.find(ptr.getCellRef().getRefNum());
+        return found == mRagdollDroppedItems.end() ? std::vector<RagdollDroppedItem>() : found->second;
+    }
+
+    std::vector<osg::Vec3f> World::getReleasedEquipmentState(const Ptr& ptr) const
+    {
+        return mPhysics->getReleasedEquipmentState(ptr);
+    }
+
+    bool World::applyNpcRagdollImpact(const Ptr& ptr, std::size_t part, const osg::Vec3f& point,
+        const osg::Vec3f& impulse, std::uint64_t id)
+    { return mPhysics->applyNpcRagdollImpact(ptr, part, point, impulse, id); }
+
+    Ptr World::kickNpcRagdoll(const osg::Vec3f& origin, const osg::Vec3f& forward, float reach, float minimumDot,
+        const osg::Vec3f& velocity, bool& headHit, osg::Vec3f& hitPoint, std::size_t& hitPart)
+    {
+        return mPhysics->kickNpcRagdoll(origin, forward, reach, minimumDot, velocity, headHit, hitPoint, hitPart);
+    }
+
+    void World::applyObjectImpulse(const Ptr& ptr, const osg::Vec3f& impulse, float mass)
+    {
+        if (!ptr.isInCell() || !ptr.getRefData().getBaseNode() || !ptr.getRefData().isEnabled())
+            throw std::runtime_error("Dynamic prop must be enabled in an active scene");
+        mPhysics->applyObjectImpulse(ptr, impulse, mass);
+    }
+
+    void World::syncDynamicObject(const Ptr& ptr, const osg::Vec3f& position, const osg::Quat& rotation,
+        const osg::Vec3f& renderedPosition, const osg::Quat& renderedRotation, bool authoritativeChanged)
+    {
+        Ptr updated = ptr;
+        if (authoritativeChanged)
+        {
+            // World/cell/save state always follows the actual completed body.
+            updated = moveObject(ptr, position, false, false);
+            ESM::Position pose = updated.getRefData().getPosition();
+            const osg::Vec3f angles = Misc::toEulerAnglesZYX(rotation);
+            for (int axis = 0; axis < 3; ++axis)
+                pose.rot[axis] = angles[axis];
+            updated.getRefData().setPosition(pose);
+        }
+        if (!updated.getRefData().getBaseNode())
+            return;
+        // Interpolate only the visible root, including frames with no new
+        // physics step. Never feed this transform into RefData or Bullet.
+        mRendering->moveObject(updated, renderedPosition);
+        mRendering->rotateObject(updated, renderedRotation);
+        if (authoritativeChanged)
+            if (const auto* object = mPhysics->getObject(updated))
+                updateNavigatorObject(*object);
+    }
+
     void World::queueMovement(const Ptr& ptr, const osg::Vec3f& velocity)
     {
         mPhysics->queueObjectMovement(ptr, velocity);
@@ -1387,6 +1974,7 @@ namespace MWWorld
         mPhysics->moveActors();
         mPhysics->moveDynamicObjects();
         mPhysics->updateRagdolls();
+        mPhysics->moveNpcRagdolls(duration);
     }
 
     void World::updateNavigator()
@@ -1609,6 +2197,25 @@ namespace MWWorld
         mPhysics->debugDraw();
     }
 
+    void World::sampleNpcRagdollAnimation(float duration)
+    {
+        mPhysics->sampleNpcRagdollAnimation(mTimeManager->isPaused() ? 0.f : duration);
+    }
+
+    void World::samplePlayerSwordWallContact(float duration, const osg::FrameStamp& frameStamp)
+    {
+        // The camera callback runs after the scene's UPDATE callbacks: both the evaluated
+        // weapon and the final camera/FOV must be ready before testing visible contact.
+        auto* animation = dynamic_cast<MWRender::NpcAnimation*>(getAnimation(mPlayer->getPlayer()));
+        if (!animation || !animation->sampleSwordWallContact(mTimeManager->isPaused() ? 0.f : duration, frameStamp))
+            return;
+        const auto& contact = animation->getSwordWallContactForAudit();
+        spawnBrutalImpact("wall_sparks", contact.position + contact.normal * .6f, contact.normal, 1.5f, false);
+        const bool soundPlayed = MWBase::Environment::get().getSoundManager()->playSound3D(
+            contact.position, ESM::RefId::stringRefId("Brutal Sword Stone"), 1.f, 1.f) != nullptr;
+        animation->recordSwordWallSound(soundPlayed);
+    }
+
     void World::updatePhysics(
         float duration, bool paused, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
     {
@@ -1743,17 +2350,24 @@ namespace MWWorld
     }
 
     bool World::castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
-        bool ignorePlayer, bool ignoreActors, std::span<const MWWorld::Ptr> ignoreList)
+        bool ignorePlayer, bool ignoreActors, std::span<const MWWorld::Ptr> ignoreList, bool melee)
     {
         MWRender::RenderingManager::RayResult rayRes
-            = mRendering->castRay(from, to, ignorePlayer, ignoreActors, ignoreList);
+            = mRendering->castRay(from, to, ignorePlayer, ignoreActors, ignoreList, melee);
         res.mHit = rayRes.mHit;
         res.mHitPos = rayRes.mHitPointWorld;
         res.mHitNormal = rayRes.mHitNormalWorld;
         res.mHitObject = rayRes.mHitObject;
+        res.mHitPart = rayRes.mHitPart;
         if (res.mHitObject.isEmpty() && rayRes.mHitRefnum.isSet())
             res.mHitObject = MWBase::Environment::get().getWorldModel()->getPtr(rayRes.mHitRefnum);
         return res.mHit;
+    }
+
+    std::vector<float> World::findRenderingSegmentCandidates(
+        std::span<const std::pair<osg::Vec3f, osg::Vec3f>> segments, std::span<const unsigned> buckets)
+    {
+        return mRendering->findSegmentCandidates(segments, buckets);
     }
 
     bool World::isCellExterior() const
@@ -1992,20 +2606,21 @@ namespace MWWorld
         return dropped;
     }
 
-    void World::initObjectInCell(const Ptr& object, CellStore& cell, bool adjustPos)
+    void World::initObjectInCell(const Ptr& object, CellStore& cell, bool adjustPos, bool notifyScripts)
     {
         if (mWorldScene->isCellActive(cell))
         {
             if (object.getRefData().isEnabled())
             {
-                mWorldScene->addObjectToScene(object);
+                mWorldScene->addObjectToScene(object, notifyScripts);
             }
-            const auto& script = object.getClass().getScript(object);
-            if (!script.empty())
+            if (notifyScripts)
             {
-                mLocalScripts.add(script, object);
+                const auto& script = object.getClass().getScript(object);
+                if (!script.empty())
+                    mLocalScripts.add(script, object);
+                addContainerScripts(object, &cell);
             }
-            addContainerScripts(object, &cell);
         }
 
         if (!object.getClass().isActor() && adjustPos && object.getRefData().getBaseNode())
@@ -2562,6 +3177,8 @@ namespace MWWorld
 
     void World::enableActorCollision(const MWWorld::Ptr& actor, bool enable)
     {
+        if (enable)
+            mPhysics->stopNpcRagdoll(actor);
         MWPhysics::Actor* physicActor = mPhysics->getActor(actor);
         if (physicActor)
             physicActor->enableCollisionBody(enable);
@@ -3731,6 +4348,17 @@ namespace MWWorld
         std::string_view effectId, bool loop)
     {
         mRendering->spawnEffect(model, textureOverride, worldPos, scale, isMagicVFX, useAmbientLight, effectId, loop);
+    }
+
+    void World::spawnBrutalImpact(std::string_view kind, const osg::Vec3f& position,
+        const osg::Vec3f& direction, float intensity, bool power)
+    {
+        mRendering->spawnBrutalImpact(kind, position, direction, intensity, power);
+    }
+
+    std::map<std::string, double> World::getBrutalImpactStats() const
+    {
+        return mRendering->getBrutalImpactStats();
     }
 
     void World::removeEffect(std::string_view effectId)

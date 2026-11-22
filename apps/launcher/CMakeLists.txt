@@ -6,6 +6,7 @@ set(LAUNCHER
     maindialog.cpp
     textslotmsgbox.cpp
     importpage.cpp
+    darkmessiahpage.cpp
     settingspage.cpp
 
     utils/cellnameloader.cpp
@@ -24,6 +25,7 @@ set(LAUNCHER_HEADER
     maindialog.hpp
     textslotmsgbox.hpp
     importpage.hpp
+    darkmessiahpage.hpp
     settingspage.hpp
 
     utils/cellnameloader.hpp
@@ -98,3 +100,5 @@ if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
         <vector>
     )
 endif()
+
+set_target_properties(openmw-launcher PROPERTIES OUTPUT_NAME brutalmorrowind-launcher)

@@ -2024,7 +2024,10 @@ void Optimizer::MergeGroupsVisitor::apply(osg::Group &group)
         traverse(group);
     else
     {
-        typedef std::map<osg::StateSet*, std::set<osg::Group*> > GroupMap;
+        // Preserve source sibling order within a material group. Pointer order
+        // changes with allocation/cache history and would select a different
+        // surviving NIF record and vertex concatenation after a reload.
+        typedef std::map<osg::StateSet*, std::vector<osg::Group*> > GroupMap;
         GroupMap childGroups;
         for (unsigned int i=0; i<group.getNumChildren(); ++i)
         {
@@ -2032,19 +2035,21 @@ void Optimizer::MergeGroupsVisitor::apply(osg::Group &group)
             osg::Group* childGroup = child->asGroup();
             if (childGroup && isOperationPermissible(*childGroup))
             {
-                childGroups[childGroup->getStateSet()].insert(childGroup);
+                auto& children = childGroups[childGroup->getStateSet()];
+                if (std::find(children.begin(), children.end(), childGroup) == children.end())
+                    children.push_back(childGroup);
             }
         }
 
         for (GroupMap::iterator it = childGroups.begin(); it != childGroups.end(); ++it)
         {
-            const std::set<osg::Group*>& groupSet = it->second;
-            if (groupSet.size() <= 1)
+            const std::vector<osg::Group*>& groupList = it->second;
+            if (groupList.size() <= 1)
                 continue;
             else
             {
-                osg::Group* first = *groupSet.begin();
-                for (std::set<osg::Group*>::const_iterator groupIt = ++groupSet.begin(); groupIt != groupSet.end(); ++groupIt)
+                osg::Group* first = groupList.front();
+                for (auto groupIt = groupList.begin() + 1; groupIt != groupList.end(); ++groupIt)
                 {
                     osg::Group* toMerge = *groupIt;
                     for (unsigned int i=0; i<toMerge->getNumChildren(); ++i)

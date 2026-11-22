@@ -1,0 +1,22 @@
+{
+  "Bip01 Pelvis": "SK_Root",
+  "Bip01 Spine": "SK_Spine_1",
+  "Bip01 Spine1": "SK_Spine_2",
+  "Bip01 Spine2": "SK_Spine_4",
+  "Bip01 Neck": "SK_Neck",
+  "Bip01 Head": "SK_Head",
+  "Bip01 L Clavicle": "SK_L_Collarbone",
+  "Bip01 L UpperArm": "SK_L_Shoulder",
+  "Bip01 L Forearm": "SK_L_Elbow",
+  "Bip01 L Hand": "SK_L_Hand",
+  "Bip01 R Clavicle": "SK_R_Collarbone",
+  "Bip01 R UpperArm": "SK_R_Shoulder",
+  "Bip01 R Forearm": "SK_R_Elbow",
+  "Bip01 R Hand": "SK_R_Hand",
+  "Bip01 L Thigh": "SK_L_Leg",
+  "Bip01 L Calf": "SK_L_Knee",
+  "Bip01 L Foot": "SK_L_Ankle",
+  "Bip01 R Thigh": "SK_R_Leg",
+  "Bip01 R Calf": "SK_R_Knee",
+  "Bip01 R Foot": "SK_R_Ankle"
+}

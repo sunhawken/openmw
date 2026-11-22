@@ -12,10 +12,21 @@
 #include <components/files/conversion.hpp>
 #include <components/sdlutil/events.hpp>
 #include <components/sdlutil/sdlmappings.hpp>
+#include <components/settings/values.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/inputmanager.hpp"
+#include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
+#include "../mwbase/world.hpp"
+#include "../mwmechanics/brutaloptions.hpp"
+#include "../mwmechanics/creaturestats.hpp"
+#include "../mwmechanics/drawstate.hpp"
+#include "../mwmechanics/weapontype.hpp"
+#include "../mwworld/class.hpp"
+#include "../mwworld/inventorystore.hpp"
+#include <components/esm3/loadarmo.hpp>
+#include <components/esm3/loadweap.hpp>
 
 #include "actions.hpp"
 
@@ -254,7 +265,7 @@ namespace MWInput
         std::map<int, SDL_Scancode> defaultKeyBindings;
 
         // Gets the Keyvalue from the Scancode; gives the button in the same place reguardless of keyboard format
-        defaultKeyBindings[A_Activate] = SDL_SCANCODE_SPACE;
+        defaultKeyBindings[A_Activate] = SDL_SCANCODE_E;
         defaultKeyBindings[A_MoveBackward] = SDL_SCANCODE_S;
         defaultKeyBindings[A_MoveForward] = SDL_SCANCODE_W;
         defaultKeyBindings[A_MoveLeft] = SDL_SCANCODE_A;
@@ -269,13 +280,13 @@ namespace MWInput
         defaultKeyBindings[A_QuickKeysMenu] = SDL_SCANCODE_F1;
         defaultKeyBindings[A_Console] = SDL_SCANCODE_GRAVE;
         defaultKeyBindings[A_Run] = SDL_SCANCODE_LSHIFT;
-        defaultKeyBindings[A_Sneak] = SDL_SCANCODE_LCTRL;
+        defaultKeyBindings[A_Sneak] = SDL_SCANCODE_C;
         defaultKeyBindings[A_AutoMove] = SDL_SCANCODE_Q;
-        defaultKeyBindings[A_Jump] = SDL_SCANCODE_E;
+        defaultKeyBindings[A_Jump] = SDL_SCANCODE_SPACE;
         defaultKeyBindings[A_Journal] = SDL_SCANCODE_J;
         defaultKeyBindings[A_Rest] = SDL_SCANCODE_T;
         defaultKeyBindings[A_GameMenu] = SDL_SCANCODE_ESCAPE;
-        defaultKeyBindings[A_TogglePOV] = SDL_SCANCODE_TAB;
+        defaultKeyBindings[A_Inventory] = SDL_SCANCODE_TAB;
         defaultKeyBindings[A_QuickKey1] = SDL_SCANCODE_1;
         defaultKeyBindings[A_QuickKey2] = SDL_SCANCODE_2;
         defaultKeyBindings[A_QuickKey3] = SDL_SCANCODE_3;
@@ -295,7 +306,7 @@ namespace MWInput
         defaultKeyBindings[A_TogglePostProcessorHUD] = SDL_SCANCODE_F2;
 
         std::map<int, int> defaultMouseButtonBindings;
-        defaultMouseButtonBindings[A_Inventory] = SDL_BUTTON_RIGHT;
+        defaultMouseButtonBindings[A_TogglePOV] = SDL_BUTTON_MIDDLE;
         defaultMouseButtonBindings[A_Use] = SDL_BUTTON_LEFT;
 
         std::map<int, ICS::InputControlSystem::MouseWheelClick> defaultMouseWheelBindings;
@@ -617,6 +628,34 @@ namespace MWInput
 
     void BindingsManager::mousePressed(const SDL_MouseButtonEvent& arg, Uint8 deviceID)
     {
+        // A standalone held guard must coexist with the original RMB inventory
+        // binding. Consume only that physical button in an eligible armed stance;
+        // raw SDL button state still reaches Lua, and no user binding is rewritten.
+        if (arg.button == SDL_BUTTON_RIGHT && !isDetectingBindingState()
+            && Settings::game().mBrutalEnabled && !MWBase::Environment::get().getWindowManager()->isGuiMode()
+            && mInputBinder->getMouseButtonBinding(mInputBinder->getControl(A_Inventory), ICS::Control::INCREASE)
+                == SDL_BUTTON_RIGHT)
+        {
+            const auto player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+            if (!player.isEmpty() && player.getClass().hasInventoryStore(player))
+            {
+                const auto& stats = player.getClass().getCreatureStats(player);
+                const auto& inventory = player.getClass().getInventoryStore(player);
+                const auto right = inventory.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
+                const auto left = inventory.getSlot(MWWorld::InventoryStore::Slot_CarriedLeft);
+                const int type = right != inventory.end() && right->getType() == ESM::Weapon::sRecordId
+                    ? right->get<ESM::Weapon>()->mBase->mData.mType : ESM::Weapon::None;
+                const bool shield = left != inventory.end() && left->getType() == ESM::Armor::sRecordId
+                    && !(MWMechanics::getWeaponType(type)->mFlags & ESM::WeaponType::TwoHanded);
+                const bool parryWeapon = type == ESM::Weapon::ShortBladeOneHand || type == ESM::Weapon::LongBladeOneHand
+                    || type == ESM::Weapon::BluntOneHand || type == ESM::Weapon::AxeOneHand
+                    || (MWMechanics::brutalStaffWeapon(type) && MWMechanics::brutalDmFirstPerson());
+                if (stats.getDrawState() == MWMechanics::DrawState::Weapon && !stats.isDead() && !stats.isParalyzed()
+                    && ((shield && Settings::game().mPlayerActiveShieldBlock)
+                        || (!shield && parryWeapon && Settings::game().mDarkMessiahSwordParry)))
+                    return;
+            }
+        }
         mInputBinder->mousePressed(arg, deviceID);
     }
 
@@ -705,6 +744,12 @@ namespace MWInput
         }
 
         // Detect press (value goes above threshold)
+        // Count transitions of the actual rebound attack control. Holding a button,
+        // keyboard autorepeat, and per-frame Lua use values cannot add clicks.
+        if (action == A_Use && (currentValue > 0.6f) != (previousValue > 0.6f))
+            if (auto mechanics = MWBase::Environment::get().getMechanicsManager())
+                mechanics->swordClinchInput(currentValue > 0.6f);
+
         if (previousValue <= 0.6 && currentValue > 0.6)
             manager->executeAction(action);
         // Detect release (value goes below threshold)

@@ -18,13 +18,27 @@
 #include "../mwworld/class.hpp"
 
 #include "joltlayers.hpp"
+#include "joltfilters.hpp"
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include "mtphysics.hpp"
+#include "playerkinetics.hpp"
 #include "trace.h"
 
 #include <cmath>
 
 namespace MWPhysics
 {
+    namespace
+    {
+        class StandingClearanceCallback final : public JPH::CollideShapeCollector
+        {
+        public:
+            bool mBlocked = false;
+            void AddHit(const JPH::CollideShapeResult& hit) override
+            { if (hit.mPenetrationDepth > .01f) { mBlocked = true; ForceEarlyOut(); } }
+        };
+    }
 
     Actor::Actor(const MWWorld::Ptr& ptr, const Resource::PhysicsShape* shape, PhysicsTaskScheduler* scheduler,
         bool canWaterWalk, DetourNavigator::CollisionShapeType collisionShapeType)
@@ -152,7 +166,7 @@ namespace MWPhysics
         {
             // Clear UserData before destroying to prevent dangling pointer access
             mPhysicsBody->SetUserData(0);
-            mTaskScheduler->removeCollisionObject(mPhysicsBody);
+            if (!mRagdoll) mTaskScheduler->removeCollisionObject(mPhysicsBody);
             mTaskScheduler->destroyCollisionObject(mPhysicsBody);
         }
     }
@@ -179,6 +193,7 @@ namespace MWPhysics
     JPH::ObjectLayer Actor::getCollisionMask() const
     {
         std::scoped_lock lock(mMutex);
+        if (mRagdoll) return 0;
         JPH::ObjectLayer collisionMask = Layers::WORLD | Layers::HEIGHTMAP | Layers::DYNAMIC_WORLD;
         if (mExternalCollisionMode)
             collisionMask |= Layers::ACTOR | Layers::PROJECTILE | Layers::DOOR;
@@ -194,20 +209,66 @@ namespace MWPhysics
         mPreviousPosition = worldPosition;
         mPosition = worldPosition;
         mSimulationPosition = worldPosition;
+        // A scripted relocation is not a measured movement for ragdoll inheritance.
+        mSimulationVelocity = osg::Vec3f();
         mPositionOffset = osg::Vec3f();
         mStandingOnPtr = nullptr;
         mSkipSimulation = true;
+        clearExternalVelocity();
     }
 
-    void Actor::setSimulationPosition(const osg::Vec3f& position)
+    bool Actor::setSimulationPosition(const osg::Vec3f& position)
     {
-        if (!std::exchange(mSkipSimulation, false))
-            mSimulationPosition = position;
+        if (std::exchange(mSkipSimulation, false))
+            return false;
+        mSimulationPosition = position;
+        return true;
     }
 
     osg::Vec3f Actor::getScaledMeshTranslation() const
     {
-        return mRotation * osg::componentMultiply(mMeshTranslation, mScale);
+        osg::Vec3f translation = osg::componentMultiply(mMeshTranslation, mScale);
+        if (mSlideCollisionLow)
+            translation.z() -= mOriginalHalfExtents.z() * mScale.z() * (1.f - PlayerKinetics::SlideHeightFraction);
+        return mRotation * translation;
+    }
+
+    bool Actor::updateSlideCollision(bool low, JPH::PhysicsSystem* world)
+    {
+        std::scoped_lock lock(mMutex);
+        if (!mSlideCollisionLow && !low) return false;
+        bool blocked = false;
+        if (mSlideCollisionLow && mInternalCollisionMode)
+        {
+            const osg::Vec3f center = mPosition + mRotation * osg::componentMultiply(mMeshTranslation, mScale);
+            JPH::CollideShapeSettings settings;
+            StandingClearanceCallback collector;
+            const auto base = Misc::Convert::toJolt<JPH::RVec3>(center);
+            world->GetNarrowPhaseQuery().CollideShape(mBasePhysicsShape, Misc::Convert::toJolt<JPH::Vec3>(mScale),
+                JPH::RMat44::sRotationTranslation(Misc::Convert::toJolt(mRotation), base), settings, base, collector,
+                world->GetDefaultBroadPhaseLayerFilter(Layers::ACTOR),
+                MaskedObjectLayerFilter(Layers::WORLD | Layers::DOOR | Layers::HEIGHTMAP | Layers::ACTOR | Layers::DYNAMIC_WORLD),
+                JPH::IgnoreSingleBodyFilter(getPhysicsBody()));
+            blocked = collector.mBlocked;
+            if (blocked && !low) return true;
+        }
+        if (mSlideCollisionLow == low) return blocked;
+        mSlideCollisionLow = low;
+        mHalfExtents.z() = mOriginalHalfExtents.z() * mScale.z() * (low ? PlayerKinetics::SlideHeightFraction : 1.f);
+        mScaleUpdated = true;
+        updateCollisionObjectPositionUnsafe();
+        return blocked;
+    }
+
+    void Actor::setRagdoll(bool value)
+    {
+        if (mRagdoll == value) return;
+        mTaskScheduler->syncSimulation();
+        mRagdoll = value;
+        if (getPhysicsBody().IsInvalid()) return;
+        auto& bodies = mTaskScheduler->getBodyInterface();
+        if (value) bodies.RemoveBody(getPhysicsBody());
+        else bodies.AddBody(getPhysicsBody(), JPH::EActivation::Activate);
     }
 
     void Actor::updateCollisionObjectPosition()
@@ -228,7 +289,9 @@ namespace MWPhysics
         if (mScaleUpdated)
         {
             // Jolt handles destroying of the original shape when SetShape is called!
-            mPhysicsShape = new JPH::ScaledShape(mBasePhysicsShape, Misc::Convert::toJolt<JPH::Vec3>(mScale));
+            osg::Vec3f scale = mScale;
+            if (mSlideCollisionLow) scale.z() *= PlayerKinetics::SlideHeightFraction;
+            mPhysicsShape = new JPH::ScaledShape(mBasePhysicsShape, Misc::Convert::toJolt<JPH::Vec3>(scale));
             bodyInterface.SetShape(getPhysicsBody(), mPhysicsShape, false, JPH::EActivation::DontActivate);
             mScaleUpdated = false;
         }
@@ -302,6 +365,8 @@ namespace MWPhysics
         mPtr.getClass().adjustScale(mPtr, scaleVec, false);
         mScale = scaleVec;
         mHalfExtents = osg::componentMultiply(mOriginalHalfExtents, scaleVec);
+        if (mSlideCollisionLow)
+            mHalfExtents.z() *= PlayerKinetics::SlideHeightFraction;
 
         scaleVec = osg::Vec3f(scale, scale, scale);
         mPtr.getClass().adjustScale(mPtr, scaleVec, true);
@@ -322,6 +387,31 @@ namespace MWPhysics
     osg::Vec3f Actor::getRenderingHalfExtents() const
     {
         return mRenderingHalfExtents;
+    }
+
+    void Actor::addExternalVelocity(const osg::Vec3f& delta)
+    {
+        mPendingExternalVelocity += delta;
+        const float speed = mPendingExternalVelocity.length();
+        if (speed > 2000.f)
+            mPendingExternalVelocity *= 2000.f / speed;
+    }
+
+    void Actor::clearExternalVelocity()
+    {
+        mSimulationVelocity=osg::Vec3f();
+        mPendingExternalVelocity = osg::Vec3f();
+        mSlideActorContactTime = 0.f;
+        mClearExternalVelocity = true;
+    }
+
+    osg::Vec3f Actor::consumeExternalVelocity(bool& clear)
+    {
+        const osg::Vec3f delta = mPendingExternalVelocity;
+        mPendingExternalVelocity = osg::Vec3f();
+        clear = mClearExternalVelocity;
+        mClearExternalVelocity = false;
+        return delta;
     }
 
     void Actor::setInertialForce(const osg::Vec3f& force)

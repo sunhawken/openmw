@@ -420,6 +420,7 @@ MWWorld::ContainerStoreIterator MWWorld::ContainerStore::add(
     // we may have copied an item from the world, so reset a few things first
     item.getRefData().setBaseNode(
         nullptr); // Especially important, otherwise scripts on the item could think that it's actually in a cell
+    item.getRefData().setReleasedEquipment(nullptr);
     ESM::Position pos;
     pos.rot[0] = 0;
     pos.rot[1] = 0;

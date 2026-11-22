@@ -9,3 +9,6 @@ PLAYER: scripts/omw/music/music.lua
 MENU: scripts/omw/music/settings.lua
 PLAYER: scripts/omw/playerskillhandlers.lua
 LOAD: scripts/omw/esmfallbacks.lua
+
+# Brutal Morrowind
+@BRUTAL_SCRIPTS@
