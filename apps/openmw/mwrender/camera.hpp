@@ -82,7 +82,7 @@ namespace MWRender
         void disableDeferredPreviewRotation() { mDeferredRotationDisabled = true; }
 
         /// \brief Lowers the camera for sneak.
-        void setSneakOffset(float offset);
+        void setSneakOffset(float offset, float slideBlend);
 
         void processViewChange();
 
@@ -136,6 +136,12 @@ namespace MWRender
         bool mProcessViewChange;
 
         float mHeight;
+        float mFullBodySneakOffset = 0.f;
+        float mVisualSneakOffset = 0.f;
+        float mVisualSneakVelocity = 0.f;
+        float mSneakTarget = 0.f;
+        double mSneakVisualTime = 0.;
+        bool mVisualSneakInitialized = false;
         float mPitch, mYaw, mRoll;
         float mExtraPitch = 0, mExtraYaw = 0, mExtraRoll = 0;
         bool mLockPitch = false, mLockYaw = false;

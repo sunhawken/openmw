@@ -76,10 +76,11 @@ namespace MWClass
 
         bool hasInventoryStore(const MWWorld::ConstPtr& ptr) const override { return true; }
 
-        bool evaluateHit(const MWWorld::Ptr& ptr, MWWorld::Ptr& victim, osg::Vec3f& hitPosition) const override;
+        bool evaluateHit(const MWWorld::Ptr& ptr, MWWorld::Ptr& victim, osg::Vec3f& hitPosition, int* contactPart,
+            std::string_view swing) const override;
 
         void hit(const MWWorld::Ptr& ptr, float attackStrength, int type, const MWWorld::Ptr& victim,
-            const osg::Vec3f& hitPosition, bool success) const override;
+            const osg::Vec3f& hitPosition, bool success, int contactPart) const override;
 
         void onHit(const MWWorld::Ptr& ptr, const std::map<std::string, float>& damages, ESM::RefId object,
             const MWWorld::Ptr& attacker, bool successful,

@@ -22,6 +22,8 @@ namespace SceneUtil
             std::string mToKey;
             float mDuration;
             std::string mEasing;
+            // Sequence fades follow the clip clock when weapon speed changes.
+            bool mAnimationTime = false;
         };
 
         AnimBlendRules() = default;

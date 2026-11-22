@@ -1,5 +1,6 @@
 #include "adapter.hpp"
 
+#include <algorithm>
 #include <MyGUI_Gui.h>
 
 #include "container.hpp"
@@ -45,6 +46,27 @@ namespace LuaUi
     {
         detachElement();
         setSize({ 0, 0 });
+    }
+
+    void LuaAdapter::setViewportWidth(int width)
+    {
+        if (!mElement || !mElement->mRoot || !mElement->mRoot->externalValue("fitToWidth", false))
+            return;
+        auto* root = mElement->mRoot;
+        const int padding = std::max(0, root->widget()->getLeft());
+        width = std::max(1, width - 2 * padding);
+        if (root->widget()->getWidth() == width)
+            return;
+        // Keep layout properties for subsequent edits. Zero minimum height lets
+        // wrapped text reflow when the window becomes wider as well as narrower.
+        auto layout = root->getLayout();
+        sol::state_view lua(layout.lua_state());
+        sol::table props = layout.get_or("props", lua.create_table());
+        props["size"] = osg::Vec2f(width, 0);
+        layout["props"] = props;
+        root->setProperties(props);
+        root->updateCoord();
+        mContainer->updateCoord();
     }
 
     void LuaAdapter::attachElement()

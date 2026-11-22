@@ -27,6 +27,8 @@ namespace SceneUtil
 
     void MorphGeometry::setSourceGeometry(osg::ref_ptr<osg::Geometry> sourceGeom)
     {
+        if (mSurfaceDecals && mSourceGeometry != sourceGeom)
+            mSurfaceDecals->clear();
         for (unsigned int i = 0; i < 2; ++i)
             mGeometry[i] = nullptr;
 
@@ -81,6 +83,13 @@ namespace SceneUtil
     osg::ref_ptr<osg::Geometry> MorphGeometry::getSourceGeometry() const
     {
         return mSourceGeometry;
+    }
+
+    SurfaceDecals* MorphGeometry::getOrCreateSurfaceDecals()
+    {
+        if (!mSurfaceDecals)
+            mSurfaceDecals = new SurfaceDecals;
+        return mSurfaceDecals.get();
     }
 
     void MorphGeometry::accept(osg::NodeVisitor& nv)
@@ -178,6 +187,8 @@ namespace SceneUtil
             nv->pushOntoNodePath(&geom);
             nv->apply(geom);
             nv->popFromNodePath();
+            if (mSurfaceDecals)
+                mSurfaceDecals->cull(geom, *static_cast<osgUtil::CullVisitor*>(nv));
             return;
         }
 
@@ -208,6 +219,8 @@ namespace SceneUtil
         nv->pushOntoNodePath(&geom);
         nv->apply(geom);
         nv->popFromNodePath();
+        if (mSurfaceDecals)
+            mSurfaceDecals->cull(geom, *static_cast<osgUtil::CullVisitor*>(nv));
     }
 
     osg::Geometry* MorphGeometry::getGeometry(unsigned int frame) const

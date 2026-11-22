@@ -3,6 +3,7 @@
 
 #include <list>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -111,6 +112,12 @@ namespace MWMechanics
         bool isSneaking(const MWWorld::Ptr& ptr) const;
 
         void forceStateUpdate(const MWWorld::Ptr& ptr) const;
+        bool requestSwordClinch(const MWWorld::Ptr& player, const MWWorld::Ptr& opponent);
+        void swordClinchInput(bool pressed);
+        void cancelSwordClinch(const MWWorld::Ptr& participant, std::string_view reason);
+
+        bool staggerActor(const MWWorld::Ptr& ptr, std::string_view group = {}) const;
+        void cancelPlayerAttackForKick(const MWWorld::Ptr& player) const;
 
         bool playAnimationGroup(const MWWorld::Ptr& ptr, std::string_view groupName, int mode, uint32_t number,
             bool scripted = false) const;
@@ -166,6 +173,28 @@ namespace MWMechanics
         GreetingState getGreetingState(const MWWorld::Ptr& ptr) const;
 
     private:
+        struct SwordClinch
+        {
+            MWWorld::Ptr player, opponent, playerWeapon, opponentWeapon;
+            osg::Vec3f direction, forward, playerOrigin, opponentGoal, lastPlayerPosition, lastOpponentPosition;
+            osg::Vec3f placeFrom, placeTo;
+            float placeYawFrom = 0.f, placeTime = 0.f, placeAge = 0.f;
+            bool placing = false;
+            uint64_t id = 0;
+            int phase = 0; // Pending until outside the melee text-key callback.
+            int clicks = 0, requiredClicks = 3, settledFrames = 0;
+            float age = 0.f, duration = 1.4333333f, distance = 81.07684f, settledTime = 0.f;
+            bool resolved = false, waitingRelease = false;
+        };
+        std::optional<SwordClinch> mSwordClinch;
+        uint64_t mNextSwordClinchId = 0;
+        bool mSwordClinchUseHeld = false;
+        void updateSwordClinch(float duration, bool paused);
+        void finishSwordClinch(std::string_view reason, bool preserveRecovery = false);
+        void resolveSwordClinch(std::string_view result, std::string_view reason);
+        bool validSwordClinch(bool geometry, std::string* reason = nullptr) const;
+        void publishSwordClinch();
+
         std::map<ESM::RefId, int> mDeathCount;
         std::list<Actor> mActors;
         std::map<const MWWorld::LiveCellRefBase*, std::list<Actor>::iterator> mIndex;

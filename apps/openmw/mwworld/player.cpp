@@ -493,10 +493,14 @@ namespace MWWorld
 
         static const float i1stPersonSneakDelta
             = store.get<ESM::GameSetting>().find("i1stPersonSneakDelta")->mValue.getFloat();
-        if (sneaking && !swimming && !flying)
-            rendering->getCamera()->setSneakOffset(i1stPersonSneakDelta);
-        else
-            rendering->getCamera()->setSneakOffset(0.f);
+        const auto& playerStats = playerClass.getCreatureStats(player);
+        const float slideBlend = playerStats.mBrutalSlideBlocked ? 1.f : playerStats.mBrutalSlideBlend;
+        const bool slideEntering = playerStats.mBrutalSlidePhase == 1 || playerStats.mBrutalSlidePhase == 2;
+        const float sneakOffset = !slideEntering && (sneaking || playerStats.mBrutalSlideBlocked) && !swimming && !flying
+            ? i1stPersonSneakDelta : 0.f;
+        // Lower eye and first-person arms together; the source CameraAdd remains
+        // a small animated delta around this physical slide eye.
+        rendering->getCamera()->setSneakOffset(sneakOffset, slideBlend);
 
         int blind = 0;
         const auto& magicEffects = playerClass.getCreatureStats(player).getMagicEffects();

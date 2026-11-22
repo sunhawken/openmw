@@ -77,7 +77,7 @@ void Launcher::ImportPage::on_wizardButton_clicked()
 {
     mMain->writeSettings();
 
-    if (!mWizardInvoker->startProcess(QLatin1String("openmw-wizard"), false))
+    if (!mWizardInvoker->startProcess(QLatin1String("brutalmorrowind-wizard"), false))
         return;
 }
 
@@ -132,7 +132,7 @@ void Launcher::ImportPage::on_importerButton_clicked()
     // start the progress bar as a "bouncing ball"
     progressBar->setMaximum(0);
     progressBar->setValue(0);
-    if (!mImporterInvoker->startProcess(QLatin1String("openmw-iniimporter"), arguments, false))
+    if (!mImporterInvoker->startProcess(QLatin1String("brutalmorrowind-iniimporter"), arguments, false))
     {
         resetProgressBar();
     }

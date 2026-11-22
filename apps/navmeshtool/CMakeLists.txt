@@ -36,3 +36,5 @@ endif()
 if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
     target_precompile_headers(openmw-navmeshtool REUSE_FROM components)
 endif()
+
+set_target_properties(openmw-navmeshtool PROPERTIES OUTPUT_NAME brutalmorrowind-navmeshtool)

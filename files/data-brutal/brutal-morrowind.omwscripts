@@ -1,0 +1,17 @@
+MENU: scripts/brutal_morrowind/settings_menu.lua
+GLOBAL: scripts/brutal_morrowind/global.lua
+GLOBAL: scripts/brutal_morrowind/ragdoll_global.lua
+PLAYER: scripts/brutal_morrowind/settings_player.lua
+PLAYER: scripts/brutal_morrowind/player.lua
+PLAYER: scripts/brutal_morrowind/stamina.lua
+PLAYER: scripts/brutal_morrowind/slide.lua
+NPC, CREATURE: scripts/brutal_morrowind/actor.lua
+NPC, CREATURE: scripts/brutal_morrowind/ragdoll_local.lua
+GLOBAL: scripts/brutal_morrowind/effects_global.lua
+GLOBAL: scripts/brutal_morrowind/adrenaline_time.lua
+PLAYER, NPC, CREATURE: scripts/brutal_morrowind/combat_effects.lua
+PLAYER: scripts/brutal_morrowind/adrenaline.lua
+PLAYER: scripts/brutal_morrowind/feedback_player.lua
+PLAYER: scripts/brutal_morrowind/clinch.lua
+
+GLOBAL: scripts/brutal_morrowind/kick_global.lua

@@ -224,7 +224,8 @@ namespace MWClass
         return ptr.getRefData().getCustomData()->asCreatureCustomData().mCreatureStats;
     }
 
-    bool Creature::evaluateHit(const MWWorld::Ptr& ptr, MWWorld::Ptr& victim, osg::Vec3f& hitPosition) const
+    bool Creature::evaluateHit(const MWWorld::Ptr& ptr, MWWorld::Ptr& victim, osg::Vec3f& hitPosition, int* contactPart,
+        std::string_view swing) const
     {
         victim = MWWorld::Ptr();
         hitPosition = osg::Vec3f();
@@ -242,7 +243,7 @@ namespace MWClass
         MWBase::World* world = MWBase::Environment::get().getWorld();
 
         const float dist = MWMechanics::getMeleeWeaponReach(ptr, weapon);
-        const std::pair<MWWorld::Ptr, osg::Vec3f> result = MWMechanics::getHitContact(ptr, dist);
+        const std::pair<MWWorld::Ptr, osg::Vec3f> result = MWMechanics::getHitContact(ptr, dist, contactPart, swing);
         if (result.first.isEmpty()) // Didn't hit anything
             return true;
 
@@ -252,11 +253,13 @@ namespace MWClass
         hitPosition = result.second;
 
         float hitchance = MWMechanics::getHitChance(ptr, victim, ptr.get<ESM::Creature>()->mBase->mData.mCombat);
-        return Misc::Rng::roll0to99(world->getPrng()) < hitchance;
+        // Keep the vanilla RNG draw even when opting out of random melee misses.
+        const bool rolledSuccess = Misc::Rng::roll0to99(world->getPrng()) < hitchance;
+        return Settings::game().mMeleeContactAlwaysHits || rolledSuccess;
     }
 
     void Creature::hit(const MWWorld::Ptr& ptr, float attackStrength, int type, const MWWorld::Ptr& victim,
-        const osg::Vec3f& hitPosition, bool success) const
+        const osg::Vec3f& hitPosition, bool success, int contactPart) const
     {
         MWMechanics::CreatureStats& stats = getCreatureStats(ptr);
 
@@ -294,10 +297,14 @@ namespace MWClass
         if (!MWMechanics::isInMeleeReach(ptr, victim, MWMechanics::getMeleeWeaponReach(ptr, weapon)))
             return;
 
+        if (Settings::game().mMeleeContactAlwaysHits
+            && !MWBase::Environment::get().getWorld()->getLOS(ptr, victim))
+            return;
+
         if (!success)
         {
             MWBase::Environment::get().getLuaManager()->onHit(ptr, victim, weapon, MWWorld::Ptr(), type, attackStrength,
-                0.0f, false, hitPosition, false, MWMechanics::DamageSourceType::Melee);
+                0.0f, false, hitPosition, false, MWMechanics::DamageSourceType::Melee, 0, false, false, contactPart);
             MWMechanics::reduceWeaponCondition(0.f, false, weapon, ptr);
             return;
         }
@@ -350,13 +357,14 @@ namespace MWClass
 
         MWMechanics::applyElementalShields(ptr, victim);
 
-        if (MWMechanics::blockMeleeAttack(ptr, victim, weapon, damage, attackStrength))
+        const bool brutalBlocked = MWMechanics::blockMeleeAttack(ptr, victim, weapon, damage, attackStrength, hitPosition, contactPart);
+        if (brutalBlocked)
             damage = 0;
 
         MWMechanics::diseaseContact(victim, ptr);
 
         MWBase::Environment::get().getLuaManager()->onHit(ptr, victim, weapon, MWWorld::Ptr(), type, attackStrength,
-            damage, healthdmg, hitPosition, true, MWMechanics::DamageSourceType::Melee);
+            damage, healthdmg, hitPosition, true, MWMechanics::DamageSourceType::Melee, 0, false, brutalBlocked, contactPart);
     }
 
     void Creature::onHit(const MWWorld::Ptr& ptr, const std::map<std::string, float>& damages, ESM::RefId object,

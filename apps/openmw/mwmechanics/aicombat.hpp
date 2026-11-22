@@ -58,6 +58,14 @@ namespace MWMechanics
         bool mUseCustomDestination;
         osg::Vec3f mCustomDestination;
 
+        // Dark Messiah guard pacing (npc_guard.qct, mm_game_settings.txt).
+        bool mDmBerserk = false;
+        float mDmRhythmTimer = 0.f;
+        float mDmTargetPassive = 0.f;
+        float mDmDodgeCooldown = 0.f;
+        float mDmPreventiveTimer = 0.f;
+        void updateDarkMessiah(float duration, const MWWorld::Ptr& target);
+
         AiCombatStorage();
 
         void startCombatMove(bool isDistantCombat, float distToTarget, float rangeAttack, const MWWorld::Ptr& actor,

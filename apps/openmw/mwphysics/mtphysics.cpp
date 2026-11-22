@@ -1,4 +1,6 @@
 #include "mtphysics.hpp"
+#include "playerkinetics.hpp"
+#include "../mwbase/luamanager.hpp"
 
 #include <cassert>
 #include <functional>
@@ -169,7 +171,8 @@ namespace
 
         struct InitPosition
         {
-            const JPH::PhysicsSystem* mPhysicsSystem;
+            JPH::PhysicsSystem* mPhysicsSystem;
+            bool mAdvanceSimulation;
             void operator()(MWPhysics::ActorSimulation& sim) const
             {
                 auto locked = sim.lock();
@@ -178,6 +181,12 @@ namespace
                 auto& [actor, frameDataRef] = *locked;
                 auto& frameData = frameDataRef.get();
                 frameData.mPosition = actor->applyOffsetChange();
+                if (frameData.mIsPlayer)
+                {
+                    auto& stats = actor->getPtr().getClass().getCreatureStats(actor->getPtr());
+                    stats.mBrutalSlideBlocked = actor->updateSlideCollision(frameData.mBrutalSlideLow, mPhysicsSystem);
+                    frameData.mHalfExtentsZ = actor->getHalfExtents().z();
+                }
                 if (frameData.mWaterCollision && frameData.mPosition.z() < frameData.mWaterlevel
                     && actor->canMoveToWaterSurface(frameData.mWaterlevel, mPhysicsSystem))
                 {
@@ -190,6 +199,50 @@ namespace
                 const auto rotation = actor->getPtr().getRefData().getPosition().asRotationVec3();
                 frameData.mRotation = osg::Vec2f(rotation.x(), rotation.z());
                 frameData.mInertia = actor->getInertialForce();
+                frameData.mExternalVelocity = actor->getExternalVelocity();
+                frameData.mLocomotionVelocity = actor->getLocomotionVelocity();
+                // Never consume an increment during a render frame with no physics
+                // step: Sync deliberately does not publish results for such frames.
+                if (mAdvanceSimulation)
+                {
+                    bool clear = false;
+                    const osg::Vec3f delta = actor->consumeExternalVelocity(clear);
+                    if (clear)
+                    {
+                        frameData.mExternalVelocity = osg::Vec3f();
+                        frameData.mLocomotionVelocity = osg::Vec3f();
+                    }
+                    if (actor->updateSlidingState(frameData.mBrutalSliding && !clear)
+                        && frameData.mIsOnGround && !frameData.mIsOnSlope && !frameData.mInert
+                        && !frameData.mFlying && !isUnderWater(frameData))
+                    {
+                        auto& moving = frameData.mLocomotionVelocity;
+                        const float speed = std::hypot(moving.x(), moving.y());
+                        const float target = std::min(speed * MWPhysics::PlayerKinetics::SlideEntrySpeedMultiplier,
+                            MWPhysics::PlayerKinetics::SprintSpeed * MWPhysics::PlayerKinetics::SlideEntrySpeedMultiplier);
+                        if (speed > 0.f && target > speed)
+                        {
+                            moving.x() *= target / speed;
+                            moving.y() *= target / speed;
+                        }
+                    }
+                    frameData.mSlideActorContactTime = actor->getSlideActorContactTime();
+                    frameData.mExternalVelocity += delta;
+                    const float speed = frameData.mExternalVelocity.length();
+                    if (speed > 2000.f)
+                        frameData.mExternalVelocity *= 2000.f / speed;
+                    if (!frameData.mFlying && !isUnderWater(frameData))
+                    {
+                        // Let vanilla gravity, landing and fall damage own the
+                        // vertical component. Horizontal motion remains independent
+                        // of movement controls, jumping and animation root motion.
+                        frameData.mInertia.z() += frameData.mExternalVelocity.z();
+                        if (frameData.mExternalVelocity.z() != 0.f)
+                            frameData.mIsOnGround = false;
+                        frameData.mExternalVelocity.z() = 0.f;
+                    }
+                }
+
                 frameData.mStuckFrames = actor->getStuckFrames();
                 frameData.mLastStuckPosition = actor->getLastStuckPosition();
             }
@@ -256,7 +309,7 @@ namespace
                 else if (heightDiff < 0)
                     stats.addToFallHeight(-heightDiff);
 
-                actor->setSimulationPosition(::interpolateMovements(*actor, mTimeAccum, mPhysicsDt));
+                const bool positionAccepted = actor->setSimulationPosition(::interpolateMovements(*actor, mTimeAccum, mPhysicsDt));
                 actor->setLastStuckPosition(frameData.mLastStuckPosition);
                 actor->setStuckFrames(frameData.mStuckFrames);
                 if (mAdvanceSimulation)
@@ -275,6 +328,25 @@ namespace
                     actor->setOnSlope(frameData.mIsOnSlope);
                     actor->setWalkingOnWater(frameData.mWalkingOnWater);
                     actor->setInertialForce(frameData.mInertia);
+                    actor->setExternalVelocity(frameData.mExternalVelocity);
+                    actor->setLocomotionVelocity(frameData.mLocomotionVelocity);
+                    if (positionAccepted) actor->setSimulationVelocity(frameData.mSimulationVelocity);
+                    if (frameData.mIsPlayer)
+                    {
+                        const bool low = positionAccepted && (stats.mBrutalSliding || stats.mBrutalSlideLow);
+                        stats.mBrutalSlideDownhill = low && stats.mBrutalSliding && frameData.mBrutalSlideDownhill;
+                        stats.mBrutalSlideGroundNormal = low ? frameData.mBrutalSlideGroundNormal : osg::Vec3f();
+                        stats.mBrutalSlideGroundPoint = low ? frameData.mBrutalSlideGroundPoint : osg::Vec3f();
+                    }
+                    if (positionAccepted && frameData.mExternalImpactSpeed > 1.f && !actor->isExternalVelocityResetPending()
+                        && actor->isActive() && !stats.isDead())
+                    {
+                        MWWorld::Ptr hit;
+                        if (auto* holder = static_cast<MWPhysics::PtrHolder*>(scheduler->getUserPointer(frameData.mExternalImpactObject)))
+                            hit = holder->getPtr();
+                        MWBase::Environment::get().getLuaManager()->actorExternalImpact(ptr, hit,
+                            frameData.mExternalImpactPosition, frameData.mExternalImpactNormal, frameData.mExternalImpactSpeed);
+                    }
                 }
             }
         };
@@ -383,7 +455,7 @@ namespace MWPhysics
         timeAccum -= numSteps * newDelta;
 
         // init
-        const Visitors::InitPosition vis{ mPhysicsSystem };
+        const Visitors::InitPosition vis{ mPhysicsSystem, mAdvanceSimulation };
         for (auto& sim : simulations)
         {
             std::visit(vis, sim);

@@ -254,6 +254,8 @@ namespace MWGui
             mAppearanceTab->onFrame(duration);
         if (mScriptView->getVisible())
         {
+            // Reserve the vertical bar even while hidden, avoiding reflow loops.
+            mScriptAdapter->setViewportWidth(mScriptView->getWidth() - 20);
             const auto scriptsSize = mScriptAdapter->getSize();
             if (mScriptView->getCanvasSize() != scriptsSize)
                 mScriptView->setCanvasSize(scriptsSize);

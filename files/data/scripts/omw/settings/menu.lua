@@ -60,6 +60,7 @@ local spacedLines = function(count)
     table.insert(content, spacer)
     return {
         type = ui.TYPE.Flex,
+        props = { autoSizeWidth = false },
         external = {
             stretch = 1,
         },
@@ -123,6 +124,18 @@ local function renderSetting(group, setting, value, global)
     local ok, rendererResult = pcall(renderFunction, value, set, argument)
     if not ok then
         print(string.format('Setting %s renderer "%s" error: %s', setting.key, setting.renderer, rendererResult))
+    end
+
+    -- A self-labelled renderer owns the whole row, without an empty growing
+    -- title/spacer shifting it toward the edge of a wide window.
+    if l10n(setting.name) == '' then
+        return {
+            name = setting.key,
+            type = ui.TYPE.Flex,
+            props = { autoSizeWidth = false },
+            external = { stretch = 1 },
+            content = ui.content { ok and rendererResult or {} },
+        }
     end
 
     return {
@@ -214,6 +227,7 @@ local function renderGroup(group, global)
     return {
         name = groupLayoutName(group.key, global),
         type = ui.TYPE.Flex,
+        props = { autoSizeWidth = false },
         external = {
             stretch = 1,
         },
@@ -222,6 +236,7 @@ local function renderGroup(group, global)
                 type = ui.TYPE.Flex,
                 props = {
                     horizontal = true,
+                    autoSizeWidth = false,
                     arrange = ui.ALIGNMENT.Center,
                 },
                 external = {
@@ -237,6 +252,7 @@ local function renderGroup(group, global)
             {
                 name = 'settings',
                 type = ui.TYPE.Flex,
+                props = { autoSizeWidth = false },
                 content = settingsContent,
                 external = {
                     stretch = 1,
@@ -305,6 +321,7 @@ local function renderPage(page, options)
     local groupsLayout = {
         name = 'groups',
         type = ui.TYPE.Flex,
+        props = { autoSizeWidth = false },
         external = {
             stretch = 1,
         },
@@ -312,6 +329,7 @@ local function renderPage(page, options)
     }
     local titleLayout = {
         type = ui.TYPE.Flex,
+        props = { autoSizeWidth = false },
         external = {
             stretch = 1,
         },
@@ -329,17 +347,21 @@ local function renderPage(page, options)
     if page.description then
         titleLayout.content:add {
             template = I.MWUI.templates.textParagraph,
+            external = { stretch = 1 },
             props = {
                 text = l10n(page.description),
-                size = util.vector2(300, 0),
+                size = util.vector2(0, 0),
+                relativeSize = util.vector2(1, 0),
             },
         }
     end
     local layout = {
         name = page.key,
         type = ui.TYPE.Flex,
+        external = { fitToWidth = true },
         props = {
             position = util.vector2(10, 10),
+            autoSizeWidth = false,
         },
         content = ui.content {
             titleLayout,

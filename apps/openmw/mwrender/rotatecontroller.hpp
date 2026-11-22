@@ -23,6 +23,13 @@ namespace MWRender
         void setEnabled(bool enabled);
         void setOffset(const osg::Vec3f& offset);
         void setRotate(const osg::Quat& rotate);
+        void setRotationPivot(const osg::Vec3f& pivot)
+        {
+            mRotationPivot = pivot;
+            mUseRotationPivot = true;
+        }
+
+        void setRotationCarrier(const osg::MatrixTransform* carrier) { mRotationCarrier = carrier; }
 
         const osg::Vec3f& getOffset() const { return mOffset; }
 
@@ -35,6 +42,9 @@ namespace MWRender
     protected:
         bool mEnabled;
         osg::Vec3f mOffset;
+        osg::Vec3f mRotationPivot;
+        bool mUseRotationPivot = false;
+        const osg::MatrixTransform* mRotationCarrier = nullptr;
         osg::Quat mRotate;
         osg::Node* mRelativeTo;
     };

@@ -1,0 +1,14 @@
+{
+ "SourceIO": {
+  "url": "https://github.com/REDxEYE/SourceIO.git",
+  "commit": "6deac3176bf0e8dd2a50038cfa1066abfa58c1f9",
+  "license": "MIT",
+  "use": "reads Dark Messiah MDL models and VTF textures"
+ },
+ "io_scene_mw": {
+  "url": "https://github.com/Greatness7/io_scene_mw.git",
+  "commit": "cbe18b558299e14ecd959183e3cf9ea096fe95df",
+  "license": "GPL-3.0",
+  "use": "reads and writes Morrowind NIF and KF files (es3 library)"
+ }
+}

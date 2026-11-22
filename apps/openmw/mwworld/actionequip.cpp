@@ -4,6 +4,7 @@
 #include "../mwbase/windowmanager.hpp"
 
 #include "../mwmechanics/actorutil.hpp"
+#include "../mwmechanics/brutaloptions.hpp"
 
 #include "class.hpp"
 #include "inventorystore.hpp"
@@ -62,6 +63,20 @@ namespace MWWorld
 
         if (it == invStore.end())
             throw std::runtime_error("ActionEquip can't find item " + object.getCellRef().getRefId().toDebugString());
+
+        // A short blade fills the right hand. Only the player's Dark Messiah arms take a
+        // second one, chosen while the right hand already holds a different short blade.
+        if (slots.first.size() > 1 && object.getType() == ESM::Weapon::sRecordId
+            && object.get<ESM::Weapon>()->mBase->mData.mType == ESM::Weapon::ShortBladeOneHand)
+        {
+            const auto right = invStore.getSlot(InventoryStore::Slot_CarriedRight);
+            const bool second = MWMechanics::brutalDualWield() && actor == MWMechanics::getPlayer() && MWMechanics::brutalDmFirstPerson()
+                && right != invStore.end() && right != it && right->getType() == ESM::Weapon::sRecordId
+                && right->get<ESM::Weapon>()->mBase->mData.mType == ESM::Weapon::ShortBladeOneHand;
+            if (right == it || invStore.getSlot(InventoryStore::Slot_CarriedLeft) == it)
+                return;
+            slots.first = { second ? InventoryStore::Slot_CarriedLeft : InventoryStore::Slot_CarriedRight };
+        }
 
         // equip the item in the first free slot
         std::vector<int>::const_iterator slot = slots.first.begin();

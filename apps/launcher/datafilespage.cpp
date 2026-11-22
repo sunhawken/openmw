@@ -1092,7 +1092,7 @@ void Launcher::DataFilesPage::startNavMeshTool()
     if (ui.navMeshRemoveUnusedTilesCheckBox->checkState() == Qt::Checked)
         arguments.append("--remove-unused-tiles");
 
-    if (!mNavMeshToolInvoker->startProcess(QLatin1String("openmw-navmeshtool"), arguments))
+    if (!mNavMeshToolInvoker->startProcess(QLatin1String("brutalmorrowind-navmeshtool"), arguments))
         return;
 
     ui.cancelNavMeshButton->setEnabled(true);

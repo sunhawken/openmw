@@ -23,6 +23,7 @@ namespace ESM
     class Script;
     class CellRef;
     struct ObjectState;
+    struct ReleasedEquipmentState;
 }
 
 namespace ESM4
@@ -49,6 +50,7 @@ namespace MWWorld
         std::shared_ptr<MWLua::LocalScripts> mLuaScripts;
         ESM::Position mPosition;
         ESM::AnimationState mAnimationState;
+        std::shared_ptr<const ESM::ReleasedEquipmentState> mReleasedEquipment;
         std::unique_ptr<CustomData> mCustomData;
         unsigned int mFlags;
 
@@ -102,6 +104,10 @@ namespace MWWorld
 
         /// Set base node (can be a null pointer).
         void setBaseNode(osg::ref_ptr<SceneUtil::PositionAttitudeTransform> base);
+
+        const std::shared_ptr<const ESM::ReleasedEquipmentState>& getReleasedEquipment() const
+        { return mReleasedEquipment; }
+        void setReleasedEquipment(std::shared_ptr<const ESM::ReleasedEquipmentState> value);
 
         void setLocals(const ESM::Script& script);
 

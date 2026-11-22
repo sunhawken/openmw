@@ -1,5 +1,6 @@
 #ifndef OPENMW_MWRENDER_RENDERINGMANAGER_H
 #define OPENMW_MWRENDER_RENDERINGMANAGER_H
+#include <map>
 
 #include "objects.hpp"
 #include "renderinginterface.hpp"
@@ -187,10 +188,15 @@ namespace MWRender
             MWWorld::Ptr mHitObject;
             ESM::RefNum mHitRefnum;
             float mRatio;
+            int mHitPart = -1;
         };
 
         RayResult castRay(const osg::Vec3f& origin, const osg::Vec3f& dest, bool ignorePlayer,
-            bool ignoreActors = false, std::span<const MWWorld::Ptr> ignoreList = {});
+            bool ignoreActors = false, std::span<const MWWorld::Ptr> ignoreList = {}, bool melee = false);
+
+        std::vector<float> findSegmentCandidates(
+            std::span<const std::pair<osg::Vec3f, osg::Vec3f>> segments,
+            std::span<const unsigned> buckets);
 
         /// Return the object under the mouse cursor / crosshair position, given by nX and nY normalized screen
         /// coordinates, where (0,0) is the top left corner.
@@ -211,6 +217,12 @@ namespace MWRender
             bool loop = false);
 
         void removeEffect(std::string_view effectId);
+        void spawnBrutalImpact(std::string_view kind, const osg::Vec3f& position,
+            const osg::Vec3f& direction, float intensity, bool power);
+        bool spawnBrutalDecapitation(const osg::Vec3f& lowerCenter, const osg::Vec3f& lowerNormal,
+            const osg::Vec3f& upperCenter, const osg::Vec3f& upperNormal, const osg::Vec3f& inheritedVelocity);
+        std::map<std::string, double> getBrutalImpactStats() const;
+
 
         /// Clear all savegame-specific data
         void clear();
@@ -327,6 +339,7 @@ namespace MWRender
         osg::ref_ptr<osgViewer::Viewer> mViewer;
         osg::ref_ptr<osg::Group> mRootNode;
         osg::ref_ptr<SceneUtil::LightManager> mSceneRoot;
+        osg::ref_ptr<osg::NodeCallback> mSwordClinchPoseCallback;
         Resource::ResourceSystem* mResourceSystem;
 
         osg::ref_ptr<SceneUtil::WorkQueue> mWorkQueue;

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Brutal Morrowind
+GenericName=Role Playing Game
+Comment=Morrowind with Dark Messiah style melee combat, built on OpenMW
+Keywords=Morrowind;OpenMW;Dark Messiah;
+TryExec=brutalmorrowind-launcher
+Exec=brutalmorrowind-launcher
+Icon=brutalmorrowind
+Categories=Game;RolePlaying;
+StartupWMClass=brutalmorrowind-launcher

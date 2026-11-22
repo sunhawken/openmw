@@ -1,3 +1,4 @@
+#include <components/sdlutil/windowcoordinates.hpp>
 #include "windowmanagerimp.hpp"
 
 #include <algorithm>
@@ -206,7 +207,7 @@ namespace MWGui
         int dw, dh;
         SDL_GL_GetDrawableSize(window, &dw, &dh);
 
-        mScalingFactor = Settings::gui().mScalingFactor * (dw / w);
+        mScalingFactor = Settings::gui().mScalingFactor * SDLUtil::drawableScale(w, dw);
         constexpr VFS::Path::NormalizedView resourcePath("mygui");
         mGuiPlatform = std::make_unique<MyGUIPlatform::Platform>(viewer, guiRoot, resourceSystem->getImageManager(),
             resourceSystem->getVFS(), mScalingFactor, resourcePath, logpath / "MyGUI.log");
@@ -1079,7 +1080,8 @@ namespace MWGui
             = MWBase::Environment::get().getLuaManager()->getActorControls(player);
         bool triedToMove = playerControls
             && (playerControls->mMovement != 0 || playerControls->mSideMovement != 0 || playerControls->mJump);
-        if (mMessageBoxManager && triedToMove && playerCls.getEncumbrance(player) > playerCls.getCapacity(player))
+        if (!Settings::game().mKineticPlayerMovement && mMessageBoxManager && triedToMove
+            && playerCls.getEncumbrance(player) > playerCls.getCapacity(player))
         {
             const auto& msgboxs = mMessageBoxManager->getActiveMessageBoxes();
             auto it

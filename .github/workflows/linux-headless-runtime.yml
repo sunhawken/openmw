@@ -30,15 +30,15 @@ jobs:
       - name: Smoke-test engine
         run: |
           set -euxo pipefail
-          build/openmw --version
-          build/openmw --help >/tmp/openmw-help.txt
+          build/brutalmorrowind --version
+          build/brutalmorrowind --help >/tmp/openmw-help.txt
       - name: Bundle runtime and shared libraries
         run: |
           set -euxo pipefail
           mkdir -p runtime/bin runtime/lib
-          cp build/openmw runtime/bin/
+          cp build/brutalmorrowind runtime/bin/openmw
           cp -a resources runtime/
-          ldd build/openmw | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' | sort -u > /tmp/openmw-libs.txt
+          ldd build/brutalmorrowind | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' | sort -u > /tmp/openmw-libs.txt
           while IFS= read -r lib; do cp -L -n "$lib" runtime/lib/ || true; done < /tmp/openmw-libs.txt
           cat > runtime/run.sh <<'EOS'
           #!/usr/bin/env bash

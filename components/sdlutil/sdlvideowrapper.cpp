@@ -1,3 +1,4 @@
+#include <components/sdlutil/windowcoordinates.hpp>
 #include "sdlvideowrapper.hpp"
 
 #include <components/debug/debuglog.hpp>
@@ -91,15 +92,15 @@ namespace SDLUtil
         {
             SDL_DisplayMode mode;
             SDL_GetWindowDisplayMode(mWindow, &mode);
-            mode.w = width / (dw / w);
-            mode.h = height / (dh / h);
+            mode.w = SDLUtil::drawableToWindowSize(width, w, dw);
+            mode.h = SDLUtil::drawableToWindowSize(height, h, dh);
             SDL_SetWindowDisplayMode(mWindow, &mode);
             SDL_SetWindowFullscreen(mWindow,
                 windowMode == Settings::WindowMode::Fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_FULLSCREEN_DESKTOP);
         }
         else
         {
-            SDL_SetWindowSize(mWindow, width / (dw / w), height / (dh / h));
+            SDL_SetWindowSize(mWindow, SDLUtil::drawableToWindowSize(width, w, dw), SDLUtil::drawableToWindowSize(height, h, dh));
             SDL_SetWindowBordered(mWindow, windowBorder ? SDL_TRUE : SDL_FALSE);
 
             centerWindow();

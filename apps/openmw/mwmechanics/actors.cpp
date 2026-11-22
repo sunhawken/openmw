@@ -923,6 +923,15 @@ namespace MWMechanics
         if (fatigue.getCurrent() >= fatigue.getBase())
             return;
 
+        const float regenFraction = Settings::game().mPlayerFatigueRegenFraction;
+        if (regenFraction > 0.f && ptr == getPlayer())
+        {
+            fatigue.setCurrent(std::min(fatigue.getModified(),
+                fatigue.getCurrent() + regenFraction * fatigue.getModified() * duration));
+            stats.setFatigue(fatigue);
+            return;
+        }
+
         // Restore fatigue
         const float endurance = stats.getAttribute(ESM::Attribute::Endurance).getModified();
         const MWWorld::Store<ESM::GameSetting>& settings
@@ -1251,6 +1260,7 @@ namespace MWMechanics
 
     void Actors::removeActor(const MWWorld::Ptr& ptr, bool keepActive)
     {
+        cancelSwordClinch(ptr, "removed");
         const auto iter = mIndex.find(ptr.mRef);
         if (iter != mIndex.end())
         {
@@ -1308,6 +1318,9 @@ namespace MWMechanics
 
     void Actors::dropActors(const MWWorld::CellStore* cellStore, const MWWorld::Ptr& ignore)
     {
+        if (mSwordClinch && ((mSwordClinch->player.isInCell() && mSwordClinch->player.getCell() == cellStore)
+                || (mSwordClinch->opponent.isInCell() && mSwordClinch->opponent.getCell() == cellStore)))
+            finishSwordClinch("cell_unloaded");
         for (Actor& actor : mActors)
         {
             if (!actor.isInvalid() && actor.getPtr().isInCell() && actor.getPtr().getCell() == cellStore
@@ -1495,6 +1508,7 @@ namespace MWMechanics
 
     void Actors::update(float duration, bool paused)
     {
+        updateSwordClinch(duration, paused);
         if (!paused)
         {
             const float updateEquippedLightInterval = 1.0f;
@@ -1625,7 +1639,8 @@ namespace MWMechanics
                         if (!isPlayer)
                         {
                             CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
-                            if (isConscious(actor.getPtr()) && !(luaControls && luaControls->mDisableAI))
+                            if (isConscious(actor.getPtr()) && !stats.mBrutalClinchActive
+                                && !(luaControls && luaControls->mDisableAI))
                             {
                                 stats.getAiSequence().execute(actor.getPtr(), ctrl, duration);
                                 updateGreetingState(actor.getPtr(), actor, mTimerUpdateHello > 0);
@@ -1635,6 +1650,7 @@ namespace MWMechanics
                         }
                     }
                     else if (aiActive && !isPlayer && isConscious(actor.getPtr())
+                        && !actor.getPtr().getClass().getCreatureStats(actor.getPtr()).mBrutalClinchActive
                         && !(luaControls && luaControls->mDisableAI))
                     {
                         CreatureStats& stats = actor.getPtr().getClass().getCreatureStats(actor.getPtr());
@@ -2066,6 +2082,19 @@ namespace MWMechanics
         return 0;
     }
 
+    bool Actors::staggerActor(const MWWorld::Ptr& ptr, std::string_view group) const
+    {
+        const auto iter = mIndex.find(ptr.mRef);
+        return iter != mIndex.end() && iter->second->getCharacterController().stagger(group);
+    }
+
+    void Actors::cancelPlayerAttackForKick(const MWWorld::Ptr& player) const
+    {
+        const auto iter = mIndex.find(player.mRef);
+        if (iter != mIndex.end())
+            iter->second->getCharacterController().cancelAttackForKick();
+    }
+
     void Actors::forceStateUpdate(const MWWorld::Ptr& ptr) const
     {
         const auto iter = mIndex.find(ptr.mRef);
@@ -2369,6 +2398,8 @@ namespace MWMechanics
 
     void Actors::clear()
     {
+        finishSwordClinch("loaded");
+        mSwordClinchUseHeld = false;
         mIndex.clear();
         mActors.clear();
         mDeathCount.clear();

@@ -25,6 +25,7 @@ namespace LuaUi
     private:
         bool mHorizontal;
         bool mAutoSized;
+        bool mAutoWidth;
         MyGUI::IntSize mChildrenSize;
         Alignment mAlign;
         Alignment mArrange;

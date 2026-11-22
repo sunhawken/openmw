@@ -16,6 +16,7 @@ namespace MWPhysics
         osg::Vec3f mHitPos;
         osg::Vec3f mHitNormal;
         MWWorld::Ptr mHitObject;
+        int mHitPart = -1; // Render contact only: ESM::PartReferenceType, otherwise unknown.
     };
 
     class RayCastingInterface

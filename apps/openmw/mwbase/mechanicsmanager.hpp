@@ -167,6 +167,13 @@ namespace MWBase
         ///< Perform a persuasion action on NPC
 
         virtual void forceStateUpdate(const MWWorld::Ptr& ptr) = 0;
+        virtual bool requestSwordClinch(const MWWorld::Ptr& player, const MWWorld::Ptr& opponent) = 0;
+        virtual void swordClinchInput(bool pressed) = 0;
+        virtual void cancelSwordClinch(const MWWorld::Ptr& participant, std::string_view reason) = 0;
+        virtual bool staggerActor(const MWWorld::Ptr& ptr, std::string_view group = {}) = 0;
+
+        /// Abandon the player's current weapon action so a kick can take over at once.
+        virtual void cancelPlayerAttackForKick() = 0;
         ///< Forces an object to refresh its animation state.
 
         virtual bool playAnimationGroup(

@@ -44,6 +44,7 @@ namespace MWWorld
         mPhysicsPostponed = refData.mPhysicsPostponed;
 
         mAnimationState = refData.mAnimationState;
+        mReleasedEquipment = refData.mReleasedEquipment;
 
         mCustomData = refData.mCustomData ? refData.mCustomData->clone() : nullptr;
         mLuaScripts = refData.mLuaScripts;
@@ -54,6 +55,7 @@ namespace MWWorld
         mBaseNode = nullptr;
         mCustomData = nullptr;
         mLuaScripts = nullptr;
+        mReleasedEquipment.reset();
     }
 
     RefData::RefData()
@@ -112,6 +114,7 @@ namespace MWWorld
         : mBaseNode(nullptr)
         , mPosition(objectState.mPosition)
         , mAnimationState(objectState.mAnimationState)
+        , mReleasedEquipment(objectState.mReleasedEquipment)
         , mCustomData(nullptr)
         , mFlags(objectState.mFlags) // Loading from a savegame -> assume changed
         , mDeletedByContentFile(deletedByContentFile)
@@ -151,6 +154,7 @@ namespace MWWorld
         objectState.mFlags = mFlags;
 
         objectState.mAnimationState = mAnimationState;
+        objectState.mReleasedEquipment = mReleasedEquipment;
     }
 
     RefData& RefData::operator=(const RefData& refData)
@@ -186,6 +190,12 @@ namespace MWWorld
     void RefData::setBaseNode(osg::ref_ptr<SceneUtil::PositionAttitudeTransform> base)
     {
         mBaseNode = std::move(base);
+    }
+
+    void RefData::setReleasedEquipment(std::shared_ptr<const ESM::ReleasedEquipmentState> value)
+    {
+        mChanged = true;
+        mReleasedEquipment = std::move(value);
     }
 
     SceneUtil::PositionAttitudeTransform* RefData::getBaseNode()

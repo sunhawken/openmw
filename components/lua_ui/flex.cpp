@@ -6,6 +6,7 @@ namespace LuaUi
     {
         mHorizontal = propertyValue("horizontal", false);
         mAutoSized = propertyValue("autoSize", true);
+        mAutoWidth = propertyValue("autoSizeWidth", true);
         mAlign = propertyValue("align", Alignment::Start);
         mArrange = propertyValue("arrange", Alignment::Start);
         WidgetExtension::updateProperties();
@@ -93,8 +94,9 @@ namespace LuaUi
         MyGUI::IntSize size = WidgetExtension::calculateSize();
         if (mAutoSized)
         {
-            primary(size) = std::max(primary(size), primary(mChildrenSize));
-            secondary(size) = std::max(secondary(size), secondary(mChildrenSize));
+            if (mAutoWidth)
+                size.width = std::max(size.width, mChildrenSize.width);
+            size.height = std::max(size.height, mChildrenSize.height);
         }
         return size;
     }
@@ -108,7 +110,7 @@ namespace LuaUi
     const std::vector<std::string_view>& LuaFlex::allUsedProperties() const
     {
         static std::vector<std::string_view> usedProps = std::invoke([this] {
-            std::vector<std::string_view> props = { "horizontal", "autoSize", "arrange", "align" };
+            std::vector<std::string_view> props = { "horizontal", "autoSize", "autoSizeWidth", "arrange", "align" };
             auto baseProps = WidgetExtension::allUsedProperties();
             props.insert(props.end(), baseProps.begin(), baseProps.end());
             return props;

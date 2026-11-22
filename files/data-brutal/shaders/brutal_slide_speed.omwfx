@@ -1,0 +1,69 @@
+uniform_float brutalSlideAlpha {
+    default = 0.0;
+    min = 0.0;
+    max = 1.0;
+    static = false;
+}
+
+uniform_float brutalSlideClock {
+    default = 0.0;
+    min = 0.0;
+    max = 1024.0;
+    static = false;
+}
+
+fragment main {
+    omw_In vec2 omw_TexCoord;
+
+    float slideHash(float lane) {
+        return fract(sin(lane * 127.1 + 311.7) * 43758.5453);
+    }
+
+    float slideStreaks(float angle, float radius, float lanes, float clock, float seed) {
+        float angular = angle * lanes;
+        float lane = floor(angular);
+        float random = slideHash(lane + seed);
+        float center = 0.25 + random * 0.5;
+        float width = mix(0.025, 0.075, slideHash(lane + seed + 17.0));
+        // Derivatives keep the narrow strokes stable at different resolutions.
+        float aa = clamp(fwidth(angular), 0.012, 0.25);
+        float stroke = 1.0 - smoothstep(width, width + aa, abs(fract(angular) - center));
+        float head = 0.53 + fract(clock + random) * 1.34;
+        float tail = mix(0.12, 0.33, slideHash(lane + seed + 43.0));
+        float radial = smoothstep(head - tail, head, radius)
+            * (1.0 - smoothstep(head, head + 0.035, radius));
+        // Leave empty angular lanes, rather than drawing a dense radial veil.
+        return stroke * radial * smoothstep(0.34, 0.48, random)
+            * mix(0.45, 1.0, slideHash(lane + seed + 79.0));
+    }
+
+    void main() {
+        vec4 scene = omw_GetLastShader(omw_TexCoord);
+        if (brutalSlideAlpha <= 0.0) {
+            omw_FragColor = scene;
+            return;
+        }
+        vec2 centered = omw_TexCoord * 2.0 - 1.0;
+        float radius = length(centered);
+        vec2 direction = centered * vec2(omw.resolution.x / max(1.0, omw.resolution.y), 1.0);
+        float angle = atan(direction.y, direction.x + 0.000001) * 0.1591549431 + 0.5;
+        // The central ellipse is exactly unchanged, including the crosshair.
+        float peripheral = smoothstep(0.60, 0.96, radius);
+        // OpenMW applies this before the HUD. Suppress the bottom edge as well
+        // so scene highlights behind health/fatigue/magicka and minimap stay calm.
+        float hudClearance = smoothstep(0.10, 0.23, omw_TexCoord.y);
+        float streaks = slideStreaks(angle, radius, 68.0, brutalSlideClock, 0.0)
+            + 0.55 * slideStreaks(angle, radius, 103.0, brutalSlideClock * 1.5, 101.0);
+        float light = min(streaks, 1.0) * peripheral * hudClearance * brutalSlideAlpha * 0.24;
+        // Neutral, cool-white light coexists with the orange adrenaline atlas.
+        // No blur, displacement, FOV change or scene-alpha change is involved.
+        omw_FragColor = vec4(scene.rgb + vec3(0.92, 0.95, 1.0) * light, scene.a);
+    }
+}
+
+technique {
+    description = "Authored peripheral slide speed streaks";
+    version = "1.0";
+    author = "Brutal Morrowind";
+    passes = main;
+}

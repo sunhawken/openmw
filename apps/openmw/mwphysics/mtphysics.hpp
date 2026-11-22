@@ -61,6 +61,7 @@ namespace MWPhysics
 
         void resetSimulation(const ActorMap& actors);
         void syncSimulation();
+        JPH::PhysicsSystem& getPhysicsSystem() { return *mPhysicsSystem; }
 
         void addCollisionObject(JPH::Body* joltBody, bool activate = false);
         void removeCollisionObject(JPH::Body* collisionObject);

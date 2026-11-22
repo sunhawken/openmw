@@ -37,6 +37,8 @@ set(SHADER_FILES
     compatibility/water.frag
     compatibility/objects.vert
     compatibility/objects.frag
+    compatibility/blooddecal.vert
+    compatibility/blooddecal.frag
     compatibility/terrain.vert
     compatibility/terrain.frag
     compatibility/terrain_composite.vert

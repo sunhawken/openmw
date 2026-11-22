@@ -1,4 +1,5 @@
 #include "weapon.hpp"
+#include "../mwmechanics/brutaloptions.hpp"
 
 #include <MyGUI_TextIterator.h>
 #include <MyGUI_UString.h>
@@ -100,7 +101,13 @@ namespace MWClass
             stack = true;
         }
         else
+        {
             slots.push_back(int(MWWorld::InventoryStore::Slot_CarriedRight));
+            // ActionEquip decides when a second short blade really goes to the left hand.
+            if (MWMechanics::brutalDualWield() && MWMechanics::brutalDmFirstPerson()
+                && ref->mBase->mData.mType == ESM::Weapon::ShortBladeOneHand)
+                slots.push_back(int(MWWorld::InventoryStore::Slot_CarriedLeft));
+        }
 
         return std::make_pair(slots, stack);
     }

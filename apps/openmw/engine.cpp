@@ -1,3 +1,4 @@
+#include <components/sdlutil/windowcoordinates.hpp>
 #include "engine.hpp"
 
 #include <cerrno>
@@ -341,6 +342,13 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
 
     mViewer->eventTraversal();
     mViewer->updateTraversal();
+    // Read evaluated bones and their matching simulation interval, after OSG's
+    // keyframe callbacks have written this frame's local transforms.
+    if (mStateManager->getState() != MWBase::StateManager::State_NoGame)
+    {
+        mWorld->sampleNpcRagdollAnimation(frametime);
+        mWorld->samplePlayerSwordWallContact(frametime, *mViewer->getFrameStamp());
+    }
 
     // update focus object for GUI
     {
@@ -540,7 +548,7 @@ void OMW::Engine::createWindow()
     {
         while (!mWindow)
         {
-            mWindow = SDL_CreateWindow("OpenMW", posX, posY, width, height, flags);
+            mWindow = SDL_CreateWindow("Brutal Morrowind", posX, posY, width, height, flags);
             if (!mWindow)
             {
                 // Try with a lower AA
@@ -570,7 +578,7 @@ void OMW::Engine::createWindow()
         SDL_GL_GetDrawableSize(mWindow, &dw, &dh);
         if (dw != w || dh != h)
         {
-            SDL_SetWindowSize(mWindow, width / (dw / w), height / (dh / h));
+            SDL_SetWindowSize(mWindow, SDLUtil::drawableToWindowSize(width, w, dw), SDLUtil::drawableToWindowSize(height, h, dh));
         }
 
         setWindowIcon();

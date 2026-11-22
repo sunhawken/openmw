@@ -37,18 +37,35 @@ namespace MWRender
         osg::Matrix matrix = node->getMatrix();
 
         osg::Quat worldOrient;
+        osg::Matrixf worldMat;
         osg::NodePathList nodepaths = node->getParentalNodePaths(mRelativeTo);
 
         if (!nodepaths.empty())
         {
-            osg::Matrixf worldMat = osg::computeLocalToWorld(nodepaths[0]);
+            worldMat = osg::computeLocalToWorld(nodepaths[0]);
             worldOrient = worldMat.getRotate();
         }
 
         osg::Quat worldOrientInverse = worldOrient.inverse();
 
-        osg::Quat orient = worldOrient * mRotate * worldOrientInverse * matrix.getRotate();
-        matrix.setRotate(orient);
+        if (mUseRotationPivot && !nodepaths.empty())
+        {
+            // First-person upper limbs aim about the stable eye rather than the
+            // neck behind it, so looking up cannot swing the hands through the camera.
+            const osg::Matrixf parentWorld = osg::Matrixf::inverse(matrix) * worldMat;
+            // The carrier is an animated ancestor, so its callback has already run.
+            // Its body/head translation remains outside the view-pitch rotation.
+            osg::Vec3f pivot = mRotationPivot;
+            if (mRotationCarrier)
+                pivot += mRotationCarrier->getMatrix().getTrans();
+            matrix = worldMat * osg::Matrixf::translate(-pivot) * osg::Matrixf::rotate(mRotate)
+                * osg::Matrixf::translate(pivot) * osg::Matrixf::inverse(parentWorld);
+        }
+        else
+        {
+            osg::Quat orient = worldOrient * mRotate * worldOrientInverse * matrix.getRotate();
+            matrix.setRotate(orient);
+        }
         matrix.setTrans(matrix.getTrans() + worldOrientInverse * mOffset);
 
         node->setMatrix(matrix);
