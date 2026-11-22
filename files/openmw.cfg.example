@@ -1,0 +1,30 @@
+# Example user openmw.cfg for Brutal Morrowind.
+#
+# The global openmw.cfg shipped with the engine only sets `resources=` and the
+# engine's own `data=` directory (resources/vfs-mw). It does NOT register any
+# game data, BSA archives or content files. Those must come from the user
+# openmw.cfg (written by the launcher/wizard, or by hand from this example).
+#
+# Symptom when this is missing: the game starts with a purple screen and logs
+# errors such as "meshes/base_anim.nif" or "textures/menu_morrowind.dds" not
+# found. Both files live inside Morrowind.bsa, so the archive must be listed
+# with fallback-archive= below.
+#
+# Copy this file to your user config directory as openmw.cfg (or pass the
+# folder that contains it with --config) and adjust the data= path.
+#   Windows: Documents\My Games\OpenMW\openmw.cfg
+#   Linux:   ~/.config/brutalmorrowind/openmw.cfg
+
+# Folder that holds Morrowind.esm and Morrowind.bsa ("Data Files").
+data="C:\Program Files (x86)\Steam\steamapps\common\Morrowind\Data Files"
+
+# BSA archives, in load order. Without these, meshes and textures packed in
+# the archives cannot be found.
+fallback-archive=Morrowind.bsa
+fallback-archive=Tribunal.bsa
+fallback-archive=Bloodmoon.bsa
+
+# Content files, in load order.
+content=Morrowind.esm
+content=Tribunal.esm
+content=Bloodmoon.esm
