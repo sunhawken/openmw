@@ -22,6 +22,7 @@ namespace MWRender
     {
         std::string mGroupname;
         std::string mStartKey;
+        float mStartTime = 0.f;
     };
 
     class AnimBlendController : public SceneUtil::Controller
@@ -46,6 +47,7 @@ namespace MWRender
 
         bool mBlendTrigger = false;
         bool mInterpActive = false;
+        bool mBlendAnimationTime = false;
 
         AnimBlendStateData mAnimState;
         osg::ref_ptr<const SceneUtil::AnimBlendRules> mAnimBlendRules;

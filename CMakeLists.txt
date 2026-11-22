@@ -95,6 +95,12 @@ set(OPENMW_VERSION_COMMITHASH "")
 set(OPENMW_VERSION_TAGHASH "")
 set(OPENMW_VERSION_COMMITDATE "")
 
+# Brutal Morrowind product version; the engine base stays OPENMW_VERSION.
+set(BRUTAL_VERSION_MAJOR 0)
+set(BRUTAL_VERSION_MINOR 2)
+set(BRUTAL_VERSION_RELEASE 1)
+set(BRUTAL_VERSION "${BRUTAL_VERSION_MAJOR}.${BRUTAL_VERSION_MINOR}.${BRUTAL_VERSION_RELEASE}")
+
 set(OPENMW_VERSION "${OPENMW_VERSION_MAJOR}.${OPENMW_VERSION_MINOR}.${OPENMW_VERSION_RELEASE}")
 
 set(OPENMW_DOC_BASEURL "https://openmw.readthedocs.io/en/")
@@ -249,15 +255,15 @@ elseif(UNIX)
     SET(LIBDIR "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}" CACHE PATH "Where to install libraries")
     SET(DATAROOTDIR "${CMAKE_INSTALL_DATAROOTDIR}" CACHE PATH "Sets the root of data directories to a non-default location")
     SET(GLOBAL_DATA_PATH "${CMAKE_INSTALL_PREFIX}/share/games/" CACHE PATH "Set data path prefix")
-    SET(DATADIR "${GLOBAL_DATA_PATH}/openmw" CACHE PATH "Sets the openmw data directories to a non-default location")
+    SET(DATADIR "${GLOBAL_DATA_PATH}/brutalmorrowind" CACHE PATH "Sets the openmw data directories to a non-default location")
     SET(ICONDIR "${DATAROOTDIR}/pixmaps" CACHE PATH "Set icon dir")
-    SET(LICDIR "${DATAROOTDIR}/licenses/openmw" CACHE PATH "Sets the openmw license directory to a non-default location.")
+    SET(LICDIR "${DATAROOTDIR}/licenses/brutalmorrowind" CACHE PATH "Sets the openmw license directory to a non-default location.")
     IF("${CMAKE_INSTALL_PREFIX}" STREQUAL "/usr")
         SET(GLOBAL_CONFIG_PATH "/etc/" CACHE PATH "Set config dir prefix")
     ELSE()
         SET(GLOBAL_CONFIG_PATH "${CMAKE_INSTALL_PREFIX}/etc/" CACHE PATH "Set config dir prefix")
     ENDIF()
-    SET(SYSCONFDIR "${GLOBAL_CONFIG_PATH}/openmw" CACHE PATH "Set config dir")
+    SET(SYSCONFDIR "${GLOBAL_CONFIG_PATH}/brutalmorrowind" CACHE PATH "Set config dir")
 
     set(OPENMW_RESOURCE_FILES "${DATADIR}/resources" CACHE PATH "location of OpenMW resources files")
 else()
@@ -589,10 +595,10 @@ configure_resource_file(${OpenMW_SOURCE_DIR}/files/gamecontrollerdb.txt
     "${OpenMW_BINARY_DIR}" "gamecontrollerdb.txt")
 
 if (NOT WIN32 AND NOT APPLE)
-    configure_file(${OpenMW_SOURCE_DIR}/files/org.openmw.launcher.desktop
-        "${OpenMW_BINARY_DIR}/org.openmw.launcher.desktop")
-    configure_file(${OpenMW_SOURCE_DIR}/files/openmw.appdata.xml
-        "${OpenMW_BINARY_DIR}/openmw.appdata.xml")
+    configure_file(${OpenMW_SOURCE_DIR}/files/brutalmorrowind.desktop
+        "${OpenMW_BINARY_DIR}/brutalmorrowind.desktop")
+    configure_file(${OpenMW_SOURCE_DIR}/files/brutalmorrowind.metainfo.xml
+        "${OpenMW_BINARY_DIR}/brutalmorrowind.metainfo.xml")
     configure_file(${OpenMW_SOURCE_DIR}/files/org.openmw.cs.desktop
         "${OpenMW_BINARY_DIR}/org.openmw.cs.desktop")
 endif()
@@ -704,6 +710,11 @@ endif()
 
 if (BUILD_LAUNCHER)
     add_subdirectory( apps/launcher )
+endif()
+
+option(BUILD_DM_IMPORT "Install the Dark Messiah data importer" ON)
+if (BUILD_DM_IMPORT)
+    add_subdirectory( tools/dm-import )
 endif()
 
 if (BUILD_MWINIIMPORTER)
@@ -1047,7 +1058,14 @@ elseif(NOT APPLE)
                                                                               PATTERN "docs" EXCLUDE
                                                                               PATTERN "extern" EXCLUDE
                                                                               PATTERN "files" EXCLUDE
-                                                                              PATTERN "Testing" EXCLUDE)
+                                                                              PATTERN "lib" EXCLUDE
+                                                                              PATTERN "SymStore" EXCLUDE
+                                                                              PATTERN "symstore-venv" EXCLUDE
+                                                                              PATTERN "Testing" EXCLUDE
+                                                                              PATTERN "tests_output" EXCLUDE
+                                                                              PATTERN "tools" EXCLUDE
+                                                                              PATTERN "dm-import" EXCLUDE
+                                                                              PATTERN "try-compile")
         INSTALL(DIRECTORY "${INSTALL_SOURCE}/" DESTINATION "." CONFIGURATIONS Debug;RelWithDebInfo FILES_MATCHING PATTERN "*.pdb"
                                                                                                                   PATTERN "deps" EXCLUDE
                                                                                                                   PATTERN "apps" EXCLUDE
@@ -1056,7 +1074,14 @@ elseif(NOT APPLE)
                                                                                                                   PATTERN "docs" EXCLUDE
                                                                                                                   PATTERN "extern" EXCLUDE
                                                                                                                   PATTERN "files" EXCLUDE
-                                                                                                                  PATTERN "Testing" EXCLUDE)
+                                                                                                                  PATTERN "lib" EXCLUDE
+                                                                                                                  PATTERN "SymStore" EXCLUDE
+                                                                                                                  PATTERN "symstore-venv" EXCLUDE
+                                                                                                                  PATTERN "Testing" EXCLUDE
+                                                                                                                  PATTERN "tests_output" EXCLUDE
+                                                                                                                  PATTERN "tools" EXCLUDE
+                                                                                                                  PATTERN "dm-import" EXCLUDE
+                                                                                                                  PATTERN "try-compile")
         INSTALL(FILES "${INSTALL_SOURCE}/openmw.cfg.install" DESTINATION "." RENAME "openmw.cfg")
         INSTALL(FILES "${OpenMW_SOURCE_DIR}/CHANGELOG.md" DESTINATION "." RENAME "CHANGELOG.txt")
         INSTALL(FILES "${OpenMW_SOURCE_DIR}/README.md" DESTINATION "." RENAME "README.txt")
@@ -1071,13 +1096,13 @@ elseif(NOT APPLE)
         SET(CPACK_GENERATOR "NSIS")
         SET(CPACK_PACKAGE_EXECUTABLES "openmw_vr;OpenMW VR")
         IF(BUILD_LAUNCHER)
-            SET(CPACK_PACKAGE_EXECUTABLES "${CPACK_PACKAGE_EXECUTABLES};openmw-launcher;OpenMW Launcher")
+            SET(CPACK_PACKAGE_EXECUTABLES "${CPACK_PACKAGE_EXECUTABLES};brutalmorrowind-launcher;Brutal Morrowind Launcher")
         ENDIF(BUILD_LAUNCHER)
         IF(BUILD_OPENCS)
             SET(CPACK_PACKAGE_EXECUTABLES "${CPACK_PACKAGE_EXECUTABLES};openmw-cs;OpenMW Construction Set")
         ENDIF(BUILD_OPENCS)
         IF(BUILD_WIZARD)
-            SET(CPACK_PACKAGE_EXECUTABLES "${CPACK_PACKAGE_EXECUTABLES};openmw-wizard;OpenMW Wizard")
+            SET(CPACK_PACKAGE_EXECUTABLES "${CPACK_PACKAGE_EXECUTABLES};brutalmorrowind-wizard;Brutal Morrowind Wizard")
         ENDIF(BUILD_WIZARD)
         SET(CPACK_NSIS_CREATE_ICONS_EXTRA "CreateShortCut '\$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Readme.lnk' '\$INSTDIR\\\\README.txt'")
         SET(CPACK_NSIS_DELETE_ICONS_EXTRA "
@@ -1087,11 +1112,14 @@ elseif(NOT APPLE)
         SET(CPACK_RESOURCE_FILE_README "${OpenMW_SOURCE_DIR}/README.md")
         SET(CPACK_PACKAGE_DESCRIPTION_FILE "${OpenMW_SOURCE_DIR}/README.md")
         SET(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
-        SET(CPACK_NSIS_DISPLAY_NAME "OpenMW ${OPENMW_VERSION}")
+        SET(CPACK_NSIS_DISPLAY_NAME "Brutal Morrowind ${BRUTAL_VERSION}")
+        SET(CPACK_PACKAGE_INSTALL_DIRECTORY "Brutal Morrowind")
+        SET(CPACK_NSIS_PACKAGE_NAME "Brutal Morrowind ${BRUTAL_VERSION}")
+        SET(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "Brutal Morrowind")
         SET(CPACK_NSIS_HELP_LINK "https:\\\\\\\\www.openmw.org")
         SET(CPACK_NSIS_URL_INFO_ABOUT "https:\\\\\\\\www.openmw.org")
-        SET(CPACK_NSIS_INSTALLED_ICON_NAME "openmw-launcher.exe")
-        SET(CPACK_NSIS_MUI_FINISHPAGE_RUN "openmw-launcher.exe")
+        SET(CPACK_NSIS_INSTALLED_ICON_NAME "brutalmorrowind-launcher.exe")
+        SET(CPACK_NSIS_MUI_FINISHPAGE_RUN "brutalmorrowind-launcher.exe")
         SET(CPACK_NSIS_MUI_ICON "${OpenMW_SOURCE_DIR}/files/windows/openmw.ico")
         SET(CPACK_NSIS_MUI_UNIICON "${OpenMW_SOURCE_DIR}/files/windows/openmw.ico")
         SET(CPACK_PACKAGE_ICON "${OpenMW_SOURCE_DIR}\\\\files\\\\openmw.bmp")
@@ -1128,7 +1156,7 @@ elseif(NOT APPLE)
             INSTALL(PROGRAMS "$<TARGET_FILE:openmw>" DESTINATION "${BINDIR}" )
         ENDIF(BUILD_OPENMW)
         IF(BUILD_LAUNCHER)
-            INSTALL(PROGRAMS "${INSTALL_SOURCE}/openmw-launcher" DESTINATION "${BINDIR}" )
+            INSTALL(PROGRAMS "$<TARGET_FILE:openmw-launcher>" DESTINATION "${BINDIR}" )
         ENDIF(BUILD_LAUNCHER)
         IF(BUILD_BSATOOL)
             INSTALL(PROGRAMS "${INSTALL_SOURCE}/bsatool" DESTINATION "${BINDIR}" )
@@ -1140,7 +1168,7 @@ elseif(NOT APPLE)
             INSTALL(PROGRAMS "${INSTALL_SOURCE}/niftest" DESTINATION "${BINDIR}" )
         ENDIF(BUILD_NIFTEST)
         IF(BUILD_MWINIIMPORTER)
-            INSTALL(PROGRAMS "${INSTALL_SOURCE}/openmw-iniimporter" DESTINATION "${BINDIR}" )
+            INSTALL(PROGRAMS "$<TARGET_FILE:openmw-iniimporter>" DESTINATION "${BINDIR}" )
         ENDIF(BUILD_MWINIIMPORTER)
         IF(BUILD_ESSIMPORTER)
             INSTALL(PROGRAMS "${INSTALL_SOURCE}/openmw-essimporter" DESTINATION "${BINDIR}" )
@@ -1149,19 +1177,19 @@ elseif(NOT APPLE)
             INSTALL(PROGRAMS "${INSTALL_SOURCE}/openmw-cs" DESTINATION "${BINDIR}" )
         ENDIF(BUILD_OPENCS)
         IF(BUILD_WIZARD)
-            INSTALL(PROGRAMS "${INSTALL_SOURCE}/openmw-wizard" DESTINATION "${BINDIR}" )
+            INSTALL(PROGRAMS "$<TARGET_FILE:openmw-wizard>" DESTINATION "${BINDIR}" )
         ENDIF(BUILD_WIZARD)
         if(BUILD_NAVMESHTOOL)
-            install(PROGRAMS "${INSTALL_SOURCE}/openmw-navmeshtool" DESTINATION "${BINDIR}" )
+            install(PROGRAMS "$<TARGET_FILE:openmw-navmeshtool>" DESTINATION "${BINDIR}" )
         endif()
         IF(BUILD_PHYSICSOBJECTTOOL)
             INSTALL(PROGRAMS "${INSTALL_SOURCE}/openmw-physicsobjecttool" DESTINATION "${BINDIR}" )
         ENDIF(BUILD_PHYSICSOBJECTTOOL)
 
         # Install icon and desktop file
-        INSTALL(FILES "${OpenMW_BINARY_DIR}/org.openmw.launcher.desktop" DESTINATION "${DATAROOTDIR}/applications" COMPONENT "openmw")
-        INSTALL(FILES "${OpenMW_SOURCE_DIR}/files/launcher/images/openmw.png" DESTINATION "${ICONDIR}" COMPONENT "openmw")
-        INSTALL(FILES "${OpenMW_BINARY_DIR}/openmw.appdata.xml" DESTINATION "${DATAROOTDIR}/metainfo" COMPONENT "openmw")
+        INSTALL(FILES "${OpenMW_BINARY_DIR}/brutalmorrowind.desktop" DESTINATION "${DATAROOTDIR}/applications" COMPONENT "openmw")
+        INSTALL(FILES "${OpenMW_SOURCE_DIR}/files/launcher/images/openmw.png" DESTINATION "${ICONDIR}" RENAME "brutalmorrowind.png" COMPONENT "openmw")
+        INSTALL(FILES "${OpenMW_BINARY_DIR}/brutalmorrowind.metainfo.xml" DESTINATION "${DATAROOTDIR}/metainfo" COMPONENT "openmw")
         IF(BUILD_OPENCS)
             INSTALL(FILES "${OpenMW_BINARY_DIR}/org.openmw.cs.desktop" DESTINATION "${DATAROOTDIR}/applications" COMPONENT "opencs")
             INSTALL(FILES "${OpenMW_SOURCE_DIR}/files/opencs/openmw-cs.png" DESTINATION "${ICONDIR}" COMPONENT "opencs")

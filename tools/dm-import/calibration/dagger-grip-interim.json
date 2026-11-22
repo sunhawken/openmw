@@ -1,0 +1,32 @@
+{
+ "L": {
+  "mode": "fixed-native-hand-hilt",
+  "anchor_native_hand": [
+   5.8,
+   3.3,
+   0.6
+  ],
+  "hilt_point": [
+   0.0,
+   -3.0,
+   0.0
+  ],
+  "measurement": "Native bare/steel skinned hand vs Iron/Steel guard; idle both grips, raised guard, fastD blend, exact user fastE intermediate grip; all four appended charged holds",
+  "constraint": "Four gripping fingers retain the handle at closed poses; authored open regrip preserved"
+ },
+ "R": {
+  "mode": "fixed-native-hand-hilt",
+  "anchor_native_hand": [
+   5.250100291214048,
+   4.137934881083517,
+   0.6729253644072466
+  ],
+  "hilt_point": [
+   0.0,
+   -2.625,
+   0.0
+  ],
+  "measurement": "Native bare/steel skinned hand vs Iron/Steel guard; idle both grips, raised guard, fastD blend, exact user fastE intermediate grip; all four appended charged holds",
+  "constraint": "Four gripping fingers retain the handle at closed poses; authored open regrip preserved"
+ }
+}

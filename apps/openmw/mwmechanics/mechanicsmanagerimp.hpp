@@ -137,6 +137,11 @@ namespace MWMechanics
         bool sleepInBed(const MWWorld::Ptr& ptr, const MWWorld::Ptr& bed) override;
 
         void forceStateUpdate(const MWWorld::Ptr& ptr) override;
+        bool requestSwordClinch(const MWWorld::Ptr& player, const MWWorld::Ptr& opponent) override;
+        void swordClinchInput(bool pressed) override;
+        void cancelSwordClinch(const MWWorld::Ptr& participant, std::string_view reason) override;
+        bool staggerActor(const MWWorld::Ptr& ptr, std::string_view group = {}) override;
+        void cancelPlayerAttackForKick() override;
 
         /// Attempt to play an animation group
         /// @return Success or error

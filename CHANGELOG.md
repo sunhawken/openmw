@@ -1,3 +1,11 @@
+Brutal Morrowind 0.2.1
+---------------------
+
+    Linux: Programs find bundled libraries and Qt plugins when started directly or from another directory.
+    Linux: The game finds its packaged OpenSceneGraph plugins independently of the working directory.
+    Linux: Complete the XCB, Qt Wayland and standalone Python library dependencies.
+    Linux: Validate package startup on clean Fedora and Ubuntu runtimes, including X11 and Wayland windows.
+
 0.51.0
 ------
 

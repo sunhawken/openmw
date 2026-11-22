@@ -66,12 +66,15 @@ namespace MWClass
         //  its victim as a parameter.
         std::optional<std::pair<MWWorld::Ptr, osg::Vec3f>> findMeleeVictim(const MWWorld::Ptr& ptr) const override;
 
-        MWWorld::MeleeHit evaluateHit(
+        MWWorld::MeleeHit evaluateVRHit(
             const MWWorld::Ptr& ptr, std::optional<std::pair<MWWorld::Ptr, osg::Vec3f>> victim) const override;
         // ## VR_PATCH END
 
+        bool evaluateHit(const MWWorld::Ptr& ptr, MWWorld::Ptr& victim, osg::Vec3f& hitPosition, int* contactPart,
+            std::string_view swing) const override;
+
         void hit(const MWWorld::Ptr& ptr, float attackStrength, int type, const MWWorld::Ptr& victim,
-            const osg::Vec3f& hitPosition, bool success, bool ignoreReach) const override;
+            const osg::Vec3f& hitPosition, bool success, int contactPart, bool ignoreReach) const override;
 
         virtual void onHit(const MWWorld::Ptr& ptr, const std::map<std::string, float>& damages, ESM::RefId object,
             const MWWorld::Ptr& attacker, bool successful, const MWMechanics::DamageSourceType sourceType) const override;

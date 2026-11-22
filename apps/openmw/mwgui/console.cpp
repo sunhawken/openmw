@@ -240,7 +240,11 @@ namespace MWGui
         if (mConsoleMode.empty() && runBatchFile(command))
             return;
 
-        if (!mConsoleMode.empty() || (command.size() >= 3 && std::string_view(command).substr(0, 3) == "lua"))
+        // Brutal Morrowind: "adrenaline [amount]" (fill or set the gauge) is a player Lua command.
+        const bool brutalCommand = Misc::StringUtils::ciEqual(command, "adrenaline")
+            || Misc::StringUtils::ciStartsWith(command, "adrenaline ");
+        if (!mConsoleMode.empty() || brutalCommand
+            || (command.size() >= 3 && std::string_view(command).substr(0, 3) == "lua"))
         {
             MWBase::Environment::get().getLuaManager()->handleConsoleCommand(mConsoleMode, command, mPtr);
             return;

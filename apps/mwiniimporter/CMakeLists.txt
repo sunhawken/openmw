@@ -38,3 +38,5 @@ endif()
 if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
     target_precompile_headers(openmw-iniimporter REUSE_FROM components)
 endif()
+
+set_target_properties(openmw-iniimporter PROPERTIES OUTPUT_NAME brutalmorrowind-iniimporter)

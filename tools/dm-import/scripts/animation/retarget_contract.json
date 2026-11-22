@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "id": "dark-messiah-first-basic-to-morrowind-first-person",
+  "status": "structural contract; generated poses and physical grips require separate validation",
+  "anatomy_priority": "User instruction: natural anatomy and a convincing grip on native models take priority over literal Dark Messiah bone or finger-pose matching. Preserve attack/regrip timing and gesture roles; adapt native joint bends, opposition and grip placement as needed",
+  "source_model": "first_basic",
+  "coordinate_basis": [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+  "sides": {
+    "R": {
+      "source": {
+        "clavicle": "SK_R_Collarbone", "shoulder": "SK_R_Shoulder", "elbow": "SK_R_Elbow",
+        "forearm_helper": "SK_R_Forearm", "distal_twist_helper": "SK_R_Wrist", "palm": "SK_R_Hand"
+      },
+      "target": {
+        "clavicle": "Bip01 R Clavicle", "shoulder": "Bip01 R UpperArm",
+        "elbow": "Bip01 R Forearm", "palm": "Bip01 R Hand"
+      },
+      "digits": [
+        {"role": "thumb", "source": ["SK_R_Thumb_1", "SK_R_Thumb_2", "SK_R_Thumb_3", "SK_R_Thumb_4"], "target": ["Bip01 R Finger0", "Bip01 R Finger01", "Bip01 R Finger02"]},
+        {"role": "index", "source": ["SK_R_Finger_A1", "SK_R_Finger_A2", "SK_R_Finger_A3", "SK_R_Finger_A4"], "target": ["Bip01 R Finger1", "Bip01 R Finger11", "Bip01 R Finger12"]},
+        {"role": "middle", "source": ["SK_R_Finger_B1", "SK_R_Finger_B2", "SK_R_Finger_B3", "SK_R_Finger_B4"], "target": ["Bip01 R Finger2", "Bip01 R Finger21", "Bip01 R Finger22"]},
+        {"role": "ring", "source": ["SK_R_Finger_C1", "SK_R_Finger_C2", "SK_R_Finger_C3", "SK_R_Finger_C4"], "target": ["Bip01 R Finger3", "Bip01 R Finger31", "Bip01 R Finger32"]},
+        {"role": "little", "source": ["SK_Finger_D1", "SK_Finger_D2", "SK_Finger_D3", "SK_Finger_D4"], "target": ["Bip01 R Finger4", "Bip01 R Finger41", "Bip01 R Finger42"]}
+      ]
+    },
+    "L": {
+      "source": {
+        "clavicle": "SK_L_Collarbone", "shoulder": "SK_L_Shoulder", "elbow": "SK_L_Elbow",
+        "forearm_helper": "SK_L_Forearm", "distal_twist_helper": "SK_L_Wrist", "palm": "SK_L_Hand"
+      },
+      "target": {
+        "clavicle": "Bip01 L Clavicle", "shoulder": "Bip01 L UpperArm",
+        "elbow": "Bip01 L Forearm", "palm": "Bip01 L Hand"
+      },
+      "digits": [
+        {"role": "thumb", "source": ["SK_L_Thumb_1", "SK_L_Thumb_2", "SK_L_Thumb_3", "SK_L_Thumb_4"], "target": ["Bip01 L Finger0", "Bip01 L Finger01", "Bip01 L Finger02"]},
+        {"role": "index", "source": ["SK_L_Finger_A1", "SK_L_Finger_A2", "SK_L_Finger_A3", "SK_L_Finger_A4"], "target": ["Bip01 L Finger1", "Bip01 L Finger11", "Bip01 L Finger12"]},
+        {"role": "middle", "source": ["SK_L_Finger_B1", "SK_L_Finger_B2", "SK_L_Finger_B3", "SK_L_Finger_B4"], "target": ["Bip01 L Finger2", "Bip01 L Finger21", "Bip01 L Finger22"]},
+        {"role": "ring", "source": ["SK_L_Finger_C1", "SK_L_Finger_C2", "SK_L_Finger_C3", "SK_L_Finger_C4"], "target": ["Bip01 L Finger3", "Bip01 L Finger31", "Bip01 L Finger32"]},
+        {"role": "little", "source": ["SK_L_Finger_D1", "SK_L_Finger_D2", "SK_L_Finger_D3", "SK_L_Finger_D4"], "target": ["Bip01 L Finger4", "Bip01 L Finger41", "Bip01 L Finger42"]}
+      ]
+    }
+  },
+  "attachments": [
+    {"source": "RightHand", "source_parent": "SK_R_Hand", "target": "Weapon Bone", "target_parent": "Bip01 R Hand"},
+    {"source": "RightHand_Staff", "source_parent": "SK_R_Hand", "target": "Weapon Bone", "target_parent": "Bip01 R Hand"},
+    {"source": "RightHand_Daggers", "source_parent": "SK_R_Hand", "target": "Weapon Bone", "target_parent": "Bip01 R Hand"},
+    {"source": "LeftHand_Daggers", "source_parent": "SK_L_Hand", "target": "Brutal Left Weapon", "target_parent": "Bip01 L Hand", "generated_target": true},
+    {"source": "Leftshield", "source_parent": "SK_L_Wrist", "target": "Shield Bone", "target_parent": "Bip01 L Hand"}
+  ],
+  "rules": {
+    "palm_pivot": "Source Hand origin, supported by animation hierarchy and dominant palm skin weights; Wrist is a twist helper, not the palm flexion pivot",
+    "forearm": "Source Elbow/Forearm/Wrist/Hand are collapsed into the native Forearm-to-Hand segment; Wrist world orientation is a distal pronation guide, never a separate native palm pivot",
+    "palm_frame": "A fixed bind/reference Hand skin-patch basis defines rigid palm orientation in each rig. Hand-to-mean(index,middle,ring,little MCP) and index-to-little MCP define a useful reference frame only at that reference pose; animated MCP-root translations are separate metacarpal deformation, not extra rigid Hand rotation",
+    "native_arm_frame": "Signed native rest bend-plane basis and real child translation axes; must round-trip oriented native rest, not only joint centres",
+    "digit": "Source joints 1..4 define three landmark segments for native joints 0..2, preserving native lengths. Source joint 4 also has skin weights: its local animation must be audited before folding this extra control into three target joints. Full axial frame and actual skin pad/nail orientation are separate from segment direction",
+    "thumb_homology": "The chain is a structural correspondence, not a proven CMC/MCP/IP equivalence. In Staff idle Source Thumb1 lies at about 0.27 palm length, native Finger0 at about 0.71; native opposition must account for different joint locations and actual skin",
+    "item": "Explicit model attachment plus item animated-root/bind compensation and native physical grip; held-item transform is not a substitute for anatomical palm orientation",
+    "native_contact_adaptation": "A separately recorded, mesh-specific native anatomical profile may adapt finger bends, abduction, opposition, palm placement, arm position and item orientation. Natural anatomy and convincing finite-handle enclosure take priority over literal Source pose matching; preserve gesture/release roles and event timing, check actual skinned meshes and visually review",
+    "left_item": "Actual OpenMW left-item mirror is applied once after the bone transform; it does not define or mirror the anatomical palm frame",
+    "release": "An open Source hand may leave the item; never force contact for every pose",
+    "acceptance": "Structural mapping, oriented-rest roundtrip, source pose fidelity, actual rendered geometry and visual review are separate checks; none implies the others"
+  }
+}

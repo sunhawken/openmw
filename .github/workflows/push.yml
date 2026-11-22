@@ -39,8 +39,7 @@ jobs:
         -D CMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
         -D OPENMW_USE_SYSTEM_RECASTNAVIGATION=ON
         -D USE_SYSTEM_TINYXML=ON
-        -D BUILD_COMPONENTS_TESTS=ON
-        -D BUILD_OPENMW_TESTS=ON
+        -D BUILD_UNITTESTS=ON
         -D BUILD_OPENCS_TESTS=OFF
         -D BUILD_OPENCS=OFF
         -D BUILD_LAUNCHER=OFF
@@ -49,9 +48,6 @@ jobs:
 
     - name: Build
       run: cmake --build . -- -j$(nproc)
-
-    - name: Run components tests
-      run: ./components-tests
 
     - name: Run OpenMW tests
       run: ./openmw-tests
@@ -65,9 +61,9 @@ jobs:
       run: |
         set -euxo pipefail
         mkdir -p siff-linux-runtime/bin siff-linux-runtime/lib siff-linux-runtime/osgPlugins-3.6.5
-        cp ./openmw siff-linux-runtime/bin/openmw
+        cp ./brutalmorrowind siff-linux-runtime/bin/openmw
         cp -a ./resources siff-linux-runtime/
-        ldd ./openmw | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' | sort -u > /tmp/openmw-libs.txt
+        ldd ./brutalmorrowind | awk '/=> \/|^\// { for (i=1;i<=NF;i++) if ($i ~ /^\//) print $i }' | sort -u > /tmp/openmw-libs.txt
         while read -r lib; do cp -L "$lib" siff-linux-runtime/lib/ || true; done < /tmp/openmw-libs.txt
         if [ -d /usr/lib/x86_64-linux-gnu/osgPlugins-3.6.5 ]; then
           cp -a /usr/lib/x86_64-linux-gnu/osgPlugins-3.6.5/. siff-linux-runtime/osgPlugins-3.6.5/

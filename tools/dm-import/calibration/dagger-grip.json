@@ -1,0 +1,32 @@
+{
+ "L": {
+  "mode": "fixed-native-hand-hilt",
+  "anchor_native_hand": [
+   5.555510449611863,
+   1.4115530099698326,
+   -0.039605302406943044
+  ],
+  "hilt_point": [
+   0.0,
+   -3.25,
+   0.0
+  ],
+  "measurement": "Native13 female skinned geometry and mirrored item root verified; 4 finger curl centres and axial centering; core guard clear; Left Back gauntlet .382 seam pending",
+  "constraint": "Enclosure-first real female finger cage; visible render acceptance pending"
+ },
+ "R": {
+  "mode": "fixed-native-hand-hilt",
+  "anchor_native_hand": [
+   5.792490037954269,
+   1.4394964650566457,
+   0.1098733198791757
+  ],
+  "hilt_point": [
+   0.0,
+   -3.25,
+   0.0
+  ],
+  "measurement": "Native13 female skinned geometry and mirrored item root verified; 4 finger curl centres and axial centering; core guard clear; Left Back gauntlet .382 seam pending",
+  "constraint": "Enclosure-first real female finger cage; visible render acceptance pending"
+ }
+}

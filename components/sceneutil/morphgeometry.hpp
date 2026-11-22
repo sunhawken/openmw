@@ -1,6 +1,8 @@
 #ifndef OPENMW_COMPONENTS_MORPHGEOMETRY_H
 #define OPENMW_COMPONENTS_MORPHGEOMETRY_H
 
+#include "surfacedecals.hpp"
+
 #include <osg/Geometry>
 
 namespace SceneUtil
@@ -67,6 +69,10 @@ namespace SceneUtil
 
         osg::ref_ptr<osg::Geometry> getSourceGeometry() const;
 
+        SurfaceDecals* getOrCreateSurfaceDecals();
+        const SurfaceDecals* getSurfaceDecals() const { return mSurfaceDecals.get(); }
+        SurfaceDecals* getSurfaceDecals() { return mSurfaceDecals.get(); }
+
         void accept(osg::NodeVisitor& nv) override;
         bool supports(const osg::PrimitiveFunctor&) const override { return true; }
         void accept(osg::PrimitiveFunctor&) const override;
@@ -79,6 +85,8 @@ namespace SceneUtil
         MorphTargetList mMorphTargets;
 
         osg::ref_ptr<osg::Geometry> mSourceGeometry;
+        // Copy construction deliberately starts with no instance decals.
+        osg::ref_ptr<SurfaceDecals> mSurfaceDecals;
 
         osg::ref_ptr<osg::Geometry> mGeometry[2];
         osg::Geometry* getGeometry(unsigned int frame) const;

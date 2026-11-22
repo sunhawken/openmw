@@ -61,7 +61,7 @@ int wmain(int argc, wchar_t* wargv[])
 
     try
     {
-        bpo::options_description desc("Syntax: openmw-iniimporter <options> inifile configfile\nAllowed options");
+        bpo::options_description desc("Syntax: brutalmorrowind-iniimporter <options> inifile configfile\nAllowed options");
         bpo::positional_options_description positionalDesc;
         auto addOption = desc.add_options();
         addOption("help,h", "produce help message");

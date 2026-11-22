@@ -26,6 +26,7 @@ namespace Launcher
     class DataFilesPage;
     class UnshieldThread;
     class ImportPage;
+    class DarkMessiahPage;
     class SettingsPage;
 
     enum FirstRunDialogResult
@@ -57,6 +58,7 @@ namespace Launcher
         void enableGraphicsPage();
         void enableSettingsPage();
         void enableImportPage();
+        void enableDarkMessiahPage();
         void play();
         void help();
 
@@ -66,6 +68,7 @@ namespace Launcher
     private slots:
         void wizardStarted();
         void wizardFinished(int exitCode, QProcess::ExitStatus exitStatus);
+        void darkMessiahImportFinished(bool success, bool playAfter);
 
     private:
         bool setup();
@@ -90,11 +93,15 @@ namespace Launcher
         bool startProgram(const QString& name, const QStringList& arguments, bool detached = false);
 
         void closeEvent(QCloseEvent* event) override;
+        void checkPage(QAction* action);
+        void launchGame();
 
         GraphicsPage* mGraphicsPage;
         DataFilesPage* mDataFilesPage;
         ImportPage* mImportPage;
         SettingsPage* mSettingsPage;
+        DarkMessiahPage* mDarkMessiahPage = nullptr;
+        QAction* mDarkMessiahAction = nullptr;
 
         Process::ProcessInvoker* mGameInvoker;
         Process::ProcessInvoker* mWizardInvoker;

@@ -18,7 +18,7 @@ set(OPENMW_HEADERS
 source_group(apps/openmw FILES main.cpp androidmain.cpp ${OPENMW_SOURCES} ${OPENMW_HEADERS} ${OPENMW_RESOURCES})
 
 add_openmw_dir (mwrender
-    actors objects renderingmanager animation rotatecontroller jigglebonecontroller jiggleglute verletclothcontroller jiggleautorig sky skyutil npcanimation esm4npcanimation vismask
+    actors objects renderingmanager animation rotatecontroller jigglebonecontroller jiggleglute verletclothcontroller jiggleautorig sky skyutil npcanimation clinchpose swordwallcontact npcblood bisection limbsevering esm4npcanimation clinchpose swordwallcontact npcblood bisection limbsevering vismask
     creatureanimation effectmanager util renderinginterface pathgrid rendermode weaponanimation screenshotmanager
     joltdebugdraw globalmap characterpreview camera localmap water terrainstorage ripplesimulation
     renderbin actoranimation landmanager navmesh actorspaths recastmesh fogmanager objectpaging groundcover
@@ -91,6 +91,7 @@ add_openmw_dir (mwphysics
     physicssystem trace collisiontype actor convert object heightfield collisionshapeconfig
     stepper movementsolver projectile raycasting mtphysics water dynamicobject
     ragdollbuilder ragdollwrapper skeletonmapper
+    ragdoll creaturerig
     )
 
 add_openmw_dir (mwclass
@@ -104,7 +105,7 @@ add_openmw_dir (mwmechanics
     drawstate spells activespells npcstats aipackage aisequence aipursue alchemy aiwander aitravel aifollow aiavoiddoor aibreathe
     aicast aiescort aiface aiactivate aicombat recharge repair enchanting pathfinding pathgrid security spellcasting spellresistance
     disease pickpocket levelledlist combat steering obstacle autocalcspell difficultyscaling aicombataction summoning
-    character actors objects aistate weaponpriority spellpriority weapontype spellutil
+    character actors swordclinch objects aistate weaponpriority spellpriority weapontype spellutil brutalfootsteps
     spelleffects
     )
 
@@ -357,4 +358,7 @@ endif()
 
 if (WIN32 AND BUILD_OPENMW_VR)
     INSTALL(TARGETS openmw_vr RUNTIME DESTINATION ".")
+endif()
+if (TARGET openmw)
+    set_target_properties(openmw PROPERTIES OUTPUT_NAME brutalmorrowind)
 endif()

@@ -313,6 +313,12 @@ namespace MWGui
     void HUD::onFrame(float dt)
     {
         LocalMapBase::onFrame(dt);
+        const int hudOffset = Settings::game().mBrutalEnabled && Settings::game().mBrutalAdrenalineHud ? 18 : 0;
+        if (mBrutalHudOffset != hudOffset)
+        {
+            mBrutalHudOffset = hudOffset;
+            updatePositions();
+        }
 
         mCellNameTimer -= dt;
         mWeaponSpellTimer -= dt;
@@ -546,9 +552,9 @@ namespace MWGui
         if (!mWeaponVisible && !mSpellVisible)
             mWeaponSpellBox->setVisible(false);
 
-        mWeapBox->setPosition(mWeapBoxBaseLeft - weapDx, mWeapBox->getTop());
-        mSpellBox->setPosition(mSpellBoxBaseLeft - spellDx, mSpellBox->getTop());
-        mSneakBox->setPosition(mSneakBoxBaseLeft - sneakDx, mSneakBox->getTop());
+        mWeapBox->setPosition(mWeapBoxBaseLeft - weapDx + mBrutalHudOffset, mWeapBox->getTop());
+        mSpellBox->setPosition(mSpellBoxBaseLeft - spellDx + mBrutalHudOffset, mSpellBox->getTop());
+        mSneakBox->setPosition(mSneakBoxBaseLeft - sneakDx + mBrutalHudOffset, mSneakBox->getTop());
 
 //## VR_PATCH BEGIN
 // Hud size shouldn't depend on window size in VR

@@ -1,0 +1,67 @@
+name: Reusable Linux workflow
+
+# Builds the Linux package in the CI/brutal/linux.Containerfile image with
+# CI/brutal/build-linux.sh. The image layers and the compiler cache are kept
+# between runs.
+
+on:
+  workflow_call:
+
+jobs:
+  Package:
+    runs-on: ubuntu-24.04
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: docker/setup-buildx-action@v3
+
+    - name: Build the build image
+      uses: docker/build-push-action@v6
+      with:
+        context: CI/brutal
+        file: CI/brutal/linux.Containerfile
+        tags: brutal-linux
+        load: true
+        cache-from: type=gha,scope=brutal-linux
+        cache-to: type=gha,scope=brutal-linux,mode=max
+
+    - name: Restore the compiler cache
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ccache-linux-${{ github.sha }}
+        restore-keys: ccache-linux-
+
+    - name: Build the package
+      run: >
+        mkdir -p "$CCACHE_DIR" &&
+        docker run --rm --volume "${{ github.workspace }}:/src" --workdir /src
+        --env CCACHE_DIR=/src/.ccache --env CCACHE_MAXSIZE=2G --env CCACHE_BASEDIR=/src
+        brutal-linux bash CI/brutal/build-linux.sh /src/build-linux /src/dist
+
+    - name: Save the compiler cache
+      if: always()
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ccache-linux-${{ github.sha }}
+
+    - name: Test the package on clean desktop runtimes
+      run: |
+        package="$(find "$PWD/build-linux" -maxdepth 1 -type d -name 'BrutalMorrowind-*-Linux-64Bit' -print -quit)"
+        test -n "$package"
+        for runtime in ubuntu:24.04 fedora:45; do
+          docker build --file CI/brutal/linux-runtime.Containerfile \
+            --build-arg "BASE_IMAGE=docker.io/library/$runtime" --tag brutal-runtime CI/brutal
+          docker run --rm --volume "$package:/package with spaces:ro" brutal-runtime
+        done
+
+    - name: Store the package
+      uses: actions/upload-artifact@v6
+      with:
+        name: brutalmorrowind-linux-${{ github.sha }}
+        path: ${{ github.workspace }}/dist/*.tar.gz

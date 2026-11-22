@@ -38,6 +38,7 @@ namespace SDLUtil
         void setGrabPointer(bool grab);
 
         void warpMouse(int x, int y);
+        void warpMouseInDrawable(int x, int y);
 
         void updateMouseSettings();
 
@@ -79,8 +80,10 @@ namespace SDLUtil
         bool mWindowHasFocus;
         bool mMouseInWindow;
 
-        Uint16 mScaleX;
-        Uint16 mScaleY;
+        float mScaleX = 1.f;
+        float mScaleY = 1.f;
+        float mRelativeRemainderX = 0.f;
+        float mRelativeRemainderY = 0.f;
     };
 
 }

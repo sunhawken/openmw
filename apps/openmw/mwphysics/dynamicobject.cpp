@@ -15,6 +15,7 @@
 #include <Jolt/Jolt.h>
 
 #include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
@@ -94,7 +95,7 @@ namespace MWPhysics
 
     DynamicObject::DynamicObject(const MWWorld::Ptr& ptr, osg::ref_ptr<Resource::PhysicsShapeInstance> shapeInstance,
         osg::Quat rotation, float mass, PhysicsTaskScheduler* scheduler, PhysicsSystem* physicsSystem,
-        DynamicShapeType shapeType)
+        DynamicShapeType shapeType, bool preserveShape)
         : PtrHolder(ptr, ptr.getRefData().getPosition().asVec3())
         , mShapeInstance(std::move(shapeInstance))
         , mMass(mass)
@@ -105,7 +106,8 @@ namespace MWPhysics
         // For dynamic objects, we need to use a convex shape instead of a mesh shape.
         // Jolt's MeshShape cannot collide with other MeshShapes or HeightfieldShapes,
         // which means dynamic objects using mesh shapes would pass through terrain and walls.
-        JPH::Ref<JPH::Shape> convexShape = createConvexShapeFromMesh(mShapeInstance->mCollisionShape.GetPtr(), shapeType);
+        JPH::Ref<JPH::Shape> convexShape = preserveShape ? mShapeInstance->mCollisionShape
+            : createConvexShapeFromMesh(mShapeInstance->mCollisionShape.GetPtr(), shapeType);
         if (!convexShape)
         {
             Log(Debug::Error) << "Failed to create convex shape for dynamic object: " << ptr.getCellRef().getRefId();
@@ -301,10 +303,27 @@ namespace MWPhysics
         bodyInterface.ActivateBody(getPhysicsBody());
     }
 
+    void DynamicObject::ignoreOverlappingBodies(std::vector<JPH::BodyID> bodies)
+    {
+        mTaskScheduler->syncSimulation();
+        mIgnoredBodies = std::move(bodies);
+        updateCollisionExclusions();
+    }
+
+    void DynamicObject::updateCollisionExclusions()
+    {
+        if (!mPhysicsBody || mIgnoredBodies.empty()) return;
+        const auto bounds = mPhysicsBody->GetWorldSpaceBounds();
+        const auto& locks = mTaskScheduler->getPhysicsSystem().GetBodyLockInterface();
+        std::erase_if(mIgnoredBodies, [&](JPH::BodyID id) {
+            JPH::BodyLockRead lock(locks, id);
+            return !lock.Succeeded() || !bounds.Overlaps(lock.GetBody().GetWorldSpaceBounds());
+        });
+    }
+
     bool DynamicObject::onContactValidate(const JPH::Body& withBody)
     {
-        // Allow all collisions for dynamic objects
-        return true;
+        return std::find(mIgnoredBodies.begin(), mIgnoredBodies.end(), withBody.GetID()) == mIgnoredBodies.end();
     }
 
     void DynamicObject::onContactAdded(const JPH::Body& withBody, const JPH::ContactManifold& inManifold,

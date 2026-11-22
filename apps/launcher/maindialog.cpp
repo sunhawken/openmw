@@ -2,6 +2,7 @@
 
 #include <QCloseEvent>
 #include <QDir>
+#include <QCheckBox>
 #include <QMessageBox>
 #include <QStringList>
 #include <QTime>
@@ -19,8 +20,13 @@
 
 #include "datafilespage.hpp"
 #include "graphicspage.hpp"
+#include "darkmessiahpage.hpp"
 #include "importpage.hpp"
 #include "settingspage.hpp"
+
+#ifndef GAME_EXECUTABLE_NAME
+#define GAME_EXECUTABLE_NAME "openmw_vr"
+#endif
 
 namespace
 {
@@ -55,7 +61,7 @@ Launcher::MainDialog::MainDialog(const Files::ConfigurationManager& configuratio
         &MainDialog::wizardFinished);
 
     buttonBox->button(QDialogButtonBox::Close)->setText(tr("Close"));
-    buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Launch OpenMW"));
+    buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Play"));
     buttonBox->button(QDialogButtonBox::Help)->setText(tr("Help"));
 
     buttonBox->button(QDialogButtonBox::Ok)->setMinimumWidth(160);
@@ -110,6 +116,12 @@ void Launcher::MainDialog::createIcons()
     connect(graphicsAction, &QAction::triggered, this, &MainDialog::enableGraphicsPage);
     connect(settingsAction, &QAction::triggered, this, &MainDialog::enableSettingsPage);
     connect(importAction, &QAction::triggered, this, &MainDialog::enableImportPage);
+
+    mDarkMessiahAction = new QAction(QIcon(QStringLiteral(":/images/dark-messiah.png")), tr("Dark Messiah"), this);
+    mDarkMessiahAction->setCheckable(true);
+    mDarkMessiahAction->setToolTip(tr("Find Dark Messiah of Might and Magic and import its animations"));
+    toolBar->insertAction(graphicsAction, mDarkMessiahAction);
+    connect(mDarkMessiahAction, &QAction::triggered, this, &MainDialog::enableDarkMessiahPage);
 }
 
 void Launcher::MainDialog::createPages()
@@ -122,12 +134,16 @@ void Launcher::MainDialog::createPages()
     mGraphicsPage = new GraphicsPage(this);
     mImportPage = new ImportPage(mCfgMgr, mGameSettings, mLauncherSettings, this);
     mSettingsPage = new SettingsPage(mCfgMgr, mGameSettings, this);
+    mDarkMessiahPage = new DarkMessiahPage(mCfgMgr, mGameSettings, this);
+    connect(mDarkMessiahPage, &DarkMessiahPage::importFinished, this, &MainDialog::darkMessiahImportFinished);
 
     // Add the pages to the stacked widget
     pagesWidget->addWidget(mDataFilesPage);
     pagesWidget->addWidget(mGraphicsPage);
     pagesWidget->addWidget(mSettingsPage);
     pagesWidget->addWidget(mImportPage);
+    pagesWidget->addWidget(mDarkMessiahPage);
+    mDarkMessiahPage->loadSettings();
 
     // Select the first page
     dataAction->setChecked(true);
@@ -178,7 +194,7 @@ Launcher::FirstRunDialogResult Launcher::MainDialog::showFirstRunDialog()
 
         if (msgBox.clickedButton() == wizardButton)
         {
-            if (mWizardInvoker->startProcess(QLatin1String("openmw-wizard"), false))
+            if (mWizardInvoker->startProcess(QLatin1String("brutalmorrowind-wizard"), false))
                 return FirstRunDialogResultWizard;
         }
         else if (msgBox.clickedButton() == skipButton)
@@ -267,6 +283,8 @@ bool Launcher::MainDialog::reloadSettings()
     if (!mSettingsPage->loadSettings())
         return false;
 
+    mDarkMessiahPage->loadSettings();
+
     return true;
 }
 
@@ -274,40 +292,28 @@ void Launcher::MainDialog::enableDataPage()
 {
     pagesWidget->setCurrentIndex(0);
     mImportPage->resetProgressBar();
-    dataAction->setChecked(true);
-    graphicsAction->setChecked(false);
-    importAction->setChecked(false);
-    settingsAction->setChecked(false);
+    checkPage(dataAction);
 }
 
 void Launcher::MainDialog::enableGraphicsPage()
 {
     pagesWidget->setCurrentIndex(1);
     mImportPage->resetProgressBar();
-    dataAction->setChecked(false);
-    graphicsAction->setChecked(true);
-    settingsAction->setChecked(false);
-    importAction->setChecked(false);
+    checkPage(graphicsAction);
 }
 
 void Launcher::MainDialog::enableSettingsPage()
 {
     pagesWidget->setCurrentIndex(2);
     mImportPage->resetProgressBar();
-    dataAction->setChecked(false);
-    graphicsAction->setChecked(false);
-    settingsAction->setChecked(true);
-    importAction->setChecked(false);
+    checkPage(settingsAction);
 }
 
 void Launcher::MainDialog::enableImportPage()
 {
     pagesWidget->setCurrentIndex(3);
     mImportPage->resetProgressBar();
-    dataAction->setChecked(false);
-    graphicsAction->setChecked(false);
-    settingsAction->setChecked(false);
-    importAction->setChecked(true);
+    checkPage(importAction);
 }
 
 bool Launcher::MainDialog::setupLauncherSettings()
@@ -427,7 +433,7 @@ bool Launcher::MainDialog::setupGameData()
 
         if (msgBox.clickedButton() == wizardButton)
         {
-            if (!mWizardInvoker->startProcess(QLatin1String("openmw-wizard"), false))
+            if (!mWizardInvoker->startProcess(QLatin1String("brutalmorrowind-wizard"), false))
                 return false;
         }
     }
@@ -479,6 +485,7 @@ bool Launcher::MainDialog::writeSettings()
     mGraphicsPage->saveSettings();
     mImportPage->saveSettings();
     mSettingsPage->saveSettings();
+    mDarkMessiahPage->saveSettings();
 
     const auto& userPath = mCfgMgr.getUserConfigPath();
 
@@ -553,8 +560,37 @@ bool Launcher::MainDialog::writeSettings()
 
 void Launcher::MainDialog::closeEvent(QCloseEvent* event)
 {
+    if (mDarkMessiahPage != nullptr && mDarkMessiahPage->importRunning())
+    {
+        const auto answer = QMessageBox::question(this, tr("Dark Messiah import"),
+            tr("The Dark Messiah import is still running. Cancel it and close the launcher?"));
+        if (answer != QMessageBox::Yes)
+        {
+            event->ignore();
+            return;
+        }
+    }
     writeSettings();
     event->accept();
+}
+
+void Launcher::MainDialog::enableDarkMessiahPage()
+{
+    pagesWidget->setCurrentWidget(mDarkMessiahPage);
+    mImportPage->resetProgressBar();
+    checkPage(mDarkMessiahAction);
+}
+
+void Launcher::MainDialog::checkPage(QAction* action)
+{
+    for (QAction* page : { dataAction, graphicsAction, settingsAction, importAction, mDarkMessiahAction })
+        page->setChecked(page == action);
+}
+
+void Launcher::MainDialog::darkMessiahImportFinished(bool success, bool playAfter)
+{
+    if (success && playAfter)
+        launchGame();
 }
 
 void Launcher::MainDialog::wizardStarted()
@@ -592,11 +628,69 @@ void Launcher::MainDialog::play()
         return;
     }
 
-    // Launch the game detached
+    if (mDarkMessiahPage->importRunning())
+    {
+        enableDarkMessiahPage();
+        return;
+    }
 
-//## VR_PATCH BEGIN
-    if (mGameInvoker->startProcess(QLatin1String("openmw_vr"), true))
-//## VR_PATCH END
+    if (!mDarkMessiahPage->dataReady())
+    {
+        if (mDarkMessiahPage->gameFolderValid())
+        {
+            QMessageBox msgBox(this);
+            msgBox.setWindowTitle(tr("Dark Messiah data"));
+            msgBox.setIcon(QMessageBox::Question);
+            if (mDarkMessiahPage->olderDataPresent())
+                msgBox.setText(tr("<b>The Dark Messiah import is from an older version of Brutal Morrowind.</b><br><br>"
+                                  "This version needs a new import. Import now? It takes about a minute. Without "
+                                  "it the game uses Morrowind's animations and the Dark Messiah combat is off."));
+            else
+                msgBox.setText(tr("<b>The Dark Messiah animations are not imported yet.</b><br><br>"
+                                  "Import them now? It takes about a minute. Without them the game uses "
+                                  "Morrowind's animations and the Dark Messiah combat is off."));
+            QPushButton* importButton = msgBox.addButton(tr("Import and play"), QMessageBox::AcceptRole);
+            QPushButton* playButton = msgBox.addButton(tr("Play without"), QMessageBox::DestructiveRole);
+            msgBox.addButton(QMessageBox::Cancel);
+            msgBox.setDefaultButton(importButton);
+            msgBox.exec();
+            if (msgBox.clickedButton() == importButton)
+            {
+                enableDarkMessiahPage();
+                mDarkMessiahPage->startImport(true);
+                return;
+            }
+            if (msgBox.clickedButton() != playButton)
+                return;
+        }
+        else if (!mDarkMessiahPage->skipMissingWarning())
+        {
+            QMessageBox msgBox(this);
+            msgBox.setWindowTitle(tr("Dark Messiah not found"));
+            msgBox.setIcon(QMessageBox::Warning);
+            msgBox.setText(tr("<b>Dark Messiah of Might and Magic was not found.</b><br><br>"
+                              "The game will use Morrowind's animations, and the components that need Dark "
+                              "Messiah animations, sounds or textures will be off. You can select the game "
+                              "folder on the Dark Messiah page."));
+            QCheckBox* dontAsk = new QCheckBox(tr("Do not ask again"), &msgBox);
+            msgBox.setCheckBox(dontAsk);
+            QPushButton* playButton = msgBox.addButton(tr("Play without"), QMessageBox::AcceptRole);
+            msgBox.addButton(QMessageBox::Cancel);
+            msgBox.exec();
+            if (msgBox.clickedButton() != playButton)
+                return;
+            mDarkMessiahPage->setSkipMissingWarning(dontAsk->isChecked());
+            mDarkMessiahPage->saveSettings();
+        }
+    }
+
+    launchGame();
+}
+
+void Launcher::MainDialog::launchGame()
+{
+    // Launch the game detached
+    if (mGameInvoker->startProcess(QLatin1String(GAME_EXECUTABLE_NAME), true))
         return qApp->quit();
 }
 

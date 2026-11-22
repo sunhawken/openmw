@@ -1,0 +1,72 @@
+uniform_float brutalClinchHistory {
+    default = 0.0;
+    min = 0.0;
+    max = 0.7529412;
+    static = false;
+}
+
+render_target BrutalClinchCurrent {
+    width_ratio = 1.0;
+    height_ratio = 1.0;
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
+}
+
+render_target BrutalClinchHistory {
+    width_ratio = 1.0;
+    height_ratio = 1.0;
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
+}
+
+fragment accumulate(target=BrutalClinchCurrent, rt1=BrutalClinchHistory) {
+    // Source break-parry history accumulation; both history passes retain UVs.
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        vec3 scene = omw_GetLastShader(omw_TexCoord).rgb;
+        if (brutalClinchHistory <= 0.0) {
+            omw_FragColor = vec4(scene, 1.0);
+            return;
+        }
+        vec4 history = omw_Texture2D(BrutalClinchHistory, omw_TexCoord);
+        if (history.a < 0.5) {
+            omw_FragColor = vec4(scene, 1.0);
+            return;
+        }
+        float radial = clamp(1.0 - length(omw_TexCoord - vec2(0.5)) * 1.41421356 * 0.35, 0.0, 1.0);
+        float first = brutalClinchHistory * 0.35 * radial;
+        float second = brutalClinchHistory * 0.25;
+        vec3 color = mix(mix(scene, history.rgb, first), history.rgb, second);
+        omw_FragColor = vec4(color, 1.0);
+    }
+}
+
+fragment remember(target=BrutalClinchHistory, rt1=BrutalClinchCurrent) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        omw_FragColor = omw_Texture2D(BrutalClinchCurrent, omw_TexCoord);
+    }
+}
+
+fragment display(rt1=BrutalClinchCurrent) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        vec4 scene = omw_GetLastShader(omw_TexCoord);
+        omw_FragColor = vec4(omw_Texture2D(BrutalClinchCurrent, omw_TexCoord).rgb, scene.a);
+    }
+}
+
+technique {
+    description = "Dark Messiah break-parry temporal history adapted to OpenMW";
+    version = "1.0";
+    author = "Brutal Morrowind";
+    passes = accumulate, remember, display;
+}

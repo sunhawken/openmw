@@ -1,6 +1,7 @@
 #ifndef OPENMW_MECHANICS_COMBAT_H
 #define OPENMW_MECHANICS_COMBAT_H
 
+#include <string_view>
 #include <utility>
 
 namespace osg
@@ -20,8 +21,17 @@ namespace MWMechanics
         const osg::Vec3f& hitPosition, const bool fromProjectile = false);
 
     /// @return can we block the attack?
+    // Dark Messiah sword parry outcomes (CreatureStats::mBrutalParryResult).
+    enum BrutalParryResult
+    {
+        BrutalParry_None = 0,
+        BrutalParry_Parried = 1, // Parry_Parry_Sword: the blow is deflected
+        BrutalParry_Broken = 2, // Parry_Break_Sword: the guard is knocked open
+        BrutalParry_Timed = 3, // our timed parry: deflected and the attacker recoils
+    };
+
     bool blockMeleeAttack(const MWWorld::Ptr& attacker, const MWWorld::Ptr& blocker, const MWWorld::Ptr& weapon,
-        float damage, float attackStrength);
+        float damage, float attackStrength, const osg::Vec3f& hitPosition, int contactPart);
 
     /// @return does normal weapon resistance and weakness apply to the weapon?
     bool isNormalWeapon(const MWWorld::Ptr& weapon);
@@ -68,8 +78,14 @@ namespace MWMechanics
 
     bool isInMeleeReach(const MWWorld::Ptr& actor, const MWWorld::Ptr& target, const float reach);
 
-    // Similarly cursed hit target selection
-    std::pair<MWWorld::Ptr, osg::Vec3f> getHitContact(const MWWorld::Ptr& actor, float reach);
+    // Current gameplay eye and actor-directed aim, independent of observer cameras.
+    std::pair<osg::Vec3f, osg::Vec3f> getMeleeAim(const MWWorld::Ptr& actor);
+
+    // Directed surface contact for the player; AI retains its selected combat target.
+    // A player melee swing ("slash", "chop", "thrust" or "any") sweeps a fan of rays
+    // along its stroke; an empty swing keeps the single aimed ray.
+    std::pair<MWWorld::Ptr, osg::Vec3f> getHitContact(const MWWorld::Ptr& actor, float reach, int* contactPart = nullptr,
+        std::string_view swing = {});
 
     bool friendlyHit(const MWWorld::Ptr& attacker, const MWWorld::Ptr& target, bool complain);
 }

@@ -4,6 +4,69 @@
 -- @module world
 -- @usage local world = require('openmw.world')
 
+---
+-- Brutal engine extension. Queues an immediate enhanced NPC ragdoll launch.
+-- Sends BrutalSuperKickResolved {kickId, accepted} to the player after the native
+-- action. Only a player contact within190 units in the same active cell is
+-- accepted. Living humanoid NPCs and fresh intact corpses are supported. Exact
+-- body sweeps can knock down other NPCs during flight; secondary victims do not
+-- become projectiles. Teleport, removal, recovery and scene unload cancel it.
+-- @function [parent=#world] applyNpcSuperKick
+-- @param openmw.core#GameObject actor
+-- @param openmw.util#Vector3 velocity Finite launch, length1..1000, horizontal speed>=100.
+-- @param openmw.core#GameObject attacker The player.
+-- @param #number kickId Unique positive integer<=9007199254740991; repeats are rejected.
+
+---
+-- Brutal engine extension. Returns transient super-kick flight/contact numeric
+-- diagnostics for an existing NPC ragdoll, or nil. active=1 only for the primary
+-- in flight; secondary=1, receivedHits=1 identifies a witnessed knockdown.
+-- @function [parent=#world] getNpcSuperKickState
+-- @param openmw.core#GameObject actor
+-- @return #table, #nil
+
+---
+-- Brutal engine extension. Returns the active NPC ragdoll controller's numeric
+-- diagnostics, or nil. Includes effective flags, simulatedAge, activeBodies,
+-- activeJoints, impact/duplicate/invalid/cap counts, last J/H, maximum calculated
+-- soft/tone torques, collision penetration and per-joint rotations/limits.
+-- Calculated controller moments are not measurements of native solver forces.
+-- @function [parent=#world] getNpcRagdollEnhancementState
+-- @param openmw.core#GameObject actor
+-- @return #table, #nil
+
+---
+-- Brutal engine extension. Queues one world-space point impulse on an existing
+-- native NPC ragdoll with enhancement enabled. Bullet applies the primary J and
+-- its r-cross-J once; a small compensated procedural angular response is optional.
+-- Repeated event IDs are ignored within the controller's bounded 64-event cache.
+-- Queueing does not return an application receipt; inspect diagnostics later.
+-- @function [parent=#world] applyNpcRagdollImpact
+-- @param openmw.core#GameObject actor
+-- @param #number part Physical body index, 1..11.
+-- @param openmw.util#Vector3 point Finite world contact point.
+-- @param openmw.util#Vector3 impulse Finite mass*game-units/s, magnitude <=200000.
+-- @param #number eventId Exact positive integer <=9007199254740991.
+
+---
+-- Brutal engine extension. Queue a procedural head-only cut on a dead, enabled
+-- non-player NPC. Prepares per-instance neck geometry and two closed textured
+-- caps before releasing the existing ragdoll head joint in the same update.
+-- World poses are retained. A nonzero cutDirection replaces all body-part linear
+-- velocities with 250 Source units/s scaled by1.84265547703229, and adds the
+-- Source-style head angular impulse capped at3600 degrees/s. A zero/missing
+-- direction restores a saved cut without a new launch. The helmet remains with the head
+-- and the original NPC continues to own all inventory. Unsupported geometry
+-- leaves the actor intact. Repeated requests are idempotent; this function does
+-- not implement random chance or damage. Inspect getNpcRagdollState.headDetached
+-- on a later update to confirm success; queueing is not a success receipt.
+-- @function [parent=#world] startNpcDecapitation
+-- @param openmw.core#GameObject actor Dead NPC in an active cell.
+-- @param openmw.util#Vector3 velocity Initial corpse velocity if no ragdoll exists,
+-- finite and length <=1000 game units/s. Ignored for an existing ragdoll.
+-- @param openmw.util#Vector3 cutDirection Optional force direction; normalized by
+-- the engine. Zero/missing means restore without launch or random spin.
+
 
 
 ---

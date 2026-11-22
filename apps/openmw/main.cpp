@@ -9,7 +9,9 @@
 #include <components/fallback/fallback.hpp>
 #include <components/fallback/validate.hpp>
 #include <components/files/configurationmanager.hpp>
+#include <components/files/conversion.hpp>
 #include <components/misc/osgpluginchecker.hpp>
+#include <components/misc/darkmessiahdata.hpp>
 #include <components/misc/rng.hpp>
 #include <components/platform/platform.hpp>
 #include <components/version/version.hpp>
@@ -34,6 +36,7 @@ extern "C" __declspec(dllexport) DWORD AmdPowerXpressRequestHighPerformance = 0x
 #endif
 
 #include <filesystem>
+#include <osgDB/Registry>
 
 #if (defined(__APPLE__) || defined(__linux) || defined(__unix) || defined(__posix))
 #include <unistd.h>
@@ -95,6 +98,20 @@ bool parseOptions(int argc, char** argv, OMW::Engine& engine, Files::Configurati
     engine.setEncoding(ToUTF8::calculateEncoding(encoding));
 
     Files::PathContainer dataDirs(asPathContainer(variables["data"].as<Files::MaybeQuotedPathContainer>()));
+
+    // Dark Messiah data from brutalmorrowind-import, above the configured data
+    // and below data-local. Without it the game keeps Morrowind's animations.
+    const std::filesystem::path& userData = cfgMgr.getUserDataPath();
+    if (Misc::DarkMessiahData::isReady(userData))
+    {
+        const std::filesystem::path root = Misc::DarkMessiahData::root(userData);
+        Log(Debug::Info) << "Using Dark Messiah data from " << root;
+        for (std::string_view part : Misc::DarkMessiahData::sParts)
+            dataDirs.push_back(root / part);
+    }
+    else
+        Log(Debug::Info) << "No Dark Messiah data for recipe " << Misc::DarkMessiahData::sRecipe << " in "
+                         << Misc::DarkMessiahData::root(userData) << "; playing with Morrowind animations";
 
     Files::PathContainer::value_type local(variables["data-local"]
                                                .as<Files::MaybeQuotedPathContainer::value_type>()
@@ -245,6 +262,14 @@ int runApplication(int argc, char* argv[])
 
     if (parseOptions(argc, argv, *engine, cfgMgr))
     {
+#if defined(__linux__) && !defined(ANDROID)
+        const auto bundledLibraries = cfgMgr.getLocalPath() / "lib";
+        if (std::filesystem::is_directory(bundledLibraries))
+        {
+            auto& paths = osgDB::Registry::instance()->getLibraryFilePathList();
+            paths.insert(paths.begin(), Files::pathToUnicodeString(bundledLibraries));
+        }
+#endif
         if (!Misc::checkRequiredOSGPluginsArePresent())
             return 1;
 

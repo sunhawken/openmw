@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+ <id>brutalmorrowind</id>
+ <metadata_license>CC0-1.0</metadata_license>
+ <project_license>GPL-3.0-or-later</project_license>
+ <name>Brutal Morrowind</name>
+ <summary>Morrowind with Dark Messiah style melee combat</summary>
+ <description>
+  <p>
+  Brutal Morrowind is a fork of the OpenMW engine that brings Dark Messiah of
+  Might and Magic style first-person melee combat to Morrowind: kicks, ragdolls,
+  slides, parries, finishers and adrenaline.
+  </p>
+  <p>
+  You need your own copies of Morrowind and Dark Messiah of Might and Magic.
+  </p>
+ </description>
+ <launchable type="desktop-id">brutalmorrowind.desktop</launchable>
+ <developer id="brutalmorrowind">
+   <name>Brutal Morrowind contributors</name>
+ </developer>
+ <releases>
+  <release version="@BRUTAL_VERSION@" date="@OPENMW_VERSION_COMMITDATE@"/>
+ </releases>
+ <content_rating type="oars-1.1">
+  <content_attribute id="violence-realistic">intense</content_attribute>
+  <content_attribute id="violence-bloodshed">intense</content_attribute>
+ </content_rating>
+</component>

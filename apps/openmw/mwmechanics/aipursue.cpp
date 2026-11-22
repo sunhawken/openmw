@@ -12,6 +12,7 @@
 #include "actorutil.hpp"
 #include "character.hpp"
 #include "creaturestats.hpp"
+#include <components/settings/values.hpp>
 #include "npcstats.hpp"
 
 namespace MWMechanics
@@ -70,6 +71,11 @@ namespace MWMechanics
         if (reached)
         {
             if (!MWBase::Environment::get().getWorld()->getLOS(target, actor))
+                return false;
+            // Keep pursuit and the bounty intact; only defer the automatic arrest
+            // conversation. Manual activation still uses the ordinary dialogue path.
+            const auto& targetStats = target.getClass().getCreatureStats(target);
+            if (Settings::game().mBrutalEnabled && (targetStats.mBrutalAdrenalineEffectActive || targetStats.mBrutalClinchActive))
                 return false;
             MWBase::Environment::get().getWindowManager()->pushGuiMode(
                 MWGui::GM_Dialogue, actor); // Arrest player when reached

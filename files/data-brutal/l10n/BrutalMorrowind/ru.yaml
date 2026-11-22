@@ -1,0 +1,113 @@
+PageName: Brutal Morrowind
+Blank: ''
+"On": Вкл
+"Off": Выкл
+PageDescription: "Настройте компоненты мода."
+PageDescriptionNoDarkMessiah: "Настройте компоненты мода.\n\nДанные Dark Messiah не импортированы: используются анимации Morrowind, компоненты, которым нужны анимации, звуки или текстуры Dark Messiah, выключены. Импортируйте их на странице Dark Messiah в лаунчере."
+GroupName: Настройки
+darkMessiah: Dark Messiah
+morrowind: Morrowind
+enabled: Включить Brutal Morrowind
+enabledDescription: "Общий выключатель. Выбор отдельных компонентов сохраняется."
+allowThirdPerson: Разрешить вид от третьего лица
+allowThirdPersonDescription: "Смена вида — нажатие колёсика мыши. Временно отключает компоненты первого лица."
+firstPersonBody: Видимое тело от первого лица (FPV)
+firstPersonBodyDescription: "Показывает собственное тело при взгляде вниз."
+firstPersonAnimations: Анимации от первого лица
+firstPersonAnimationsDescription: "Набор анимаций рук и оружия."
+npcAnimations: Анимации NPC
+npcAnimationsDescription: "Набор анимаций персонажей."
+guaranteedHits: 100% шанс попадания в ближнем бою
+guaranteedHitsDescription: "Выключите, чтобы вернуть исходный шанс попадания по навыкам и усталости."
+meleeGeometry: Контакт оружия и широкие удары
+meleeGeometryDescription: "Попадания по видимой модели оружия и области взмаха."
+equipmentPhysics: Физика выпавшего снаряжения
+equipmentPhysicsDescription: "Физика оружия и щитов, выпавших из ragdoll."
+ragdollEnabled: Ragdoll
+ragdollEnabledDescription: "Физические падения NPC и существ."
+ragdollEnhancements: Улучшения ragdoll
+ragdollEnhancementsDescription: "Плавучесть и улучшенная реакция тел на столкновения. Требует ragdoll."
+dynamicProps: Физика предметов мира
+dynamicPropsDescription: "Удары сдвигают лежащие предметы."
+movementEnabled: Ходьба, бег и спринт
+movementEnabledDescription: "Скорости Dark Messiah. Alt — ходьба; кнопка спринта задаётся выше."
+staminaEnabled: Выносливость Dark Messiah
+staminaEnabledDescription: "Восстановление и затраты сил по правилам Dark Messiah."
+kickEnabled: Пинок
+kickEnabledDescription: "Пинок назначенной кнопкой."
+kickAlwaysRagdoll: Пинок всегда вызывает ragdoll
+kickAlwaysRagdollDescription: "Обычный не адреналиновый пинок всегда сбивает NPC и поддерживаемых существ в ragdoll с обычным уроном, расходом запаса сил и силой отбрасывания."
+slideEnabled: Подкат
+slideEnabledDescription: "Присядьте во время спринта или бега, чтобы сделать подкат."
+activeBlockEnabled: Ручной блок
+activeBlockEnabledDescription: "Удерживайте ПКМ для защиты щитом."
+shieldBashEnabled: Удар щитом
+shieldBashEnabledDescription: "Клик атаки из блока щитом наносит толчок."
+parryEnabled: Парирование оружием
+parryEnabledDescription: "Удерживайте ПКМ для защиты оружием."
+clinchEnabled: Клинч клинков
+clinchEnabledDescription: "Атакуйте после парирования. Нужны анимации Dark Messiah."
+attackCombosEnabled: Атаки с разбега и в падении
+attackCombosEnabledDescription: "Особые удары с разбега и во время прыжка."
+fastAttacksEnabled: Связки быстрых атак
+fastAttacksEnabledDescription: "Связки короткими кликами. Нужны анимации рук Dark Messiah."
+wallBounceEnabled: Отскок оружия от стен
+wallBounceEnabledDescription: "Оружие отскакивает при ударе об окружение."
+npcAiTweaks: Изменения ИИ NPC
+npcAiTweaksDescription: "Темп боя, замахи и уклонения Dark Messiah."
+npcStagger: Реакции NPC на удары
+npcStaggerDescription: "Противники вздрагивают и пошатываются от ударов."
+hitRecovery: Убрать оглушение игрока
+hitRecoveryDescription: "Полученный урон не прерывает действия игрока."
+adrenalineEnabled: Адреналин и добивания
+adrenalineEnabledDescription: "Попадания копят заряд для добивания или сверхпинка."
+slowMotionEnabled: Замедление при добивании
+slowMotionEnabledDescription: "Краткое замедление после смертельного адреналинового удара."
+dismemberment: Расчленение
+dismembermentDescription: "Отсечение частей тела при добивании. Требует ragdoll."
+bloodEffects: Эффекты крови
+bloodEffectsDescription: "Брызги крови мода."
+sparkEffects: Искры при ударе
+sparkEffectsDescription: "Искры при попадании по металлу и окружению."
+bloodDecals: Следы крови
+bloodDecalsDescription: "Следы крови на телах и поверхностях."
+combatSounds: Звуки Dark Messiah
+combatSoundsDescription: "Звуки оружия, попаданий, пинков, адреналина, шагов, прыжков и приземлений из Dark Messiah. Выключено: звуки Morrowind."
+adrenalineHudEnabled: Шкала адреналина
+adrenalineHudEnabledDescription: "Индикатор заряда рядом с исходными шкалами."
+adrenalineFxEnabled: Экранный эффект адреналина
+adrenalineFxEnabledDescription: "Экранный эффект при полном заряде."
+slideFxEnabled: Эффект скорости подката
+slideFxEnabledDescription: "Полосы скорости по краям экрана."
+clinchFxEnabled: Размытие после клинча
+clinchFxEnabledDescription: "Краткое размытие после проигранного клинча."
+superKickSpeed: Импульс адреналинового пинка
+superKickSpeedDescription: "Скорость отбрасывания сверхпинком. Обычный пинок — 460 ед/с."
+adrenalineHits: Ударов до полного адреналина
+adrenalineHitsDescription: "Число заряженных попаданий до полного заряда. Быстрые дают меньше."
+adrenalineDecay: Убывание адреналина
+adrenalineDecayDescription: "Заряд постепенно убывает вне боя."
+npcStandupEnabled: Анимации подъёма NPC
+npcStandupEnabledDescription: "Подъём живых NPC. Нужны ragdoll и анимации Dark Messiah."
+ragdollSoftStops: Мягкие пределы суставов ragdoll
+ragdollSoftStopsDescription: "Мягкое ограничение суставов. Нужны улучшения ragdoll."
+ragdollNeutralPose: Нейтральная поза ragdoll
+ragdollNeutralPoseDescription: "Естественная поза суставов. Нужны улучшения ragdoll."
+ragdollLimbResponse: Реакция конечностей ragdoll
+ragdollLimbResponseDescription: "Реакция конечностей на импульсы. Нужны улучшения ragdoll."
+ragdollSelfCollision: Самостолкновения ragdoll
+ragdollSelfCollisionDescription: "Столкновения частей одного тела. Нужны улучшения ragdoll."
+finisherEnabled: Адреналиновые добивания оружием
+finisherEnabledDescription: "Полный заряд даёт смертельный заряженный удар оружием."
+superKickEnabled: Адреналиновый сверхпинок
+superKickEnabledDescription: "Усиленный пинок за полный заряд. Нужны пинок, адреналин и ragdoll."
+dualWieldEnabled: Два коротких клинка
+dualWieldEnabledDescription: "Парные анимации и удары двумя надетыми короткими клинками."
+
+kickBinding: "Кнопка пинка"
+
+kickBindingDescription: "Нажмите и задайте кнопку; Esc — убрать."
+
+sprintBinding: "Кнопка спринта"
+
+sprintBindingDescription: "Нажмите и задайте кнопку; Esc — убрать."

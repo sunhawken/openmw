@@ -300,6 +300,133 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     </message>
 </context>
 <context>
+    <name>Launcher::DarkMessiahPage</name>
+    <message>
+        <source>Dark Messiah of Might and Magic</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Brutal Morrowind takes its combat animations, sounds and blood effects from your copy of Dark Messiah of Might and Magic. Nothing is copied from the game folder itself: the importer builds them once in your user data folder.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah folder (the one that holds vpks)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Browse...</source>
+        <translation type="unfinished">Bläddra...</translation>
+    </message>
+    <message>
+        <source>Detect</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Imported data</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import</source>
+        <translation type="unfinished">Importera</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="unfinished">Avbryt</translation>
+    </message>
+    <message>
+        <source>Without Dark Messiah the game uses Morrowind&apos;s animations, and the components that need Dark Messiah animations, sounds or textures are switched off.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select the Dark Messiah of Might and Magic folder</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah not found</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah of Might and Magic was not found in your Steam libraries. Select its folder with Browse.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not found. Select the game folder or press Detect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Game files found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This folder has no Dark Messiah archives (vpks/*_dir.vpk).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Imported and ready: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Imported for an older version of Brutal Morrowind. Import again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not imported yet. The import takes about a minute.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import again</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select the Dark Messiah of Might and Magic folder first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Morrowind.bsa was not found in your data folders. Set up Morrowind first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The importer is missing: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Starting...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cancelling...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import finished.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import cancelled.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import failed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The Dark Messiah import failed. The log on the Dark Messiah page shows the reason.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The importer could not be started: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah import</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>Launcher::DataFilesPage</name>
     <message>
         <source>English</source>
@@ -472,7 +599,7 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
     </message>
     <message>
         <source>Launch OpenMW</source>
-        <translation>Starta OpenMW</translation>
+        <translation type="vanished">Starta OpenMW</translation>
     </message>
     <message>
         <source>Help</source>
@@ -570,6 +697,54 @@ de ordinarie fonterna i Morrowind. Bocka denna ruta om du ändå föredrar ordin
         <source>&lt;br&gt;&lt;b&gt;Could not create directory %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</source>
         <translation>&lt;br&gt;&lt;b&gt;Kunde inte skapa katalog %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</translation>
     </message>
+    <message>
+        <source>Play</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Find Dark Messiah of Might and Magic and import its animations</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah import</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The Dark Messiah import is still running. Cancel it and close the launcher?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah data</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;The Dark Messiah animations are not imported yet.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Import them now? It takes about a minute. Without them the game uses Morrowind&apos;s animations and the Dark Messiah combat is off.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import and play</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Play without</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark Messiah not found</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Dark Messiah of Might and Magic was not found.&lt;/b&gt;&lt;br&gt;&lt;br&gt;The game will use Morrowind&apos;s animations, and the components that need Dark Messiah animations, sounds or textures will be off. You can select the game folder on the Dark Messiah page.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Do not ask again</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Launcher::SettingsPage</name>
@@ -626,7 +801,7 @@ Loggar och inställningar som ändras genom startaren och inne i spelet kommer s
     <name>MainWindow</name>
     <message>
         <source>OpenMW Launcher</source>
-        <translation>OpenMW Startare</translation>
+        <translation type="vanished">OpenMW Startare</translation>
     </message>
     <message>
         <source>OpenMW version</source>
@@ -667,6 +842,10 @@ Loggar och inställningar som ändras genom startaren och inne i spelet kommer s
     <message>
         <source>Allows to change display settings</source>
         <translation>Låter dig ändra bildinställningar</translation>
+    </message>
+    <message>
+        <source>Brutal Morrowind Launcher</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

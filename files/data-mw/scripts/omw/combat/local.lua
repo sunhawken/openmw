@@ -192,7 +192,9 @@ local function applyArmor(attack)
                 core.sendGlobalEvent('ModifyItemCondition', { actor = self, item = item, amount = diff })
             end
 
-            if skillid == 'lightarmor' then
+            -- Brutal Morrowind: a kick or shield bash plays Dark Messiah's own impact in onHit.
+            if attack.brutalKick or attack.brutalBash then
+            elseif skillid == 'lightarmor' then
                 core.sound.playSound3d('Light Armor Hit', self)
             elseif skillid == 'mediumarmor' then
                 core.sound.playSound3d('Medium Armor Hit', self)
@@ -268,8 +270,13 @@ local function onHit(data)
     if data.successful and not godMode() then
         I.Combat.applyArmor(data)
         I.Combat.adjustDamageForDifficulty(data)
+        if data.brutalKick then
+            core.sound.playSound3d('Brutal Kick Hit', self)
+        elseif data.brutalBash == 'Brutal Shield Metal' or data.brutalBash == 'Brutal Shield Wood' then
+            core.sound.playSound3d(data.brutalBash, self)
+        end
         if getDamage(data, 'health') > 0 then
-            core.sound.playSound3d('Health Damage', self)
+            if not data.brutalKick and not data.brutalBash then core.sound.playSound3d('Health Damage', self) end
             if data.hitPos then
                 I.Combat.spawnBloodEffect(data.hitPos)
             end

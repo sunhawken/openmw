@@ -182,6 +182,8 @@ namespace MWMechanics
                 mTimeOfDeath = MWBase::Environment::get().getWorld()->getTimeStamp();
 
             mDead = true;
+            mPowerStrike = {};
+            mBrutalAdrenalineEffectActive = false;
 
             mDynamic[index].setCurrent(0);
         }
@@ -558,6 +560,22 @@ namespace MWMechanics
 
     void CreatureStats::readState(const ESM::CreatureStats& state)
     {
+        mPowerStrike = {};
+        mLastConsumedPowerStrikeToken.clear();
+        mBrutalAdrenalineEffectActive = false;
+        // Paired actions and their receipts belong to the old live scene, never
+        // to a saved actor. Lua reconfigures the supported player rig after load.
+        mBrutalClinchEnabled = mBrutalClinchActive = mBrutalClinchInterrupted = mBrutalClinchReleaseUse = false;
+        mBrutalClinchBlendOut = 0.f;
+        mBrutalClinchOpponent = {};
+        mBrutalClinchId = mBrutalClinchLastResultId = 0;
+        mBrutalClinchPhase = mBrutalClinchClicks = mBrutalClinchTarget = 0;
+        mBrutalClinchRemaining = mBrutalClinchElapsed = 0.f;
+        mBrutalClinchLastResult.clear();
+        mBrutalClinchLastReason.clear();
+        mBrutalClinchInterruptReason.clear();
+        mBrutalClinchApplyingLossDamage = false;
+        mBrutalClinchVelocity = {};
         if (!state.mMissingACDT)
         {
             for (size_t i = 0; i < state.mAttributes.size(); ++i)

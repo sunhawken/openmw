@@ -1,3 +1,4 @@
+#include "../mwphysics/collisiontype.hpp"
 #include "aicombat.hpp"
 
 #include <components/detournavigator/navigatorutils.hpp>
@@ -19,6 +20,8 @@
 #include "../mwbase/world.hpp"
 
 #include "actorutil.hpp"
+
+#include <components/settings/values.hpp>
 #include "aicombataction.hpp"
 #include "character.hpp"
 #include "combat.hpp"
@@ -46,6 +49,24 @@ namespace
 
 namespace MWMechanics
 {
+    namespace
+    {
+        // npc_guard.qct zones and timings, converted from DM inches to Morrowind units.
+        constexpr float DmInch = 1.84265547703229f;
+        constexpr float DmRedZone = 40.f * DmInch; // closer than this, the guard steps back
+        constexpr float DmYellowZone = 120.f * DmInch;
+        constexpr float DmDodgeDelay = 15.f; // DodgeDelay / PreventiveDodgeDelay
+        constexpr float DmDodgeChance = 0.5f; // base_dodge_chance, against an incoming attack
+        constexpr float DmPreventiveDodgeChance = 0.2f;
+        constexpr float DmDodgeDuration = 0.5f;
+
+        bool darkMessiahMelee(const MWWorld::Ptr& actor, bool ranged)
+        {
+            return !ranged && actor.getClass().isNpc() && actor != getPlayer()
+                && Settings::game().mDarkMessiahNpcCombat;
+        }
+    }
+
     AiCombat::AiCombat(const MWWorld::Ptr& actor)
     {
         mTargetActor = actor.getCellRef().getRefNum();
@@ -154,6 +175,7 @@ namespace MWMechanics
             }
 
             storage.updateCombatMove(duration);
+            storage.updateDarkMessiah(duration, target);
             storage.mRotateMove = false;
             if (storage.mReadyToAttack)
                 updateActorsMovement(actor, duration, storage);
@@ -207,7 +229,6 @@ namespace MWMechanics
                 return true;
         }
 
-        stats.setMovementFlag(CreatureStats::Flag_Run, true);
         float& actionCooldown = storage.mActionCooldown;
         std::unique_ptr<Action>& currentAction = storage.mCurrentAction;
 
@@ -256,6 +277,10 @@ namespace MWMechanics
         const osg::Vec3f vTargetPos(target.getRefData().getPosition().asVec3());
 
         float distToTarget = getDistanceToBounds(actor, target);
+        // Dark Messiah's guards close in at a run but fight at a walk inside their combat
+        // zone (Yellow_zone 120 inches beyond their reach).
+        stats.setMovementFlag(CreatureStats::Flag_Run,
+            !darkMessiahMelee(actor, isRangedCombat) || distToTarget > rangeAttack + DmYellowZone);
 
         storage.mReadyToAttack = (currentAction->isAttackingOrSpell() && distToTarget <= rangeAttack && storage.mLOS);
 
@@ -554,6 +579,56 @@ namespace MWMechanics
         bool targetUsesRanged = false;
         float rangeAttackOfTarget = ActionWeapon(targetWeapon).getCombatRange(targetUsesRanged);
 
+        if (darkMessiahMelee(actor, isDistantCombat))
+        {
+            // Dark Messiah's guards hold their ground and face the target. They do not chain
+            // 0.1-0.2 s side steps: a dodge is a deliberate step, at most once per DodgeDelay,
+            // against an incoming attack (base_dodge_chance) or preventively.
+            if (mCombatMove)
+                return;
+            mMovement.mPosition[0] = mMovement.mPosition[1] = 0;
+            const bool targetAttacks = targetClass.isActor()
+                && targetClass.getCreatureStats(target).getAttackingOrSpell();
+            float chance = 0.f;
+            if (mDmDodgeCooldown <= 0.f && distToTarget <= rangeAttackOfTarget)
+            {
+                if (targetAttacks)
+                    chance = DmDodgeChance;
+                else if (mDmPreventiveTimer <= 0.f)
+                {
+                    chance = DmPreventiveDodgeChance;
+                    mDmPreventiveTimer = DmDodgeDelay;
+                }
+            }
+            if (chance > 0.f && Misc::Rng::rollClosedProbability(prng) < chance)
+            {
+                mMovement.mPosition[0] = Misc::Rng::rollProbability(prng) < 0.5 ? 1.0f : -1.0f;
+                mTimerCombatMove = DmDodgeDuration;
+                mCombatMove = true;
+                mDmDodgeCooldown = DmDodgeDelay;
+            }
+            else if (distToTarget < DmRedZone)
+            {
+                // Inside the red zone: step back to the ideal distance if there is floor behind.
+                const int mask = MWPhysics::CollisionType_World | MWPhysics::CollisionType_HeightMap
+                    | MWPhysics::CollisionType_Door;
+                const osg::Vec3f half = MWBase::Environment::get().getWorld()->getHalfExtents(actor);
+                const osg::Vec3f pos = actor.getRefData().getPosition().asVec3();
+                const osg::Vec3f back = actor.getRefData().getBaseNode()->getAttitude() * osg::Vec3f(0, -1, 0);
+                const osg::Vec3f source = pos + osg::Vec3f(0, 0, 0.75f * half.z());
+                const auto* rays = MWBase::Environment::get().getWorld()->getRayCasting();
+                const osg::Vec3f behind = source + back * (half.y() + 64);
+                if (!rays->castRay(source, behind, mask).mHit
+                    && rays->castRay(behind, behind - osg::Vec3f(0, 0, 0.75f * half.z() + 96), mask).mHit)
+                {
+                    mMovement.mPosition[1] = -1;
+                    mTimerCombatMove = 0.4f;
+                    mCombatMove = true;
+                }
+            }
+            return;
+        }
+
         if (mMovement.mPosition[0])
         {
             mTimerCombatMove = 0.1f + 0.1f * Misc::Rng::rollClosedProbability(prng);
@@ -630,6 +705,27 @@ namespace MWMechanics
         }
     }
 
+    void AiCombatStorage::updateDarkMessiah(float duration, const MWWorld::Ptr& target)
+    {
+        if (!Settings::game().mDarkMessiahNpcCombat)
+            return;
+        auto& prng = MWBase::Environment::get().getWorld()->getPrng();
+        mDmDodgeCooldown -= duration;
+        mDmPreventiveTimer -= duration;
+        // AttackRythmMinTime/MaxTime: alternate the calm and berserk attack rhythm.
+        mDmRhythmTimer -= duration;
+        if (mDmRhythmTimer <= 0.f)
+        {
+            mDmBerserk = !mDmBerserk;
+            mDmRhythmTimer = 10.f + 5.f * Misc::Rng::rollClosedProbability(prng);
+        }
+        // PlayerNoAttackDelayToGoBersekerMode: a passive opponent invites the berserk rhythm.
+        if (target.getClass().isActor() && target.getClass().getCreatureStats(target).getAttackingOrSpell())
+            mDmTargetPassive = 0.f;
+        else if ((mDmTargetPassive += duration) >= 2.f)
+            mDmBerserk = true;
+    }
+
     void AiCombatStorage::updateCombatMove(float duration)
     {
         if (mCombatMove)
@@ -664,6 +760,9 @@ namespace MWMechanics
 
                 auto& prng = MWBase::Environment::get().getWorld()->getPrng();
                 mStrength = Misc::Rng::rollClosedProbability(prng);
+                const bool darkMessiah = darkMessiahMelee(actor, distantCombat);
+                if (darkMessiah)
+                    mStrength = 1.f; // guards play the whole authored wind-up
 
                 const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
 
@@ -684,6 +783,10 @@ namespace MWMechanics
                     }
                 }
                 mAttackCooldown = std::min(baseDelay + 0.01f * Misc::Rng::roll0to99(prng), baseDelay + 0.9f);
+                // AttackCool/BersekerMin/MaxTime, counted while the guard stands ready.
+                if (darkMessiah)
+                    mAttackCooldown = mDmBerserk ? Misc::Rng::rollClosedProbability(prng)
+                                                 : 2.f + 1.5f * Misc::Rng::rollClosedProbability(prng);
             }
             else
                 mAttackCooldown -= AI_REACTION_TIME;

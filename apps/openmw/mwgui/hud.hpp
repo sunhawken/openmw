@@ -86,6 +86,7 @@ namespace MWGui
         ESM::RefNum mEnemyActor;
 
         // bottom left elements
+        int mBrutalHudOffset = 0;
         int mHealthManaStaminaBaseLeft, mWeapBoxBaseLeft, mSpellBoxBaseLeft, mSneakBoxBaseLeft;
         // bottom right elements
         int mMinimapBoxBaseRight, mEffectBoxBaseRight;

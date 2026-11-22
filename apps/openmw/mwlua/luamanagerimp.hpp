@@ -101,7 +101,16 @@ namespace MWLua
         void jailTimeServed(const MWWorld::Ptr& actor, int days) override;
         void onHit(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, const MWWorld::Ptr& weapon,
             const MWWorld::Ptr& ammo, int attackType, float attackStrength, float damage, bool isHealth,
-            const osg::Vec3f& hitPos, bool successful, MWMechanics::DamageSourceType sourceType) override;
+            const osg::Vec3f& hitPos, bool successful, MWMechanics::DamageSourceType sourceType,
+            uint64_t brutalAttackId = 0, bool brutalPowered = false, bool brutalBlocked = false, int contactPart = -1) override;
+        void meleeResolved(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, const MWWorld::Ptr& weapon,
+            uint64_t attackId, const std::string& token, bool powered, bool successful, bool blocked,
+            float damage, float strength, const osg::Vec3f& hitPos) override;
+        void swordClinchResolved(const MWWorld::Ptr& player, const MWWorld::Ptr& opponent,
+            uint64_t id, std::string_view result, std::string_view reason, int clicks, int requiredClicks) override;
+        void actorExternalImpact(const MWWorld::Ptr& actor, const MWWorld::Ptr& hitObject,
+            const osg::Vec3f& position, const osg::Vec3f& normal, float speed) override;
+        void npcKickRagdoll(const MWWorld::Ptr& attacker, const MWWorld::Ptr& target) override;
         void exteriorCreated(MWWorld::CellStore& cell) override
         {
             mEngineEvents.addToQueue(EngineEvents::OnNewExterior{ cell });

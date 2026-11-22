@@ -1,6 +1,7 @@
 add_subdirectory(shaders)
 add_subdirectory(data)
 add_subdirectory(data-mw)
+add_subdirectory(data-brutal)
 add_subdirectory(lua_api)
 
 if (NOT DEFINED OPENMW_RESOURCES_ROOT)

@@ -107,6 +107,35 @@
 -- @field [parent=#Actor] #STANCE STANCE
 
 ---
+-- Brutal Morrowind engine extension: add a world-space velocity delta.
+-- Only available to the actor's own local script. Queued until the next physics
+-- step. Units are game units/second; this API has no physical mass parameter.
+-- Rejects non-finite vectors and individual deltas longer than 2000 units/s.
+-- Grounded horizontal velocity decelerates at 850 units/s^2. Vertical launches
+-- use native gravity and landing. Swimming/flying external velocity is damped.
+-- State is transient across save/load; horizontal velocity clears on teleport,
+-- death, deactivation and world changes. No effect with actor collision disabled.
+-- A blocking non-walkable contact caused by horizontal external velocity sends
+-- BrutalNativeImpact {speed, hitPos, normal, hitObject?} to this actor; at most one
+-- strongest contact per physics frame. Ordinary falls remain native fall damage.
+-- @function [parent=#Actor] addExternalVelocity
+-- @param openmw.self#SelfObject actor Must be self.
+-- @param openmw.util#Vector3 delta World-space velocity increment.
+
+---
+-- Brutal engine: request the player's held shield block (setting `player active shield block`).
+-- The controller raises the shield only with a shield equipped and a weapon drawn, and not mid-attack.
+-- @function [parent=#Actor] setShieldBlock
+-- @param openmw.self#SelfObject actor Must be the player's self.
+-- @param #boolean held
+
+---
+-- Brutal engine: true while the player's shield is raised and blocks frontal melee blows.
+-- @function [parent=#Actor] isShieldBlockRaised
+-- @param openmw.core#GameObject actor
+-- @return #boolean
+
+---
 -- Returns true if the object is an actor and is able to move. For dead, paralyzed,
 -- or knocked down actors it returns false.
 -- @function [parent=#Actor] canMove

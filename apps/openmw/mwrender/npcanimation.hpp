@@ -11,11 +11,14 @@
 
 #include <array>
 #include <vector>
+#include <cstdint>
+#include <osg/observer_ptr>
 
 namespace ESM
 {
     struct NPC;
     struct BodyPart;
+    struct ReleasedEquipmentState;
 }
 
 namespace MWSound
@@ -28,6 +31,10 @@ namespace MWRender
 
     class RotateController;
     class HeadAnimationTime;
+    struct DecapitationGeometry;
+    struct BisectionGeometry;
+    struct LimbSeveringGeometry;
+    class ClippedRenderPrewarm;
 
     class NpcAnimation : public ActorAnimation, public WeaponAnimation, public MWWorld::InventoryStoreListener
     {
@@ -47,12 +54,84 @@ namespace MWRender
             VM_VRFirstPerson,
         };
 
-    protected:
-//## VR_PATCH END
+        struct SwordWallContact
+        {
+            bool armed = false, pending = false, soundPlayed = false;
+            std::uint64_t count = 0, swing = 0, sounds = 0;
+            unsigned int frame = 0, samples = 0;
+            float sourceTime = 0.f, sweepFraction = 0.f;
+            unsigned int sweepSegments = 0, sweepCandidates = 0, sweepConfirmed = 0;
+            float sweepMilliseconds = 0.f;
+            std::string key, kind, mount;
+            osg::Vec3f position, normal, previousBase, previousTip, bladeBase, bladeTip, sweepFrom, sweepTo;
+            osg::Vec3f currentBase, currentTip, currentContactPoint;
+        };
+
+        // Read-only controller snapshot for comparing real input and rendered
+        // weapon lifecycles. It never selects or advances an animation.
+        struct WeaponCycleState
+        {
+            std::string_view phase = "none";
+            int index = 0, upperBody = 0;
+            bool queued = false, button = false, readyToHit = false;
+            float held = 0.f;
+            bool chargedHold = false, guardCharge = false;
+            float useHeld = 0.f;
+            std::uint64_t acceptedStrikes = 0;
+        };
+
+    private:
         static const PartBoneMap sPartList;
+
+        // Opt-in private geometry audit. The callback samples after the whole
+        // object update traversal, after the rendered ragdoll bones are assigned.
+        struct GarmentAudit;
+        std::unique_ptr<GarmentAudit> mGarmentAudit;
+        void updateRagdollGarmentAudit(float timepassed);
+        void dumpRagdollGarmentForAudit(osg::NodeVisitor& visitor);
+        struct GarmentCoverage;
+        struct BloodDecals;
+        std::shared_ptr<BloodDecals> mBloodDecals;
+        struct CutBloodFlow;
+        std::shared_ptr<CutBloodFlow> mCutBloodFlow;
+        void updateCutBloodFlow(float dt);
+        void emitCutBloodFlow(osg::NodeVisitor& visitor);
+        void clearCutBloodFlow();
+        void rebuildBloodDecals();
+        bool useBrutalStaffSet() const override;
+        void prewarmBloodDecals();
+        void transferBloodDecalsToHead(DecapitationGeometry& target, bool bindSources = false);
+        void transferBloodDecalsToTorso(BisectionGeometry& target);
+        void transferBloodDecalsToLimbs(LimbSeveringGeometry& target);
+        std::unique_ptr<GarmentCoverage> mGarmentCoverage;
+        bool mGarmentCoveragePrepared = false, mGarmentWasRagdoll = false;
+        double mGarmentRagdollAge = 0.;
+        void clearRagdollGarmentCoverage();
+        void prepareRagdollGarmentCoverage();
+        void updateRagdollGarmentCoverage(float timepassed);
+        void evaluateRagdollGarmentCoverage(osg::NodeVisitor& visitor);
+
+        std::unique_ptr<DecapitationGeometry> mDecapitation;
+        std::unique_ptr<BisectionGeometry> mBisection;
+        std::unique_ptr<LimbSeveringGeometry> mLimbSevering;
+        std::array<bool, ESM::PRT_Count> mLimbReplacedParts{};
+        int mLimbSeveringFailure = 0;
+        bool rebuildSeveredLimbs(unsigned mask);
+        int mBisectionFailure = 0;
+        bool rebuildSeveredTorso();
+        bool rebuildSeveredHead(bool prewarmOnly = false);
+        int mDecapitationFailure = 0;
+        osg::ref_ptr<osg::StateSet> mDecapitationCapState;
+        osg::ref_ptr<osg::StateSet> mDecapitationHeadCapState;
+        bool prewarmDecapitationMaterial();
+        std::size_t mDecapitationPrewarmQueued = 0;
+        std::unique_ptr<ClippedRenderPrewarm> mDecapitationRenderPrewarm;
+        std::size_t mDecapitationWarmDrawn = 0, mDecapitationWarmTimedOut = 0, mDecapitationWarmDrawables = 0;
 
         // Bounded Parts
         PartHolderPtr mObjectParts[ESM::PRT_Count];
+        std::array<std::string, ESM::PRT_Count> mPartModels;
+        std::array<std::string, ESM::PRT_Count> mFirstPersonWristCoverage;
         std::array<MWSound::Sound*, ESM::PRT_Count> mSounds;
 
         const ESM::NPC* mNpc;
@@ -73,6 +152,50 @@ namespace MWRender
         int mPartslots[ESM::PRT_Count]; // Each part slot is taken by clothing, armor, or is empty
         int mPartPriorities[ESM::PRT_Count];
 
+        // Source matrices are restored before every update and blend capture. The
+        // fit is applied only after the whole scene has evaluated its current pose.
+        std::vector<std::pair<osg::observer_ptr<osg::MatrixTransform>, osg::Matrixf>> mClinchSourcePose;
+        osg::observer_ptr<osg::Node> mClinchBladeNode;
+        osg::Vec3f mClinchBladeRange;
+        std::uint64_t mClinchPoseId = 0;
+        bool mClinchWasContest = false;
+        double mClinchEntryTime = 0., mClinchExitTime = 0.;
+        osg::Vec3f mClinchLastCorrection, mClinchExitCorrection;
+        osg::Vec3f getClinchBladeRange();
+
+        SwordWallContact mSwordWallContact;
+        WeaponCycleState mWeaponCycleState;
+        struct WallWeaponState
+        {
+            osg::observer_ptr<osg::Node> node;
+            std::vector<osg::Vec3f> vertices;
+            std::vector<std::pair<std::size_t, std::size_t>> edges;
+            osg::Matrixf previousMatrix, previousCamera;
+            osg::Vec3f previousRootScale{ 1.f, 1.f, 1.f }, previousRootPosition;
+            osg::Quat previousRootAttitude;
+            float previousFovRatio = 1.f;
+            osg::Vec3f materialPoint;
+            bool materialWitness = false;
+            float recoilAge = -1.f;
+            osg::Vec3f recoilFoldAxis;
+            int recoilFoldDegrees = 0;
+            bool recoilFoldValid = false;
+            osg::Vec3f previousPosition;
+            float base = 0.f, tip = 0.f, previousTime = -1.f;
+            bool history = false;
+        };
+        std::array<WallWeaponState, 2> mWallWeapons;
+        unsigned mWallStruckMount = 0;
+        std::string mSwordWallGroup, mSwordWallKey;
+        std::vector<std::pair<osg::observer_ptr<osg::MatrixTransform>, osg::Matrixf>> mSwordWallSourcePose;
+        bool mSwordWallStruck = false;
+        osg::Matrixf mSwordWallLastCorrection, mSwordWallAppliedTail;
+        osg::Vec3f mSwordWallCorrectionOrigin;
+        float mSwordWallTailAge = -1.f;
+        bool mSwordWallCorrectionValid = false;
+        bool applySwordWallCorrection(const osg::Matrixf& correction, const osg::FrameStamp& frameStamp);
+        bool sampleWeaponWallContact(unsigned mount, osg::Node* node, float duration, const osg::FrameStamp& frameStamp);
+
         osg::Vec3f mFirstPersonOffset;
         // Field of view to use when rendering first person meshes
         float mFirstPersonFieldOfView;
@@ -82,7 +205,37 @@ namespace MWRender
 
         bool mSoundsDisabled;
 
+        // A secondary normal skeleton supplies only the world-space torso and legs.
+        // It has no inventory/text-key listener and cannot drive combat or actor motion.
+        bool mBodyAwareness = false;
+        bool mBodyAwarenessHiddenForClinch = false;
+        void updateBodyAwarenessClinchVisibility();
+        osg::ref_ptr<osg::MatrixTransform> mBodyAwarenessRoot;
+        osg::ref_ptr<NpcAnimation> mBodyAwarenessAnimation;
+        osg::Vec3f mBodyGroundNormal{ 0.f, 0.f, 1.f };
+        osg::Vec3f mBodyGroundUp{ 0.f, 0.f, 1.f };
+        osg::Vec3f mBodyGroundAnchor;
+        float mBodyGroundOffset = 0.f;
+        float mBodyGroundLift = 0.f;
+        float mBodyGroundBlend = 0.f;
+        void resetBodyAwareness();
+        void updateBodyAwareness();
+        void syncBodyAwareness(float duration);
+        void alignBodyAwareness(float duration);
+
         bool mAccurateAiming;
+        enum BrutalViewmodel
+        {
+            BrutalViewmodel_Default,
+            BrutalViewmodel_Shield,
+            BrutalViewmodel_Staff,
+            BrutalViewmodel_Dagger,
+        };
+        static constexpr std::string_view sBrutalLeftWeaponBone = "Brutal Left Weapon";
+        BrutalViewmodel mViewmodelSet = BrutalViewmodel_Default; // Clip set loaded for the first-person rig.
+        BrutalViewmodel brutalViewmodelSet() const;
+        bool carriesLeftWeapon() const;
+        bool carriesShield() const;
         float mAimingFactor;
 
         // Hazaeki-style transformation support. When a Hazaeki player is turned into a "humanoid
@@ -120,6 +273,8 @@ namespace MWRender
         void removeIndividualPart(ESM::PartReferenceType type);
         void reserveIndividualPart(ESM::PartReferenceType type, int group, int priority);
 
+        void fitFirstPersonRobe(osg::Node& node);
+        void fitFirstPersonWrists();
         bool addOrReplaceIndividualPart(ESM::PartReferenceType type, int group, int priority,
             VFS::Path::NormalizedView mesh, bool enchantedGlow = false, osg::Vec4f* glowColor = nullptr,
             bool isLight = false);
@@ -154,10 +309,87 @@ namespace MWRender
          */
         NpcAnimation(const MWWorld::Ptr& ptr, osg::ref_ptr<osg::Group> parentNode,
             Resource::ResourceSystem* resourceSystem, bool disableSounds = false, ViewMode viewMode = VM_Normal,
-            float firstPersonFieldOfView = 55.f);
+            float firstPersonFieldOfView = 55.f, bool bodyAwareness = false);
         virtual ~NpcAnimation();
 
         void enableHeadAnimation(bool enable) override;
+        int getPartForNodePath(const osg::NodePath& path) const;
+        bool addBloodDecal(const osg::Vec3f& position, const osg::Vec3f& outward,
+            std::string_view kind, bool power, int hitPart = -1);
+        std::string getBloodDecalData() const;
+        bool restoreBloodDecals(std::string_view data);
+        std::map<std::string, double> getBloodDecalStats() const;
+        void startCutBloodFlow();
+        void startBisectionBloodFlow();
+        void startLimbSeveringBloodFlow();
+        struct SwordClinchGeometry
+        {
+            bool active = false, fitted = false, clamped = false;
+            unsigned int frame = 0;
+            int phase = 0;
+            float elapsed = 0.f, sourceElapsed = 0.f, weight = 0.f, rawGap = 0.f, finalGap = 0.f, cameraError = 0.f;
+            osg::Vec3f correction, requestedCorrection;
+            osg::Vec3f playerHilt, playerAxis, opponentHilt, opponentAxis;
+            osg::Vec3f playerRange, opponentRange, playerContact, opponentContact;
+            float playerParameter = 0.f, opponentParameter = 0.f;
+        };
+        SwordClinchGeometry mSwordClinchGeometry;
+        void restoreTransientPose() override;
+        void fitSwordClinchPose(osg::NodeVisitor& visitor);
+        bool canFitSwordClinchPose(NpcAnimation& opponent);
+        const SwordClinchGeometry& getSwordClinchGeometryForAudit() const { return mSwordClinchGeometry; }
+        void configureSwordWallSweep(std::uint64_t swing, std::string_view group, std::string_view key);
+        bool sampleSwordWallContact(float duration, const osg::FrameStamp& frameStamp);
+        bool consumeSwordWallContact(std::uint64_t swing, std::string& key);
+        const SwordWallContact& getSwordWallContactForAudit() const { return mSwordWallContact; }
+        void recordWeaponCycleForAudit(const WeaponCycleState& state) { mWeaponCycleState = state; }
+        const WeaponCycleState& getWeaponCycleForAudit() const { return mWeaponCycleState; }
+        void recordSwordWallSound(bool played)
+        {
+            mSwordWallContact.soundPlayed = played;
+            if (played)
+                ++mSwordWallContact.sounds;
+        }
+        std::map<std::string, osg::Vec3f> getShieldGeometryForAudit() const;
+        struct WeaponGripGeometry
+        {
+            std::map<std::string, std::string> models;
+            std::map<std::string, osg::Matrixf> roots;
+            std::map<std::string, std::vector<osg::Vec3f>> triangles;
+        };
+        WeaponGripGeometry getWeaponGripGeometryForAudit() const;
+        std::shared_ptr<const ESM::ReleasedEquipmentState> captureReleasedEquipment(int slot,
+            const osg::Matrixf& itemRoot, float mass, float& maxWorldVertexError) const;
+        bool getReleasedEquipmentOwnerIsLeft(int slot) const;
+        RagdollExtremityVertices getRagdollExtremityVertices(
+            UnsupportedRagdollExtremityBones* unsupportedBones = nullptr) const override;
+        bool setHeadSevered(bool severed);
+        bool setTorsoSevered(bool severed);
+        bool setLimbsSevered(unsigned mask);
+        unsigned getSeveredLimbsMask() const;
+        bool canSeverLegs() const;
+        std::map<std::string, double> getLimbSeveringStats() const;
+        std::map<std::string, osg::Vec3f> getLimbSeveringSurfacesForAudit() const;
+        bool isTorsoSevered() const { return bool(mBisection); }
+        std::map<std::string, double> getBisectionStats() const;
+        std::map<std::string, osg::Vec3f> getBisectionSurfacesForAudit() const;
+        std::map<std::string, double> getDecapitationStats() const;
+        std::map<std::string, osg::Vec3f> getDecapitationSurfacesForAudit() const;
+        bool useFullBodyFirstPerson() const;
+        /// Reapply a run-time animation option to this actor.
+        void reloadBrutalAnimations();
+        const NpcAnimation* getBodyAwarenessAnimation() const { return mBodyAwarenessAnimation.get(); }
+        bool useBodyCrouchTransitions() const override;
+        bool usePrimaryCrouchTransitions() const override;
+        const osg::Vec3f& getBodyGroundUp() const { return mBodyGroundUp; }
+        const osg::Vec3f& getBodyGroundAnchor() const { return mBodyGroundAnchor; }
+        float getBodyGroundBlend() const { return mBodyGroundBlend; }
+        float getBodyGroundLift() const { return mBodyGroundLift; }
+        std::map<std::string, osg::Vec3f> getFootGeometryForAudit(const osg::Vec3f& normal) const;
+        unsigned int getBodyAwarenessVisibilityMask() const
+        { return mBodyAwarenessRoot ? mBodyAwarenessRoot->getNodeMask() : 0u; }
+        bool isBodyAwarenessHiddenForClinch() const { return mBodyAwarenessHiddenForClinch; }
+        void setFirstPersonGeometryVisibleForAudit(bool visible);
 
         /// 1: the first person meshes follow the camera's rotation completely
         /// 0: the first person meshes follow the camera with a reduced factor, so you can look down at your own hands

@@ -1,6 +1,7 @@
 #include "actor.hpp"
 
 #include <components/esm3/loadmgef.hpp>
+#include <components/settings/values.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/luamanager.hpp"
@@ -71,7 +72,8 @@ namespace MWClass
     {
         const MWMechanics::Movement& movementSettings = ptr.getClass().getMovementSettings(ptr);
         float moveSpeed = this->getMaxSpeed(ptr) * movementSettings.mSpeedFactor;
-        if (movementSettings.mIsStrafing)
+        if (movementSettings.mIsStrafing
+            && !(ptr == MWMechanics::getPlayer() && Settings::game().mKineticPlayerMovement))
             moveSpeed *= 0.75f;
         return moveSpeed;
     }

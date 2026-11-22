@@ -235,6 +235,14 @@ namespace MWLua
             const std::string lowerGroup = Misc::StringUtils::lowerCase(groupName);
 
             auto animation = getMutableAnimationOrThrow(object);
+            // A player kick interrupts any sword phase. Replacing only the visible pose
+            // would leave the sword's pending hit alive underneath, so cancel it first.
+            if ((lowerGroup == "brutal_kick" || lowerGroup == "brutal_kick1h" || lowerGroup == "brutal_kick1h_low")
+                && object.ptr() == MWBase::Environment::get().getWorld()->getPlayerPtr()
+                && (animation->getInfo("weapononehand") || animation->getInfo("brutal_fallattack")
+                    || animation->getInfo("brutal_rush")))
+                MWBase::Environment::get().getMechanicsManager()->cancelPlayerAttackForKick();
+
             animation->play(lowerGroup, priority, blendMask, autoDisable, speed, start, stop, startPoint, loops,
                 forceLoop || animation->isLoopingAnimation(lowerGroup));
         };

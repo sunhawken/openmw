@@ -63,6 +63,17 @@
 #include "dynamicobject.hpp"
 #include "joltlayers.hpp"
 #include "ragdollwrapper.hpp"
+#include "ragdoll.hpp"
+#include <components/sceneutil/positionattitudetransform.hpp>
+#include <components/esm3/releasedequipmentstate.hpp>
+#include <components/esm3/loadcrea.hpp>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include "creaturerig.hpp"
+#include <components/misc/rng.hpp>
+#include "../mwbase/luamanager.hpp"
+#include "../mwbase/mechanicsmanager.hpp"
+#include "../mwmechanics/character.hpp"
+#include "../mwmechanics/damagesourcetype.hpp"
 
 #include "heightfield.hpp"
 #include "movementsolver.hpp"
@@ -291,6 +302,7 @@ namespace MWPhysics
 
     PhysicsSystem::~PhysicsSystem()
     {
+        mBrutalRagdolls.clear();
         mResourceSystem->removeResourceManager(mShapeManager.get());
         mWaterInstance.reset();
         mTaskScheduler->releaseSharedStates();
@@ -406,6 +418,8 @@ namespace MWPhysics
         {
             if (!ptr.isEmpty())
             {
+                if (const auto found = mBrutalRagdolls.find(ptr.mRef); found != mBrutalRagdolls.end())
+                    for (const auto id : found->second->getCollisionBodies()) bodyFilter.IgnoreBody(id);
                 const Actor* actor = getActor(ptr);
                 if (actor)
                     bodyFilter.IgnoreBody(actor->getPhysicsBody());
@@ -422,6 +436,8 @@ namespace MWPhysics
         {
             for (const MWWorld::Ptr& target : targets)
             {
+                if (const auto found = mBrutalRagdolls.find(target.mRef); found != mBrutalRagdolls.end())
+                    for (const auto id : found->second->getCollisionBodies()) bodyFilter.PushTarget(id);
                 const Actor* actor = getActor(target);
                 if (actor)
                     bodyFilter.PushTarget(actor->getPhysicsBody());
@@ -680,6 +696,7 @@ namespace MWPhysics
 
     void PhysicsSystem::queueBodyRemoval(const MWWorld::Ptr& ptr)
     {
+        stopNpcRagdoll(ptr);
         // Queue the object for batch removal - the actual body removal and destruction
         // happens when flushBodyRemovals() is called
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
@@ -960,6 +977,7 @@ namespace MWPhysics
 
     void PhysicsSystem::remove(const MWWorld::Ptr& ptr)
     {
+        stopNpcRagdoll(ptr);
         // IMPORTANT: Must fully synchronize physics simulation before removing objects.
         // This includes both waiting for the async job AND processing the simulation results.
         // The simulation results (in mSimulations vector) contain BodyIDs (like mStandingOn)
@@ -1005,6 +1023,10 @@ namespace MWPhysics
 
     void PhysicsSystem::updatePtr(const MWWorld::Ptr& old, const MWWorld::Ptr& updated)
     {
+        if (auto node = mBrutalRagdolls.extract(old.mRef); !node.empty()) {
+            node.mapped()->updatePtr(updated); node.key() = updated.mRef; mBrutalRagdolls.insert(std::move(node));
+        }
+        if (auto node = mPushRagdolls.extract(old.mRef); !node.empty()) { node.key() = updated.mRef; mPushRagdolls.insert(std::move(node)); }
         if (auto foundObject = mObjects.find(old.mRef); foundObject != mObjects.end())
             foundObject->second->updatePtr(updated);
         else if (auto foundDynamic = mDynamicObjects.find(old.mRef); foundDynamic != mDynamicObjects.end())
@@ -1224,7 +1246,7 @@ namespace MWPhysics
         const MWBase::World* world = MWBase::Environment::get().getWorld();
         for (const auto& [ref, physicActor] : mActors)
         {
-            if (!physicActor->isActive())
+            if (!physicActor->isActive() || physicActor->isRagdoll())
                 continue;
 
             auto ptr = physicActor->getPtr();
@@ -1333,6 +1355,7 @@ namespace MWPhysics
             const bool buoyancyEnabled = Settings::physics().mEnableBuoyancy;
             for (auto& [_, dynObj] : mDynamicObjects)
             {
+                dynObj->updateCollisionExclusions();
                 if (!buoyancyEnabled || !dynObj->isInWaterZone())
                     continue;
 
@@ -1370,6 +1393,7 @@ namespace MWPhysics
                 }
             }
 
+            for (auto& [key, body] : mBrutalRagdolls) body->beforeStep(mPhysicsDt);
             mPhysicsSystem->Update(mPhysicsDt, cCollisionSteps, mMemoryAllocator.get(), mPhysicsJobSystem.get());
         }
 
@@ -1412,7 +1436,7 @@ namespace MWPhysics
             mActorsPositions.reserve(mActors.size() - 1);
         for (const auto& [ptr, physicActor] : mActors)
         {
-            if (physicActor.get() == player)
+            if (physicActor.get() == player || physicActor->isRagdoll())
                 continue;
             mActorsPositions.emplace_back(physicActor->getPtr(), physicActor->getSimulationPosition());
         }
@@ -1421,20 +1445,113 @@ namespace MWPhysics
             world->moveObject(ptr, pos, false, false);
     }
 
+    void PhysicsSystem::applyObjectImpulse(const MWWorld::Ptr& ptr, const osg::Vec3f& impulse, float mass)
+    {
+        if (!Settings::game().mBrutalDynamicProps) return;
+        if (!std::isfinite(mass) || mass <= 0.f) throw std::runtime_error("Invalid dynamic prop mass");
+        mTaskScheduler->syncSimulation();
+        if (!mDynamicObjects.contains(ptr.mRef))
+        {
+            if (const auto found = mObjects.find(ptr.mRef); found != mObjects.end())
+            {
+                if (found->second->isAnimated() || !found->second->isSolid())
+                    throw std::runtime_error("Dynamic prop requires a solid, non-animated collision shape");
+            }
+            addDynamicObject(ptr, ptr.getClass().getCorrectedModel(ptr),
+                ptr.getRefData().getBaseNode()->getAttitude(), mass);
+        }
+        const auto found = mDynamicObjects.find(ptr.mRef);
+        if (found == mDynamicObjects.end()) throw std::runtime_error("Dynamic prop has no collision shape");
+        if (const auto original = mObjects.find(ptr.mRef); original != mObjects.end())
+        {
+            mAnimatedObjects.erase(original->second.get());
+            mObjects.erase(original);
+        }
+        found->second->applyImpulse(impulse);
+    }
+
+    void PhysicsSystem::addReleasedEquipment(const MWWorld::Ptr& ptr)
+    {
+        if (!Settings::game().mBrutalEquipmentPhysics || mDynamicObjects.contains(ptr.mRef)) return;
+        const auto& release = ptr.getRefData().getReleasedEquipment();
+        if (!release || !release->valid()) throw std::runtime_error("Invalid released equipment descriptor");
+        JPH::ConvexHullShapeSettings hull;
+        for (const auto& drawable : release->mDrawables)
+        {
+            const osg::Matrixf residual(drawable.mTransform.data());
+            for (const auto& vertex : drawable.mVertices)
+                hull.mPoints.push_back(Misc::Convert::toJolt<JPH::Vec3>(
+                    osg::Vec3f(vertex[0], vertex[1], vertex[2]) * residual));
+        }
+        hull.mMaxConvexRadius = .05f;
+        auto result = hull.Create();
+        if (result.HasError()) throw std::runtime_error(result.GetError().c_str());
+        auto shape = osg::ref_ptr<Resource::PhysicsShape>(new Resource::PhysicsShape);
+        shape->mCollisionShape = result.Get();
+        shape->mVisualCollisionType = Resource::VisualCollisionType::Default;
+        mTaskScheduler->syncSimulation();
+        auto object = std::make_shared<DynamicObject>(ptr, Resource::makeInstance(shape),
+            ptr.getRefData().getBaseNode()->getAttitude(), release->mMass,
+            mTaskScheduler.get(), this, DynamicShapeType::Box, true);
+        mDynamicObjects.emplace(ptr.mRef, std::move(object));
+    }
+
+    void PhysicsSystem::initializeReleasedEquipment(const MWWorld::Ptr& item, const MWWorld::Ptr& actor,
+        const osg::Vec3f& linear, const osg::Vec3f& angular)
+    {
+        const auto object = mDynamicObjects.find(item.mRef);
+        if (object == mDynamicObjects.end() || !mBrutalRagdolls.contains(actor.mRef))
+            throw std::runtime_error("Released equipment or owner body is missing");
+        mTaskScheduler->syncSimulation();
+        object->second->ignoreOverlappingBodies(mBrutalRagdolls.at(actor.mRef)->getEquipmentGripBodies());
+        object->second->setLinearVelocity(linear);
+        object->second->setAngularVelocity(angular);
+    }
+
+    bool PhysicsSystem::getRagdollEquipmentFrame(const MWWorld::Ptr& actor, bool left,
+        osg::Matrixf& frame, osg::Vec3f& linear, osg::Vec3f& angular) const
+    {
+        const auto found = mBrutalRagdolls.find(actor.mRef);
+        return found != mBrutalRagdolls.end() && found->second->getEquipmentFrame(left, frame, linear, angular);
+    }
+
+    std::vector<osg::Vec3f> PhysicsSystem::getReleasedEquipmentState(const MWWorld::Ptr& item) const
+    {
+        const auto found = mDynamicObjects.find(item.mRef);
+        if (found == mDynamicObjects.end()) return {};
+        mTaskScheduler->syncSimulation();
+        const auto& object = *found->second;
+        JPH::Vec3 linear, angular;
+        mPhysicsSystem->GetBodyInterface().GetLinearAndAngularVelocity(object.getPhysicsBody(), linear, angular);
+        JPH::BodyIDVector bodies;
+        mPhysicsSystem->GetBodies(bodies);
+        unsigned worldContacts = 0, ragdollContacts = 0;
+        for (const auto id : bodies)
+            if (mPhysicsSystem->WereBodiesInContact(object.getPhysicsBody(), id))
+            {
+                bool ragdoll = false;
+                for (const auto& [ref, body] : mBrutalRagdolls)
+                    if (const auto& parts = body->getCollisionBodies(); std::find(parts.begin(),parts.end(),id) != parts.end())
+                    { ragdoll = true; break; }
+                if (ragdoll) ++ragdollContacts; else ++worldContacts;
+            }
+        return { object.getSimulationPosition(), Misc::Convert::toOsg(linear), Misc::Convert::toOsg(angular),
+            osg::Vec3f(object.isActive() ? 1.f : 0.f, float(worldContacts+ragdollContacts), float(object.ignoredBodyCount())),
+            osg::Vec3f(float(worldContacts),float(ragdollContacts),0.f) };
+    }
+
     void PhysicsSystem::moveDynamicObjects()
     {
+        mTaskScheduler->syncSimulation();
+        struct Update { MWWorld::Ptr ptr; osg::Vec3f position; osg::Quat rotation; };
+        std::vector<Update> updates;
+        updates.reserve(mDynamicObjects.size());
+        for (const auto& [ref, object] : mDynamicObjects)
+            updates.push_back({object->getPtr(),object->getSimulationPosition(),object->getSimulationRotation()});
         const auto world = MWBase::Environment::get().getWorld();
-
-        for (const auto& [ptr, dynObj] : mDynamicObjects)
-        {
-            if (dynObj->isActive())
-            {
-                osg::Vec3f pos = dynObj->getSimulationPosition();
-                osg::Quat rot = dynObj->getSimulationRotation();
-                world->moveObject(dynObj->getPtr(), pos, false, false);
-                world->rotateObject(dynObj->getPtr(), Misc::toEulerAnglesZYX(rot), MWBase::RotationFlag_none);
-            }
-        }
+        for (const auto& update : updates)
+            if (update.ptr.isInCell() && update.ptr.getRefData().getBaseNode())
+                world->syncDynamicObject(update.ptr,update.position,update.rotation,update.position,update.rotation,true);
     }
 
     void PhysicsSystem::debugDraw()
@@ -1647,6 +1764,16 @@ namespace MWPhysics
     ActorFrameData::ActorFrameData(
         Actor& actor, bool inert, bool waterCollision, float slowFall, float waterlevel, bool isPlayer)
         : mPosition()
+        , mExternalVelocity(actor.getExternalVelocity())
+        , mLocomotionVelocity(actor.getLocomotionVelocity())
+        , mKineticMovement(isPlayer && Settings::game().mKineticPlayerMovement)
+        , mBrutalSliding(isPlayer && actor.getPtr().getClass().getCreatureStats(actor.getPtr()).mBrutalSliding)
+        , mBrutalSlideLow(isPlayer && actor.getPtr().getClass().getCreatureStats(actor.getPtr()).mBrutalSlideLow)
+        , mBrutalSlideFrictionBlend(mBrutalSliding ? 1.f
+              : mKineticMovement && mBrutalSlideLow
+                  && actor.getPtr().getClass().getCreatureStats(actor.getPtr()).mBrutalSlidePhase == 3
+              ? std::clamp(actor.getPtr().getClass().getCreatureStats(actor.getPtr()).mBrutalSlideBlend, 0.f, 1.f)
+              : 0.f)
         , mIsOnGround(actor.getOnGround())
         , mIsOnSlope(actor.getOnSlope())
         , mWalkingOnWater(false)
@@ -1999,7 +2126,7 @@ namespace MWPhysics
         const osg::Vec3f& hitImpulse)
     {
         // Check if ragdoll physics is enabled in settings
-        if (!Settings::physics().mEnableRagdoll)
+        if (Settings::game().mBrutalRagdoll || !Settings::physics().mEnableRagdoll)
             return;
 
         if (!ptr.getClass().isActor())
@@ -2271,4 +2398,699 @@ namespace MWPhysics
             return mGrabbedRagdoll->getPtr();
         return MWWorld::Ptr();
     }
+    void PhysicsSystem::createNpcRagdoll(const MWWorld::Ptr& ptr,
+        const std::map<std::string, osg::Matrixf, std::less<>>& bones, const osg::Vec3f& kick)
+    {
+        if (mBrutalRagdolls.contains(ptr.mRef))
+            throw std::runtime_error("NPC already has a ragdoll");
+        Actor* actor = getActor(ptr);
+        if (!actor)
+            throw std::runtime_error("NPC has no active physics actor");
+        // Publish the new body at a batch boundary, so the previous frame cannot
+        // step it before its initial velocity/point impulse has been captured.
+        mTaskScheduler->syncSimulation();
+        // NPC death hands off to the ragdoll directly, with or without enhanced
+        // drives. Keep the actor's translation continuous in both cases.
+        const osg::Vec3f inherited = actor->getSimulationVelocity();
+        const auto sample = mRagdollAnimation.find(ptr.mRef);
+        const auto motion = Settings::game().mRagdollEnhancement && sample != mRagdollAnimation.end()
+            ? sample->second.motion : Ragdoll::BoneMotion{};
+        const auto* animation = MWBase::Environment::get().getWorld()->getAnimation(ptr);
+        Ragdoll::UnsupportedExtremityBones unsupportedBones;
+        const auto surfaceVertices = animation ? animation->getRagdollExtremityVertices(&unsupportedBones)
+                                              : Ragdoll::ExtremityVertices{};
+        const auto* rig = findCreatureRig(ptr);
+        auto ragdoll = rig
+            ? std::make_unique<Ragdoll>(ptr, *rig, bones, inherited, kick, mTaskScheduler.get())
+            : std::make_unique<Ragdoll>(
+                ptr, bones, inherited, kick, mTaskScheduler.get(), std::nullopt, motion, surfaceVertices, unsupportedBones);
+        mRagdollAnimation.erase(ptr.mRef);
+        actor->setRagdoll(true);
+        mBrutalRagdolls.emplace(ptr.mRef, std::move(ragdoll));
+        MWBase::Environment::get().getWorld()->releaseNpcRagdollEquipment(ptr);
+    }
+
+    void PhysicsSystem::stopNpcRagdoll(const MWWorld::Ptr& ptr)
+    {
+        mSuperKickSources.erase(ptr.mRef);
+        mSuperKickVictims.erase(ptr.mRef);
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        if (found == mBrutalRagdolls.end())
+            return;
+        mPushRagdolls.erase(ptr.mRef);
+        mBrutalRagdolls.erase(found); // remove constraints before bodies, while scheduler is alive
+        if (auto* actor = getActor(ptr))
+        {
+            actor->setRagdoll(false);
+            actor->updatePosition();
+        }
+        if (auto* animation = MWBase::Environment::get().getWorld()->getAnimation(ptr))
+            animation->endRagdollPose();
+    }
+
+    namespace
+    {
+        // Dark Messiah's kick reactions (ACT_PUSH_*): the side the kick came from, head or
+        // body by where the kicker aims, and a random strength among small/medium/long.
+        std::string chooseKickReaction(const MWWorld::Ptr& ptr, const MWWorld::Ptr& attacker,
+            const osg::Vec3f& direction, float height)
+        {
+            const float yaw = ptr.getRefData().getPosition().rot[2];
+            const osg::Vec3f forward(std::sin(yaw), std::cos(yaw), 0.f), right(std::cos(yaw), -std::sin(yaw), 0.f);
+            const osg::Vec3f toAttacker = -direction; // the kick pushes away from its source
+            const float front = toAttacker * forward, side = toAttacker * right;
+            const char* from = std::abs(front) >= std::abs(side) ? (front >= 0.f ? "front" : "back")
+                                                                  : (side >= 0.f ? "right" : "left");
+            auto& prng = MWBase::Environment::get().getWorld()->getPrng();
+            const int roll = Misc::Rng::rollDice(100, prng);
+            if (roll >= 85)
+                return std::string("brutal_push_") + from + "_long";
+            if (roll >= 60)
+                return std::string("brutal_push_") + from + "_medium";
+            bool head = false;
+            if (!attacker.isEmpty())
+            {
+                // DM picks the kick height from the kicker's view pitch. The player's eye is at
+                // a Morrowind NPC's head height, so a level view kicks the body; looking up
+                // over the target's head lands a high kick.
+                const auto& source = attacker.getRefData().getPosition();
+                const osg::Vec3f target = ptr.getRefData().getPosition().asVec3();
+                const float distance = osg::Vec2f(target.x() - source.pos[0], target.y() - source.pos[1]).length();
+                const float eye = source.pos[2] + (attacker == MWMechanics::getPlayer() ? 124.7f : height * .9f);
+                head = eye - std::tan(source.rot[0]) * distance > target.z() + std::max(height, 128.f) + 16.f;
+            }
+            return std::string("brutal_push_") + (head ? "head_" : "body_") + from;
+        }
+    }
+
+    bool PhysicsSystem::applyNpcKick(const MWWorld::Ptr& ptr, const osg::Vec3f& kick, const MWWorld::Ptr& attacker, bool continuing,
+        bool knockDown, bool slideTrip)
+    {
+        return applyNpcKickImpl(ptr, kick, attacker, continuing, knockDown, false, slideTrip);
+    }
+
+    bool PhysicsSystem::applyNpcKickImpl(const MWWorld::Ptr& ptr, const osg::Vec3f& kick,
+        const MWWorld::Ptr& attacker, bool continuing, bool knockDown, bool superKick, bool slideTrip)
+    {
+        auto world=MWBase::Environment::get().getWorld();
+        auto* actor=getActor(ptr);
+        auto* animation=world->getAnimation(ptr);
+        const bool isCreature = ptr.getType()==ESM::REC_CREA;
+        if ((ptr.getType()!=ESM::REC_NPC_ && !isCreature) || ptr==MWMechanics::getPlayer() || !actor || !animation
+            || ptr.getClass().getCreatureStats(ptr).isDead() || animation->isRagdollPose()) return false;
+        const auto* rig = findCreatureRig(ptr);
+        // A heavy creature answers more slowly; one with no legs, wings or fins cannot be moved at all.
+        const auto* record = isCreature ? ptr.get<ESM::Creature>()->mBase : nullptr;
+        const bool immobile = record && !(record->mFlags
+            & (ESM::Creature::Walks | ESM::Creature::Flies | ESM::Creature::Swims | ESM::Creature::Bipedal));
+        // A continuing push has already been scaled when it began.
+        const auto* baseNode = ptr.getRefData().getBaseNode();
+        const float weight = rig && !continuing ? rig->kickScale(baseNode ? baseNode->getScale().x() : 1.f) : 1.f;
+        // The vertical component lifts only a ledge ragdoll: a standing recoil stays grounded.
+        const osg::Vec3f push = immobile ? osg::Vec3f() : osg::Vec3f(kick.x(),kick.y(),0.f)*weight;
+        osg::Vec3f direction=immobile ? osg::Vec3f(kick.x(),kick.y(),0.f) : push;
+        if (direction.normalize()<.01f)
+        {
+            if (!superKick) return false;
+            direction = osg::Vec3f(0, 1, 0); // A spent projectile can still knock a witnessed victim down.
+        }
+        const auto position=ptr.getRefData().getPosition().asVec3();
+        const auto half=actor->getRenderingHalfExtents();
+        // Source human hull is 72 units tall. Scale the authored 60/40 probes
+        // to this world NPC, independently of the first-person camera/assets.
+        const float units=2.f*half.z()/72.f;
+        const int mask=Layers::WORLD | Layers::HEIGHTMAP | Layers::DOOR;
+        const osg::Vec3f chest=position+osg::Vec3f(0,0,half.z());
+        bool fullKnockdown = superKick || (knockDown && !slideTrip);
+        bool ledge=Settings::game().mBrutalRagdoll && (fullKnockdown || ((knockDown || actor->getOnGround() || continuing)
+            && !world->isSwimming(ptr) && !world->isFlying(ptr)));
+        if (isCreature && (!rig || (immobile && !superKick))) ledge=false;
+        if (ledge && !knockDown && castSphere(chest,chest+direction*(60.f*units),half.x()*.8f,mask).mHit) ledge=false;
+        const osg::Vec3f side(-direction.y(),direction.x(),0);
+        // A knockdown falls on open ground; only a kick needs the void behind the target.
+        if (ledge && !knockDown)
+            for (float lateral : {-0.7f,0.f,0.7f})
+            {
+                const auto p=position+direction*(60.f*units)+side*(half.x()*lateral);
+                const auto support=castRay(p+osg::Vec3f(0,0,8),p-osg::Vec3f(0,0,40.f*units),mask);
+                if (support.mHit && support.mHitNormal.z()>.5f) { ledge=false; break; }
+            }
+        Ragdoll::BoneMatrices bones;
+        if (ledge && rig)
+        {
+            for (const auto& part:rig->mParts)
+            { auto bone=animation->getBoneWorldMatrix(part.mBone); if (!bone) {ledge=false;break;} bones.emplace(part.mBone,*bone); }
+        }
+        else if (ledge) for (const auto& name:Ragdoll::getRequiredBones())
+        { auto bone=animation->getBoneWorldMatrix(name); if (!bone) {ledge=false;break;} bones.emplace(name,*bone); }
+        if (!ledge)
+        {
+            if (superKick) return false; // Missing bones must not turn a rejected power kick into an ordinary push.
+            if (!continuing)
+            {
+                if (!immobile) actor->addExternalVelocity(push);
+                // Creatures keep their own hit animations: no group is imposed on them.
+                MWBase::Environment::get().getMechanicsManager()->staggerActor(
+                    ptr, isCreature ? std::string() : chooseKickReaction(ptr, attacker, direction, 2.f * half.z()));
+                // Source rechecks support throughout a push, not only at contact.
+                if (!isCreature || (rig && !immobile))
+                    mKickWatches[ptr.mRef]={ptr,attacker,direction,0.f,kick.z()*weight/push.length()};
+            }
+            return false;
+        }
+        // A fresh kick has not entered external velocity. A continuing push
+        // already has: transfer its remaining component into a torso impulse,
+        // subtracting it from inherited COM motion so momentum is not doubled.
+        mTaskScheduler->syncSimulation();
+        bool clear=false;
+        const auto pending=actor->consumeExternalVelocity(clear);
+        const auto inherited=(clear ? osg::Vec3f() : actor->getSimulationVelocity())+pending-(continuing ? push : osg::Vec3f());
+        const bool lowTrip = slideTrip && knockDown && !superKick && !continuing;
+        // The sliding boot removes support at the posed shins. Ordinary kicks
+        // and continuing ledge pushes still enter through the chest.
+        const osg::Vec3f rootBone = rig ? osg::Vec3f(bones.at(rig->mParts.front().mBone).getTrans()) : osg::Vec3f();
+        const osg::Vec3f humanContact = rig ? osg::Vec3f() : osg::Vec3f(lowTrip
+            ? (bones.at("Bip01 L Calf").getTrans() + bones.at("Bip01 L Foot").getTrans()
+                  + bones.at("Bip01 R Calf").getTrans() + bones.at("Bip01 R Foot").getTrans()) * .25f
+                - direction * 5.f // physical calf capsule radius
+            : bones.at("Bip01 Spine1").getTrans() - direction * half.x());
+        const osg::Vec3f contact = rig
+            ? osg::Vec3f((lowTrip ? osg::Vec3f(position + osg::Vec3f(0.f, 0.f, half.z() * .3f)) : rootBone) - direction * half.x())
+            : humanContact;
+        MWBase::Environment::get().getMechanicsManager()->staggerActor(ptr);
+        animation->beginRagdollPose();
+        try {
+            const auto sample = mRagdollAnimation.find(ptr.mRef);
+            const auto motion = Settings::game().mRagdollEnhancement && sample != mRagdollAnimation.end()
+                ? sample->second.motion : Ragdoll::BoneMotion{};
+            Ragdoll::UnsupportedExtremityBones unsupportedBones;
+            const auto surfaceVertices = animation->getRagdollExtremityVertices(&unsupportedBones);
+            const auto profile = lowTrip ? Ragdoll::KickProfile::LowTrip : Ragdoll::KickProfile::Chest;
+            auto body = rig
+                ? std::make_unique<Ragdoll>(ptr,*rig,bones,inherited,kick*weight,mTaskScheduler.get(),contact,profile)
+                : std::make_unique<Ragdoll>(ptr,bones,inherited,kick,mTaskScheduler.get(),contact,motion,
+                    surfaceVertices,unsupportedBones,profile);
+            if (fullKnockdown) body->guardSuperKickSpawn();
+            mRagdollAnimation.erase(ptr.mRef);
+            actor->clearExternalVelocity(); actor->setInertialForce({}); actor->setOnGround(false); actor->setRagdoll(true);
+            mBrutalRagdolls.emplace(ptr.mRef,std::move(body));
+            mKickWatches.erase(ptr.mRef);
+            auto& state=mPushRagdolls[ptr.mRef]; state.peakZ=state.previousZ=position.z(); state.attacker=attacker;
+            state.knockDown=knockDown;
+            // Every living ragdoll is a disarm, including ordinary knockdowns.
+            world->releaseNpcRagdollEquipment(ptr);
+        } catch (...) {animation->endRagdollPose();throw;}
+        if (!attacker.isEmpty() && !knockDown)
+            MWBase::Environment::get().getLuaManager()->npcKickRagdoll(attacker, ptr);
+        return true;
+    }
+
+    bool PhysicsSystem::applyNpcSuperKick(const MWWorld::Ptr& ptr, const osg::Vec3f& velocity,
+        const MWWorld::Ptr& attacker, std::uint64_t kickId)
+    {
+        if (!Settings::game().mBrutalRagdoll || ptr.isEmpty() || (ptr.getType() != ESM::REC_NPC_ && !findCreatureRig(ptr)) || ptr == MWMechanics::getPlayer()
+            || !kickId || kickId > 9007199254740991ULL || mSuperKickIds.contains(kickId)
+            || mSuperKickSources.contains(ptr.mRef)) return false;
+        for (int axis = 0; axis < 3; ++axis) if (!std::isfinite(velocity[axis])) return false;
+        if (velocity.length2() > 1000.f * 1000.f
+            || osg::Vec2f(velocity.x(), velocity.y()).length() < 100.f) return false;
+        auto* actor = getActor(ptr);
+        auto world = MWBase::Environment::get().getWorld();
+        auto* animation = world->getAnimation(ptr);
+        if (!actor || !actor->isActive() || !animation || !ptr.getRefData().isEnabled()) return false;
+        mTaskScheduler->syncSimulation();
+        if (!mBrutalRagdolls.contains(ptr.mRef))
+        {
+            if (!ptr.getClass().getCreatureStats(ptr).isDead())
+            {
+                if (!applyNpcKickImpl(ptr, velocity, attacker, false, true, true)) return false;
+            }
+            else
+            {
+                // Foot damage can kill immediately before the queued super-kick
+                // action. Hand that current pose to physics without waiting for
+                // an ordinary death-animation frame, then launch the same body.
+                Ragdoll::BoneMatrices bones;
+                std::vector<std::string> names;
+                if (const auto* rig = findCreatureRig(ptr))
+                    for (const auto& part : rig->mParts) names.push_back(part.mBone);
+                else names = Ragdoll::getRequiredBones();
+                for (const auto& name : names)
+                {
+                    const auto bone = animation->getBoneWorldMatrix(name);
+                    if (!bone) return false;
+                    bones.emplace(name, *bone);
+                }
+                animation->beginRagdollPose();
+                try { createNpcRagdoll(ptr, bones, osg::Vec3f()); }
+                catch (...) { animation->endRagdollPose(); throw; }
+                mBrutalRagdolls.at(ptr.mRef)->guardSuperKickSpawn();
+            }
+        }
+        auto& body = *mBrutalRagdolls.at(ptr.mRef);
+        const auto* source = attacker.isEmpty() ? nullptr : getActor(attacker);
+        if (!body.startSuperKick(kickId, kickId, velocity, source ? source->getPhysicsBody() : JPH::BodyID())) return false;
+        mSuperKickIds.insert(kickId);
+        mSuperKickSources.emplace(ptr.mRef, SuperKickSource{ attacker, kickId });
+        mSuperKickVictims.erase(ptr.mRef);
+        if (auto push = mPushRagdolls.find(ptr.mRef); push != mPushRagdolls.end())
+        {
+            push->second = PushRagdoll{};
+            push->second.attacker = attacker;
+            push->second.peakZ = push->second.previousZ = body.getDynamics()[0].z();
+            push->second.knockDown = true;
+        }
+        world->releaseNpcRagdollEquipment(ptr);
+        return true;
+    }
+
+    std::map<std::string, double> PhysicsSystem::getNpcSuperKickState(const MWWorld::Ptr& ptr) const
+    {
+        const auto body = mBrutalRagdolls.find(ptr.mRef);
+        if (body == mBrutalRagdolls.end()) return {};
+        auto result = body->second->getSuperKickState();
+        if (const auto source = mSuperKickSources.find(ptr.mRef); source != mSuperKickSources.end())
+        {
+            result["secondary"] = 0;
+            result["knockdowns"] = source->second.knockdowns;
+            result["rejectedContacts"] = source->second.rejectedContacts;
+        }
+        else if (const auto victim = mSuperKickVictims.find(ptr.mRef); victim != mSuperKickVictims.end())
+        {
+            result["active"] = 0;
+            result["secondary"] = 1;
+            result["kickId"] = double(victim->second);
+            result["receivedHits"] = 1;
+        }
+        return result;
+    }
+
+    void PhysicsSystem::processSuperKickContacts()
+    {
+        if (mSuperKickSources.empty()) return;
+        std::vector<Ragdoll::SuperKickContact> contacts;
+        for (const auto& [ref, body] : mBrutalRagdolls)
+        {
+            auto pending = body->takeSuperKickContacts();
+            contacts.insert(contacts.end(), pending.begin(), pending.end());
+        }
+        for (const auto& contact : contacts)
+        {
+            const auto source = std::find_if(mSuperKickSources.begin(), mSuperKickSources.end(),
+                [&](const auto& item) { return item.second.kickId == contact.token; });
+            if (source == mSuperKickSources.end()) continue;
+            const auto attacker = source->second.attacker;
+            MWWorld::Ptr target;
+            for (const auto& [ref, actor] : mActors)
+                if (actor->getPhysicsBody() == contact.actor)
+                { target = actor->getPtr(); break; }
+            bool applied = false;
+            if (!target.isEmpty() && target.getClass().isActor() && target != MWMechanics::getPlayer()
+                && target.getRefData().isEnabled() && !target.getClass().getCreatureStats(target).isDead())
+                if (const auto* actor = getActor(target); actor && actor->isActive() && !actor->isRagdoll())
+                    applied = applyNpcKickImpl(target, contact.transfer, attacker, false, true, true);
+            // World equipment release may move references. Resolve the source
+            // again instead of holding iterators across a main-thread World call.
+            const auto current = std::find_if(mSuperKickSources.begin(), mSuperKickSources.end(),
+                [&](const auto& item) { return item.second.kickId == contact.token; });
+            if (current != mSuperKickSources.end())
+            {
+                if (applied) ++current->second.knockdowns;
+                else ++current->second.rejectedContacts;
+            }
+            if (applied) mSuperKickVictims[target.mRef] = contact.token;
+        }
+    }
+
+    bool PhysicsSystem::detachNpcRagdollHead(const MWWorld::Ptr& ptr, const osg::Vec3f& cutVelocity,
+        const osg::Vec3f& headAngularImpulse)
+    {
+        if (ptr == MWMechanics::getPlayer() || !ptr.getClass().isNpc()
+            || !ptr.getClass().getCreatureStats(ptr).isDead())
+            return false;
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        return found != mBrutalRagdolls.end() && found->second->detachHead(cutVelocity, headAngularImpulse);
+    }
+
+    bool PhysicsSystem::detachNpcRagdollTorso(const MWWorld::Ptr& ptr, const osg::Vec3f& cutVelocity,
+        const osg::Vec3f& upperSeparation, const std::string& savedPose)
+    {
+        if (ptr == MWMechanics::getPlayer() || !ptr.getClass().isNpc()
+            || !ptr.getClass().getCreatureStats(ptr).isDead()) return false;
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        if (found == mBrutalRagdolls.end() || !found->second->detachTorso(cutVelocity, upperSeparation, savedPose)) return false;
+        if (!savedPose.empty())
+            if (auto* animation = MWBase::Environment::get().getWorld()->getAnimation(ptr))
+                for (const auto& [bone, matrix] : found->second->getBonePoses(1.f))
+                    animation->setBoneWorldMatrix(bone, matrix);
+        return true;
+    }
+
+    std::string PhysicsSystem::getNpcBisectionPoseData(const MWWorld::Ptr& ptr) const
+    {
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        return found == mBrutalRagdolls.end() ? std::string() : found->second->getBisectionPoseData();
+    }
+
+    bool PhysicsSystem::detachNpcRagdollLimbs(const MWWorld::Ptr& ptr, unsigned mask,
+        const osg::Vec3f& cutVelocity, const std::string& savedPose)
+    {
+        if (ptr == MWMechanics::getPlayer() || !ptr.getClass().isNpc()
+            || !ptr.getClass().getCreatureStats(ptr).isDead()) return false;
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        if (found == mBrutalRagdolls.end() || !found->second->detachLimbs(mask, cutVelocity, savedPose)) return false;
+        if (!savedPose.empty())
+            if (auto* animation = MWBase::Environment::get().getWorld()->getAnimation(ptr))
+                for (const auto& [bone, matrix] : found->second->getBonePoses(1.f))
+                    animation->setBoneWorldMatrix(bone, matrix);
+        return true;
+    }
+
+    std::string PhysicsSystem::getNpcLimbSeveringPoseData(const MWWorld::Ptr& ptr) const
+    {
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        return found == mBrutalRagdolls.end() ? std::string() : found->second->getLimbSeveringPoseData();
+    }
+
+    unsigned PhysicsSystem::getNpcSeveredLimbsMask(const MWWorld::Ptr& ptr) const
+    {
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        return found == mBrutalRagdolls.end() ? 0 : found->second->getSeveredLimbsMask();
+    }
+
+    MWWorld::Ptr PhysicsSystem::kickNpcRagdoll(const osg::Vec3f& origin, const osg::Vec3f& forward, float reach,
+        float minimumDot, const osg::Vec3f& velocity, bool& headHit, osg::Vec3f& hitPoint, std::size_t& hitPart)
+    {
+        headHit = false;
+        Ragdoll* best = nullptr;
+        std::size_t bestPart = 0;
+        float bestDistance = -1.f;
+        for (const auto& [ref, ragdoll] : mBrutalRagdolls)
+        {
+            std::size_t part = 0;
+            osg::Vec3f point;
+            const float distance = ragdoll->findKickPart(origin, forward, reach, minimumDot, part, point);
+            if (distance >= 0.f && (!best || distance < bestDistance))
+            {
+                if (castRay(origin, point, Layers::WORLD | Layers::HEIGHTMAP | Layers::DOOR).mHit) continue;
+                best = ragdoll.get();
+                bestPart = part;
+                bestDistance = distance;
+                hitPoint = point;
+            }
+        }
+        if (!best)
+            return {};
+        headHit = best->isDetachedHeadPart(bestPart);
+        if (!best->applyKick(bestPart, velocity, hitPoint)) return {};
+        hitPart = bestPart;
+        return best->getPtr();
+    }
+
+    std::vector<osg::Vec3f> PhysicsSystem::getNpcRagdollDynamics(const MWWorld::Ptr& ptr) const
+    {
+        auto it=mBrutalRagdolls.find(ptr.mRef); if (it==mBrutalRagdolls.end()) return {};
+        auto out=it->second->getDynamics();
+        auto push=mPushRagdolls.find(ptr.mRef);
+        out.emplace_back(push!=mPushRagdolls.end(),push==mPushRagdolls.end()?0.f:push->second.age,it->second->initialRotationError());
+        out.emplace_back(it->second->initialMatrixError(),0,0);
+        out.push_back(it->second->getLandingState());
+        out.emplace_back(push==mPushRagdolls.end()?0.f:push->second.settled,
+            push==mPushRagdolls.end()?0.f:push->second.unsupported,
+            push!=mPushRagdolls.end() && push->second.supported);
+        const auto head = it->second->getHeadState();
+        out.insert(out.end(), head.begin(), head.end());
+        return out;
+    }
+
+    std::map<std::string, double> PhysicsSystem::getNpcRagdollEnhancementState(const MWWorld::Ptr& ptr) const
+    {
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        return found == mBrutalRagdolls.end() ? std::map<std::string, double>() : found->second->getEnhancementState();
+    }
+
+    bool PhysicsSystem::applyNpcRagdollImpact(const MWWorld::Ptr& ptr, std::size_t part,
+        const osg::Vec3f& point, const osg::Vec3f& impulse, std::uint64_t id)
+    {
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        return found != mBrutalRagdolls.end() && found->second->applyImpact(part, point, impulse, id);
+    }
+
+    void PhysicsSystem::sampleNpcRagdollAnimation(float duration)
+    {
+        if (!Settings::game().mRagdollEnhancement)
+        { mRagdollAnimation.clear(); return; }
+        if (!std::isfinite(duration) || duration <= 0.f)
+        { mRagdollAnimation.clear(); return; }
+        auto world = MWBase::Environment::get().getWorld();
+        for (const auto& [ref, actor] : mActors)
+        {
+            const auto ptr = actor->getPtr();
+            if (ptr.getType() != ESM::REC_NPC_ || ptr == MWMechanics::getPlayer()
+                || actor->isRagdoll() || !actor->isActive())
+            { mRagdollAnimation.erase(ref); continue; }
+            if (ptr.getClass().getCreatureStats(ptr).isDead())
+            {
+                // Scripted death observation can queue activation on a later
+                // frame. Retain the last live velocity briefly, without sampling
+                // a canned death animation or reviving stale loaded-corpse motion.
+                if (const auto found = mRagdollAnimation.find(ref); found != mRagdollAnimation.end())
+                {
+                    found->second.deadAge += duration;
+                    if (found->second.deadAge > .25f) mRagdollAnimation.erase(found);
+                }
+                continue;
+            }
+            auto* animation = world->getAnimation(ptr);
+            if (!animation) { mRagdollAnimation.erase(ref); continue; }
+            Ragdoll::BoneMatrices bones;
+            for (const auto& name : Ragdoll::getRequiredBones())
+            {
+                const auto bone = animation->getBoneWorldMatrix(name);
+                if (!bone) { bones.clear(); break; }
+                bones.emplace(name, *bone);
+            }
+            if (bones.empty()) { mRagdollAnimation.erase(ref); continue; }
+            // Read the scene root through the same live world-path convention
+            // as getBoneWorldMatrix, rather than mixing record/physics coordinates
+            // with the evaluated rendered bones.
+            const auto* root = ptr.getRefData().getBaseNode();
+            if (!root) { mRagdollAnimation.erase(ref); continue; }
+            const auto paths = root->getParentalNodePaths();
+            if (paths.empty()) { mRagdollAnimation.erase(ref); continue; }
+            const osg::Matrixf rootWorld = osg::computeLocalToWorld(paths.front());
+            bool finiteRoot = true;
+            for (int i = 0; i < 16; ++i)
+                finiteRoot = finiteRoot && std::isfinite(rootWorld.ptr()[i]);
+            if (!finiteRoot) { mRagdollAnimation.erase(ref); continue; }
+            const auto renderedRootPosition = rootWorld.getTrans();
+            auto& sample = mRagdollAnimation[ref];
+            if (sample.deadAge > 0.f) sample.bones.clear(); // resurrection starts a fresh sample pair
+            sample.deadAge = 0.f;
+            sample.motion = sample.bones.empty() ? Ragdoll::BoneMotion{}
+                : Ragdoll::sampleAnimationMotion(sample.bones, bones,
+                    renderedRootPosition - sample.renderedRootPosition, duration);
+            sample.bones = std::move(bones);
+            sample.renderedRootPosition = renderedRootPosition;
+        }
+    }
+
+    void PhysicsSystem::moveNpcRagdolls(float duration)
+    {
+        if (!Settings::game().mBrutalRagdoll)
+        {
+            if (!mBrutalRagdolls.empty()) mTaskScheduler->syncSimulation();
+            std::vector<MWWorld::Ptr> actors;
+            for (const auto& [_, body] : mBrutalRagdolls) actors.push_back(body->getPtr());
+            for (const auto& actor : actors)
+            {
+                stopNpcRagdoll(actor);
+                MWBase::Environment::get().getMechanicsManager()->forceStateUpdate(actor);
+            }
+            mKickWatches.clear();
+            return;
+        }
+
+        auto world = MWBase::Environment::get().getWorld();
+        if (!Settings::game().mBrutalDismemberment)
+        {
+            std::vector<MWWorld::Ptr> cuts;
+            for (const auto& [_, body] : mBrutalRagdolls)
+                if (body->isTorsoDetached() || body->getSeveredLimbsMask()
+                    || (!body->getHeadState().empty() && body->getHeadState().front().x() != 0.f))
+                    cuts.push_back(body->getPtr());
+            if (!cuts.empty()) mTaskScheduler->syncSimulation();
+            for (const auto& actor : cuts)
+            {
+                stopNpcRagdoll(actor);
+                MWBase::Environment::get().getMechanicsManager()->forceStateUpdate(actor);
+            }
+        }
+        std::vector<KickWatch> watches;
+        for (auto it=mKickWatches.begin();it!=mKickWatches.end();)
+        {
+            auto& watch=it->second; watch.age+=duration;
+            auto* actor=getActor(watch.actor);
+            if (!actor || watch.age>1.f || actor->isExternalVelocityResetPending()
+                || watch.actor.getClass().getCreatureStats(watch.actor).isDead()
+                || actor->getExternalVelocity()*watch.direction<20.f)
+                it=mKickWatches.erase(it);
+            else { watches.push_back(watch); ++it; }
+        }
+        for (const auto& watch:watches)
+            if (auto* actor=getActor(watch.actor))
+            {
+                auto remaining=watch.direction*std::max(0.f,actor->getExternalVelocity()*watch.direction);
+                remaining.z()=remaining.length()*watch.lift;
+                applyNpcKick(watch.actor,remaining,watch.attacker,true);
+            }
+        // Otherwise the same frame may select either the old completed pose
+        // (alpha=1) or a newly completed batch (residual alpha), depending on
+        // worker timing. Include bodies just created by a ledge watch, wait once
+        // for the whole group, then select one deterministic residual clock.
+        if (!mBrutalRagdolls.empty()) mTaskScheduler->syncSimulation();
+        processSuperKickContacts();
+        struct Update { MWWorld::Ptr ptr; osg::Vec3f position;
+            std::vector<std::pair<std::string, osg::Matrixf>> poses; };
+        std::vector<Update> updates;
+        std::vector<MWWorld::Ptr> cancel;
+        std::vector<MWWorld::Ptr> recover;
+        for (const auto& [_, ragdoll] : mBrutalRagdolls)
+        {
+            ragdoll->setWater(mWaterEnabled, mWaterHeight);
+            ragdoll->configureEnhancement();
+            const auto ptr = ragdoll->getPtr();
+            auto* animation = world->getAnimation(ptr);
+            if ((!ptr.getClass().getCreatureStats(ptr).isDead() && !mPushRagdolls.contains(ptr.mRef)) || !animation || !animation->isRagdollPose())
+            {
+                cancel.push_back(ptr);
+                continue;
+            }
+            auto poses = ragdoll->getBonePoses();
+            auto position = ragdoll->getActorPosition(ptr.getRefData().getPosition().asVec3());
+            if (position && ptr.getClass().getCreatureStats(ptr).isDead())
+            {
+                // A corpse's standing pelvis offset places its reference below
+                // the floor. That offset cannot be reused with the ordinary
+                // completed death pose reconstructed by a saved-game load.
+                // Reanchor only the scene reference; the same world bone poses
+                // are reapplied below, leaving every rendered limb unchanged.
+                position->z() = ragdoll->retainedBottom();
+            }
+            if (auto it=mPushRagdolls.find(ptr.mRef); it!=mPushRagdolls.end())
+            {
+                auto& push=it->second; push.age+=duration;
+                auto& stats=ptr.getClass().getCreatureStats(ptr);
+                const auto dynamics=ragdoll->getDynamics();
+                const float z=dynamics[0].z();
+                const int mask=Layers::WORLD | Layers::HEIGHTMAP | Layers::DOOR;
+                const auto floor=castRay(dynamics[0],osg::Vec3f(dynamics[0].x(),dynamics[0].y(),ragdoll->bottom()-12.f),mask);
+                const bool supported=floor.mHit && floor.mHitNormal.z()>.5f && ragdoll->bottom()-floor.mHitPos.z()<12.f;
+                push.supported=supported;
+                if (supported && push.landed)
+                {
+                    // A later departure starts at its actual last supported
+                    // height, not the peak of an earlier completed fall.
+                    push.peakZ=z; push.downSpeed=0.f;
+                }
+                else
+                {
+                    push.peakZ=std::max(push.peakZ,z);
+                    push.downSpeed=std::max(push.downSpeed,-dynamics[1].z());
+                }
+                push.unsupported=supported?0.f:push.unsupported+duration;
+                // Rearm only after real unsupported flight. Rest contact jitter
+                // cannot consume or repeatedly charge the same landing.
+                if (push.unsupported>.05f) push.landed=false;
+                if (!push.landed && push.downSpeed>80.f && dynamics[1].z()>-30.f && supported)
+                {
+                    push.landed=true;
+                    const float height=std::max(0.f,push.peakZ-z);
+                    const float damage=MWMechanics::calculateRagdollFallDamage(ptr,height);
+                    ragdoll->recordLanding(height,damage);
+                    if (damage>0.f && !stats.isDead()) ptr.getClass().onHit(ptr,{{"health",damage}},ESM::RefId(),push.attacker,true,MWMechanics::DamageSourceType::Unspecified);
+                }
+                if (position) { position->x()=dynamics[0].x();position->y()=dynamics[0].y();position->z()=ragdoll->bottom(); }
+                if (supported && ragdoll->speed()<35.f && ragdoll->angularSpeed()<1.5f) push.settled+=duration;
+                else push.settled=0.f;
+                if (stats.isDead()) mPushRagdolls.erase(it); // retain the same body/momentum as a corpse
+                // In water there is nothing to come to rest on: the actor swims again.
+                else if (push.age>=2.f && (push.settled>=.35f || (mWaterEnabled && z<mWaterHeight))) recover.push_back(ptr);
+            }
+            if (position)
+                updates.push_back({ptr, *position, std::move(poses)});
+        }
+        for (const auto& ptr : cancel)
+            stopNpcRagdoll(ptr);
+        for (const auto& update : updates)
+        {
+            // Cell moves can replace references or unload a corpse; never keep map iterators across World calls.
+            const auto ptr = world->moveObject(update.ptr, update.position, false, false);
+            if (!mBrutalRagdolls.contains(ptr.mRef))
+                continue;
+            if (auto* animation = world->getAnimation(ptr); animation && animation->isRagdollPose())
+                for (const auto& [bone, matrix] : update.poses)
+                    animation->setBoneWorldMatrix(bone, matrix);
+        }
+        for (const auto& ptr:recover)
+        {
+            auto* animation=world->getAnimation(ptr);
+            std::string_view standUp;
+            if (animation && Settings::game().mDarkMessiahStandUp && !Settings::game().mBrutalClassicNpcAnimations)
+                if (const auto found=mBrutalRagdolls.find(ptr.mRef); found!=mBrutalRagdolls.end())
+                {
+                    // SCHED_MM_STAND_UP_FRONT/BACK. Both clips start lying with the head behind the
+                    // actor's final facing, face down (front) or face up (back). Turn the actor to
+                    // face the ragdoll's feet, then reapply the same world bone poses so the short
+                    // recovery blend starts from exactly what is on screen.
+                    // A copy: rotating the actor resamples the ragdoll's pose list.
+                    const std::vector<std::pair<std::string, osg::Matrixf>> poses=found->second->getLastBonePoses();
+                    const auto at=[&](std::string_view name) -> std::optional<osg::Vec3f> {
+                        for (const auto& [bone,matrix]:poses) if (bone==name) return matrix.getTrans();
+                        return std::nullopt; };
+                    const auto pelvis=at("Bip01 Pelvis"), head=at("Bip01 Head");
+                    const auto left=at("Bip01 L UpperArm"), right=at("Bip01 R UpperArm");
+                    if (pelvis && head && left && right)
+                    {
+                        const osg::Vec3f up=*head-*pelvis;
+                        osg::Vec3f feet(-up.x(),-up.y(),0.f);
+                        const osg::Vec3f front=(*left-*right)^up;
+                        const std::string_view group=front.z()<0.f ? "brutal_standup_front" : "brutal_standup_back";
+                        if (feet.normalize()>1e-3f && animation->hasAnimation(group))
+                        {
+                            world->rotateObject(ptr,osg::Vec3f(0.f,0.f,std::atan2(feet.x(),feet.y())));
+                            for (const auto& [bone,matrix]:poses) animation->setBoneWorldMatrix(bone,matrix);
+                            standUp=group;
+                        }
+                    }
+                }
+            if (animation) animation->endRagdollPose(standUp.empty() ? .6f : .25f);
+            stopNpcRagdoll(ptr);
+            if (auto* actor=getActor(ptr)) {actor->setOnGround(false);actor->setInertialForce({});}
+            MWBase::Environment::get().getMechanicsManager()->forceStateUpdate(ptr);
+            if (!standUp.empty()) MWBase::Environment::get().getMechanicsManager()->staggerActor(ptr,standUp);
+        }
+    }
+
+    std::vector<osg::Vec3f> PhysicsSystem::getNpcRagdollState(const MWWorld::Ptr& ptr) const
+    {
+        const auto found = mBrutalRagdolls.find(ptr.mRef);
+        if (found == mBrutalRagdolls.end())
+            return {};
+        const auto* animation = MWBase::Environment::get().getWorld()->getAnimation(ptr);
+        if (!animation)
+            return {};
+        const auto& poses = found->second->getLastBonePoses();
+        std::vector<osg::Vec3f> state;
+        state.emplace_back(static_cast<float>(found->second->partCount()), found->second->maxJointError(),
+            found->second->retainedBottom());
+        for (const auto& [bone, matrix] : poses)
+        {
+            state.push_back(matrix.getTrans());
+            const auto rendered = animation->getBoneWorldMatrix(bone);
+            state.push_back(rendered ? osg::Vec3f(rendered->getTrans()) : osg::Vec3f());
+        }
+        return state;
+    }
+
 }

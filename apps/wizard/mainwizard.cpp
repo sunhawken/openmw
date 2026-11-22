@@ -223,7 +223,7 @@ void Wizard::MainWizard::runSettingsImporter()
     arguments.append(QStringLiteral("--cfg"));
     arguments.append(Files::getUserConfigPathQString(mCfgMgr));
 
-    if (!mImporterInvoker->startProcess(QStringLiteral("openmw-iniimporter"), arguments, false))
+    if (!mImporterInvoker->startProcess(QStringLiteral("brutalmorrowind-iniimporter"), arguments, false))
         return qApp->quit();
 }
 

@@ -1,4 +1,5 @@
 #include "movementsolver.hpp"
+#include "playerkinetics.hpp"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
@@ -99,6 +100,13 @@ namespace MWPhysics
     namespace
     {
         // Collector that checks if there is anything in the way while switching to inShape
+        bool isSlidingDownhill(const osg::Vec3f& velocity, const osg::Vec3f& normal)
+        {
+            const float speed = std::hypot(velocity.x(), velocity.y());
+            return speed > 5.f && isWalkableSlope(normal)
+                && velocity.x() * normal.x() + velocity.y() * normal.y() > .01f * normal.z() * speed;
+        }
+
         class ContactCollectionCallback : public JPH::CollideShapeCollector
         {
         public:
@@ -252,6 +260,7 @@ namespace MWPhysics
         // own) for compatibility with vanilla assets, we have to derive this from the vertical half extent instead of
         // from internal hull translation if not for this hack, the "correct" collision hull position would be
         // physicActor->getScaledMeshTranslation()
+        const osg::Vec3f previous = actor.mPosition;
         actor.mPosition.z() += actor.mHalfExtentsZ; // vanilla-accurate
 
         float swimlevel = actor.mSwimLevel + actor.mHalfExtentsZ;
@@ -259,6 +268,7 @@ namespace MWPhysics
         ActorTracer tracer;
 
         osg::Vec3f velocity;
+        osg::Vec3f slideSupportNormal;
 
         // Dead and paralyzed actors underwater will float to the surface,
         // if the CharacterController tells us to do so
@@ -272,6 +282,70 @@ namespace MWPhysics
                            * osg::Quat(actor.mRotation.y(), osg::Vec3f(0, 0, -1)))
                 * actor.mMovement;
         }
+        else if (actor.mKineticMovement)
+        {
+            // Desired input is rotated once. Persisted momentum stays in world space
+            // when the player looks around or releases the controls in mid-air.
+            osg::Vec3f wish = osg::Quat(actor.mRotation.y(), osg::Vec3f(0, 0, -1)) * actor.mMovement;
+            const float jump = wish.z();
+            wish.z() = 0.f;
+            const bool grounded = actor.mIsOnGround && !actor.mIsOnSlope;
+            osg::Vec3f& moving = actor.mLocomotionVelocity;
+            if (actor.mBrutalSliding && grounded && !actor.mInert && actor.mInertia.z() <= 0.f
+                && actor.mStuckFrames == 0)
+            {
+                // A close hull sweep proves support at this step, including after
+                // a relocation. Never use the long stair-down probe to add gravity
+                // along a distant surface or retain a slide in the air.
+                tracer.doTrace(actor.mPhysicsBody, actor.mPosition,
+                    actor.mPosition - osg::Vec3f(0, 0, 2.f * sGroundOffset), physicsSystem, collisionMask);
+                if (tracer.mFraction < 1.f && tracer.mHitObjectLayer != Layers::ACTOR && isWalkableSlope(tracer.mPlaneNormal))
+                    slideSupportNormal = tracer.mPlaneNormal;
+            }
+            if (grounded)
+            {
+                // Source CGameMovement::Friction, then Accelerate.
+                const float speed = moving.length();
+                if (speed > 0.f)
+                {
+                    // Rising out of a slide restores standing friction continuously.
+                    // Idle/crouching under a ceiling has no slide-friction blend.
+                    const float friction = PlayerKinetics::Friction
+                        + (PlayerKinetics::SlideFriction - PlayerKinetics::Friction) * actor.mBrutalSlideFrictionBlend;
+                    // Downhill gravity has a low terminal speed on shallow grades.
+                    // The ordinary stop-speed floor would artificially pin it there.
+                    const float control = isSlidingDownhill(moving, slideSupportNormal)
+                        ? speed : std::max(speed, PlayerKinetics::StopSpeed);
+                    const float drop = control * friction * time;
+                    moving *= std::max(speed - drop, 0.f) / speed;
+                }
+            }
+            if (slideSupportNormal.z() > 0.f)
+            {
+                const float gravityStep = Constants::GravityConst * Constants::UnitsPerMeter * time;
+                // Horizontal component of gravity rejected from the support normal.
+                moving.x() += gravityStep * slideSupportNormal.z() * slideSupportNormal.x();
+                moving.y() += gravityStep * slideSupportNormal.z() * slideSupportNormal.y();
+            }
+            float wishSpeed = wish.length();
+            if (wishSpeed > 0.f && !actor.mBrutalSliding)
+            {
+                const osg::Vec3f direction = wish / wishSpeed;
+                const float accelerate = grounded ? PlayerKinetics::Accelerate : PlayerKinetics::AirAccelerate;
+                const float target = grounded ? wishSpeed : std::min(wishSpeed, PlayerKinetics::AirWishCap);
+                const float add = target - moving * direction;
+                if (add > 0.f)
+                    moving += direction * std::min(accelerate * wishSpeed * time, add);
+            }
+            actor.mInertia.x() = actor.mInertia.y() = 0.f;
+            if (grounded && jump > 0.f && !actor.mBrutalSliding)
+                actor.mInertia.z() = jump;
+            velocity = actor.mLocomotionVelocity;
+            velocity.z() = actor.mInertia.z();
+            if (slideSupportNormal.z() > 0.f)
+                velocity.z() = -(velocity.x() * slideSupportNormal.x() + velocity.y() * slideSupportNormal.y())
+                    / slideSupportNormal.z();
+        }
         else
         {
             velocity = (osg::Quat(actor.mRotation.y(), osg::Vec3f(0, 0, -1))) * actor.mMovement;
@@ -282,6 +356,10 @@ namespace MWPhysics
             else if (!actor.mIsOnGround || actor.mIsOnSlope)
                 velocity = velocity + actor.mInertia;
         }
+
+        velocity += actor.mExternalVelocity;
+        if (!actor.mKineticMovement || actor.mFlying || actor.mPosition.z() < swimlevel)
+            actor.mLocomotionVelocity = osg::Vec3f();
 
         // Now that we have the effective movement vector, apply wind forces to it
         if (worldData.mIsInStorm && velocity.length() > 0)
@@ -411,6 +489,32 @@ namespace MWPhysics
                 auto planeNormal = tracer.mPlaneNormal;
                 // need to know the unadjusted normal to handle certain types of seams properly
                 const auto origPlaneNormal = planeNormal;
+                // Report only the velocity contributed by the external channel,
+                // and only a blocking non-walkable contact (successful stair steps
+                // take the other branch). Keep the strongest contact per frame.
+                const float closingSpeed = -(actor.mExternalVelocity * origPlaneNormal);
+                if (!isWalkableSlope(origPlaneNormal) && closingSpeed > actor.mExternalImpactSpeed)
+                {
+                    actor.mExternalImpactSpeed = closingSpeed;
+                    actor.mExternalImpactPosition = tracer.mHitPoint;
+                    actor.mExternalImpactNormal = origPlaneNormal;
+                    actor.mExternalImpactObject = tracer.mHitBodyID;
+                }
+                if (!isWalkableSlope(origPlaneNormal) && closingSpeed > 0.f)
+                {
+                    actor.mExternalVelocity = reject(actor.mExternalVelocity, origPlaneNormal);
+                    if (!actor.mFlying && !underwater)
+                        actor.mExternalVelocity.z() = 0.f;
+                }
+
+
+                if (actor.mKineticMovement && !isWalkableSlope(planeNormal))
+                {
+                    osg::Vec3f normal(planeNormal.x(), planeNormal.y(), 0.f);
+                    if (normal.normalize() > .001f && actor.mLocomotionVelocity * normal < 0.f)
+                        actor.mLocomotionVelocity = reject(actor.mLocomotionVelocity, normal);
+                }
+
 
                 // If we touched the ground this frame, and whatever we ran into is a wall of some sort,
                 // pretend that its collision normal is pointing horizontally
@@ -512,6 +616,9 @@ namespace MWPhysics
             }
         }
 
+        const osg::Vec3f beforeGroundCorrection = newPosition;
+        osg::Vec3f groundNormal, groundPoint;
+        bool closeSlideSupport = false;
         bool isOnGround = false;
         bool isOnSlope = false;
         if (forceGroundTest || (actor.mInertia.z() <= 0.f && newPosition.z() >= swimlevel))
@@ -533,6 +640,9 @@ namespace MWPhysics
                         actor.mWalkingOnWater = true;
                     if (!actor.mFlying && !isOnSlope)
                     {
+                        groundNormal = tracer.mPlaneNormal;
+                        groundPoint = tracer.mHitPoint;
+                        closeSlideSupport = tracer.mFraction * dropDistance <= 2.f * sGroundOffset;
                         if (tracer.mFraction * dropDistance > sGroundOffset)
                             newPosition.z() = tracer.mEndPos.z() + sGroundOffset;
                         else
@@ -582,6 +692,19 @@ namespace MWPhysics
         actor.mPosition = newPosition;
         // remove what was added earlier in compensating for doTrace not taking interior transformation into account
         actor.mPosition.z() -= actor.mHalfExtentsZ; // vanilla-accurate
+        if (time > 0.f) actor.mSimulationVelocity = (actor.mPosition - previous - (newPosition - beforeGroundCorrection)) / time;
+        if ((actor.mBrutalSliding || actor.mBrutalSlideLow) && closeSlideSupport && isOnGround && !isOnSlope
+            && !actor.mInert && actor.mStuckFrames == 0 && newPosition.z() >= swimlevel)
+        {
+            actor.mBrutalSlideGroundNormal = groundNormal;
+            actor.mBrutalSlideGroundPoint = groundPoint;
+            actor.mBrutalSlideDownhill = actor.mBrutalSliding && isSlidingDownhill(actor.mSimulationVelocity,groundNormal);
+        }
+        if (isOnGround && !isOnSlope)
+        {
+            const float speed = actor.mExternalVelocity.length();
+            if (speed > 0.f) actor.mExternalVelocity *= std::max(0.f, 1.f - 850.f * time / speed);
+        }
     }
 
     JPH::Vec3 addMarginToDelta(JPH::Vec3 delta)

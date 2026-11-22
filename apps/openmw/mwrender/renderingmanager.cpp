@@ -1,4 +1,5 @@
 #include "renderingmanager.hpp"
+#include "swordsegmentintersector.hpp"
 
 #include <cstdlib>
 #include <limits>
@@ -8,6 +9,8 @@
 #include <osg/Group>
 #include <osg/Light>
 #include <osg/Material>
+#include <osg/NodeCallback>
+#include <osg/observer_ptr>
 #include <osg/Matrix>
 #include <osg/UserDataContainer>
 
@@ -100,6 +103,26 @@
 //## VR_PATCH END
 namespace MWRender
 {
+    class SwordClinchPoseCallback : public osg::NodeCallback
+    {
+        osg::observer_ptr<NpcAnimation> mOwner;
+    public:
+        explicit SwordClinchPoseCallback(NpcAnimation* owner) : mOwner(owner) {}
+        void operator()(osg::Node* node, osg::NodeVisitor* visitor) override
+        {
+            osg::ref_ptr<NpcAnimation> owner;
+            const bool update = visitor && visitor->getVisitorType() == osg::NodeVisitor::UPDATE_VISITOR
+                && mOwner.lock(owner);
+            if (update)
+                owner->restoreTransientPose();
+            traverse(node, visitor);
+            // Both participants now have this frame's complete animated transforms.
+            // RigGeometry skins during CULL, so this fit affects the same frame.
+            if (update)
+                owner->fitSwordClinchPose(*visitor);
+        }
+    };
+
     class PreloadCommonAssetsWorkItem : public SceneUtil::WorkItem
     {
     public:
@@ -753,6 +776,8 @@ namespace MWRender
             updateProjectionMatrix();
         }
         mCamera->update(dt, paused);
+        if (!paused)
+            mEffectManager->updateBrutalPrewarm(mCamera->getPosition(), mCamera->getOrient() * osg::Vec3f(0, 1, 0), mNearClip);
 
         bool isUnderwater = mWater->isUnderwater(mCamera->getPosition());
 
@@ -872,7 +897,8 @@ namespace MWRender
     }
 
     RayResult getIntersectionResult(osgUtil::LineSegmentIntersector* intersector,
-        const osg::ref_ptr<osgUtil::IntersectionVisitor>& visitor, std::span<const MWWorld::Ptr> ignoreList = {})
+        const osg::ref_ptr<osgUtil::IntersectionVisitor>& visitor, std::span<const MWWorld::Ptr> ignoreList = {},
+        bool melee = false)
     {
 //## VR_PATCH BEGIN
 // VR needs the actual node hit, because the 3dgui does not exist as an object in the world.
@@ -919,7 +945,16 @@ namespace MWRender
             }
 
             if (ptrHolder)
+            {
+                int part=-1;
+                if (const auto* npc=dynamic_cast<const NpcAnimation*>(
+                    MWBase::Environment::get().getWorld()->getAnimation(ptrHolder->mPtr)))
+                    part=npc->getPartForNodePath(intersection.nodePath);
+                // Sword parries are not implemented. A carried weapon must not become a flesh hit.
+                if (melee && part==ESM::PRT_Weapon) return;
                 result.mHitObject = ptrHolder->mPtr;
+                result.mHitPart = part;
+            }
 
             unsigned int vertexCounter = 0;
             for (unsigned int i = 0; i < refnumMarkers.size(); ++i)
@@ -954,7 +989,7 @@ namespace MWRender
             }
         };
 
-        if (ignoreList.empty() || intersector->getIntersectionLimit() != osgUtil::LineSegmentIntersector::NO_LIMIT)
+        if ((!melee && ignoreList.empty()) || intersector->getIntersectionLimit() != osgUtil::LineSegmentIntersector::NO_LIMIT)
         {
             test(intersector->getFirstIntersection());
         }
@@ -1060,15 +1095,24 @@ namespace MWRender
     }
 
     RayResult RenderingManager::castRay(const osg::Vec3f& origin, const osg::Vec3f& dest,
-        bool ignorePlayer, bool ignoreActors, uint32_t ignoreMask, std::span<const MWWorld::Ptr> ignoreList)
+        bool ignorePlayer, bool ignoreActors, uint32_t ignoreMask, std::span<const MWWorld::Ptr> ignoreList, bool melee)
     {
         osg::ref_ptr<osgUtil::LineSegmentIntersector> intersector(
             new osgUtil::LineSegmentIntersector(osgUtil::LineSegmentIntersector::MODEL, origin, dest));
-        intersector->setIntersectionLimit(osgUtil::LineSegmentIntersector::LIMIT_NEAREST);
+        intersector->setIntersectionLimit(melee ? osgUtil::LineSegmentIntersector::NO_LIMIT
+            : osgUtil::LineSegmentIntersector::LIMIT_NEAREST);
 
         mRootNode->accept(*getIntersectionVisitor(intersector, ignorePlayer, ignoreActors, ignoreMask, ignoreList));
 
-        return getIntersectionResult(intersector, mIntersectionVisitor, ignoreList);
+        return getIntersectionResult(intersector, mIntersectionVisitor, ignoreList, melee);
+    }
+
+    std::vector<float> RenderingManager::findSegmentCandidates(
+        std::span<const std::pair<osg::Vec3f, osg::Vec3f>> segments, std::span<const unsigned> buckets)
+    {
+        osg::ref_ptr<SwordSegmentIntersector> intersector = new SwordSegmentIntersector(segments, buckets);
+        mRootNode->accept(*getIntersectionVisitor(intersector, true, true));
+        return intersector->ratios();
     }
 
     RayResult RenderingManager::castRay(
@@ -1126,6 +1170,25 @@ namespace MWRender
         bool loop)
     {
         mEffectManager->addEffect(model, texture, worldPosition, scale, isMagicVFX, useAmbientLight, effectId, loop);
+    }
+
+    void RenderingManager::spawnBrutalImpact(std::string_view kind, const osg::Vec3f& position,
+        const osg::Vec3f& direction, float intensity, bool power)
+    {
+        if(kind.starts_with("cut"))mEffectManager->queueCutBlood(kind,position,direction,intensity);
+        else mEffectManager->spawnBrutalImpact(kind, position, direction, intensity, power);
+    }
+
+    bool RenderingManager::spawnBrutalDecapitation(const osg::Vec3f& lowerCenter, const osg::Vec3f& lowerNormal,
+        const osg::Vec3f& upperCenter, const osg::Vec3f& upperNormal, const osg::Vec3f& inheritedVelocity)
+    {
+        return mEffectManager->spawnBrutalDecapitation(lowerCenter, lowerNormal, upperCenter, upperNormal,
+            inheritedVelocity);
+    }
+
+    std::map<std::string, double> RenderingManager::getBrutalImpactStats() const
+    {
+        return mEffectManager->getBrutalImpactStats();
     }
 
     void RenderingManager::removeEffect(std::string_view effectId)
@@ -1205,6 +1268,10 @@ namespace MWRender
         }
 //## VR_PATCH END
 
+        if (mSwordClinchPoseCallback)
+            mSceneRoot->removeUpdateCallback(mSwordClinchPoseCallback);
+        mSwordClinchPoseCallback = new SwordClinchPoseCallback(mPlayerAnimation.get());
+        mSceneRoot->addUpdateCallback(mSwordClinchPoseCallback);
         mCamera->setAnimation(mPlayerAnimation.get());
         mCamera->attachTo(player);
     }

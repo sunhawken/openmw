@@ -299,6 +299,145 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     </message>
 </context>
 <context>
+    <name>Launcher::DarkMessiahPage</name>
+    <message>
+        <source>Dark Messiah of Might and Magic</source>
+        <translation>Dark Messiah of Might and Magic</translation>
+    </message>
+    <message>
+        <source>Brutal Morrowind takes its combat animations, sounds and blood effects from your copy of Dark Messiah of Might and Magic. Nothing is copied from the game folder itself: the importer builds them once in your user data folder.</source>
+        <translation>Brutal Morrowind берёт боевые анимации, звуки и эффекты крови из вашей копии Dark Messiah of Might and Magic. Из папки игры ничего не копируется как есть: импортёр один раз собирает их в вашей папке пользовательских данных.</translation>
+    </message>
+    <message>
+        <source>Dark Messiah folder (VPK, GCF or extracted mm resources)</source>
+        <translation>Папка Dark Messiah (архивы VPK, GCF или распакованные ресурсы mm)</translation>
+    </message>
+    <message>
+        <source>Browse...</source>
+        <translation>Обзор...</translation>
+    </message>
+    <message>
+        <source>Detect</source>
+        <translation>Найти</translation>
+    </message>
+    <message>
+        <source>Imported data</source>
+        <translation>Импортированные данные</translation>
+    </message>
+    <message>
+        <source>Import</source>
+        <translation>Импортировать</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Отмена</translation>
+    </message>
+    <message>
+        <source>Without Dark Messiah the game uses Morrowind&apos;s animations, and the components that need Dark Messiah animations, sounds or textures are switched off.</source>
+        <translation>Без Dark Messiah игра использует анимации Morrowind, а компоненты, которым нужны анимации, звуки или текстуры Dark Messiah, выключены.</translation>
+    </message>
+    <message>
+        <source>Select the Dark Messiah of Might and Magic folder</source>
+        <translation>Выберите папку Dark Messiah of Might and Magic</translation>
+    </message>
+    <message>
+        <source>Dark Messiah not found</source>
+        <translation>Dark Messiah не найдена</translation>
+    </message>
+    <message>
+        <source>Dark Messiah of Might and Magic was not found in your Steam libraries. Select its folder with Browse.</source>
+        <translation>Dark Messiah of Might and Magic не найдена в библиотеках Steam. Выберите её папку кнопкой «Обзор».</translation>
+    </message>
+    <message>
+        <source>Not found. Select the game folder or press Detect.</source>
+        <translation>Не найдена. Выберите папку игры или нажмите «Найти».</translation>
+    </message>
+    <message>
+        <source>Game files found.</source>
+        <translation>Файлы игры найдены.</translation>
+    </message>
+    <message>
+        <source>This folder has no Dark Messiah resources (VPK, GCF or extracted mm folder).</source>
+        <translation>В этой папке нет ресурсов Dark Messiah (VPK, GCF или распакованной папки mm).</translation>
+    </message>
+    <message>
+        <source>Imported and ready: %1</source>
+        <translation>Импортировано и готово: %1</translation>
+    </message>
+    <message>
+        <source>Could not remove the old import %1: %2</source>
+        <translation>Не удалось удалить старый импорт %1: %2</translation>
+    </message>
+    <message>
+        <source>Removed the old import %1</source>
+        <translation>Старый импорт удалён: %1</translation>
+    </message>
+    <message>
+        <source>Imported for an older version of Brutal Morrowind. Import again.</source>
+        <translation>Импортировано для более старой версии Brutal Morrowind. Импортируйте заново.</translation>
+    </message>
+    <message>
+        <source>Not imported yet. The import takes about a minute.</source>
+        <translation>Ещё не импортировано. Импорт занимает около минуты.</translation>
+    </message>
+    <message>
+        <source>Import again</source>
+        <translation>Импортировать заново</translation>
+    </message>
+    <message>
+        <source>Select the Dark Messiah of Might and Magic folder first.</source>
+        <translation>Сначала выберите папку Dark Messiah of Might and Magic.</translation>
+    </message>
+    <message>
+        <source>Morrowind.bsa was not found in your data folders. Set up Morrowind first.</source>
+        <translation>Morrowind.bsa не найден в папках данных. Сначала настройте Morrowind.</translation>
+    </message>
+    <message>
+        <source>The importer is missing: %1</source>
+        <translation>Импортёр не найден: %1</translation>
+    </message>
+    <message>
+        <source>Starting...</source>
+        <translation>Запуск...</translation>
+    </message>
+    <message>
+        <source>Cancelling...</source>
+        <translation>Отмена...</translation>
+    </message>
+    <message>
+        <source>Cancel requested by the user.</source>
+        <translation>Отмена запрошена пользователем.</translation>
+    </message>
+    <message>
+        <source>Import finished.</source>
+        <translation>Импорт завершён.</translation>
+    </message>
+    <message>
+        <source>Import cancelled.</source>
+        <translation>Импорт отменён.</translation>
+    </message>
+    <message>
+        <source>Import failed.</source>
+        <translation>Импорт не удался.</translation>
+    </message>
+    <message>
+        <source>Import failed</source>
+        <translation>Импорт не удался</translation>
+    </message>
+    <message>
+        <source>The Dark Messiah import failed. The log on the Dark Messiah page shows the reason.</source>
+        <translation>Импорт Dark Messiah не удался. Причина указана в журнале на странице Dark Messiah.</translation>
+    </message>
+    <message>
+        <source>The importer could not be started: %1</source>
+        <translation>Не удалось запустить импортёр: %1</translation>
+    </message>
+    <message>
+        <source>Dark Messiah import</source>
+        <translation>Импорт Dark Messiah</translation>
+    </message>
+</context>
+<context>
     <name>Launcher::DataFilesPage</name>
     <message>
         <source>Select Directory</source>
@@ -471,7 +610,7 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
     </message>
     <message>
         <source>Launch OpenMW</source>
-        <translation>Запустить OpenMW</translation>
+        <translation type="vanished">Запустить OpenMW</translation>
     </message>
     <message>
         <source>Help</source>
@@ -569,6 +708,58 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <source>&lt;br&gt;&lt;b&gt;Could not create directory %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</source>
         <translation>&lt;br&gt;&lt;b&gt;Не удалось создать директорию %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</translation>
     </message>
+    <message>
+        <source>Play</source>
+        <translation>Играть</translation>
+    </message>
+    <message>
+        <source>Dark Messiah</source>
+        <translation>Dark Messiah</translation>
+    </message>
+    <message>
+        <source>Find Dark Messiah of Might and Magic and import its animations</source>
+        <translation>Найти Dark Messiah of Might and Magic и импортировать её анимации</translation>
+    </message>
+    <message>
+        <source>Dark Messiah import</source>
+        <translation>Импорт Dark Messiah</translation>
+    </message>
+    <message>
+        <source>The Dark Messiah import is still running. Cancel it and close the launcher?</source>
+        <translation>Импорт Dark Messiah ещё идёт. Отменить его и закрыть лаунчер?</translation>
+    </message>
+    <message>
+        <source>Dark Messiah data</source>
+        <translation>Данные Dark Messiah</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;The Dark Messiah import is from an older version of Brutal Morrowind.&lt;/b&gt;&lt;br&gt;&lt;br&gt;This version needs a new import. Import now? It takes about a minute. Without it the game uses Morrowind&apos;s animations and the Dark Messiah combat is off.</source>
+        <translation>&lt;b&gt;Импорт Dark Messiah сделан для более старой версии Brutal Morrowind.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Для этой версии нужен новый импорт. Импортировать сейчас? Это займёт около минуты. Без него игра использует анимации Morrowind, а бой Dark Messiah выключен.</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;The Dark Messiah animations are not imported yet.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Import them now? It takes about a minute. Without them the game uses Morrowind&apos;s animations and the Dark Messiah combat is off.</source>
+        <translation>&lt;b&gt;Анимации Dark Messiah ещё не импортированы.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Импортировать их сейчас? Это займёт около минуты. Без них игра использует анимации Morrowind, а бой Dark Messiah выключен.</translation>
+    </message>
+    <message>
+        <source>Import and play</source>
+        <translation>Импортировать и играть</translation>
+    </message>
+    <message>
+        <source>Play without</source>
+        <translation>Играть без них</translation>
+    </message>
+    <message>
+        <source>Dark Messiah not found</source>
+        <translation>Dark Messiah не найдена</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;Dark Messiah of Might and Magic was not found.&lt;/b&gt;&lt;br&gt;&lt;br&gt;The game will use Morrowind&apos;s animations, and the components that need Dark Messiah animations, sounds or textures will be off. You can select the game folder on the Dark Messiah page.</source>
+        <translation>&lt;b&gt;Dark Messiah of Might and Magic не найдена.&lt;/b&gt;&lt;br&gt;&lt;br&gt;Игра будет использовать анимации Morrowind, а компоненты, которым нужны анимации, звуки или текстуры Dark Messiah, будут выключены. Папку игры можно выбрать на странице Dark Messiah.</translation>
+    </message>
+    <message>
+        <source>Do not ask again</source>
+        <translation>Больше не спрашивать</translation>
+    </message>
 </context>
 <context>
     <name>Launcher::SettingsPage</name>
@@ -625,7 +816,7 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     <name>MainWindow</name>
     <message>
         <source>OpenMW Launcher</source>
-        <translation>Лаунчер OpenMW</translation>
+        <translation type="vanished">Лаунчер OpenMW</translation>
     </message>
     <message>
         <source>OpenMW version</source>
@@ -666,6 +857,10 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     <message>
         <source>Display</source>
         <translation>Экран</translation>
+    </message>
+    <message>
+        <source>Brutal Morrowind Launcher</source>
+        <translation>Лаунчер Brutal Morrowind</translation>
     </message>
 </context>
 <context>

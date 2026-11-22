@@ -130,7 +130,9 @@ namespace MWSound
         Sound* playSound(SoundBuffer* sfx, float volume, float pitch, Type type = Type::Sfx,
             PlayMode mode = PlayMode::Normal, float offset = 0);
         Sound* playSound3D(const MWWorld::ConstPtr& ptr, SoundBuffer* sfx, float volume, float pitch, Type type,
-            PlayMode mode, float offset);
+            PlayMode mode, float offset, SoundBuffer* parameters = nullptr);
+        SoundBuffer* loadBrutalSound(const ESM::RefId& soundId, bool allowOrdinaryReplacements,
+            float& volume, float& pitch, SoundBuffer*& parameters);
 
         void updateSounds(float duration);
         void updateRegionSound(float duration);

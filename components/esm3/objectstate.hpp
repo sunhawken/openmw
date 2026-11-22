@@ -2,6 +2,7 @@
 #define OPENMW_ESM_OBJECTSTATE_H
 
 #include <string>
+#include <memory>
 #include <vector>
 
 #include <components/esm/luascripts.hpp>
@@ -11,6 +12,7 @@
 #include "animationstate.hpp"
 #include "cellref.hpp"
 #include "locals.hpp"
+#include "releasedequipmentstate.hpp"
 
 namespace ESM
 {
@@ -34,6 +36,7 @@ namespace ESM
         LuaScripts mLuaScripts;
         Position mPosition;
         AnimationState mAnimationState;
+        std::shared_ptr<const ReleasedEquipmentState> mReleasedEquipment;
         ActorIdConverter* mActorIdConverter = nullptr;
         FormatVersion mVersion = DefaultFormatVersion;
         uint32_t mFlags = 0;

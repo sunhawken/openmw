@@ -104,3 +104,5 @@ if(USE_QT)
     set_property(TARGET openmw-wizard PROPERTY AUTOUIC ON)
     set_property(TARGET openmw-wizard PROPERTY AUTOUIC_SEARCH_PATHS ui)
 endif(USE_QT)
+
+set_target_properties(openmw-wizard PROPERTIES OUTPUT_NAME brutalmorrowind-wizard)
