@@ -3395,6 +3395,9 @@ namespace MWRender
     {
         for (const osg::ref_ptr<osg::Node>& linked : mLinked)
             SceneUtil::detachFromParents(*linked);
+        if (!mLinked.empty())
+            Log(Debug::Verbose) << "Part \"" << (mNode ? mNode->getName() : std::string()) << "\": detached "
+                                << mLinked.size() << " AttachTo piece(s)";
 
         if (mNode.get() && !mNode->getNumParents())
             Log(Debug::Verbose) << "Part \"" << mNode->getName() << "\" has no parents";

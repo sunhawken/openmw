@@ -2324,6 +2324,10 @@ namespace MWRender
             Log(Debug::Warning) << "Part \"" << model.value() << "\": no bone \"" << missing
                                 << "\" for an AttachTo piece; it stays on " << bonename;
 
+        if (!pieces.mRelocated.empty())
+            Log(Debug::Verbose) << "Part \"" << model.value() << "\": moved " << pieces.mRelocated.size()
+                                << " AttachTo piece(s) onto their bones";
+
         auto holder = std::make_unique<PartHolder>(std::move(attached));
         for (const osg::ref_ptr<osg::Node>& piece : pieces.mRelocated)
             holder->addLinkedNode(piece);
