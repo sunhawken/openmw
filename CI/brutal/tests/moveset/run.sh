@@ -20,7 +20,7 @@ if [[ -z "${DISPLAY:-}" ]]; then
     export DISPLAY=:96; Xvfb "$DISPLAY" -screen 0 640x480x24 >/dev/null 2>&1 & XPID=$!; sleep 2
 fi
 HOME="$WORK/home" timeout 180 "$BIN" --config "$WORK/cfg" --skip-menu --start "Seyda Neen" --no-sound > "$WORK/log" 2>&1 || true
-grep -E "\[moveset-test\]|\[BrutalMoveset\]" "$WORK/log" || true
+grep -E "\[moveset-test\]|\[BrutalMoveset\]" "$WORK/log" || true; cp "$WORK/log" "${MOVESET_TEST_LOG:-/dev/null}" 2>/dev/null || true
 if grep -q "\[moveset-test\] FAIL" "$WORK/log" || ! grep -q "\[moveset-test\] finished" "$WORK/log"; then
     echo "RESULT: FAIL"; grep -iE "error|lua" "$WORK/log" | tail -15; exit 1
 fi

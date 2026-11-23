@@ -96,7 +96,9 @@ local function findTarget(reach, cone)
             local dist = flat:length()
             if dist < bestDist and dist > 1 and (flat / dist):dot(flatForward) >= cone then
                 local ray = nearby.castRay(origin, actor.position + util.vector3(0, 0, 60), { ignore = self })
-                if not ray.hitObject or ray.hitObject == actor then
+                -- Anything the ray hits first (terrain, statics with no object,
+                -- other objects) blocks the strike; only the target itself may.
+                if not ray.hit or ray.hitObject == actor then
                     best, bestDist = actor, dist
                 end
             end
@@ -139,8 +141,10 @@ local function stopMove()
     playing = nil
 end
 
+local moveSerial = 0 -- counts started moves, so a repeated move gets fresh windows
+
 local function strike(e)
-    local key = e.move .. '@' .. tostring(e.t) .. '@' .. tostring(e.piece)
+    local key = moveSerial .. '#' .. tostring(e.ordinal)
     if hitWindows[key] then return end
     local target = findTarget(e.reach or 160, e.cone or 0.6)
     if not target then return end
@@ -164,6 +168,7 @@ local function dispatch(events)
         log.count = log.count + 1
         if e.type == 'start' then
             hitWindows = {}
+            moveSerial = moveSerial + 1
             playMove(e)
             say('start ' .. e.move .. ' chain ' .. e.chain)
         elseif e.type == 'end' then
@@ -184,6 +189,10 @@ local function dispatch(events)
                 impulse.apply(self, v)
             end
             say('move ' .. tostring(e.forward or 0))
+        elseif e.type == 'hit' then
+            -- The window opens here, on the segmented timeline: this runs even
+            -- when the whole window, or the move itself, ends inside one frame.
+            strike(e)
         elseif e.type == 'rejected' then
             say('rejected ' .. tostring(e.input) .. ' (' .. tostring(e.reason) .. ')')
         end
@@ -273,14 +282,13 @@ return {
                     if r.state().move then dispatch(r.interrupt(types.Actor.isDead(self) and 'dead' or 'disabled')) end
                 else
                     dispatch(r.update(dt))
+                    -- Windows still open at the end of the frame keep trying,
+                    -- so a target stepping into reach mid-window is struck.
                     for _, h in ipairs(r.activeHits()) do
-                        local move = sets[activeId].moves[h.move]
-                        for _, e in ipairs(move.events or {}) do
-                            if e.type == 'hit' and e.from == h.from and e.piece == h.piece then
-                                strike({ move = h.move, t = e.t, piece = e.piece, damage = e.damage, fatigue = e.fatigue,
-                                    reach = e.reach, cone = e.cone, push = e.push })
-                            end
-                        end
+                        local e = {}
+                        for k, v in pairs(h.event) do e[k] = v end
+                        e.move, e.ordinal = h.move, h.ordinal
+                        strike(e)
                     end
                 end
             end

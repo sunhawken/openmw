@@ -49,7 +49,12 @@ local function sortedEvents(move)
         return a.i < b.i
     end)
     for i, wrapped in ipairs(list) do
-        list[i] = wrapped.e
+        -- A copy, so content tables are never modified (and may be shared).
+        local copy = { __ordinal = wrapped.i }
+        for k, v in pairs(wrapped.e) do
+            copy[k] = v
+        end
+        list[i] = copy
     end
     return list
 end
@@ -179,9 +184,11 @@ function M.new(set, hooks)
         local cur = self.current
         while cur.nextEvent <= #cur.events and cur.events[cur.nextEvent].t <= cur.time + EPS do
             local e = cur.events[cur.nextEvent]
-            local copy = { move = cur.id }
+            local copy = { move = cur.id, ordinal = e.__ordinal }
             for k, v in pairs(e) do
-                copy[k] = v
+                if k ~= "__ordinal" then
+                    copy[k] = v
+                end
             end
             out[#out + 1] = copy
             cur.nextEvent = cur.nextEvent + 1
@@ -330,7 +337,8 @@ function M.new(set, hooks)
         end
         for _, e in ipairs(cur.events) do
             if e.type == "hit" and cur.time + EPS >= e.from and cur.time <= e.to + EPS then
-                list[#list + 1] = { move = cur.id, piece = e.piece, from = e.from, to = e.to, damage = e.damage }
+                list[#list + 1] = { move = cur.id, ordinal = e.__ordinal, piece = e.piece, from = e.from, to = e.to,
+                    damage = e.damage, event = e }
             end
         end
         return list

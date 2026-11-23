@@ -34,6 +34,25 @@ local SET = {
     },
 }
 
+-- Regression: a 1 ms hit window, narrower than any frame, must still strike.
+local NARROW = {
+    id = 'narrow_window',
+    start = { light = 'n1' },
+    moves = { n1 = { duration = 0.3, events = {
+        { t = 0.1, type = 'hit', piece = 'p', from = 0.1, to = 0.101, damage = 3, reach = 250, cone = 0.3 },
+        -- Same time and piece as above: a separate window, not a duplicate key.
+        { t = 0.1, type = 'hit', piece = 'p', from = 0.1, to = 0.101, damage = 3, reach = 250, cone = 0.3 },
+    } } },
+}
+-- Regression: a target behind a wall must not be struck.
+local BLOCKED = {
+    id = 'occlusion',
+    start = { light = 'o1' },
+    moves = { o1 = { duration = 0.4, events = {
+        { t = 0.1, type = 'hit', piece = 'p', from = 0.1, to = 0.3, damage = 3, reach = 600, cone = 0.3 },
+    } } },
+}
+
 local function check(ok, what)
     print('[moveset-test] ' .. (ok and 'PASS ' or 'FAIL ') .. what)
 end
@@ -52,6 +71,8 @@ return {
             end)
             core.sendGlobalEvent('MovesetTestSpawnTarget', {})
         end,
+        MovesetTestTargetMoved = function() phase, timer = 'moved', 0 end,
+        MovesetTestWallPlaced = function() phase, timer = 'walled', 0 end,
         MovesetTestTarget = function(e)
             target = e.target
             phase, timer = 'settle', 0
@@ -82,6 +103,33 @@ return {
                 check(healthAfter < healthBefore, string.format('target health %.1f -> %.1f', healthBefore, healthAfter))
                 check((self.position - startPos):length() > 1, 'player moved by the movement event')
                 check(I.BrutalMoveset.state().move == nil, 'back to neutral after the combo')
+                I.BrutalMoveset.register(NARROW)
+                I.BrutalMoveset.activate('narrow_window')
+                seen.struck = 0
+                I.BrutalMoveset.press('light')
+                phase, timer = 'narrow', 0
+            elseif phase == 'narrow' and timer > 0.8 then
+                check((seen.struck or 0) == 2, 'two 1 ms same-time windows on one piece each struck once (got '
+                    .. tostring(seen.struck) .. ')')
+                core.sendGlobalEvent('MovesetTestMoveTarget', { target = target, distance = 400 })
+                phase, timer = 'wait_move', 0
+            elseif phase == 'moved' and timer > 0.5 then
+                core.sendGlobalEvent('MovesetTestWall', { target = target })
+                phase, timer = 'wait_wall', 0
+            elseif phase == 'walled' and timer > 1 then
+                local nearby = require('openmw.nearby')
+                local util = require('openmw.util')
+                local ray = nearby.castRay(self.position + util.vector3(0, 0, 60),
+                    target.position + util.vector3(0, 0, 60), { ignore = self })
+                check(ray.hit and ray.hitObject ~= target, 'precondition: wall blocks the line of sight (hit '
+                    .. tostring(ray.hitObject and ray.hitObject.recordId) .. ')')
+                I.BrutalMoveset.register(BLOCKED)
+                I.BrutalMoveset.activate('occlusion')
+                seen.struck = 0
+                I.BrutalMoveset.press('light')
+                phase, timer = 'blocked', 0
+            elseif phase == 'blocked' and timer > 0.8 then
+                check((seen.struck or 0) == 0, 'no strike through the wall (got ' .. tostring(seen.struck) .. ')')
                 print('[moveset-test] finished')
                 phase = nil
                 core.quit()

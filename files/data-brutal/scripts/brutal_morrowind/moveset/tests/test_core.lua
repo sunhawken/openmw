@@ -370,5 +370,27 @@ test("random frame splits give identical results (200 trials)", function()
     end
 end)
 
+test("emitted events carry their authored ordinal; content is not modified", function()
+    local shared = { t = 0.2, type = "hit", piece = "p", from = 0.2, to = 0.3 }
+    local set = {
+        id = "ord",
+        start = { light = "m" },
+        moves = {
+            m = { duration = 1, events = { shared, { t = 0.2, type = "hit", piece = "p", from = 0.2, to = 0.3 } } },
+            n = { duration = 1, events = { { t = 0, type = "sound" }, shared } },
+        },
+    }
+    local r = core.new(set)
+    r.press("light")
+    local ev = r.update(0.25)
+    eq(#ev, 2)
+    eq(ev[1].ordinal, 1)
+    eq(ev[2].ordinal, 2)
+    local hits = r.activeHits()
+    eq(#hits, 2)
+    eq(hits[1].ordinal ~= hits[2].ordinal, true)
+    eq(shared.__ordinal, nil, "content table must not be modified")
+end)
+
 io.write(string.format("moveset core: %d passed, %d failed\n", passed, failed))
 os.exit(failed == 0 and 0 or 1)
