@@ -34,6 +34,11 @@ set(BRUTAL_DATA_FILES
     scripts/brutal_morrowind/slide.lua
     scripts/brutal_morrowind/slide_speed_fx.lua
     scripts/brutal_morrowind/stamina.lua
+    scripts/brutal_morrowind/moveset/core.lua
+    scripts/brutal_morrowind/moveset/input.lua
+    scripts/brutal_morrowind/moveset/menu.lua
+    scripts/brutal_morrowind/moveset/player.lua
+    l10n/BrutalMoveset/en.yaml
     shaders/brutal_adrenaline.omwfx
     shaders/brutal_clinch_blur.omwfx
     shaders/brutal_slide_speed.omwfx
