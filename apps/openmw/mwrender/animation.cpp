@@ -45,6 +45,7 @@
 #include <components/vfs/pathutil.hpp>
 #include <components/vfs/recursivedirectoryiterator.hpp>
 
+#include <components/sceneutil/bonepieces.hpp>
 #include <components/sceneutil/keyframe.hpp>
 #include <components/sceneutil/lightcommon.hpp>
 #include <components/sceneutil/lightmanager.hpp>
@@ -3392,6 +3393,9 @@ namespace MWRender
 
     PartHolder::~PartHolder()
     {
+        for (const osg::ref_ptr<osg::Node>& linked : mLinked)
+            SceneUtil::detachFromParents(*linked);
+
         if (mNode.get() && !mNode->getNumParents())
             Log(Debug::Verbose) << "Part \"" << mNode->getName() << "\" has no parents";
 

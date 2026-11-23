@@ -8,6 +8,7 @@
 #include "decapitationplane.hpp"
 #include "renderprewarm.hpp"
 #include <components/resource/imagemanager.hpp>
+#include <components/sceneutil/bonepieces.hpp>
 #include <components/sceneutil/texturetype.hpp>
 #include <osg/Texture2D>
 #include <cmath>
@@ -2311,7 +2312,22 @@ namespace MWRender
         if (enchantedGlow)
             mGlowUpdater = SceneUtil::addEnchantedGlow(attached, mResourceSystem, *glowColor);
 
-        return std::make_unique<PartHolder>(std::move(attached));
+        // Multi-piece equipment: "AttachTo:<bone>" nodes move onto their own
+        // bones. The glow above is applied first so every piece keeps it.
+        const NodeMap& nodeMap = getNodeMap();
+        const SceneUtil::BonePieceResult pieces
+            = SceneUtil::relocateBonePieces(*attached, [&nodeMap](std::string_view bone) -> osg::Group* {
+                  const auto found = nodeMap.find(bone);
+                  return found == nodeMap.end() ? nullptr : found->second.get();
+              });
+        for (const std::string& missing : pieces.mMissingBones)
+            Log(Debug::Warning) << "Part \"" << model.value() << "\": no bone \"" << missing
+                                << "\" for an AttachTo piece; it stays on " << bonename;
+
+        auto holder = std::make_unique<PartHolder>(std::move(attached));
+        for (const osg::ref_ptr<osg::Node>& piece : pieces.mRelocated)
+            holder->addLinkedNode(piece);
+        return holder;
     }
 
     osg::Vec3f NpcAnimation::runAnimation(float timepassed)
