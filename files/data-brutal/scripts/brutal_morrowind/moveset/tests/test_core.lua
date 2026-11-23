@@ -135,9 +135,10 @@ test("a buffered press chains exactly when the window opens", function()
     r.update(0.15) -- t = 0.15, window opens at 0.3
     eq(types(r.press("light")), "") -- buffered
     eq(r.state().buffered, "light")
-    -- One big step that jumps past the window opening still chains at 0.3.
+    -- One big step that jumps past the window opening still chains at 0.3,
+    -- and the rest of the frame (0.35 s) plays l2 (0.25 s at speed 2) through.
     local ev = r.update(0.5)
-    eq(types(ev), "hit:l1,end:l1,start:l2")
+    eq(types(ev), "hit:l1,end:l1,start:l2,hit:l2,end:l2")
 end)
 
 test("a buffered press expires after bufferTime", function()
@@ -248,6 +249,125 @@ test("load rejects data for another set or version", function()
     eq(r.load({ version = 1, set = "other" }), false)
     eq(r.load({ version = 99, set = "test" }), false)
     eq(r.load(nil), false)
+end)
+
+-- Regressions from code review (partition invariance, cooldown timing,
+-- authored order of same-time events).
+
+local function chainSet()
+    return {
+        id = "chain",
+        bufferTime = 1,
+        start = { light = "a" },
+        moves = {
+            a = { duration = 1, cancel = { 0.1, 0.2 }, next = { light = "b", skill = "s" } },
+            b = { duration = 1, speed = 2, events = { { t = 0.3, type = "sound", id = "b03" } } },
+            s = { duration = 0.5, cooldown = 1 },
+        },
+    }
+end
+
+local function runSplit(steps)
+    local r = core.new(chainSet())
+    r.press("light")
+    r.press("light") -- buffered; window opens at 0.1
+    local all = {}
+    for _, dt in ipairs(steps) do
+        for _, e in ipairs(r.update(dt)) do all[#all + 1] = e end
+    end
+    return r, types(all)
+end
+
+test("remaining frame time carries into the chained move", function()
+    local r = runSplit({ 0.3 })
+    eq(r.state().move, "b")
+    -- 0.1 s in a, then 0.2 s real in b at speed 2 = 0.4 move time.
+    near(r.state().time, 0.4)
+end)
+
+test("result does not depend on how the frame is split", function()
+    local r1, ev1 = runSplit({ 0.3 })
+    local r2, ev2 = runSplit({ 0.1, 0.1, 0.1 })
+    local r3, ev3 = runSplit({ 0.05, 0.2, 0.05 })
+    near(r1.state().time, r2.state().time)
+    near(r1.state().time, r3.state().time)
+    eq(ev1, ev2)
+    eq(ev1, ev3)
+    eq(ev1, "end:a,start:b,sound:b")
+end)
+
+test("a cooldown expiring after the cancel window does not allow the chain", function()
+    local r = core.new(chainSet())
+    r.press("light") -- a
+    r.update(0.05)
+    r.cooldowns.s = 0.2 -- expires at 0.25, after the window (0.1 .. 0.2)
+    r.press("skill") -- buffered until the window opens at 0.1
+    local ev = r.update(0.3)
+    eq(r.state().move, "a", "a should keep running, not chain into s")
+    local found = false
+    for _, e in ipairs(ev) do
+        if e.type == "rejected" and e.reason == "cooldown" then found = true end
+    end
+    eq(found, true, "the chain should be rejected for cooldown: " .. types(ev))
+end)
+
+test("a cooldown expiring before the window opens allows the chain", function()
+    local r = core.new(chainSet())
+    r.press("light")
+    r.update(0.02)
+    r.cooldowns.s = 0.05 -- expires at 0.07, before the window opens at 0.1
+    r.press("skill")
+    r.update(0.2)
+    eq(r.state().move, "s")
+end)
+
+test("same-time events keep their authored order", function()
+    local set = {
+        id = "order",
+        start = { light = "m" },
+        moves = {
+            m = {
+                duration = 1,
+                events = {
+                    { t = 0.2, type = "sound", id = "first" },
+                    { t = 0.2, type = "effect", model = "second" },
+                    { t = 0.2, type = "hit", piece = "third", from = 0.2, to = 0.3 },
+                    { t = 0.1, type = "sound", id = "earliest" },
+                },
+            },
+        },
+    }
+    local r = core.new(set)
+    r.press("light")
+    local ev = r.update(0.5)
+    eq(types(ev), "sound:m,sound:m,effect:m,hit:m")
+    eq(ev[1].id, "earliest")
+    eq(ev[2].id, "first")
+    eq(ev[3].model, "second")
+end)
+
+test("random frame splits give identical results (200 trials)", function()
+    math.randomseed(12345)
+    local function run(steps)
+        local r = core.new(testSet())
+        local all = {}
+        local function add(ev) for _, e in ipairs(ev) do all[#all + 1] = e end end
+        add(r.press("light"))
+        add(r.press("light")) -- buffered, chains at 0.3
+        for _, dt in ipairs(steps) do add(r.update(dt)) end
+        local st = r.state()
+        return types(all) .. "|" .. tostring(st.move) .. "|" .. string.format("%.4f", st.time)
+    end
+    local reference = run({ 0.7 })
+    for _ = 1, 200 do
+        local steps, left = {}, 0.7
+        while left > 1e-9 do
+            local dt = math.min(left, math.random() * 0.2)
+            steps[#steps + 1] = dt
+            left = left - dt
+        end
+        eq(run(steps), reference)
+    end
 end)
 
 io.write(string.format("moveset core: %d passed, %d failed\n", passed, failed))

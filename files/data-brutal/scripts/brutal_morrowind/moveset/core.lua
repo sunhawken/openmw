@@ -37,16 +37,20 @@ local M = {}
 local EPS = 1e-6
 
 local function sortedEvents(move)
+    -- Sort by time; events at the same time keep their authored order.
     local list = {}
     for i, e in ipairs(move.events or {}) do
-        list[i] = e
+        list[i] = { e = e, i = i }
     end
     table.sort(list, function(a, b)
-        if a.t == b.t then
-            return tostring(a.type) < tostring(b.type)
+        if a.e.t ~= b.e.t then
+            return a.e.t < b.e.t
         end
-        return a.t < b.t
+        return a.i < b.i
     end)
+    for i, wrapped in ipairs(list) do
+        list[i] = wrapped.e
+    end
     return list
 end
 
@@ -238,59 +242,70 @@ function M.new(set, hooks)
     end
 
     --- Advances time by `dt` real seconds. Returns events produced, in order.
+    -- Cooldowns, the input buffer and the current move all advance on one
+    -- timeline, stopping at every boundary (event, cancel window opening, move
+    -- end, buffer expiry, cooldown expiry). A move started mid-frame consumes
+    -- the rest of the frame. The result therefore does not depend on how the
+    -- elapsed time is split into frames.
     function self.update(dt)
         local out = {}
-        for id, left in pairs(self.cooldowns) do
-            left = left - dt
-            self.cooldowns[id] = left > EPS and left or nil
-        end
         local bufferTime = set.bufferTime or 0.25
-        -- Ages the buffered press by `real` seconds; reports it when it runs out.
-        local function ageBuffer(real)
+        local remaining = dt
+        local guard = 0
+        while remaining > EPS do
+            guard = guard + 1
+            if guard > 10000 then
+                error("moveset update did not converge")
+            end
+            local cur = self.current
+            local step = remaining
+            for _, left in pairs(self.cooldowns) do
+                step = math.min(step, left)
+            end
             if self.buffer then
-                self.buffer.age = self.buffer.age + real
+                -- Stop just past the expiry so it is reported in order.
+                step = math.min(step, math.max(0, bufferTime - self.buffer.age) + 2 * EPS)
+            end
+            if cur then
+                local speed = cur.move.speed or 1
+                local boundary = cur.move.duration
+                local w = cur.move.cancel
+                if w and cur.time + EPS < w[1] then
+                    boundary = math.min(boundary, w[1])
+                end
+                local nextEvent = cur.events[cur.nextEvent]
+                if nextEvent and nextEvent.t > cur.time + EPS then
+                    boundary = math.min(boundary, nextEvent.t)
+                end
+                step = math.min(step, math.max(0, boundary - cur.time) / speed)
+            end
+            step = math.max(step, EPS)
+
+            for id, left in pairs(self.cooldowns) do
+                left = left - step
+                self.cooldowns[id] = left > EPS and left or nil
+            end
+            if cur then
+                cur.time = math.min(cur.move.duration, cur.time + step * (cur.move.speed or 1))
+                fireEvents(out)
+            end
+            remaining = remaining - step
+
+            local chained = self.buffer ~= nil and consumeBuffer(out)
+            if not chained and self.buffer then
+                self.buffer.age = self.buffer.age + step
                 if self.buffer.age > bufferTime + EPS then
                     out[#out + 1] = { type = "expired", input = self.buffer.input }
                     self.buffer = nil
                 end
             end
-        end
-        local cur = self.current
-        if not cur then
-            ageBuffer(dt)
-            return out
-        end
-        -- Step through every boundary (cancel window opening, buffer expiry,
-        -- move end) so the result does not depend on frame length.
-        local speed = cur.move.speed or 1
-        local remainingReal = dt
-        while self.current == cur and remainingReal > EPS do
-            local stepTo = cur.move.duration
-            local w = cur.move.cancel
-            if w and cur.time + EPS < w[1] and w[1] < stepTo then
-                stepTo = w[1]
-            end
-            local stepReal = math.min(remainingReal, (stepTo - cur.time) / speed)
-            if self.buffer then
-                -- Stop just past the expiry so the expiry is reported in order.
-                stepReal = math.min(stepReal, math.max(0, bufferTime - self.buffer.age) + 2 * EPS)
-            end
-            cur.time = math.min(cur.move.duration, cur.time + stepReal * speed)
-            remainingReal = remainingReal - stepReal
-            fireEvents(out)
-            if self.buffer and consumeBuffer(out) then
-                break
-            end
-            ageBuffer(stepReal)
-            if cur.time + EPS >= cur.move.duration then
+            if not chained and cur and self.current == cur and cur.time + EPS >= cur.move.duration then
                 out[#out + 1] = { type = "end", move = cur.id, reason = "finished" }
                 self.current = nil
+            end
+            if not self.current and not self.buffer and next(self.cooldowns) == nil then
                 break
             end
-        end
-        -- Time left after a move ended or chained ages the buffer in neutral.
-        if self.current ~= cur and remainingReal > EPS and self.current == nil then
-            ageBuffer(remainingReal)
         end
         return out
     end
