@@ -1,5 +1,10 @@
 #include "scenemanager.hpp"
 
+#include "colladanames.hpp"
+
+#include <iterator>
+#include <sstream>
+
 #include <cstdlib>
 #include <filesystem>
 
@@ -357,8 +362,9 @@ namespace Resource
     class ReplaceAnimationUnderscoresVisitor : public osg::NodeVisitor
     {
     public:
-        ReplaceAnimationUnderscoresVisitor()
+        explicit ReplaceAnimationUnderscoresVisitor(const ColladaNames& names)
             : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
+            , mNames(names)
         {
         }
 
@@ -384,10 +390,11 @@ namespace Resource
         }
 
     private:
-        inline void renameNode(osg::Node& node)
-        {
-            node.setName(Misc::StringUtils::underscoresToSpaces(node.getName()));
-        }
+        const ColladaNames& mNames;
+
+        std::string rename(const std::string& name) const { return colladaNodeName(mNames, name); }
+
+        inline void renameNode(osg::Node& node) { node.setName(rename(node.getName())); }
 
         void renameUpdateCallbacks(osg::MatrixTransform& node)
         {
@@ -397,7 +404,7 @@ namespace Resource
                 auto* animCb = dynamic_cast<osgAnimation::AnimationUpdateCallback<osg::NodeCallback>*>(cb);
                 if (animCb)
                 {
-                    std::string newAnimCbName = Misc::StringUtils::underscoresToSpaces(animCb->getName());
+                    std::string newAnimCbName = rename(animCb->getName());
                     animCb->setName(newAnimCbName);
                 }
                 cb = cb->getNestedCallback();
@@ -413,7 +420,7 @@ namespace Resource
             std::vector<std::pair<std::string, std::string>> renameList;
             for (const auto& [oldBoneName, _] : *vertexInfluenceMap)
             {
-                const std::string newBoneName = Misc::StringUtils::underscoresToSpaces(oldBoneName);
+                const std::string newBoneName = rename(oldBoneName);
                 if (newBoneName != oldBoneName)
                     renameList.emplace_back(oldBoneName, newBoneName);
             }
@@ -428,13 +435,14 @@ namespace Resource
 
         void renameAnimationChannelTargets(osgAnimation::BasicAnimationManager& animManager)
         {
-            for (const osgAnimation::Animation* animation : animManager.getAnimationList())
+            for (osgAnimation::Animation* animation : animManager.getAnimationList())
             {
                 if (animation)
                 {
+                    animation->setName(colladaClipName(mNames, animation->getName()));
                     const osgAnimation::ChannelList& channels = animation->getChannels();
                     for (osgAnimation::Channel* channel : channels)
-                        channel->setTargetName(Misc::StringUtils::underscoresToSpaces(channel->getTargetName()));
+                        channel->setTargetName(rename(channel->getTargetName()));
                 }
             }
         }
@@ -631,9 +639,32 @@ namespace Resource
             if (isColladaFile)
                 options->setOptionString("daeUseSequencedTextureUnits");
 
+            // Collada: OSG's reader copies the stream into a buffer of exactly the
+            // stream's length and hands COLLADA DOM a bare `const char*` with no
+            // length (osgPlugins/dae/daeReader.cpp, convert(std::istream&)). With
+            // no terminating NUL the XML parser reads past the end into whatever
+            // follows in memory, which intermittently fails as "Extra content at
+            // the end of the document". Give the reader a NUL-terminated copy.
+            // The same text yields the exact node and clip names, which the reader
+            // replaces with element ids.
+            ColladaNames colladaNames;
+            std::istringstream colladaStream;
+            std::istream* readerInput = &model;
+            if (isColladaFile)
+            {
+                const auto start = model.tellg();
+                std::string text = readColladaForReader(model);
+                colladaNames = parseColladaNames(text);
+                colladaStream.str(std::move(text));
+                readerInput = &colladaStream;
+                model.clear();
+                model.seekg(start);
+            }
+
+            // Hash of the original file bytes, as before.
             const std::array<std::uint64_t, 2> fileHash = Files::getHash(normalizedFilename.value(), model);
 
-            osgDB::ReaderWriter::ReadResult result = reader->readNode(model, options);
+            osgDB::ReaderWriter::ReadResult result = reader->readNode(*readerInput, options);
             if (!result.success())
             {
                 std::stringstream errormsg;
@@ -658,7 +689,7 @@ namespace Resource
             // If a collada file with rigs, we should replace underscores with spaces
             if (isColladaFile && !rigFinder.mFoundNodes.empty())
             {
-                ReplaceAnimationUnderscoresVisitor renamingVisitor;
+                ReplaceAnimationUnderscoresVisitor renamingVisitor(colladaNames);
                 node->accept(renamingVisitor);
             }
 
@@ -721,6 +752,16 @@ namespace Resource
                                 new TemplateRef(newRiggeometryHolder->getGeometry(0)));
                         }
                     }
+                }
+
+                {
+                    std::size_t clips = 0;
+                    if (auto* bam = dynamic_cast<osgAnimation::BasicAnimationManager*>(node->getUpdateCallback()))
+                        clips = bam->getAnimationList().size();
+                    Log(Debug::Verbose) << "Collada model " << normalizedFilename << ": "
+                                        << colladaDescriptionVisitor.mRigGeometryHolders.size()
+                                        << " skinned meshes, " << clips << " clips, skeleton "
+                                        << (colladaDescriptionVisitor.mSkeleton ? "found" : "missing");
                 }
 
                 node->getOrCreateStateSet()->addUniform(new osg::Uniform("emissiveMult", 1.f));

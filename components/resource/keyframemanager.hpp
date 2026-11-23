@@ -37,6 +37,7 @@ namespace Resource
         osg::ref_ptr<osgAnimation::BasicAnimationManager> mAnimationManager;
         VFS::Path::Normalized mPath;
         const VFS::Manager* mVFS;
+        bool mRootDone = false; // A character root controller has been added.
     };
 }
 

@@ -14,9 +14,10 @@ ignored:
 Usage:
   make_collada_rig.py OUT_DIR [--name rig] [--bip01]
 
---bip01 writes the same rig with stock Bip01 names instead (Bip01, Bip01 Pelvis,
-Bip01 Spine1, ...) written with underscores the way exporters do, to check that
-stock-compatible exports still load as before.
+--bip01 writes the same rig with stock Bip01 names (Bip01, Bip01 Pelvis, ...),
+exporter style: exact names in `name`, underscored ids. --legacy writes ids
+only (no `name` attributes), like old exports that relied on the
+underscore-to-space rule.
 """
 import argparse
 import math
@@ -37,20 +38,32 @@ CUSTOM_BONES = [
 
 BIP01_BONES = [
     ("Bip01", None, (0, 0, 0)),
-    ("Bip01_Pelvis", "Bip01", (0, 0, 90)),
-    ("Bip01_Spine", "Bip01_Pelvis", (0, 0, 15)),
-    ("Bip01_Spine1", "Bip01_Spine", (0, 0, 20)),
-    ("Bip01_Neck", "Bip01_Spine1", (0, 0, 25)),
-    ("Bip01_L_Clavicle", "Bip01_Spine1", (20, 0, 20)),
-    ("Bip01_L_UpperArm", "Bip01_L_Clavicle", (25, 0, 0)),
-    ("Bip01_R_Clavicle", "Bip01_Spine1", (-20, 0, 20)),
-    ("Bip01_R_Hand", "Bip01_R_Clavicle", (-25, 0, 0)),
+    ("Bip01 Pelvis", "Bip01", (0, 0, 90)),
+    ("Bip01 Spine", "Bip01 Pelvis", (0, 0, 15)),
+    ("Bip01 Spine1", "Bip01 Spine", (0, 0, 20)),
+    ("Bip01 Neck", "Bip01 Spine1", (0, 0, 25)),
+    ("Bip01 L Clavicle", "Bip01 Spine1", (20, 0, 20)),
+    ("Bip01 L UpperArm", "Bip01 L Clavicle", (25, 0, 0)),
+    ("Bip01 R Clavicle", "Bip01 Spine1", (-20, 0, 20)),
+    ("Bip01 R Hand", "Bip01 R Clavicle", (-25, 0, 0)),
 ]
 
 
+LEGACY = False
+BIP01_STYLE = False
+
+
 def sid(name):
-    """Collada ids/sids cannot contain spaces or dots; names keep them."""
+    """Collada ids/sids cannot contain spaces. Stock-style rigs use exporter ids
+    (spaces to underscores); the custom rig uses an encoding that keeps the
+    underscore/space pair distinct, so its names survive only via `name`."""
+    if BIP01_STYLE:
+        return name.replace(" ", "_")
     return "j_" + "".join(c if c.isalnum() else "_%02x" % ord(c) for c in name)
+
+
+def xml_escape(text):
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 def translate(t):
@@ -158,7 +171,8 @@ def node_xml(bones, name, depth=3):
     children = [b[0] for b in bones if b[1] == name]
     pad = "  " * depth
     inner = "".join(node_xml(bones, c, depth + 1) for c in children)
-    return (f'{pad}<node id="{sid(name)}" sid="{sid(name)}" name="{name}" type="JOINT">\n'
+    name_attr = "" if LEGACY else f' name="{xml_escape(name)}"'
+    return (f'{pad}<node id="{sid(name)}" sid="{sid(name)}"{name_attr} type="JOINT">\n'
             f'{pad}  <matrix sid="transform">{fmt(translate(t))}</matrix>\n{inner}{pad}</node>\n')
 
 
@@ -184,7 +198,11 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--name", default="rig")
     ap.add_argument("--bip01", action="store_true")
+    ap.add_argument("--legacy", action="store_true", help="with --bip01: ids only, no name attributes")
     args = ap.parse_args()
+    global LEGACY, BIP01_STYLE
+    LEGACY = args.legacy
+    BIP01_STYLE = args.bip01
     bones = BIP01_BONES if args.bip01 else CUSTOM_BONES
     names = [b[0] for b in bones]
     root, pelvis, spine_low, spine_up, neck, arm_l, arm_l2, arm_r, hand_r = names
@@ -201,7 +219,9 @@ def main():
     # Clips: (name, bone, keyframe function, duration). Each keeps the bone's
     # rest translation and rotates it, so the motion is measurable per bone.
     clips = [
-        ("idle", spine_up, lambda a: rot_z(local[spine_up], 0.15 * math.sin(a)), 2.0),
+        # Starts at 0. Not named "idle": the engine plays "idle" on every actor
+        # itself, which would interfere with a scripted check.
+        ("sway", spine_up, lambda a: rot_z(local[spine_up], 0.9 * math.sin(a)), 2.0),
         ("wave_hello", arm_l, lambda a: rot_x(local[arm_l], 1.2 * math.sin(a)), 1.0),
         ("Slash Combo.2", hand_r, lambda a: rot_z(local[hand_r], 1.5 * math.sin(a)), 0.8),
     ]
@@ -245,9 +265,9 @@ def main():
   <library_visual_scenes>
     <visual_scene id="scene" name="scene">
 {nodes}      <node id="body" name="body"><instance_controller url="#body_skin"><skeleton>#{sid(root)}</skeleton>
-        <bind_material><technique_common><instance_material symbol="mat" target="#mat"/></technique_common></bind_material></instance_controller></node>
+        <bind_material><technique_common><instance_material symbol="mat" target="#mat"><bind_vertex_input semantic="UVMap" input_semantic="TEXCOORD" input_set="0"/></instance_material></technique_common></bind_material></instance_controller></node>
       <node id="arms" name="arms"><instance_controller url="#arms_skin"><skeleton>#{sid(root)}</skeleton>
-        <bind_material><technique_common><instance_material symbol="mat" target="#mat"/></technique_common></bind_material></instance_controller></node>
+        <bind_material><technique_common><instance_material symbol="mat" target="#mat"><bind_vertex_input semantic="UVMap" input_semantic="TEXCOORD" input_set="0"/></instance_material></technique_common></bind_material></instance_controller></node>
     </visual_scene>
   </library_visual_scenes>
   <scene><instance_visual_scene url="#scene"/></scene>

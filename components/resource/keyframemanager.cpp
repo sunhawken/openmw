@@ -152,6 +152,9 @@ namespace Resource
                 emulatedAnimation.mStartTime = startTime;
                 emulatedAnimation.mStopTime = stopTime;
                 emulatedAnimation.mName = animationName;
+                // Start and stop come from this clip's own keys, which OSG reads
+                // on the document's shared timeline.
+                emulatedAnimation.mAbsoluteKeys = true;
                 emulatedAnimations.emplace_back(emulatedAnimation);
             }
         }
@@ -185,15 +188,57 @@ namespace Resource
         mTarget.mKeyframeControllers.emplace(name, callback);
     }
 
+    namespace
+    {
+        bool isBone(const osg::Node& node)
+        {
+            return node.libraryName() == std::string_view("osgAnimation")
+                && node.className() == std::string_view("Bone");
+        }
+
+        // True when a bone named "bip01" exists at or below `node`.
+        bool hasBip01Bone(osg::Node& node)
+        {
+            struct Finder : osg::NodeVisitor
+            {
+                Finder()
+                    : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+                {
+                }
+                bool mFound = false;
+                void apply(osg::Node& n) override
+                {
+                    if (isBone(n) && Misc::StringUtils::ciEqual(n.getName(), "bip01"))
+                        mFound = true;
+                    if (!mFound)
+                        traverse(n);
+                }
+            } finder;
+            node.accept(finder);
+            return finder.mFound;
+        }
+    }
+
     void RetrieveAnimationsVisitor::apply(osg::Node& node)
     {
-        if (node.libraryName() == std::string_view("osgAnimation") && node.className() == std::string_view("Bone")
-            && Misc::StringUtils::lowerCase(node.getName()) == std::string_view("bip01"))
+        if (!mRootDone && isBone(node))
         {
-            addKeyframeController("bip01", node); /* Character root */
-            addKeyframeController("Bip01 Spine1", node); /* Torso */
-            addKeyframeController("Bip01 L Clavicle", node); /* Left arm */
-            addKeyframeController("Bip01 R Clavicle", node); /* Right arm */
+            if (Misc::StringUtils::lowerCase(node.getName()) == std::string_view("bip01"))
+            {
+                // Stock skeleton: root plus the torso and arm blend groups.
+                addKeyframeController("bip01", node); /* Character root */
+                addKeyframeController("Bip01 Spine1", node); /* Torso */
+                addKeyframeController("Bip01 L Clavicle", node); /* Left arm */
+                addKeyframeController("Bip01 R Clavicle", node); /* Right arm */
+                mRootDone = true;
+            }
+            else if (!hasBip01Bone(node))
+            {
+                // Any other skeleton: its topmost bone drives every channel. The
+                // torso/arm split needs the stock bones, which it does not have.
+                addKeyframeController(node.getName(), node);
+                mRootDone = true;
+            }
         }
 
         traverse(node);

@@ -1,0 +1,2 @@
+GLOBAL: scripts/rig_test_global.lua
+CUSTOM: scripts/rig_test_actor.lua
