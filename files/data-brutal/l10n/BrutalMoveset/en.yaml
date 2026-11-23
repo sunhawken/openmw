@@ -1,0 +1,18 @@
+PageName: Brutal Morrowind move sets
+PageDescription: "Combos and skills defined by installed move set content. Without such content these options do nothing."
+enabled: Move sets
+enabledDescription: "Lets installed move set content take over the bound attack and skill keys."
+hud: Combo display
+hudDescription: "Shows the current move and combo count above the hotbar."
+lightBinding: Move set light attack
+lightBindingDescription: "First input of the active move set. Unbound by default."
+heavyBinding: Move set heavy attack
+heavyBindingDescription: "Second input of the active move set. Unbound by default."
+skill1Binding: Move set skill 1
+skill1BindingDescription: "Unbound by default."
+skill2Binding: Move set skill 2
+skill2BindingDescription: "Unbound by default."
+skill3Binding: Move set skill 3
+skill3BindingDescription: "Unbound by default."
+dodgeBinding: Move set dodge
+dodgeBindingDescription: "Unbound by default."

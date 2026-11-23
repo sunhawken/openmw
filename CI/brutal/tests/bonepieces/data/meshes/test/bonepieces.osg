@@ -1,0 +1,110 @@
+Group {
+  name "BonePiecesTestWeapon"
+  nodeMask 0xffffffff
+  num_children 5
+  MatrixTransform {
+    name "Main"
+    nodeMask 0xffffffff
+    referenceFrame RELATIVE
+    Matrix {
+      1 0 0 0
+      0 1 0 0
+      0 0 1 0
+      0 0 10 1
+    }
+    num_children 1
+    Geode {
+      num_drawables 1
+      ShapeDrawable {
+        Box {
+          Center 0 0 0
+          HalfLengths 4 4 4
+        }
+      }
+    }
+  }
+  MatrixTransform {
+    name "AttachTo:Bip01 L Hand|a"
+    nodeMask 0xffffffff
+    referenceFrame RELATIVE
+    Matrix {
+      1 0 0 0
+      0 1 0 0
+      0 0 1 0
+      0 0 6 1
+    }
+    num_children 1
+    Geode {
+      num_drawables 1
+      ShapeDrawable {
+        Box {
+          Center 0 0 0
+          HalfLengths 4 4 4
+        }
+      }
+    }
+  }
+  MatrixTransform {
+    name "AttachTo:Bip01 R Foot|a"
+    nodeMask 0xffffffff
+    referenceFrame RELATIVE
+    Matrix {
+      1 0 0 0
+      0 1 0 0
+      0 0 1 0
+      0 4 0 1
+    }
+    num_children 1
+    Geode {
+      num_drawables 1
+      ShapeDrawable {
+        Box {
+          Center 0 0 0
+          HalfLengths 4 4 4
+        }
+      }
+    }
+  }
+  MatrixTransform {
+    name "AttachTo:Bip01 L Foot|b"
+    nodeMask 0xffffffff
+    referenceFrame RELATIVE
+    Matrix {
+      1 0 0 0
+      0 1 0 0
+      0 0 1 0
+      0 4 0 1
+    }
+    num_children 1
+    Geode {
+      num_drawables 1
+      ShapeDrawable {
+        Box {
+          Center 0 0 0
+          HalfLengths 4 4 4
+        }
+      }
+    }
+  }
+  MatrixTransform {
+    name "AttachTo:Bip01 No Such Bone"
+    nodeMask 0xffffffff
+    referenceFrame RELATIVE
+    Matrix {
+      1 0 0 0
+      0 1 0 0
+      0 0 1 0
+      0 0 0 1
+    }
+    num_children 1
+    Geode {
+      num_drawables 1
+      ShapeDrawable {
+        Box {
+          Center 0 0 0
+          HalfLengths 4 4 4
+        }
+      }
+    }
+  }
+}

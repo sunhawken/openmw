@@ -91,6 +91,7 @@ namespace SceneUtil
     {
         std::string animationName;
         float newTime = time;
+        bool absoluteKeys = false;
 
         // Find the correct animation based on time
         for (const EmulatedAnimation& emulatedAnimation : mEmulatedAnimations)
@@ -98,6 +99,7 @@ namespace SceneUtil
             if (time >= emulatedAnimation.mStartTime && time <= emulatedAnimation.mStopTime)
             {
                 newTime = time - emulatedAnimation.mStartTime;
+                absoluteKeys = emulatedAnimation.mAbsoluteKeys;
                 animationName = emulatedAnimation.mName;
                 break;
             }
@@ -120,7 +122,7 @@ namespace SceneUtil
                     = dynamic_cast<osgAnimation::MatrixLinearSampler*>(channel->getSampler()))
                 {
                     osg::Matrixf matrix;
-                    templateSampler->getValueAt(newTime, matrix);
+                    templateSampler->getValueAt(absoluteKeys ? time : newTime, matrix);
                     return matrix;
                 }
             }
@@ -134,12 +136,13 @@ namespace SceneUtil
         return getTransformForNode(time, "bip01").getTrans();
     }
 
-    void OsgAnimationController::update(float time, const std::string& animationName)
+    void OsgAnimationController::update(float time, const EmulatedAnimation& clip)
     {
         for (const auto& mergedAnimationTrack : mMergedAnimationTracks)
         {
-            if (mergedAnimationTrack->getName() == animationName)
-                mergedAnimationTrack->update(time);
+            if (mergedAnimationTrack->getName() != clip.mName)
+                continue;
+            mergedAnimationTrack->update(clip.mAbsoluteKeys ? time : time - clip.mStartTime);
         }
     }
 
@@ -165,7 +168,7 @@ namespace SceneUtil
             {
                 if (time > emulatedAnimation.mStartTime && time < emulatedAnimation.mStopTime)
                 {
-                    update(time - emulatedAnimation.mStartTime, emulatedAnimation.mName);
+                    update(time, emulatedAnimation);
                 }
             }
 

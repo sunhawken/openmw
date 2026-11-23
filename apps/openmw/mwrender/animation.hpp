@@ -84,8 +84,15 @@ namespace MWRender
 
         const osg::ref_ptr<osg::Node>& getNode() const { return mNode; }
 
+        /// Nodes that belong to this part but live elsewhere in the actor's
+        /// scene graph (multi-piece equipment moved onto other bones). They are
+        /// detached together with the part.
+        void addLinkedNode(osg::ref_ptr<osg::Node> node) { mLinked.push_back(std::move(node)); }
+        const std::vector<osg::ref_ptr<osg::Node>>& getLinkedNodes() const { return mLinked; }
+
     private:
         osg::ref_ptr<osg::Node> mNode;
+        std::vector<osg::ref_ptr<osg::Node>> mLinked;
 
         void operator=(const PartHolder&);
         PartHolder(const PartHolder&);

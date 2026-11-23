@@ -1,6 +1,7 @@
 #include "animationbindings.hpp"
 
 #include <components/lua/luastate.hpp>
+#include <components/lua/utilpackage.hpp>
 #include <components/misc/finitevalues.hpp>
 
 #include "../mwbase/environment.hpp"
@@ -256,6 +257,15 @@ namespace MWLua
         api["hasBone"] = [](const LObject& object, std::string_view bonename) -> bool {
             const MWRender::Animation* anim = getConstAnimationOrThrow(object);
             return anim->getNode(bonename) != nullptr;
+        };
+
+        // World transform of a bone (position and rotation), or nil when the
+        // actor has no such bone. Reads the last updated pose of the scene graph.
+        api["getBoneTransform"] = [](const LObject& object, std::string_view bonename) -> sol::optional<LuaUtil::TransformM> {
+            const MWRender::Animation* anim = getConstAnimationOrThrow(object);
+            if (const std::optional<osg::Matrixf> m = anim->getBoneWorldMatrix(bonename))
+                return LuaUtil::TransformM{ *m };
+            return sol::nullopt;
         };
 
         api["addVfx"] = [context](const SelfObject& object, std::string_view model, sol::optional<sol::table> options) {

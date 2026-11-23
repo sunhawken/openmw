@@ -18,6 +18,11 @@ namespace SceneUtil
         float mStartTime;
         float mStopTime;
         std::string mName;
+        /// True when the clip's keys lie on one timeline shared with mStartTime and
+        /// mStopTime (Collada animation clips). The clip is then sampled at the
+        /// timeline time, so every channel keeps its own offset inside the clip.
+        /// False: keys are relative to the clip start (time - mStartTime).
+        bool mAbsoluteKeys = false;
     };
 
     class LinkVisitor : public osg::NodeVisitor
@@ -63,7 +68,10 @@ namespace SceneUtil
         osg::Matrixf getTransformForNode(float time, const std::string_view name) const;
 
         /// @brief Calls animation track update()
-        void update(float time, const std::string& animationName);
+        /// Updates \a clip's tracks for the absolute timeline time \a time.
+        void update(float time, const EmulatedAnimation& clip);
+
+
 
         /// @brief Called every frame for osgAnimation
         void operator()(osg::Node*, osg::NodeVisitor*);

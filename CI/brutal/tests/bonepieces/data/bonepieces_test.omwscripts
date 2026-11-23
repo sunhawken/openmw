@@ -1,0 +1,2 @@
+GLOBAL: scripts/bonepieces_global.lua
+PLAYER: scripts/bonepieces_player.lua

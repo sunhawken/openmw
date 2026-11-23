@@ -1,0 +1,3 @@
+GLOBAL: scripts/moveset_test_global.lua
+PLAYER: scripts/moveset_test_player.lua
+CUSTOM: scripts/moveset_test_target.lua

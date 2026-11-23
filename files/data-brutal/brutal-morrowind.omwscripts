@@ -15,3 +15,5 @@ PLAYER: scripts/brutal_morrowind/feedback_player.lua
 PLAYER: scripts/brutal_morrowind/clinch.lua
 
 GLOBAL: scripts/brutal_morrowind/kick_global.lua
+MENU: scripts/brutal_morrowind/moveset/menu.lua
+PLAYER: scripts/brutal_morrowind/moveset/player.lua

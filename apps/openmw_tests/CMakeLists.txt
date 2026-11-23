@@ -22,6 +22,11 @@ file(GLOB UNITTEST_SRC_FILES
 
     mwrender/testjigglebonecontroller.cpp
 
+    sceneutil/testbonepieces.cpp
+    sceneutil/testosgacontrollertimeline.cpp
+
+    resource/testcolladanames.cpp
+
     mwscript/testscripts.cpp
 )
 
