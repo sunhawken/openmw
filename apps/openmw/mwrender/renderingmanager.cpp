@@ -1111,7 +1111,7 @@ namespace MWRender
         std::span<const std::pair<osg::Vec3f, osg::Vec3f>> segments, std::span<const unsigned> buckets)
     {
         osg::ref_ptr<SwordSegmentIntersector> intersector = new SwordSegmentIntersector(segments, buckets);
-        mRootNode->accept(*getIntersectionVisitor(intersector, true, true));
+        mRootNode->accept(*getIntersectionVisitor(intersector, true, true, MWRender::Mask_3DGUI));
         return intersector->ratios();
     }
 

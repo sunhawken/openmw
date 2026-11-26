@@ -335,14 +335,14 @@ namespace MWVR
 
             if (victim && victim->first.getClass().isActor())
             {
-                auto hit = mPtr.getClass().evaluateHit(mPtr, victim);
+                auto hit = mPtr.getClass().evaluateVRHit(mPtr, victim);
                 transition_swingingToImpact(hit.mVictim, hit.mHitPosition, hit.mSuccess);
             }
         }
 
         void StateMachine::transition_swingingToImpact(MWWorld::Ptr victim, osg::Vec3f hitPosition, bool success) 
         {
-            mPtr.getClass().hit(mPtr, mStrength, mSwingType, victim, hitPosition, success, true);
+            mPtr.getClass().hit(mPtr, mStrength, mSwingType, victim, hitPosition, success, -1, true);
             transition(SwingState_Impact, false);
         }
 

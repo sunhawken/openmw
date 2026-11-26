@@ -498,7 +498,8 @@ namespace MWRender
 //## VR_PATCH BEGIN
         if (VR::getVR())
             VR::setSneakOffsetEnabled(offset != 0.f);
-//## VR_PATCH END    }
+//## VR_PATCH END
+    }
 
     void Camera::setYaw(float angle, bool force)
     {

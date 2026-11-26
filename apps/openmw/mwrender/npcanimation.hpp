@@ -80,7 +80,8 @@ namespace MWRender
             std::uint64_t acceptedStrikes = 0;
         };
 
-    private:
+    protected:
+//## VR_PATCH END
         static const PartBoneMap sPartList;
 
         // Opt-in private geometry audit. The callback samples after the whole
